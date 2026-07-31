@@ -63,6 +63,10 @@ With 42 targets, a generic bridge / scaffold / fuzz driver amortizes. Hand-craft
 **P4 — The port crate never knows JS exists.**
 `mnemonist-core` builds, tests, and benches with Node absent. This is both good architecture and the one-line rebuttal to the FFI rule.
 
+**P0 — DEFINITION OF DONE. A unit is not ported until every gate below is green.**
+See §1.1. Nothing else in this document overrides it. "Compiles and the test passes" is a
+workflow smoke-test, not a delivered unit.
+
 **P5 — Commit incrementally, from kickoff, always. This is a disqualification risk.**
 Admin FAQ, verbatim: *"We check Git history and expect the first port commit after kickoff with
 real incremental commits. **A single dump or predated work risks disqualification.**"*
@@ -72,6 +76,101 @@ real incremental commits. **A single dump or predated work risks disqualificatio
 - Planning docs from `scratchpad/` may be committed **at or after** kickoff as planning artifacts —
   they are not port code, and their content is openly about pre-kickoff scouting, which the FAQ
   explicitly permits (*"You can scout, read tests, check LOC/license, and plan now"*).
+
+---
+
+## 1.1 The unit, and the Definition of Done
+
+### What a unit is
+
+**A unit is the complete require-closure of one upstream test file** — not one source module.
+
+Forced by the harness, not chosen: every `require('../x.js')` in an upstream test file sits at the
+top of the file, so a single missing module throws before any `it()` executes and the **whole file
+fails with zero partial credit.** You cannot half-land a test file.
+
+Most files are 1:1 with a module. These are not:
+
+| Test file | Require-closure | LOC |
+|---|---|---|
+| `_utils.js` | `typed-arrays` + `binary-search` + `hash-tables` + `iterables` + `merge` | ~1,166 |
+| `lru-cache.js` | `lru-cache` + `lru-map` + `lru-cache-with-delete` + `lru-map-with-delete` | 1,271 |
+| `sort.js` | `sort/quick` + `sort/insertion` + `utils/typed-arrays` | ~350 |
+| `multi-set.js` | `multi-map` + `multi-set` | 853 |
+| `multi-map.js` | `multi-map` + `vector` | 781 |
+| `heap.js` | `heap` + `utils/comparators` | 655 |
+| `kd-tree.js` | `kd-tree` + `utils/comparators` | 526 |
+
+**This corrects an earlier claim in §6** that `test/_utils.js` accrues partial credit as utils land.
+It does not. All five utils modules must exist before one assertion runs.
+
+### Definition of Done — all ten gates, no exceptions
+
+| # | Gate | Evidence |
+|---|---|---|
+| 1 | Every module in the closure ported to `mnemonist-core` | builds |
+| 2 | `#![forbid(unsafe_code)]` intact; core has no JS awareness | `cargo build -p mnemonist-core` with Node absent |
+| 3 | napi bridge + shim per module | — |
+| 4 | **Original test file green, unmodified** | `tests/run.sh <file>` |
+| 5 | `sha256sum -c tests/SHA256SUMS` PASS | — |
+| 6 | **Falsification check**: sabotage the core, gate goes red | proves the suite exercises Rust, not a JS fallback |
+| 7 | Rust native tests covering what upstream's do not | `cargo test -p mnemonist-core` |
+| 8 | **Divergence doc** `docs/modules/<unit>.md` | see below |
+| 9 | **Differential fuzz** 60s+, zero divergences | `fuzz/log.txt` entry + committed `proptest-regressions/` |
+| 10 | **Benchmark** vs upstream JS | keyed entry in `bench/results.json` |
+
+Plus always: `cargo fmt`, `cargo clippy --all-targets -- -D warnings` clean.
+
+**The done marker is `tests/scope.txt`.** A unit is added to it in the final commit of its series,
+and only when gates 1–10 are green. If it is not in `scope.txt`, it does not exist: `run.sh`,
+the README scope table, and `.port-mortem.toml` all read from that file.
+
+### Gate 6 exists because of a real miss
+
+The first falsification attempt on `StaticDisjointSet` sabotaged `if x_root == y_root` — a branch
+that test never takes, because every union in it merges distinct sets. It stayed green and proved
+nothing. **A falsification test that cannot fail is just a second green light.** Choose the
+sabotage by naming the assertion it must break, then confirm red *and* confirm green after revert.
+
+### Gate 8 — the divergence doc
+
+One file per unit, `docs/modules/<unit>.md`. This is the artifact that makes the rigor gap
+*visible* rather than merely claimed, and it feeds `DECISIONS.md` and the write-up directly.
+
+```markdown
+# <unit>
+Upstream: <files> · <n> LOC · test/<file>.js (<n> lines, <n> assertions)
+
+## What upstream tests
+Bullets. Be specific about the shape of the coverage.
+
+## What upstream does NOT test          <-- the point of the document
+Behaviours reachable in the public API that the original suite never exercises.
+
+## What we test in addition
+Our native tests, mapped 1:1 to the gaps above.
+
+## Bugs this found
+Defects only visible because our coverage exceeds upstream's. Cross-ref NOTES.md B-nn.
+
+## Deliberate divergences
+Where the port differs and why. Cross-ref DECISIONS-CANDIDATES.md D-nn.
+
+## Fuzz + bench
+Ops fuzzed, seed, duration, divergences. Benchmark headline including any regression.
+```
+
+### Commit granularity
+
+A unit lands as a short series, not one dump — P5 still applies:
+`feat(core)` → `feat(napi)` → `test(fuzz)` + `perf(bench)` → `docs(module)` + scope.txt.
+**The scope.txt commit is what marks it done.** Never begin the next unit before the current one
+is in `scope.txt`.
+
+### Consequence: `StaticDisjointSet` is NOT done
+
+It has gates 1–7 (and gate 6 only after the second attempt). It is missing **8, 9, 10**. It is a
+validated workflow smoke-test, not a delivered unit, and it must be backfilled — see §7.2.
 
 ---
 
@@ -827,9 +926,10 @@ infrastructure — a meaningful change to the wave's value.
 | `hash-tables` | 107 | 1.5 |
 | `merge` | 563 | 1.5 — heaviest single util; only `inverted-index` needs it |
 
-Mocha reports per-`it`, so `test/_utils.js` accrues **partial credit** as utils land — no need to
-finish all 1,166 LOC before it starts scoring. Port the Wave 0 four, bank the passes, and treat
-`binary-search`/`hash-tables`/`merge` as fill-in work between modules.
+**CORRECTED (§1.1): `test/_utils.js` accrues NO partial credit.** Its five requires are top-level,
+so a single missing module throws before any `it()` runs and the entire file fails. All five —
+including `merge` at 563 LOC — must land before one assertion scores. That makes the utils unit
+~1,166 LOC, one of the largest in the repo, not the fill-in work described here originally.
 
 ### Wave 1 — contiguous/bit subset (~3,300 LOC) ← **THE SHIPPABLE MILESTONE**
 `sparse-map` 243 · `sparse-queue-set` 218 · `bit-set` 379 · `bit-vector` 550 · `hashed-array-tree` 209 ·
@@ -985,6 +1085,40 @@ start `sparse-set` — begin it fresh on Day 2 rather than half-finished at 1am 
 **Adding a module should be a repeatable ~30–45 min operation by H29.** If it isn't, the scaffold
 generator (D2) is the thing to fix before porting anything further — that ratio is what determines
 how much of Wave 1 lands.
+
+### 7.2 REVISED ORDER — harnesses before more modules
+
+Adopting P0/§1.1 changes what comes next. Gates 9 and 10 need a differential fuzzer and a bench
+harness that do not exist, so **every module ported before they exist lands non-compliant and needs
+retrofitting.** Retrofitting N modules is strictly worse than building the harness once.
+
+**Revised sequence:**
+
+| Step | Work | Why here |
+|---|---|---|
+| **1** | `difffuzz`: persistent Node oracle + proptest op-sequence driver (§4, E1+E2) | Gate 9 for everything downstream |
+| **2** | Bench harness: matched xorshift32, batch timing, RSS via rusage (§5.1–5.2) | Gate 10 for everything downstream |
+| **3** | **Backfill `StaticDisjointSet` to full DoD** — gates 8, 9, 10 | Shakes out both harnesses on the *simplest* module, with no iterators in the way. Converts the smoke-test into the reference implementation of the process |
+| **4** | Block C — `sparse-set` + cursor design | First unit that is DoD-compliant *natively* |
+| **5** | Wave 1 remainder, re-sorted by test weight | See below |
+
+Backfilling before Block C is deliberate: it means **one** module needs retrofit instead of two,
+and the harnesses get debugged against a module with zero iterator surface.
+
+**Re-sort Wave 1 by test weight once the cursor pattern is proven.** The original order optimised
+for capability risk — correct while the toolchain was unknown, wasteful afterwards. Test lines are
+where the 40% actually lives, and they are badly back-loaded:
+
+| Module | test lines | src | current pos |
+|---|---|---|---|
+| `circular-buffer` | **339** | 140 | #10 (behind `fixed-deque`) |
+| `bit-vector` | 320 | 550 | #5 |
+| `fixed-deque` | 281 | 357 | #9 |
+| `vector` | 234 | 373 | #11 |
+| `bit-set` | 189 | 379 | #4 |
+
+Those five are ~60% of Wave 1's total test weight. Capability order still constrains
+(`circular-buffer` genuinely needs `fixed-deque`), but within a tier, sort by test lines.
 
 ### Checkpoints (each is a real GO/NO-GO)
 
