@@ -188,18 +188,30 @@ impl SparseSet {
             return false;
         }
 
-        // Swap the last member into the hole. `this.dense[this.size - 1]` is
-        // `undefined` when `size` has run past `length`, and storing
-        // `undefined` into a typed array stores 0 — that is where the
-        // `unwrap_or(0)` comes from, not from defensiveness.
-        let last = self.dense.try_get(self.size - 1).unwrap_or(0);
+        // Swap the last member into the hole:
+        //
+        //   index = this.dense[this.size - 1];
+        //   this.dense[this.sparse[member]] = index;
+        //   this.sparse[index]             = this.sparse[member];
+        //
+        // `index` is `undefined` once `size` has run past `length`, and the
+        // two stores then behave *differently*, which is the trap:
+        let last = self.dense.try_get(self.size - 1);
 
-        self.dense.try_set(slot, last);
-        // `this.sparse[index] = this.sparse[member]`, where `index` is the
-        // member just moved. Out of range this is a dropped store upstream
-        // too: it creates a string-keyed expando on the typed array that no
-        // method ever reads.
-        self.sparse.try_set(last as usize, slot as u32);
+        // Storing `undefined` into a typed array stores 0 — `ToNumber` gives
+        // `NaN`, and a `NaN` element store is 0. So this write still lands.
+        self.dense.try_set(slot, last.unwrap_or(0));
+
+        // But `this.sparse[undefined]` is a *string-keyed* property on the
+        // typed-array object, not element 0. It creates an expando that no
+        // method ever reads, and it leaves `sparse` untouched. Writing
+        // `sparse[0]` here instead would be a silent divergence — verified
+        // against Node: `new SparseSet(3)`, add 0/1/2/99, `delete(1)` leaves
+        // `sparse` as `[0, 1, 2]` and sets `sparse.undefined = 1`.
+        if let Some(last) = last {
+            self.sparse.try_set(last as usize, slot as u32);
+        }
+
         self.size -= 1;
 
         true
@@ -449,6 +461,28 @@ mod tests {
         assert_eq!(cursor.step(), Step::Gap);
         assert_eq!(cursor.step(), Step::Gap);
         assert_eq!(cursor.step(), Step::Done);
+    }
+
+    /// Deleting once `size` has run past `length` is where upstream's two
+    /// swap stores stop behaving alike: the `dense` store lands (as 0), the
+    /// `sparse` store becomes a string-keyed expando and leaves the array
+    /// alone. Pinned against Node, which gives `dense = [0, 0, 2]` and
+    /// `sparse = [0, 1, 2]` for exactly this sequence.
+    #[test]
+    fn a_delete_past_capacity_writes_dense_but_not_sparse() {
+        let mut set = SparseSet::new(3).unwrap();
+
+        for member in [0, 1, 2, 99] {
+            set.add(member);
+        }
+
+        assert_eq!(set.size(), 4);
+        assert!(set.delete(1));
+
+        assert_eq!(set.size(), 3);
+        assert_eq!(set.dense(), &PointerVec::U8(vec![0, 0, 2]));
+        // Not `[1, 1, 2]`, which is what writing `sparse[0]` would give.
+        assert_eq!(set.sparse(), &PointerVec::U8(vec![0, 1, 2]));
     }
 
     /// Gap 8: D-06. The cursor is not restartable, while the set is
