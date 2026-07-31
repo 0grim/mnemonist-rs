@@ -300,6 +300,23 @@ pub enum CheckFailure {
     /// The port and upstream disagree. This is the finding.
     Diverged(Box<Divergence>),
     /// The harness broke. Never a finding.
+    ///
+    /// # Trap for the next module
+    ///
+    /// An exception *thrown by an operation* on the JS side currently arrives
+    /// here, as [`crate::OracleError::Js`], and is therefore classified as
+    /// apparatus failure rather than as a divergence. That is correct for
+    /// `static-disjoint-set`, whose op alphabet cannot throw — every generated
+    /// index is in range and every op name is a real method.
+    ///
+    /// It stops being correct for any module where throwing is legitimate
+    /// behaviour, because "upstream threw and the port did not" is exactly the
+    /// kind of divergence this crate exists to catch, and routing it here would
+    /// abort the campaign instead of reporting it. The fix, when that module
+    /// arrives: make throwing part of the compared result — encode it as
+    /// `{"$throw": "<message>"}` on both sides — rather than an out-of-band
+    /// error. Left undone deliberately; guessing the shape before there is a
+    /// module to check it against is how it gets guessed wrong.
     Oracle(crate::OracleError),
 }
 
