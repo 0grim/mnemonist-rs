@@ -8,5 +8,5 @@
 //! crate never depends on it and never will.
 
 pub mod cursor;
-pub mod utils;
 pub mod structures;
+pub mod utils;

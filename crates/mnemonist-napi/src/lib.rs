@@ -9,6 +9,8 @@
 
 use napi_derive::napi;
 
+pub mod static_disjoint_set;
+
 #[napi]
 pub fn ping() -> &'static str {
     "pong"
