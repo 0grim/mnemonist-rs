@@ -118,6 +118,43 @@ impl PointerVec {
         }
     }
 
+    /// Read one slot, or `None` where JS would have produced `undefined`.
+    ///
+    /// The counterpart to [`PointerVec::get`], for the structures whose
+    /// upstream code *relies* on the out-of-range read. `SparseSet` is the
+    /// first: `this.sparse[member]` for a member past the array is `undefined`
+    /// there, every comparison against `undefined` is false, and both `has`
+    /// and `delete` fall out of their guards because of it. Reproducing that
+    /// needs the read to be an [`Option`], not a panic.
+    pub fn try_get(&self, index: usize) -> Option<u32> {
+        match self {
+            Self::U8(values) => values.get(index).copied().map(u32::from),
+            Self::U16(values) => values.get(index).copied().map(u32::from),
+            Self::U32(values) => values.get(index).copied(),
+        }
+    }
+
+    /// Truncating write, silently dropped when out of range.
+    ///
+    /// A JS typed-array store past the end is a **no-op** — no throw, no
+    /// growth, and in sloppy mode not even an error. [`PointerVec::set`]
+    /// panics instead, which is right where a structure's own invariants say
+    /// the index is good. This is for the places where upstream's own logic
+    /// walks off the end and keeps going, and the no-op is load-bearing:
+    /// `SparseSet.add(member)` with `member >= length` writes `sparse[member]`
+    /// into the void, increments `size` anyway, and leaves the set in a state
+    /// only this method reproduces.
+    ///
+    /// Returns whether the write landed.
+    pub fn try_set(&mut self, index: usize, value: u32) -> bool {
+        match self {
+            Self::U8(values) => values.get_mut(index).map(|slot| *slot = value as u8),
+            Self::U16(values) => values.get_mut(index).map(|slot| *slot = value as u16),
+            Self::U32(values) => values.get_mut(index).map(|slot| *slot = value),
+        }
+        .is_some()
+    }
+
     /// Truncating write, mirroring a JS typed array store.
     ///
     /// The narrowing cast is the whole mechanism: `Uint8Array` writes take the
@@ -238,5 +275,40 @@ mod tests {
     #[should_panic(expected = "index out of bounds")]
     fn reads_past_the_end_panic_rather_than_yielding_undefined() {
         PointerVec::zeroed(PointerWidth::U8, 2).get(2);
+    }
+
+    /// The opt-in form, for structures that depend on `undefined`.
+    #[test]
+    fn try_get_reports_the_out_of_range_read_instead_of_panicking() {
+        for width in [PointerWidth::U8, PointerWidth::U16, PointerWidth::U32] {
+            let mut values = PointerVec::zeroed(width, 2);
+            values.set(1, 7);
+
+            assert_eq!(values.try_get(1), Some(7));
+            assert_eq!(values.try_get(2), None);
+            assert_eq!(values.try_get(usize::MAX), None);
+        }
+    }
+
+    /// A JS typed-array store past the end is a no-op, not a throw.
+    #[test]
+    fn try_set_drops_out_of_range_writes_and_still_truncates_in_range_ones() {
+        let mut values = PointerVec::zeroed(PointerWidth::U8, 2);
+
+        assert!(values.try_set(0, 300));
+        assert_eq!(values.try_get(0), Some(300 % 256));
+
+        assert!(!values.try_set(2, 1));
+        assert_eq!(values, PointerVec::U8(vec![(300u32 % 256) as u8, 0]));
+
+        let mut wide = PointerVec::zeroed(PointerWidth::U16, 1);
+        assert!(wide.try_set(0, 70_000));
+        assert_eq!(wide.try_get(0), Some(70_000 % 65_536));
+        assert!(!wide.try_set(9, 1));
+
+        let mut widest = PointerVec::zeroed(PointerWidth::U32, 1);
+        assert!(widest.try_set(0, u32::MAX));
+        assert_eq!(widest.try_get(0), Some(u32::MAX));
+        assert!(!widest.try_set(1, 1));
     }
 }
