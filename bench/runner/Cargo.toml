@@ -1,0 +1,18 @@
+[package]
+name = "bench-runner"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Rust half of the matched benchmark harness. Pure core, never through N-API."
+publish = false
+
+[[bin]]
+name = "bench-runner"
+path = "src/main.rs"
+
+[dependencies]
+mnemonist-core = { workspace = true }
+libc = { workspace = true }
+serde_json = { workspace = true }
+# Built with the workspace's stock `--release` profile. No exotic codegen
+# flags: the comparison is only fair if the port is built the way it ships.
