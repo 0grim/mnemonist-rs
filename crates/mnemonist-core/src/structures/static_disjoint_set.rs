@@ -23,8 +23,9 @@
 //!    `log2(size) > 256`, and `parents` already rejects any `size` past
 //!    2<sup>32</sup> — and, because of the bug above,
 //!    a root's rank can be bumped once per union and wrap around at 256. The
-//!    wrap is emulated (see [`PointerVec::set`]), since JS `Uint8Array` writes
-//!    truncate rather than panic.
+//!    wrap is emulated by [`PointerVec`], which allocates a real `Vec<u8>` for
+//!    an 8-bit width, so the narrowing store truncates exactly as a JS
+//!    `Uint8Array` write does.
 //! 3. **First-encounter-by-index ordering** in `mapping` and `compile`: set ids
 //!    are handed out in the order their members are first walked, ascending by
 //!    item index.
@@ -44,49 +45,7 @@
 //! assert_eq!(sets.compile(), vec![vec![0, 1], vec![2], vec![3, 4]]);
 //! ```
 
-use crate::utils::typed_arrays::{get_pointer_array, PointerWidth};
-
-/// A fixed-width unsigned integer vector, standing in for the JS typed arrays
-/// upstream allocates.
-///
-/// Writes are masked to the chosen width so that overflow wraps exactly as it
-/// does in a `Uint8Array`/`Uint16Array`/`Uint32Array` rather than panicking or
-/// silently widening.
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct PointerVec {
-    width: PointerWidth,
-    mask: u32,
-    values: Vec<u32>,
-}
-
-impl PointerVec {
-    fn zeroed(width: PointerWidth, len: usize) -> Self {
-        let mask = match width {
-            PointerWidth::U8 => u32::from(u8::MAX),
-            PointerWidth::U16 => u32::from(u16::MAX),
-            PointerWidth::U32 => u32::MAX,
-        };
-
-        Self {
-            width,
-            mask,
-            values: vec![0; len],
-        }
-    }
-
-    fn get(&self, index: usize) -> u32 {
-        self.values[index]
-    }
-
-    /// Truncating write, mirroring a JS typed array store.
-    fn set(&mut self, index: usize, value: u32) {
-        self.values[index] = value & self.mask;
-    }
-
-    fn len(&self) -> usize {
-        self.values.len()
-    }
-}
+use crate::utils::typed_arrays::{get_pointer_array, PointerVec, PointerWidth};
 
 /// The result of [`StaticDisjointSet::mapping`].
 ///
@@ -139,11 +98,12 @@ impl StaticDisjointSet {
     /// # Panics
     ///
     /// A `size` that passes validation but is too large to allocate aborts the
-    /// process through the global allocator rather than returning `Err`.
-    /// Backing storage is `u32` regardless of the logical width, so the two
-    /// arrays cost `8 * size` bytes together. Upstream throws a catchable
-    /// error in that situation; stable Rust has no fallible `Vec` allocation,
-    /// so callers accepting untrusted sizes should bound them beforehand.
+    /// process through the global allocator rather than returning `Err`. The
+    /// two arrays cost exactly what upstream's two typed arrays do — `parents`
+    /// at `getPointerArray(size)` bytes per slot, `ranks` always one — so the
+    /// bound is the same as upstream's. Upstream throws a catchable error in
+    /// that situation; stable Rust has no fallible `Vec` allocation, so callers
+    /// accepting untrusted sizes should bound them beforehand.
     pub fn new(size: usize) -> Result<Self, &'static str> {
         // Two different widths, exactly as upstream: parents must index every
         // item, whereas ranks only ever hold values on the order of log2(size).
@@ -177,12 +137,12 @@ impl StaticDisjointSet {
 
     /// Width chosen for the internal parents array.
     pub fn parents_width(&self) -> PointerWidth {
-        self.parents.width
+        self.parents.width()
     }
 
     /// Width chosen for the internal ranks array, from `log2(size)`.
     pub fn ranks_width(&self) -> PointerWidth {
-        self.ranks.width
+        self.ranks.width()
     }
 
     /// Find the root of the set containing `x`, compressing the path walked.
