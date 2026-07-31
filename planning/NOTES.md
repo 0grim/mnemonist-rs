@@ -283,6 +283,49 @@ would have taken ~33 hours. D-23 paid for itself on the first module.
 different benchmarks. `--dump-prng` + `diff` catches it in one second; reasoning about it would
 have taken longer and been less convincing.
 
+### H+5 — the RSS lesson: a fix that worked for a reason we got wrong
+
+**The prediction.** `PointerVec` backed every logical width with `Vec<u32>`, so at 4e6 items our
+`ranks` was 16 MB where upstream's `Uint8Array` is 4 MB — 32 MB of structure against upstream's
+20 MB, straddling this CPU's 32 MB L3. That was offered as the cause of a 2.7× p99 tail regression,
+with a confident mechanism attached.
+
+**The fix worked, emphatically.** Per-width backing store → p99 at `mixed-4e6` went
+**275.0 → 43.6 ns/op** against upstream's 134.9. A 2.7× loss became a 3.1× win.
+
+**The mechanism was wrong, and one number proved it.** If footprint were the cause, resident memory
+should have dropped ~12 MB. `structure_rss_delta_mb` moved **12.8 → 13.0**. Nothing.
+
+**Why.** `ranks` is `vec![0; n]`, and because of the rank bug (B-7) almost every entry is *never
+written* — only roots are ever bumped. Linux does not fault in untouched zero pages, so the extra
+12 MB was **never resident and never appeared in RSS in the first place**. We reasoned confidently
+about memory that did not exist.
+
+**Two generalisable lessons:**
+1. **RSS measures resident, not allocated.** For zero-initialised or sparsely-written structures
+   the two diverge without limit. Allocating 16 MB and touching 4 KB of it costs 4 KB of RSS.
+   Any argument of the form "we allocate more, therefore we are slower" needs a residency check
+   before it is believed.
+2. **Check a causal story against a metric that would falsify it.** The fix and the explanation
+   were bundled together, and only splitting them — "if footprint is the cause, RSS must drop" —
+   exposed that one was right and the other wasn't. A correct prediction of *outcome* is not
+   evidence for the predicted *mechanism*.
+
+Current best hypothesis is address-space stride rather than resident size: at `u32` the same
+indices span 4× the pages (4096 vs 1024 at 4 KB), and TLB pressure lands in the tail rather than
+the median. **Unconfirmed** — needs `perf stat -e dTLB-load-misses` on both revisions. Recorded as
+a hypothesis, not a finding.
+
+**Bonus lesson from the same episode: benchmark noise is larger than it looks.** A run taken while
+the machine was saturated inflated *both* sides 2–3×, and upstream's own p99 swung **102 → 135**
+between two clean runs on the same host. Absolute ns/op are not comparable across runs; only the
+within-run A/B comparison is sound. §5.2's interleaving requirement is what made the conclusion
+survive a bad measurement rather than being poisoned by it — and the honest reporting rule is that
+small ratios read as "roughly 2×", never as three significant figures.
+
+*Write-up beats: "the fix worked and my explanation didn't" is a better story than a clean win, and
+"RSS measures resident, not allocated" is the kind of thing people rediscover painfully.*
+
 ## Write-up angle candidates
 
 1. **"The rigor gap, measured."** The event's own thesis, tested: what differential fuzzing
