@@ -9,6 +9,8 @@
 
 use napi_derive::napi;
 
+pub mod cursor;
+pub mod sparse_set;
 pub mod static_disjoint_set;
 
 #[napi]
