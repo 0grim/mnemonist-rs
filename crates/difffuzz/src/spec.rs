@@ -153,11 +153,85 @@ impl fmt::Display for Divergence {
             )?,
         }
 
-        writeln!(f, "  port:     {}", self.port)?;
-        writeln!(f, "  upstream: {}", self.upstream)?;
+        for (label, port, upstream) in narrow(&self.port, &self.upstream) {
+            writeln!(f, "  {label}")?;
+            writeln!(f, "    port:     {}", elide(&port))?;
+            writeln!(f, "    upstream: {}", elide(&upstream))?;
+        }
+
         writeln!(f, "minimal repro:")?;
         write!(f, "{}", self.program.render(self.module))
     }
+}
+
+/// Longest value rendered in full before eliding the middle.
+///
+/// A `compile()` on a 348-element set is ~4 KB of JSON, and printing two of
+/// them buries the one number that differs. Measured on a real sabotage run:
+/// the untruncated message was 8 KB and the actual difference was the string
+/// `Uint8Array` vs `Uint16Array`.
+const MAX_RENDERED: usize = 240;
+
+/// Reduce a whole-state disagreement to the observations that actually differ.
+///
+/// Both sides are the same shape by construction, so when they are objects the
+/// interesting part is the differing keys. Falls back to the whole value for
+/// scalars and for the return-value case.
+fn narrow(port: &Value, upstream: &Value) -> Vec<(String, String, String)> {
+    match (port.as_object(), upstream.as_object()) {
+        (Some(left), Some(right)) => {
+            let mut differing: Vec<(String, String, String)> = left
+                .iter()
+                .filter(|(key, value)| right.get(*key) != Some(*value))
+                .map(|(key, value)| {
+                    let other = right
+                        .get(key)
+                        .map_or_else(|| "<absent>".into(), Value::to_string);
+
+                    (format!("{key}:"), value.to_string(), other)
+                })
+                .collect();
+
+            // Keys present upstream but not in the port would otherwise vanish.
+            differing.extend(
+                right
+                    .iter()
+                    .filter(|(key, _)| !left.contains_key(*key))
+                    .map(|(key, value)| (format!("{key}:"), "<absent>".into(), value.to_string())),
+            );
+
+            differing
+        }
+        _ => vec![(
+            String::from("value:"),
+            port.to_string(),
+            upstream.to_string(),
+        )],
+    }
+}
+
+/// Keep both ends, drop the middle. The ends are where a length change or a
+/// type tag shows up; the middle of a 1,000-element array almost never is.
+fn elide(rendered: &str) -> String {
+    if rendered.len() <= MAX_RENDERED {
+        return rendered.to_owned();
+    }
+
+    let keep = MAX_RENDERED / 2;
+    let head: String = rendered.chars().take(keep).collect();
+    let tail: String = rendered
+        .chars()
+        .rev()
+        .take(keep)
+        .collect::<Vec<char>>()
+        .into_iter()
+        .rev()
+        .collect();
+
+    format!(
+        "{head} … [{} chars elided] … {tail}",
+        rendered.len() - head.len() - tail.len()
+    )
 }
 
 /// Run one program against both implementations, comparing after every op.

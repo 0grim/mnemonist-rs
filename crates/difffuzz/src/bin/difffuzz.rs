@@ -73,6 +73,18 @@ fn finish(report: &Report) -> ExitCode {
     println!("{}", report.log_line());
 
     match &report.divergence {
+        // A campaign that executed no operations is not clean, it is empty --
+        // and "zero divergences" is exactly the wrong thing to print about it.
+        // Reachable through a mistyped --cases, a grammar that generates
+        // nothing, or a deadline shorter than one case.
+        None if report.ops == 0 => {
+            eprintln!(
+                "difffuzz: campaign ran {} cases and ZERO operations, so it proved nothing. \
+                 Not reporting this as clean.",
+                report.cases
+            );
+            ExitCode::from(2)
+        }
         None => {
             eprintln!(
                 "clean: {} cases, {} ops, {:.1}s, zero divergences",
