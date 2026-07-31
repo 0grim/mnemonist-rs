@@ -1,0 +1,28 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+#
+# PROVENANCE OF THE ENTRY BELOW -- read before assuming it recorded a real
+# port defect. It did not. It was produced by a deliberate falsification of
+# the fuzzer itself, in the spirit of DoD gate 6: a fuzzer that has never
+# been seen to fail is just a second green light.
+#
+# The sabotage was to *fix* upstream's B-7 rank bug in
+# crates/mnemonist-core/src/structures/static_disjoint_set.rs, i.e. to read
+# `ranks[x_root]/[y_root]` where upstream reads `ranks[x]/[y]`. That makes the
+# port strictly more correct than upstream -- and therefore wrong, because the
+# elected root is observable through `find`. The fuzzer found it in 129 cases
+# and shrank a 600-op program to the three operations that matter:
+#
+#     var s = new StaticDisjointSet(23);
+#     s.union(10, 7);            // ranks[10] stays 0; ranks[7] never set
+#     s.union(11, 7);            // upstream: 0 == 0, so root becomes 11
+#     s.find(10);                // upstream 11, rank-correct port 10
+#
+# The sabotage was reverted and this seed now passes. It stays checked in as a
+# regression guard: if anyone ever "cleans up" the reproduced rank bug, this
+# exact case fails again before any novel case is generated.
+cc 70b0df5065314c3bffe40687fe27d07184199cdf317c0a4fc17b89b1b0a1fb64 # shrinks to Program { ctor: [Number(23)], ops: [Op { name: "union", args: [Number(0), Number(0)] }, Op { name: "union", args: [Number(0), Number(0)] }, Op { name: "union", args: [Number(0), Number(0)] }, Op { name: "union", args: [Number(10), Number(7)] }, Op { name: "union", args: [Number(11), Number(7)] }, Op { name: "find", args: [Number(10)] }] }
