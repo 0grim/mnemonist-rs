@@ -47,6 +47,8 @@
 //! `undefined` gap is a JavaScript-visible behaviour and it stays confined to
 //! the layer that has JavaScript in it. Core types never mention `undefined`.
 
+use std::fmt;
+
 /// One step of a [`Cursor`].
 ///
 /// Three states rather than [`Option`], because upstream has three: a value, a
@@ -121,46 +123,63 @@ pub trait Sequence {
     fn slot(&self, frozen: &Self::Frozen, ordinal: usize) -> Option<Self::Item>;
 }
 
-/// A stateful, non-restartable cursor over a [`Sequence`].
+/// Everything an in-flight walk consists of, with no borrow of the source.
 ///
-/// The Rust half of an `obliterator/iterator`. Construct one per iteration;
-/// never hand out a fresh one from something that looks like re-iterating the
-/// collection, or behaviour (1) in the module docs is lost.
-#[derive(Debug, Clone)]
-pub struct Cursor<'a, S>
+/// This is the *whole* of an upstream cursor's closure state — `i`, `l` and
+/// whatever else was frozen — and nothing else. It is separate from [`Cursor`]
+/// for one structural reason: **upstream cursors outlive any borrow of the
+/// thing they walk.** JS lets a cursor and a mutable handle to the collection
+/// coexist; a `&'a S` inside the cursor makes that a compile error.
+///
+/// Two callers need exactly this shape, and neither can use [`Cursor`]:
+///
+/// * the napi bridge, where the cursor is a JS object holding a napi reference
+///   to a JS-owned parent, and the `&S` only exists for the duration of one
+///   `next()` call; and
+/// * the differential fuzzer, whose instance holds a set *and* a live cursor
+///   over it in one struct, which is self-referential with a borrow inside.
+///
+/// [`Cursor`] is then the thin ergonomic wrapper for ordinary Rust code.
+///
+/// [`Debug`](fmt::Debug) is hand-written rather than derived: `derive` would
+/// demand `S: Debug` when only `S::Frozen` is ever stored, and `S` is the
+/// whole collection.
+pub struct CursorState<S>
 where
     S: Sequence + ?Sized,
 {
-    source: &'a S,
     frozen: S::Frozen,
-    /// `l` in the upstream closure. Never re-read from `source`.
+    /// `l` in the upstream closure. Never re-read from the source.
     len: usize,
     /// `i` in the upstream closure.
     ordinal: usize,
 }
 
-impl<'a, S> Cursor<'a, S>
+impl<S> CursorState<S>
 where
     S: Sequence + ?Sized,
 {
-    /// Open a cursor, freezing the source's positional state now.
-    pub fn new(source: &'a S) -> Self {
+    /// Freeze `source` now, and start at ordinal zero.
+    pub fn open(source: &S) -> Self {
         let (frozen, len) = source.freeze();
 
         Self {
-            source,
             frozen,
             len,
             ordinal: 0,
         }
     }
 
-    /// Advance one position, faithfully — including the gap.
+    /// Advance one position against the live source — including the gap.
     ///
     /// This is the primitive the napi bridge drives, because it is the only
-    /// form that can tell `undefined` from `{done: true}`. Rust callers
-    /// normally want the [`Iterator`] impl instead.
-    pub fn step(&mut self) -> Step<S::Item> {
+    /// form that can tell `undefined` from `{done: true}`.
+    ///
+    /// `source` must be the same source [`open`](CursorState::open) froze.
+    /// Nothing enforces that — the type system cannot, which is the price of
+    /// dropping the borrow — so the two callers above each hold exactly one
+    /// source and pass it back unchanged.
+    pub fn step(&mut self, source: &S) -> Step<S::Item> {
         // The frozen length, exactly as upstream's `if (i >= l)`. Asking the
         // source for its current length here would be the whole divergence.
         if self.ordinal >= self.len {
@@ -170,7 +189,7 @@ where
         let ordinal = self.ordinal;
         self.ordinal += 1;
 
-        match self.source.slot(&self.frozen, ordinal) {
+        match source.slot(&self.frozen, ordinal) {
             Some(item) => Step::Item(item),
             None => Step::Gap,
         }
@@ -189,6 +208,81 @@ where
     /// Steps remaining before [`Step::Done`], gaps included.
     pub fn remaining(&self) -> usize {
         self.len.saturating_sub(self.ordinal)
+    }
+}
+
+/// A stateful, non-restartable cursor over a [`Sequence`], for Rust callers.
+///
+/// The Rust half of an `obliterator/iterator`: a [`CursorState`] plus the
+/// borrow that makes it usable as an [`Iterator`]. Construct one per
+/// iteration; never hand out a fresh one from something that looks like
+/// re-iterating the collection, or behaviour (1) in the module docs is lost.
+pub struct Cursor<'a, S>
+where
+    S: Sequence + ?Sized,
+{
+    source: &'a S,
+    state: CursorState<S>,
+}
+
+impl<'a, S> Cursor<'a, S>
+where
+    S: Sequence + ?Sized,
+{
+    /// Open a cursor, freezing the source's positional state now.
+    pub fn new(source: &'a S) -> Self {
+        Self {
+            source,
+            state: CursorState::open(source),
+        }
+    }
+
+    /// Advance one position, faithfully — including the gap.
+    ///
+    /// Rust callers normally want the [`Iterator`] impl instead.
+    pub fn step(&mut self) -> Step<S::Item> {
+        self.state.step(self.source)
+    }
+
+    /// The length captured at creation — `l`, not the source's length now.
+    pub fn frozen_len(&self) -> usize {
+        self.state.frozen_len()
+    }
+
+    /// How many steps have been taken — `i`.
+    pub fn position(&self) -> usize {
+        self.state.position()
+    }
+
+    /// Steps remaining before [`Step::Done`], gaps included.
+    pub fn remaining(&self) -> usize {
+        self.state.remaining()
+    }
+}
+
+impl<S> fmt::Debug for CursorState<S>
+where
+    S: Sequence + ?Sized,
+{
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("CursorState")
+            .field("frozen_len", &self.len)
+            .field("position", &self.ordinal)
+            .finish_non_exhaustive()
+    }
+}
+
+impl<S> fmt::Debug for Cursor<'_, S>
+where
+    S: Sequence + ?Sized,
+{
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("Cursor")
+            .field("frozen_len", &self.frozen_len())
+            .field("position", &self.position())
+            .finish_non_exhaustive()
     }
 }
 
@@ -430,6 +524,44 @@ mod tests {
         cursor.by_ref().count();
 
         assert_eq!((cursor.position(), cursor.remaining()), (3, 0));
+    }
+
+    /// The detached form is the one the bridge and the fuzzer drive: state in
+    /// one place, source supplied per step, no borrow in between. Mutating the
+    /// source between steps is legal here precisely because there is no borrow
+    /// to conflict with — which is the aliasing JS has natively.
+    #[test]
+    fn detached_state_walks_a_source_it_does_not_borrow() {
+        let mut source = vec![1u32, 2, 3];
+        let mut state = CursorState::open(&Slice(source.clone()));
+
+        assert_eq!(state.frozen_len(), 3);
+        assert_eq!(state.step(&Slice(source.clone())), Step::Item(1));
+
+        // A plain `&mut` while the walk is in flight: impossible with `Cursor`,
+        // routine at the boundary.
+        source.truncate(1);
+
+        assert_eq!(state.step(&Slice(source.clone())), Step::Gap);
+        assert_eq!(state.position(), 2);
+        assert_eq!(state.remaining(), 1);
+        assert_eq!(state.step(&Slice(source)), Step::Gap);
+        assert_eq!(state.step(&Slice(Vec::new())), Step::Done);
+    }
+
+    struct Slice(Vec<u32>);
+
+    impl Sequence for Slice {
+        type Item = u32;
+        type Frozen = ();
+
+        fn freeze(&self) -> ((), usize) {
+            ((), self.0.len())
+        }
+
+        fn slot(&self, _frozen: &(), ordinal: usize) -> Option<u32> {
+            self.0.get(ordinal).copied()
+        }
     }
 
     #[test]
