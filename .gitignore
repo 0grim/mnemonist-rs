@@ -1,0 +1,6 @@
+/target
+/tests/.work/
+/tests/.verify-stamp
+node_modules/
+*.node
+bench/raw/

@@ -1,0 +1,3 @@
+# Declared port scope: one module name per line (matches tests/original/test/<name>.js).
+# A module is listed ONLY when it is complete: port + original test green + fuzz + bench.
+# Consumers: tests/run.sh spec selection, README scope table, .port-mortem.toml.
