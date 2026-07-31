@@ -231,42 +231,58 @@ Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 10,0
 
 | metric | port | upstream | |
 |---|---|---|---|
-| p50 ns/op | **12.6** | 20.8 | 1.6× faster |
-| p99 ns/op | **33.6** | 59.4 | 1.8× faster |
-| RSS delta MB | **13.9** | 41.9 | |
-| structure-only RSS delta MB | **1.3** | 11.9 | |
+| p50 ns/op | **15.6** | 22.6 | 1.5× faster |
+| p99 ns/op | **34.5** | 68.5 | 2.0× faster |
+| RSS delta MB | **11.1** | 41.9 | |
+| structure-only RSS delta MB | **1.4** | 11.8 | |
 | startup ms | **0.6** | 15.3 | 25× (reported separately; not throughput) |
 
-**`mixed-4e6`** — the same op mix at four times the size. **This is where the port loses:**
+**`mixed-4e6`** — the same op mix at four times the size:
 
 | metric | port | upstream | |
 |---|---|---|---|
-| p50 ns/op | **19.8** | 33.8 | 1.7× faster |
-| **p99 ns/op** | **275.0** | **102.1** | **2.7× SLOWER — regression** |
-| min ns/op | **17.1** | 21.2 | |
-| RSS delta MB | **36.7** | 80.7 | |
-| structure-only RSS delta MB | **12.8** | 23.6 | |
+| p50 ns/op | **21.8** | 42.9 | 2.0× faster |
+| p99 ns/op | **43.6** | 134.9 | 3.1× faster |
+| min ns/op | **13.1** | 28.1 | |
+| RSS delta MB | **25.3** | 78.4 | |
+| structure-only RSS delta MB | **13.0** | 23.4 | |
 
-**Why the port loses the tail, and why the regression is real rather than noise.** It reproduces
-across every repeat and across a full re-run of the harness (measured 229 / 246 / 275 / 276 /
-362 ns against upstream's 96–110). The cause is a design
-decision in the port, not the workload: `PointerVec` backs *every* logical width with a `Vec<u32>`.
-Upstream's `ranks` is a `Uint8Array`; ours is four times the size. At 4e6 items that is
-16 MB + 16 MB = 32 MB of structure against upstream's 4 MB + 16 MB = 20 MB — which is the
-difference between fitting in this CPU's 32 MB L3 and not. p50 stays 1.7× ahead because the common path
-is a compressed `parents` lookup; the tail is where the extra cache pressure lands, and batch-level
-p99 is precisely the metric designed to show it (§5.2 Problem 2).
+No regressions on either workload.
 
-Note the shape of it: **the port wins median throughput and loses tail latency**, which is the
-inverse of the usual Rust-vs-V8 story. It also means the honest one-line summary is not "faster",
-it is "faster at the median, worse at the tail above ~1e6 items, and uses less memory throughout".
+#### A regression that existed, and the fix — with the explanation that did not survive
 
-**The fix is known and deliberately not applied here.** Giving `PointerVec` a real per-width
-backing store (`Vec<u8>` / `Vec<u16>` / `Vec<u32>`) would close the memory gap and probably the
-tail with it. It is not a `static-disjoint-set` change — `PointerVec` is currently private to this
-module and is due to move into `utils/typed_arrays.rs` when a second structure needs truncation
-semantics (D-30's closing note). Doing it as part of that promotion, with this benchmark as the
-before/after, is worth more than doing it now.
+An earlier revision of this port **lost the tail badly at 4e6: p99 275.0 ns/op against upstream's
+102.1, a 2.7× regression**, reproducible across repeats and a full harness re-run, while p50 stayed
+1.7× ahead. It was caused by `PointerVec` backing *every* logical width with a `Vec<u32>` — where
+upstream's `ranks` is a `Uint8Array`, ours was four times as wide.
 
-`bench/drive.js` derives the `regressions` array mechanically from the published metrics, so this
-row cannot be quietly dropped from a future run.
+Giving `PointerVec` a real per-width backing store (`Vec<u8>` / `Vec<u16>` / `Vec<u32>`, where the
+narrowing cast *is* the truncation, so the mask became unnecessary rather than merely correct) took
+p99 from **275.0 → 43.6 ns/op**, turning a 2.7× loss into a 3.1× win.
+
+**The mechanism we predicted was wrong, and the data says so.** The hypothesis was footprint: 4e6
+items meant 16 MB + 16 MB = 32 MB of structure against upstream's 4 MB + 16 MB = 20 MB, straddling
+this CPU's 32 MB L3. If that were the mechanism, resident memory should have dropped by ~12 MB.
+**It did not: `structure_rss_delta_mb` moved 12.8 → 13.0.**
+
+The reason is that `ranks` is `vec![0; n]` and, because of the rank bug above, almost every entry
+is *never written* — only roots are ever bumped. Linux does not fault in untouched zero pages, so
+the extra 12 MB was never resident and never appeared in RSS in the first place. The footprint
+argument was measuring something that did not exist.
+
+A better hypothesis — **address-space stride rather than resident size**: at `u32` the same logical
+indices span 4× the address range, so random `ranks[x]` reads touch 4× as many pages (4096 vs 1024
+at 4 KB), and TLB pressure is exactly the kind of cost that lands in the tail rather than the
+median. **This is unconfirmed.** Confirming it needs `perf stat -e dTLB-load-misses` on both
+revisions, which has not been run. It is recorded as a hypothesis, not a finding.
+
+**Methodological caveat, and why interleaving earned its place.** Upstream's own p99 measured
+102.1 in one run and 134.9 in another on the same host — a 32% swing from ambient load alone, and
+a mid-run measurement taken while the machine was saturated inflated *both* sides by 2–3×. Absolute
+ns/op are therefore not comparable across runs; only the within-run A/B comparison is sound, which
+is precisely what §5.2's interleaving requirement protects. The 275 → 43.6 improvement is far
+outside that noise band, but the smaller ratios in these tables should be read as "roughly 2×",
+not as three significant figures.
+
+`bench/drive.js` derives the `regressions` array mechanically from the published metrics, so a
+future regression cannot be quietly dropped from a run.
