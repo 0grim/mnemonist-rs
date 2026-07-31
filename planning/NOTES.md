@@ -227,6 +227,62 @@ a commit message (`find()'s` closed the outer `bash -lc '...'`). Dodged in Rust 
 files, forgotten for the commit body. *Small recurring tax of driving a WSL repo from a Windows
 shell — the reason we moved the session into WSL.*
 
+### H+5 — harnesses built, `StaticDisjointSet` backfilled to full DoD
+
+**The fuzzer found nothing, and that is the interesting result.** 4.23 M operations across two
+seeds, zero divergences. Expected, and worth saying out loud: **a faithful port reproduces
+upstream's bugs, so differential fuzzing structurally cannot find them.** B-7 was found by reading.
+What the fuzzer is actually for on a bug-for-bug port is the *opposite* direction — catching the
+port drifting away from upstream, **including drifting towards correctness**.
+
+**So the fuzzer was falsified by "fixing" B-7.** Gate 6's lesson applies to the fuzzer itself: one
+that has never been observed to catch anything is a second green light, not a check. Changing
+`ranks[x]` to `ranks[x_root]` in the core — the single most plausible way a future cleanup breaks
+this port — was caught in **129 cases, 0.3 s**, and proptest shrank a 600-op program to three ops:
+`new(23); union(10,7); union(11,7); find(10)` → upstream 11, "corrected" port 10. That seed is now
+committed as a regression guard with a provenance header, because an unlabelled `cc` line in
+`proptest-regressions/` would read as a real defect that was found and fixed.
+*Write-up beat: the most valuable thing my differential fuzzer caught was my own code being too
+correct.*
+
+**proptest's default `max_shrink_iters` is tuned for small values and quietly gives up.** At the
+default it stopped at a "minimal" 29-op program that was mostly noise, with a warning easy to miss
+in the scroll. Raised to 2²², the same failure minimises to 3 meaningful ops. **The shrink budget
+is the difference between a repro you can file upstream and a wall of text.**
+
+**The benchmark's first result was too good, which was the tell.** Port won every metric on the
+1e6 workload — p50, p99, RSS, startup. Against a library that is already typed-array-backed, that
+should not happen, and §5.1 says so explicitly. Swept the size (200 → 5k → 65k → 1e6 → 4e6) looking
+for the boundary and found it at **4e6: p99 276 ns vs 110 ns, the port 2.5× SLOWER**, while p50
+stays 1.8× faster.
+
+Cause is our own design, not the workload: `PointerVec` backs *every* logical width with a
+`Vec<u32>`, so our `ranks` is 4× upstream's `Uint8Array`. At 4e6 that is 32 MB of structure vs
+20 MB — exactly the 32 MB L3 boundary on this 7600X. **The port wins the median and loses the
+tail, which is the inverse of the usual Rust-vs-V8 story**, and it only shows up because §5.2's
+batch-level p99 exists to show it.
+*Beat: "I went looking for the workload where my port loses, and the honest answer changed the
+headline from 'faster' to 'faster at the median, worse at the tail'."*
+
+**Two harness decisions that turned out to matter more than expected:**
+
+1. **Both bench sides emit a checksum over every non-mutating op's result, and the driver refuses
+   to write results unless all 20 runs agree.** Intended as cheap paranoia; it turns "same
+   workload" from an assertion into a verified claim — same ops *and* same answers — and it
+   incidentally re-proves the rank bug is reproduced, since a corrected port would elect different
+   roots and move the checksum.
+2. **Percentiles are computed once in the driver over both sides**, not twice in the two runners.
+   §5.2 asks for "same percentile maths"; implementing it twice and hoping is strictly weaker.
+
+**Cost of the persistent oracle, quantified at last:** ~23,600 op/s *including* a full
+`mapping()` + `compile()` comparison after every op. At one `node` spawn per op the 120 s campaign
+would have taken ~33 hours. D-23 paid for itself on the first module.
+
+**Small trap:** JS bitwise operators produce *signed* 32-bit results, so the xorshift32 twin needs
+`>>> 0` or the two streams part company within a handful of draws — silently producing two
+different benchmarks. `--dump-prng` + `diff` catches it in one second; reasoning about it would
+have taken longer and been less convincing.
+
 ## Write-up angle candidates
 
 1. **"The rigor gap, measured."** The event's own thesis, tested: what differential fuzzing
