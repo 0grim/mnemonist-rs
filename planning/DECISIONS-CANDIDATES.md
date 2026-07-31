@@ -266,6 +266,33 @@ insertion order.
 
 ---
 
+### D-30 — JS typed-array write truncation must be emulated, not just width *selection*
+**Status:** CONFIRMED (implemented in `StaticDisjointSet`) · **Category:** behavioural · **Divergence:** no
+**Upstream:** writing to a `Uint8Array` silently truncates mod 256. Selecting the right *width*
+(D-17/`getPointerArray`) is only half the semantics; the *write* behaviour is the other half.
+
+**Why this is reachable rather than theoretical — it compounds with B-7.** Because the rank bug
+leaves non-root ranks permanently zero, the equal-ranks branch is taken on nearly every union, so a
+single root's rank is bumped once per union — far past what `getPointerArray(Math.log2(size))` sized
+the array for. And `ranks` is **always** `Uint8Array` in practice: widening would require
+`log2(size) > 256`, impossible when `parents` already caps `size` at 2³².
+Concrete: a 300-element set unioned as `(0,1)` then `(1,k)` ends with `ranks[0] == 43`.
+**Verified against real Node — it agrees exactly.**
+
+**Port:** a `PointerVec` masks every write to the selected width. A naive `Vec<u32>` would have
+diverged silently here, and no test would have caught it.
+**Verify:** test `root_rank_wraps_at_the_ranks_array_width`.
+**Note:** `PointerVec` is currently private to `static_disjoint_set.rs`. Promote it into
+`utils/typed_arrays.rs` as soon as a second structure needs truncation semantics.
+
+### D-31 — `StaticDisjointSet` rank bug pinned by regression test
+**Status:** CONFIRMED · **Category:** behavioural · **Divergence:** no (deliberate bug-for-bug)
+Concrete input where the bug changes the elected root, found and pinned so a future "cleanup"
+cannot silently correct it: size 8, unions `(0,1) (0,2) (3,4) (1,3)`. Upstream reads
+`ranks[1] == 0 < ranks[3] == 1` and flips the root to `3`; a correct union-by-rank would read
+`ranks[0] == 1 == ranks[3] == 1` and keep `0`. **Node confirms `find(1) === 3`.**
+See B-7 in `NOTES.md` for the upstream report. **Verify:** test `reproduces_upstream_rank_bug`.
+
 ## Behavioural — `utils/iterables`
 
 ### D-17 — `toArray` preallocation can produce sparse arrays

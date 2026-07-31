@@ -202,6 +202,31 @@ one-command fix.*
 
 ---
 
+### H+2 — first real module ported (`StaticDisjointSet`)
+
+**The rank bug has a second-order consequence that nearly bit us.** B-7 leaves non-root ranks
+permanently zero, so the equal-ranks branch fires on almost every union, so one root's rank climbs
+once per union — far past the `log2(size)` the array was sized for. And `ranks` is *always* a
+`Uint8Array` in practice. So it **wraps**: a 300-element set ends with `ranks[0] == 43`. Node agrees
+exactly. A naive `Vec<u32>` port diverges silently and no test catches it, because upstream's own
+suite never builds a set that large.
+
+*Two bugs compounding — one upstream logic error making an otherwise-unreachable overflow reachable
+— is the best single argument for differential testing we have so far. Neither is visible from
+reading one file.*
+
+**Validated every case against real Node rather than reasoning about it.** All 10 scenarios matched.
+That is now the working method: when a JS semantic is in question, run it, don't argue about it.
+
+**Pinned the rank bug with a regression test** on a concrete input where it changes the elected root
+(size 8; unions `(0,1) (0,2) (3,4) (1,3)` → upstream elects `3`, correct union-by-rank elects `0`).
+A future "cleanup" now fails the suite instead of silently diverging.
+
+**Process note:** the same apostrophe-quoting trap that broke `&'static str` earlier also truncated
+a commit message (`find()'s` closed the outer `bash -lc '...'`). Dodged in Rust source by staging
+files, forgotten for the commit body. *Small recurring tax of driving a WSL repo from a Windows
+shell — the reason we moved the session into WSL.*
+
 ## Write-up angle candidates
 
 1. **"The rigor gap, measured."** The event's own thesis, tested: what differential fuzzing
