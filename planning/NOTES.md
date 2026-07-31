@@ -326,6 +326,43 @@ small ratios read as "roughly 2×", never as three significant figures.
 *Write-up beats: "the fix worked and my explanation didn't" is a better story than a clean win, and
 "RSS measures resident, not allocated" is the kind of thing people rediscover painfully.*
 
+### H+5 — `cargo build` does not compile your tests
+
+An agent died mid-task leaving uncommitted work. `cargo build --release` was **clean**. `cargo test`
+had **three compile errors**, all on one line:
+
+```rust
+assert_eq!(values, PointerVec::U8(vec![300 % 256, 0]));
+```
+
+Both literals infer as `u8` from the `Vec<u8>` context, so `300` and `256` are out of range, `256`
+truncates to `0`, and the modulo panics at compile time. Widened to `(300u32 % 256) as u8`, which
+keeps the arithmetic documenting the truncation it tests instead of hardcoding `44`.
+
+**The lesson is not the literal.** It is that `#[cfg(test)]` blocks are not compiled by `cargo
+build`, so **a green build carries no information about whether test code even parses.** Any gate
+that means to say "this compiles" must run `cargo test`, not `cargo build`. `tests/verify.sh`
+already does — which is worth noting as a design choice that paid off rather than luck.
+
+### The pattern these three share
+
+Three separate incidents today, all the same meta-failure — *the check I ran did not check what I
+believed it checked*:
+
+| Incident | What it appeared to verify | What it actually verified |
+|---|---|---|
+| Falsification that stayed green | that the suite exercises Rust | nothing — it sabotaged a branch the test never takes |
+| RSS as evidence for the L3 hypothesis | that the footprint shrank | nothing — the pages were never resident to begin with |
+| `cargo build` clean | that the code compiles | that *non-test* code compiles |
+
+Each one produced a **confident green signal that was empty**, and in every case the failure was
+invisible until something forced the question "what would this look like if it were broken?"
+
+*This is the strongest write-up thread we have. It is the rigor gap in miniature — not "the port
+was wrong" but "the evidence that the port was right did not say what we thought". A hackathon
+premised on proving behavioural equivalence is exactly the place to argue that verification needs
+verifying.*
+
 ## Write-up angle candidates
 
 1. **"The rigor gap, measured."** The event's own thesis, tested: what differential fuzzing
