@@ -91,7 +91,10 @@ fn main() -> ExitCode {
         // which hides the part of the memory story that is actually about the
         // port -- and on this module that part is a regression, so hiding it
         // would be exactly the thing DESIGN.md 5.1 warns against.
-        let size = number(&flags, "--size", DEFAULT_SIZE as usize) as u32;
+        let size = match size_flag(&flags) {
+            Ok(size) => size,
+            Err(message) => return fail(&message),
+        };
         let set =
             mnemonist_core::structures::static_disjoint_set::StaticDisjointSet::new(size as usize)
                 .expect("benchmark sizes are well inside the pointer limit");
@@ -108,9 +111,12 @@ fn main() -> ExitCode {
 
     let warmup = number(&flags, "--warmup", 3);
     let measured = number(&flags, "--measured", 1);
-    let size = number(&flags, "--size", DEFAULT_SIZE as usize) as u32;
     let ops = number(&flags, "--ops", DEFAULT_OPS);
-    let seed = number(&flags, "--seed", DEFAULT_SEED as usize) as u32;
+
+    let (size, seed) = match (size_flag(&flags), u32_flag(&flags, "--seed", DEFAULT_SEED)) {
+        (Ok(size), Ok(seed)) => (size, seed),
+        (Err(message), _) | (_, Err(message)) => return fail(&message),
+    };
 
     let generated = workload::generate(size, ops, seed);
 
@@ -170,6 +176,37 @@ fn number(flags: &[&str], name: &str, fallback: usize) -> usize {
     value(flags, name)
         .and_then(|raw| raw.parse().ok())
         .unwrap_or(fallback)
+}
+
+/// Parse into `u32` directly rather than into `usize` and casting.
+///
+/// `--size 4294967296` truncating to 0 would be reported in the results JSON
+/// as a real measurement of a size nobody asked for. A benchmark that
+/// silently measures the wrong thing is worse than one that refuses to run.
+fn u32_flag(flags: &[&str], name: &str, fallback: u32) -> Result<u32, String> {
+    match value(flags, name) {
+        None => Ok(fallback),
+        Some(raw) => raw
+            .parse::<u32>()
+            .map_err(|_| format!("`{name}` expects an integer in 1..=4294967295, got `{raw}`")),
+    }
+}
+
+/// `--size`, with zero rejected.
+///
+/// Zero is the one value where the two runners genuinely disagree: the Rust
+/// PRNG's `next() % 0` panics, while JS gives `NaN`, which coerces to 0 on the
+/// way into a typed array and yields a plausible-looking all-zero workload. So
+/// one side fails loudly and the other reports a meaningless success. Neither
+/// is acceptable, and the only honest workload of size 0 is no workload.
+fn size_flag(flags: &[&str]) -> Result<u32, String> {
+    let size = u32_flag(flags, "--size", DEFAULT_SIZE)?;
+
+    if size == 0 {
+        return Err(String::from("`--size` must be at least 1"));
+    }
+
+    Ok(size)
 }
 
 fn fail(message: &str) -> ExitCode {

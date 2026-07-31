@@ -110,6 +110,27 @@ pub fn run_with<S: ModuleSpec>(
     campaign: &Campaign,
     oracle: &mut Oracle,
 ) -> Result<Report, OracleError> {
+    // Two ways to build a campaign that quietly does nothing, both rejected
+    // here rather than in the CLI, because `Campaign`'s fields are public and
+    // a test harness can construct one directly.
+    //
+    // `batch == 0` is the nastier of the two: proptest's runner loops
+    // `while successes < cases`, so a zero case count returns Ok without ever
+    // calling the property. In duration mode that yields a 60-second run
+    // reporting "zero divergences" over zero work; in cases mode the outer
+    // loop spins forever, because `executed` can never reach the budget.
+    if campaign.batch == 0 {
+        return Err(OracleError::Protocol(
+            "campaign batch is 0, which would run no cases at all".into(),
+        ));
+    }
+
+    if campaign.cases.is_none() && campaign.duration.is_none() {
+        return Err(OracleError::Protocol(
+            "campaign has neither a case budget nor a deadline, so it would never stop".into(),
+        ));
+    }
+
     let strategy = program_strategy(spec);
 
     let config = Config {
@@ -184,9 +205,23 @@ pub fn run_with<S: ModuleSpec>(
                 divergence = match check_program(spec, &mut held, &program) {
                     Err(CheckFailure::Diverged(found)) => Some(*found),
                     Err(CheckFailure::Oracle(error)) => return Err(error),
-                    // Only reachable if the disagreement is not deterministic,
-                    // which for these structures would itself be the finding.
-                    Ok(_) => None,
+                    // proptest has already told us this program failed; the
+                    // re-run exists only to recover the structured value,
+                    // because proptest hands back a rendered string.
+                    //
+                    // If the re-run passes, something is wrong that must not
+                    // be rounded down to `None` -- that would turn a detected
+                    // failure into a clean report, which is the exact failure
+                    // mode this crate is built to avoid. Non-determinism in a
+                    // deterministic structure would itself be the finding.
+                    Ok(_) => {
+                        return Err(OracleError::Protocol(format!(
+                            "proptest reported a failing case that does not reproduce. \
+                             The disagreement is not deterministic, which is itself a \
+                             finding, and it is NOT being reported as clean. Program:\n{}",
+                            program.render(spec.module())
+                        )));
+                    }
                 };
                 drop(held);
                 break;

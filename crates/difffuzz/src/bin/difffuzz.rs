@@ -135,6 +135,16 @@ impl Options {
             return Err("--module is required".into());
         }
 
+        // Caught again in `run_with`, but rejecting it here gives the operator
+        // the flag name rather than a protocol error.
+        if options.batch == 0 {
+            return Err("--batch 0 would run no cases at all".into());
+        }
+
+        if options.cases == Some(0) {
+            return Err("--cases 0 would run no cases at all".into());
+        }
+
         Ok(options)
     }
 }

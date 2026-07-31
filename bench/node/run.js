@@ -132,6 +132,23 @@ function number(name, fallback) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+// Twin of size_flag() in bench/runner/src/main.rs. Rejecting size 0 matters
+// specifically here: `x % 0` is NaN in JS, and NaN coerced into a typed array
+// becomes 0, so this side would happily produce an all-zero workload and
+// report a plausible-looking measurement of nothing while the Rust side
+// panicked. Upper bound mirrors the Rust u32 parse.
+function sizeArg() {
+  const size = number('--size', DEFAULT_SIZE);
+
+  if (!Number.isInteger(size) || size < 1 || size > 4294967295) {
+    process.stderr.write('run.js: `--size` must be an integer in 1..=4294967295\n');
+    process.exitCode = 2;
+    return null;
+  }
+
+  return size;
+}
+
 // `maxRSS` is kilobytes on Linux, matching getrusage on the Rust side.
 function peakRssKb() {
   return process.resourceUsage().maxRSS;
@@ -174,7 +191,10 @@ function main() {
     // Twin of bench-runner --structure: build the structure, touch nothing
     // else, report peak RSS. Isolates the structure from the ~9 MB of
     // materialised workload arrays that dominate the mixed run's RSS delta.
-    const size = number('--size', DEFAULT_SIZE);
+    const size = sizeArg();
+
+    if (size === null) return;
+
     const set = new StaticDisjointSet(size);
 
     // Read one element so nothing can be deferred or elided.
@@ -188,7 +208,10 @@ function main() {
 
   const warmup = number('--warmup', 3);
   const measured = number('--measured', 1);
-  const size = number('--size', DEFAULT_SIZE);
+  const size = sizeArg();
+
+  if (size === null) return;
+
   const ops = number('--ops', DEFAULT_OPS);
   const seed = number('--seed', DEFAULT_SEED);
 

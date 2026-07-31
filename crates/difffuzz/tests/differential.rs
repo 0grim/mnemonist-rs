@@ -30,6 +30,37 @@ fn static_disjoint_set_matches_upstream() {
     }
 }
 
+/// A campaign that cannot execute anything must fail, not pass.
+///
+/// Both shapes below were live defects found in review. `batch: 0` is the
+/// dangerous one: proptest's runner loops `while successes < cases`, so a zero
+/// case count returns `Ok` without ever calling the property — which produced
+/// a full-length run reporting "zero divergences" over zero work. Pinned here
+/// because that is the single worst thing this crate could do.
+#[test]
+fn a_campaign_that_runs_nothing_is_an_error() {
+    let empty_batch = Campaign {
+        batch: 0,
+        ..Campaign::cases(1, 10, REGRESSIONS)
+    };
+
+    assert!(
+        difffuzz::run(&StaticDisjointSetSpec, &empty_batch).is_err(),
+        "a zero batch must not be reportable as a clean campaign"
+    );
+
+    let unbounded = Campaign {
+        cases: None,
+        duration: None,
+        ..Campaign::cases(1, 10, REGRESSIONS)
+    };
+
+    assert!(
+        difffuzz::run(&StaticDisjointSetSpec, &unbounded).is_err(),
+        "a campaign with neither budget would never terminate"
+    );
+}
+
 /// The persisted regression corpus is replayed by `TestRunner::run` before any
 /// novel case, so the entry recorded in
 /// `proptest-regressions/static-disjoint-set.txt` is covered by the test above.
