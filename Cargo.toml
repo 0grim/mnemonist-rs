@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/mnemonist-core",
     "crates/mnemonist-napi",
+    "crates/difffuzz",
 ]
 
 [workspace.package]
@@ -15,3 +16,5 @@ mnemonist-core = { path = "crates/mnemonist-core" }
 napi = { version = "3", default-features = false, features = ["napi9"] }
 napi-derive = "3"
 napi-build = "2"
+proptest = "1"
+serde_json = "1"
