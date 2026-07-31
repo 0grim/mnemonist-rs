@@ -1,0 +1,96 @@
+{
+  "methodology": "bench/methodology.md",
+  "host": {
+    "cpu": "AMD Ryzen 5 7600X 6-Core Processor",
+    "cores": 12,
+    "governor": "unavailable",
+    "ram_gb": 15.2,
+    "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+    "node": "v24.18.1",
+    "kernel": "6.18.33.2-microsoft-standard-WSL2",
+    "in_docker": false,
+    "pinned_to": "-c 2,3"
+  },
+  "protocol": {
+    "warmup": 3,
+    "measured": 10,
+    "batch_k": 1000,
+    "interleaved": true,
+    "percentile": "nearest-rank, computed once in bench/drive.js over both sides",
+    "criterion": false,
+    "through_napi": false,
+    "rss": "in-process: getrusage(RUSAGE_SELF) in Rust, process.resourceUsage().maxRSS in Node"
+  },
+  "baseline_rss_mb": {
+    "node": 42.9,
+    "rust": 4.7
+  },
+  "modules": {
+    "static-disjoint-set": {
+      "workloads": {
+        "mixed-1e6": {
+          "workload": "1e6 mixed union/find/connected (50/25/25) over size 1e6, xorshift32 seed 42, ops materialised before the timed region",
+          "checksum": 125056860759,
+          "checksum_note": "identical on both sides: same ops, same answers, rank bug included",
+          "structure_note": "structure_rss_delta_mb constructs size 1e6 and nothing else, isolating the structure from the op arrays both sides materialise",
+          "port": {
+            "p50_ns_per_op": 12.996,
+            "p99_ns_per_op": 34.547,
+            "min_ns_per_op": 6.031,
+            "rss_total_mb": 18.6,
+            "rss_delta_mb": 14,
+            "structure_rss_delta_mb": 1.4,
+            "startup_ms": 0.6,
+            "samples": 10000
+          },
+          "original": {
+            "p50_ns_per_op": 21.121,
+            "p99_ns_per_op": 57.552,
+            "min_ns_per_op": 12.675,
+            "rss_total_mb": 85.4,
+            "rss_delta_mb": 42.6,
+            "structure_rss_delta_mb": 12,
+            "startup_ms": 15.6,
+            "samples": 10000
+          },
+          "regressions": []
+        },
+        "mixed-4e6": {
+          "workload": "1e6 mixed union/find/connected (50/25/25) over size 4e6, xorshift32 seed 42, ops materialised before the timed region",
+          "checksum": 500597930518,
+          "checksum_note": "identical on both sides: same ops, same answers, rank bug included",
+          "structure_note": "structure_rss_delta_mb constructs size 4e6 and nothing else, isolating the structure from the op arrays both sides materialise",
+          "port": {
+            "p50_ns_per_op": 21.131,
+            "p99_ns_per_op": 276.084,
+            "min_ns_per_op": 17.484,
+            "rss_total_mb": 41.5,
+            "rss_delta_mb": 36.8,
+            "structure_rss_delta_mb": 12.9,
+            "startup_ms": 0.6,
+            "samples": 10000
+          },
+          "original": {
+            "p50_ns_per_op": 39.005,
+            "p99_ns_per_op": 110.043,
+            "min_ns_per_op": 25.089,
+            "rss_total_mb": 121.9,
+            "rss_delta_mb": 79,
+            "structure_rss_delta_mb": 23.6,
+            "startup_ms": 15.6,
+            "samples": 10000
+          },
+          "regressions": [
+            {
+              "metric": "p99_ns_per_op",
+              "port": 276.084,
+              "original": 110.043,
+              "ratio": 2.51
+            }
+          ]
+        }
+      }
+    }
+  },
+  "generated_utc": "2026-07-31T20:55:13.694Z"
+}
