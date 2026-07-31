@@ -1,0 +1,62 @@
+# fuzz/log.txt — differential fuzz campaigns (DoD gate 9)
+#
+# One line per campaign, appended by fuzz/run.sh. A line is only written when
+# the harness actually ran: exit code 2 (no node, dead pipe, malformed
+# response) writes nothing at all, so an entry here can never mean "the oracle
+# never started".
+#
+# Format:
+#   <UTC>  module=<name> seed=<n> cases=<n> ops=<n> wall=<s> divergences=<n>
+#
+# Reproduce any line exactly:
+#   target/release/difffuzz --module <name> --seed <seed> --cases <cases>
+#
+# `cases` is the case budget rather than the clock, so the replay is not cut
+# short on a slower machine. Verified deterministic: seed 7 / 100 cases gives
+# ops=20760 on every run, seed 8 gives ops=22096.
+#
+# ---------------------------------------------------------------------------
+# GRAMMAR, PER MODULE — including what is deliberately excluded.
+#
+# DESIGN.md 3.7 asks for narrowed grammars to be disclosed, because "we fuzzed
+# it" reads as "we covered everything" when it wasn't.
+#
+# static-disjoint-set
+#   ops          union(x, y) [weight 3] · find(x) · connected(x, y)
+#   observed     size · dimension · mapping() · compile()
+#                after EVERY op, on both sides
+#   ctor sizes   1..=400   — straddles 256, where getPointerArray switches
+#                            `parents` to 16-bit while `ranks`, sized from
+#                            log2(size), stays 8-bit; and large enough for the
+#                            B-7 rank wrap at 256 to be reachable
+#   program len  1..600 ops
+#   EXCLUDED     out-of-range indices. Upstream reads past a typed array, gets
+#                undefined and propagates NaN; the bridge raises a RangeError.
+#                That divergence is deliberate and documented (napi module
+#                docs, adaptation 3), so fuzzing it would only re-report a
+#                known decision. Nothing else is excluded.
+#
+#   NOTE: mapping() and compile() are observations, not ops. Both call find()
+#   on every item, so path compression is exercised on every step of every
+#   program rather than when the generator happens to pick it.
+#
+# ---------------------------------------------------------------------------
+# THE FUZZER WAS FALSIFIED BEFORE IT WAS TRUSTED.
+#
+# Gate 6's lesson applies to the fuzzer itself: one that has never been seen to
+# catch anything is just a second green light. The sabotage was to *fix*
+# upstream's B-7 rank bug in the core, making the port strictly more correct
+# than upstream and therefore wrong, since the elected root is observable
+# through find(). Caught in 129 cases (0.3s), shrunk from 600 ops to three.
+# Reverted; the seed is committed in
+# crates/difffuzz/proptest-regressions/static-disjoint-set.txt with a
+# provenance header, and proptest replays it before any novel case below.
+#
+# ---------------------------------------------------------------------------
+# Throughput: ~23,600 op/s including a full mapping()+compile() comparison
+# after every single op. That is the persistent-oracle decision (D-23) paying
+# off: at one `node` spawn per op the 120s campaign would have taken ~33 hours.
+# ---------------------------------------------------------------------------
+
+2026-07-31T20:58:46Z  module=static-disjoint-set seed=42 cases=16666 ops=2837506 wall=120.0s divergences=0
+2026-07-31T21:00:12Z  module=static-disjoint-set seed=20260731 cases=8179 ops=1394965 wall=60.0s divergences=0
