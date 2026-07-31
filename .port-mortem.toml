@@ -20,8 +20,11 @@ tests_total     = 525          # measured pre-kickoff, Node 24.18.1, clean clone
 
 [port]
 scope_manifest = "tests/scope.txt"
-modules_ported = 0
-loc_in_scope   = 0
+modules_ported = 1
+# Upstream LOC of fully ported modules. utils/typed-arrays.js (187 LOC) is in
+# static-disjoint-set's require-closure but only getPointerArray is reachable
+# from it, so it is not counted here; it will be when test/_utils.js lands.
+loc_in_scope   = 195
 
 [verify]
 build           = "docker build -t port-mortem ."
@@ -31,7 +34,7 @@ core_standalone = "docker build -t pm-core --target core . && docker run --rm pm
 hashes          = "sha256sum -c tests/SHA256SUMS"
 
 [results]
-in_scope_passing  = 0
-in_scope_total    = 0
-repo_wide_passing = 0
+in_scope_passing  = 1
+in_scope_total    = 1
+repo_wide_passing = 1
 repo_wide_total   = 525

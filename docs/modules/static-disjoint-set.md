@@ -231,28 +231,29 @@ Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 10,0
 
 | metric | port | upstream | |
 |---|---|---|---|
-| p50 ns/op | **13.0** | 21.1 | 1.6× faster |
-| p99 ns/op | **34.5** | 57.6 | 1.7× faster |
-| RSS delta MB | **14.0** | 42.6 | |
-| structure-only RSS delta MB | **1.4** | 12.0 | |
-| startup ms | **0.6** | 15.6 | 26× (reported separately; not throughput) |
+| p50 ns/op | **12.6** | 20.8 | 1.6× faster |
+| p99 ns/op | **33.6** | 59.4 | 1.8× faster |
+| RSS delta MB | **13.9** | 41.9 | |
+| structure-only RSS delta MB | **1.3** | 11.9 | |
+| startup ms | **0.6** | 15.3 | 25× (reported separately; not throughput) |
 
 **`mixed-4e6`** — the same op mix at four times the size. **This is where the port loses:**
 
 | metric | port | upstream | |
 |---|---|---|---|
-| p50 ns/op | **21.1** | 39.0 | 1.8× faster |
-| **p99 ns/op** | **276.1** | **110.0** | **2.5× SLOWER — regression** |
-| min ns/op | **17.5** | 25.1 | |
-| RSS delta MB | **36.8** | 79.0 | |
-| structure-only RSS delta MB | **12.9** | 23.6 | |
+| p50 ns/op | **19.8** | 33.8 | 1.7× faster |
+| **p99 ns/op** | **275.0** | **102.1** | **2.7× SLOWER — regression** |
+| min ns/op | **17.1** | 21.2 | |
+| RSS delta MB | **36.7** | 80.7 | |
+| structure-only RSS delta MB | **12.8** | 23.6 | |
 
 **Why the port loses the tail, and why the regression is real rather than noise.** It reproduces
-across every repeat (measured 229/246/276/362 ns vs upstream's 96–110). The cause is a design
+across every repeat and across a full re-run of the harness (measured 229 / 246 / 275 / 276 /
+362 ns against upstream's 96–110). The cause is a design
 decision in the port, not the workload: `PointerVec` backs *every* logical width with a `Vec<u32>`.
 Upstream's `ranks` is a `Uint8Array`; ours is four times the size. At 4e6 items that is
 16 MB + 16 MB = 32 MB of structure against upstream's 4 MB + 16 MB = 20 MB — which is the
-difference between fitting in this CPU's 32 MB L3 and not. p50 stays ahead because the common path
+difference between fitting in this CPU's 32 MB L3 and not. p50 stays 1.7× ahead because the common path
 is a compressed `parents` lookup; the tail is where the extra cache pressure lands, and batch-level
 p99 is precisely the metric designed to show it (§5.2 Problem 2).
 

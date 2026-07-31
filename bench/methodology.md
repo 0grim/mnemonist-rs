@@ -178,7 +178,7 @@ somewhere and report it."* So the size was swept — 200, 5,000, 65,536, 1e6,
 4e6 — looking for the boundary.
 
 `mixed-4e6` is the same op mix at four times the size, and it is where the port
-loses: **p99 2.5× worse** while p50 stays 1.8× better. The cause is a design
+loses: **p99 2.7× worse** while p50 stays 1.7× better. The cause is a design
 decision in the port, not noise — see
 `docs/modules/static-disjoint-set.md` § *Fuzz + bench*. Publishing only the
 size that flatters the port would have been the easiest possible way to produce

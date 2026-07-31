@@ -253,8 +253,8 @@ is the difference between a repro you can file upstream and a wall of text.**
 **The benchmark's first result was too good, which was the tell.** Port won every metric on the
 1e6 workload — p50, p99, RSS, startup. Against a library that is already typed-array-backed, that
 should not happen, and §5.1 says so explicitly. Swept the size (200 → 5k → 65k → 1e6 → 4e6) looking
-for the boundary and found it at **4e6: p99 276 ns vs 110 ns, the port 2.5× SLOWER**, while p50
-stays 1.8× faster.
+for the boundary and found it at **4e6: p99 275 ns vs 102 ns, the port 2.7× SLOWER**, while p50
+stays 1.7× faster.
 
 Cause is our own design, not the workload: `PointerVec` backs *every* logical width with a
 `Vec<u32>`, so our `ranks` is 4× upstream's `Uint8Array`. At 4e6 that is 32 MB of structure vs

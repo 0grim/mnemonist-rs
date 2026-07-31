@@ -419,8 +419,8 @@ event is built around.
 array mechanically from the results rather than leaving a human to fill it in.
 **Rationale:** the FAQ states hiding a regression scores worse than disclosing it. A field nobody
 has to remember cannot be quietly left out on a bad day at hour 60.
-**First finding:** `static-disjoint-set` at 4e6 items — p99 **276 ns vs upstream's 110 ns, 2.5×
-slower**, while p50 stays 1.8× faster. Cause is `PointerVec` backing every logical width with a
+**First finding:** `static-disjoint-set` at 4e6 items — p99 **275 ns vs upstream's 102 ns, 2.7×
+slower**, while p50 stays 1.7× faster. Cause is `PointerVec` backing every logical width with a
 `Vec<u32>`, making our structure 32 MB against upstream's 20 MB and pushing it past this CPU's
 32 MB L3. Found by sweeping the size *because* the 1e6 result looked too clean.
 **Consequence for D-30:** promoting `PointerVec` into `utils/typed_arrays.rs` should give it a real
