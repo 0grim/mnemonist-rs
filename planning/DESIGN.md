@@ -799,7 +799,15 @@ Report regressions honestly — the FAQ states hiding one scores worse than disc
 Benchmark the **pure Rust** path, never through N-API; napi overhead would poison the comparison
 and misrepresent the port.
 
-Tools: `criterion` (Rust micro), `hyperfine` (startup), `/usr/bin/time -v` or `getrusage` (RSS).
+**Tools — superseded by §5.2 and §12c.2, which are authoritative.** This line originally read
+"`criterion`, `hyperfine`, `/usr/bin/time -v`" and contradicted both. Corrected:
+
+| Need | Tool | Why not the obvious choice |
+|---|---|---|
+| Comparative p50/p99 | **matched hand-rolled harness**, same shape both sides | `criterion` has no Node counterpart; criterion-vs-loop is two methodologies in one table (§5.2 Problem 1) |
+| Rust-only regression tracking | `criterion` is fine here | — |
+| Startup | `hyperfine` | the one place a uniform external tool *is* fair: it times whole processes identically |
+| RSS | **in-process** `getrusage` / `process.resourceUsage().maxRSS` | `/usr/bin/time -v` is GNU `time`, absent from `node:slim`, and mixing it with an in-process reading on the other side breaks the same-methodology rule (§12c.2) |
 
 ### 5.1 Workload design
 
