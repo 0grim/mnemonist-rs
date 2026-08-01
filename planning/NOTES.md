@@ -144,6 +144,125 @@ Other structures capture `this.size`. These coincide for `Stack` today; the inco
 rather than active.
 **Probably not a bug** — log it, don't file it.
 
+### B-11 — `HashedArrayTree.pop` reads the last BLOCK, not the popped index's block
+`status: VERIFIED against Node 24.18.1` · `mnemonist hashed-array-tree.js`
+```js
+var lastBlock = this.blocks[this.blocks.length - 1];   // the LAST block
+var i = (--this.length) & this.offsetMask;             // offset of the POPPED index
+return lastBlock[i];
+```
+The offset comes from the popped index; the block is taken unconditionally from the end of
+`blocks`. They agree only while the tree fits in one block — which is the whole of upstream's
+coverage, since its `pop` test uses the 1024-element default and pushes twice. Measured with
+`blockSize: 2` after pushing `1, 2, 3`: `pop()` gives `3`, then `0`, then `3`. The `2` is
+unreachable and the `3` comes back twice. `length` is decremented correctly, so only the returned
+value is wrong and nothing downstream notices. A shrinking `resize` reaches it without any growth at
+all, because `resize` never deallocates: push `7,8,9,10`, `resize(1)`, `pop()` gives `9`.
+**Strong candidate** — a data structure returning the wrong element from `pop`.
+
+### B-12 — `HashedArrayTree`'s bounds guard is `length < index`, admitting `index === length`
+`status: VERIFIED against Node 24.18.1` · `mnemonist hashed-array-tree.js`
+The same `if (this.length < index)` guards `set` and `get`, and the strict `<` lets one-past-the-end
+through. Three different outcomes depending on where `length` sits:
+* `get(length)` returns the raw block slot, so **a brand-new tree answers `get(0)` with `0`, not
+  `undefined`** — which is exactly what upstream's own "should return undefined on out-of-bound
+  values" test asserts, one index away (it asks for index 2 on a length-0 tree).
+* `set(length, v)` **writes**, and `length` does not move. Invisible to `pop`, visible to `get`.
+* when the admitted index is also `capacity`, `blocks[capacity >> blockMask]` is `undefined` and
+  upstream raises `TypeError: Cannot set properties of undefined (setting '0')`.
+
+### B-13 — `BitSet`/`BitVector.reset` omits the `>>> 0` that `set` and `flip` apply, so `size` drifts and can go NEGATIVE
+`status: VERIFIED against Node 24.18.1` · `mnemonist bit-set.js` + `bit-vector.js` (copy-pasted)
+`size` is never a popcount; it is maintained by comparing the word before and after each write,
+which only works if both readings are unsigned. `set` and `flip` say so explicitly:
+```js
+newBytes = this.array[byteIndex] |= (1 << pos);
+newBytes = newBytes >>> 0;                        // <-- reset() does NOT do this
+if (newBytes > oldBytes) this.size++;
+```
+`reset` compares the **signed** value of the compound assignment against the **unsigned**
+`Uint32Array` read. On any word whose bit 31 is set, the signed value is negative, so
+`newBytes < oldBytes` is true whether or not the reset changed anything:
+```js
+var s = new BitSet(32);
+s.set(31);      // size 1
+s.reset(0);     // bit 0 was ALREADY clear
+s.size          // 0   -- and bit 31 is still set
+s.rank(32)      // 0   -- rank early-returns on size === 0, so it lies too
+```
+Three no-op resets give `size === -2`. **Strongest of this batch**: it is a one-token omission, the
+two correct call sites are three lines away, and the consequence propagates into `rank` and
+`select`, both of which bail on `size === 0`.
+
+### B-14 — `BitSet`/`BitVector.select` does not advance its position across skipped words
+`status: VERIFIED against Node 24.18.1` · `mnemonist bit-set.js` + `bit-vector.js` (copy-pasted)
+```js
+for (var i = 0; i < l; i++) {
+  byte = this.array[i];
+  if (byte === 0) continue;              // <-- p is NOT advanced by 32 here
+  for (var j = 0; j < b; j++, p++) { … }
+}
+```
+`p` only moves inside the inner loop, so every all-zero word before the answer costs the result 32.
+`new BitSet(64); s.set(40)` answers `select(1) === 8`, where 40 is correct. With bits at 3 and 70 in
+a `BitSet(96)`, `select(1) === 3` (right, nothing skipped) and `select(2) === 38` (wrong by 32).
+Invisible upstream because both `select` tests use a length of 11 — a single word.
+
+### B-15 — `bitwise.msb32` returns 0 for every input whose bit 31 is set
+`status: VERIFIED against Node 24.18.1` · `mnemonist utils/bitwise.js`
+`x |= (x >> 1)` is an **arithmetic** shift, so an input with the top bit set smears to `-1` at the
+first step, and the final `x & ~(x >> 1)` is then `-1 & ~(-1)`, which is `-1 & 0`, which is `0`.
+So the function reports "no bits set" for exactly the half of the 32-bit range where the answer is
+most obvious: `msb32(0xFFFFFFFF) === 0`, `msb32(2**31) === 0`, `msb32(-1) === 0`. It is correct
+everywhere below the sign bit, which is why nothing has noticed. `msb8` has the same shape but the
+smear stops before bit 31, so it only misfires on input that is not a byte (`msb8(256) === 256`).
+
+### B-16 — `bitwise.criticalBit32Mask`'s trailing `& 0xffffffff` undoes its own `>>> 0`
+`status: VERIFIED against Node 24.18.1` · `mnemonist utils/bitwise.js`
+```js
+exports.criticalBit32Mask = function (a, b) {
+  return (~msb32(a ^ b) >>> 0) & 0xffffffff;
+};
+```
+The `>>> 0` produces the intended unsigned mask; `& 0xffffffff` then converts *both* operands to
+signed 32-bit — `0xffffffff` is `-1` there — so the mask is an identity that re-signs the result.
+`criticalBit32Mask(1, 2) === -3`, `criticalBit32Mask(0, 0) === -1`. Its byte-wide sibling
+`criticalBit8Mask` ends in `& 0xff` and is correct, which makes the pair a nice illustration of the
+same idiom being right at one width and wrong at another. **Low severity** — file with the others.
+
+### B-17 — `BitVector.pop` never decrements `size` and `push(0)` never clears the slot
+`status: VERIFIED against Node 24.18.1` · `mnemonist bit-vector.js`
+Three defects in six lines. `push(0)` returns `++this.length` without storing anything, so a slot a
+`pop` released keeps its stale `1`; `push(1)` does `this.size++` unconditionally, so a re-push over
+a set bit counts it twice; and `pop` moves `length` and nothing else. Upstream's own `pop` test
+walks the exact sequence and stops one assertion short:
+```js
+var v = new BitVector();
+v.push(1); v.push(1);   // size 2
+v.pop(); v.pop();       // length 0 -- size STILL 2, bits STILL set
+v.push(0);              // length 1
+v.get(0)                // 1, not 0     <-- the test asserts get(1) instead
+v.push(1);              // size 3, with two bits actually set
+```
+
+### B-18 — `length % 32 || 32` treats a length of 0 as a full final word
+`status: VERIFIED against Node 24.18.1` · `mnemonist bit-set.js` + `bit-vector.js`
+Both iteration paths size the last word as `length % 32 || 32`. The `|| 32` is there for a length
+that fills its last word exactly, and `0 % 32` is also falsy, so a length of **zero** over a
+non-empty array yields 32 bits. `BitSet` cannot reach it — its array is empty when its length is —
+but a `BitVector` can, because capacity outlives length: `new BitVector(); v.grow();` then `forEach`
+calls back **32 times** on a vector of length 0.
+
+### B-19 — `BitSet.set` accepts an index past `length` but inside the last word, and then nothing can see it
+`status: VERIFIED against Node 24.18.1` · `mnemonist bit-set.js` + `bit-vector.js`
+`new BitSet(10)` allocates one 32-bit word, and `set(20)` lands in it: `size === 1`, `array` is
+`[1048576]`, while `rank(10) === 0`, `select(1) === undefined` and iteration yields ten zeros. So
+`size` disagrees with every other view of the same set. This is the narrow survivor of the
+`SparseSet` out-of-range family — **and it is worth recording that the family does NOT otherwise
+recur**: `set`/`reset`/`flip` past the *array* are inert no-ops and `get` is `0`, because a
+`BitSet`'s counter is derived from a before/after comparison that an `undefined` read makes false,
+where `SparseSet` increments its counter unconditionally after a dropped store (B-8).
+
 > Differential fuzzing has not run yet. Expect the best candidates to come from there, not from
 > reading. Add them here with the minimised repro attached.
 
