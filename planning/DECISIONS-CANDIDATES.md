@@ -1163,3 +1163,29 @@ letting the temporary outlive the call.
 **Verify:** `tests/boundary/heap.js` — "should not hold a RefCell borrow across the JS its own
 peek() runs", and "should not run ANY user JavaScript from clear()", which asserts the cause rather
 than the symptom.
+
+### D-82 — `BiMap`'s two size counters are real state, reset asymmetrically by `clear`
+**Status:** CONFIRMED · **Category:** behavioural · **Divergence:** no
+**Upstream:** `BiMap`/`InverseMap` share one `clear` function — `this.size = 0; this.items.clear();
+this.inverse.items.clear();` — that empties both underlying `Map`s regardless of which side calls
+it, but resets only the ONE counter belonging to whichever object `this` is. `bimap.clear()` leaves
+`bimap.inverse.size` stale at its pre-clear value; `bimap.inverse.clear()` leaves `bimap.size`
+stale. `set`/`delete` resync both counters from the live maps on their real-mutation path, so the
+staleness heals on the next successful mutation — but not on a no-op `delete` (absent key), which
+returns `false` before touching either counter, exactly as upstream. Recorded as B-120
+(`planning/NOTES.md`), found by differential fuzzing.
+**Port:** `BiMap<K>` carries two real stored fields (`size`, `inverse_size`), not derived from
+`OrderedMap::len()`. `clear`/`clear_reverse` reset only the matching field; `set`/`set_reverse`
+unconditionally resync both (safe: a no-op `set` requires an existing colliding entry, which cannot
+survive a real `clear()`); `delete`/`delete_reverse` resync only when something was actually
+removed, matching `del`'s early return.
+**Rationale:** the first draft derived both counters from the underlying maps' real lengths, so
+`clear()` incidentally zeroed both — the port more correct than upstream, i.e. a defect, not an
+improvement, per this project's bug-for-bug porting rule. A second draft added stored counters but
+resynced them unconditionally after every `delete`, which "healed" the staleness one operation too
+early on exactly the no-op-delete-after-clear case; differential fuzzing caught both drafts on
+their very next run.
+**Verify:** `crates/mnemonist-core/src/structures/bi_map.rs`,
+`clear_desyncs_size_from_inverse_size_b_120`; `crates/difffuzz/proptest-regressions/bi-map.txt`
+(both seeds, with provenance); `cargo run --release -p difffuzz -- --module bi-map --seed 42
+--cases 5000` clean at zero divergences on the fixed tree.
