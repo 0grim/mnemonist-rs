@@ -237,6 +237,11 @@ const ITERATOR_FACTORIES: &[(&str, &str)] = &[
     ("FixedStack", "values"),
     ("FixedDeque", "values"),
     ("CircularBuffer", "values"),
+    // Appended at the end, never inserted (CLAUDE.md, Git): a new row anywhere
+    // else is a merge conflict inside an array literal.
+    ("BiMap", "entries"),
+    ("BiMapInverse", "entries"),
+    ("FuzzyMap", "values"),
 ];
 
 /// Wire every collection's `Symbol.iterator` to its cursor factory.
