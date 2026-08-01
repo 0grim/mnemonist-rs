@@ -9,6 +9,7 @@
 
 use napi_derive::napi;
 
+pub mod bit_set;
 pub mod cursor;
 pub mod hashed_array_tree;
 pub mod sparse_set;
