@@ -1001,3 +1001,14 @@
 # post-fix campaigns.
 2026-08-01T18:44:17Z  module=inverted-index seed=42 cases=9600 ops=968510 wall=60.0s divergences=0
 2026-08-01T18:44:17Z  module=inverted-index seed=20260801 cases=9632 ops=967012 wall=60.0s divergences=0
+# linked-list correction: the two campaigns logged above (cases=29/43, ~60-70s wall for ~3-4k ops)
+# were measuring a grammar with a latent hang, not a slow port. `$forEach`'s `push` mutation used the
+# same uncapped FOR_EACH_MANY limit every other mutation table in this port uses, but push-while-the-
+# walk-sits-on-the-tail relinks that exact tail's `.next` to the node just pushed, and this module's
+# walk advances onto THAT node next -- which is now itself the tail. Uncapped, that chases its own
+# tail forever (matches a real Node forEach in the identical shape; not a divergence). Capped push's
+# own limit to 8 in crates/difffuzz/src/modules/linked_list.rs; per-case throughput went from ~2s to
+# ~5ms. The two lines below are the same two seeds, re-run after the fix, and are the campaigns that
+# actually count.
+2026-08-01T18:53:12Z  module=linked-list seed=42 cases=11790 ops=1184507 wall=60.0s divergences=0
+2026-08-01T18:53:12Z  module=linked-list seed=20260801 cases=11865 ops=1187723 wall=60.0s divergences=0

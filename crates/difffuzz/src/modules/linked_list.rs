@@ -251,8 +251,25 @@ impl ModuleSpec for LinkedListSpec {
 /// it fires while the walk is sitting on the (old) tail. `shift`/`unshift`
 /// are included specifically to prove the NEGATIVE half of those rules under
 /// the differential fuzzer, not just by hand-written Rust tests.
+// `push`'s limit is a small FIXED cap, not `FOR_EACH_MANY` -- unlike every
+// other mutation table in this port. A `push` while the walk sits on the
+// (old) tail relinks that exact tail's `.next` to the freshly pushed node,
+// and this walk's own `advance()` then moves onto THAT node next -- which is
+// now itself the tail. An uncapped `push` therefore chases its own tail
+// forever: the walk visits a node, pushes, advances onto the node it just
+// pushed, which is the new tail, and repeats without end. This is not a
+// divergence from upstream (a real `forEach` with an uncapped push-at-the-
+// tail callback would loop identically, and does when tried against Node) --
+// it is a genuine unbounded program this grammar must not generate, because a
+// campaign is supposed to run thousands of finite cases, not hang on one.
+// Found the hard way: an early run of this module's campaign with
+// `FOR_EACH_MANY` here simply never returned. `unshift`/`shift`/`clear` have
+// no equivalent hazard -- see the module docs' liveness rules -- so they keep
+// the uncapped limit every other table in this port uses.
+const PUSH_LIMIT: u64 = 8;
+
 const MUTATIONS: &[(&str, &str, u64)] = &[
-    ("push", "arg0", FOR_EACH_MANY),
+    ("push", "arg0", PUSH_LIMIT),
     ("unshift", "arg0", FOR_EACH_MANY),
     ("shift", "none", FOR_EACH_MANY),
     ("clear", "none", FOR_EACH_MANY),
