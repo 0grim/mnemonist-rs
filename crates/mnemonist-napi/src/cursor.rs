@@ -122,6 +122,7 @@ const ITERATOR_FACTORIES: &[(&str, &str)] = &[
     // to `entries`, not to `values`. Getting that wrong would leave `[...map]`
     // yielding bare values and every `deepStrictEqual` against pairs failing.
     ("SparseMap", "entries"),
+    ("SparseQueueSet", "values"),
 ];
 
 /// Wire every collection's `Symbol.iterator` to its cursor factory.
