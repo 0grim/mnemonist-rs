@@ -15,5 +15,6 @@ pub mod static_disjoint_set;
 // several agents at once and a new line at the end can never land inside
 // another one's hunk.
 pub mod backing;
+pub mod circular_buffer;
 pub mod fixed_deque;
 pub mod fixed_stack;

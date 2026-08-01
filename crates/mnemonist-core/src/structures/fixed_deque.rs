@@ -363,6 +363,34 @@ impl<T: Clone> FixedDeque<T> {
 
         self.start - 1
     }
+
+    // ---- the pieces `CircularBuffer` overrides `push`/`unshift` around -----
+    //
+    // Upstream builds `CircularBuffer` by copying `FixedDeque.prototype` and
+    // then replacing two methods, so its overrides write `this.items`,
+    // `this.start` and `this.size` directly. These are the same three writes,
+    // crate-visible so the override lives in its own module rather than as a
+    // flag inside `push`.
+
+    pub(crate) fn store(&mut self, index: usize, item: T) {
+        self.backing.store(&mut self.items, index, item);
+    }
+
+    pub(crate) fn set_start(&mut self, start: usize) {
+        self.start = start;
+    }
+
+    pub(crate) fn set_size(&mut self, size: usize) {
+        self.size = size;
+    }
+
+    pub(crate) fn slot_for_push(&self) -> usize {
+        wrap_once(self.start + self.size, self.capacity)
+    }
+
+    pub(crate) fn slot_for_unshift(&self) -> usize {
+        self.previous_start()
+    }
 }
 
 /// Upstream's `if (index >= capacity) index -= capacity` — **one** subtraction.
