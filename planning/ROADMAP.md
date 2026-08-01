@@ -128,3 +128,20 @@ wave boundaries in §6:
   three registry files is the practical ceiling on parallelism.
 - **Stop-and-review before a design is inherited.** Applied to the cursor, to `forEach`, and now to
   `JsKey`.
+- **Rules live in `CLAUDE.md`, not in prompts.** It auto-loads for every agent in this repo. Hand-
+  repeating the same lessons in each brief is how they drift — the `cargo clippy | tail -5` bug
+  shipped because one agent's hand-written check differed from another's.
+
+### Branch and merge policy
+
+Observed failure: three agents produced **five** branches across three naming schemes, two of them
+created *on top of* their auto-generated worktree branch and left behind.
+
+- Agents **commit to the branch their worktree already has** and create no others (`CLAUDE.md`).
+- The orchestrator merges with **`--no-ff` and a descriptive message**, then **deletes the branch**.
+  Branch names therefore never reach the final repository — only the merge commit message, which
+  the orchestrator writes.
+- Merge commits are kept rather than rebased away: parallel agent work genuinely happened in
+  parallel, and the graph showing that is honest history rather than clutter. Rebasing would also
+  rewrite commits, which P5 forbids.
+- Merge order: oldest branch point first, so conflicts surface one batch at a time.
