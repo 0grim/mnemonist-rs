@@ -64,7 +64,7 @@
 //! diverging only for astral characters. See `symspell.rs`'s module docs
 //! for the same note in full.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 /// `mnemonist/passjoin-index: \`levenshtein\` should be a function returning
 /// edit distance between two strings.` Reproduced for the bridge's benefit —
@@ -280,6 +280,40 @@ pub fn multi_match_aware_substrings(
     substrings
 }
 
+/// An insertion-ordered, deduplicated set of strings — upstream's `search`
+/// builds a real `M = new Set()` and returns it directly, so the match
+/// order a caller observes is genuine first-insertion order, not sorted and
+/// not hash-bucket order. `HashSet<String>` cannot stand in for this:
+/// iterating a `HashSet` has no relationship to insertion order at all. The
+/// difference is invisible to `test/passjoin-index.js` itself
+/// (`assert.deepStrictEqual` on two `Set`s compares membership, not order),
+/// but it is exactly what the differential fuzzer's plain JSON-array
+/// comparison would catch as a false divergence if `matches` were a
+/// `HashSet` here. See `search_results_are_in_upstreams_own_insertion_order`.
+#[derive(Debug, Default)]
+struct OrderedStringSet {
+    order: Vec<String>,
+}
+
+impl OrderedStringSet {
+    fn contains(&self, value: &str) -> bool {
+        self.order.iter().any(|existing| existing == value)
+    }
+
+    /// `Set.prototype.add`: a no-op at its original position if `value` is
+    /// already present, matching upstream's `M.add(candidate)` called
+    /// unconditionally in the `s <= k && l <= k` branch.
+    fn add(&mut self, value: &str) {
+        if !self.contains(value) {
+            self.order.push(value.to_owned());
+        }
+    }
+
+    fn into_vec(self) -> Vec<String> {
+        self.order
+    }
+}
+
 /// Upstream's `PassjoinIndex`.
 ///
 /// Unlike `symspell`, the distance function is not stored here at all — it
@@ -363,16 +397,16 @@ impl PassjoinIndex {
     }
 
     /// `#.search(query)` — every added string within Levenshtein distance
-    /// `k` of `query`, as a set (upstream returns a JS `Set`), computed with
-    /// an infallible `levenshtein`. The convenience form of
-    /// [`PassjoinIndex::try_search`] for a native Rust metric that cannot
-    /// throw.
+    /// `k` of `query`, in the order upstream's `Set` would iterate them
+    /// (see [`OrderedStringSet`]), computed with an infallible
+    /// `levenshtein`. The convenience form of [`PassjoinIndex::try_search`]
+    /// for a native Rust metric that cannot throw.
     pub fn search(
         &self,
         query: &str,
         mut levenshtein: impl FnMut(&str, &str) -> i64,
-    ) -> HashSet<String> {
-        let result: Result<HashSet<String>, std::convert::Infallible> =
+    ) -> Vec<String> {
+        let result: Result<Vec<String>, std::convert::Infallible> =
             self.try_search(query, |a, b| Ok(levenshtein(a, b)));
 
         result.expect("an infallible levenshtein cannot fail")
@@ -385,7 +419,7 @@ impl PassjoinIndex {
     /// Only ever calls `levenshtein` on a candidate the inverted index
     /// itself surfaced — see the module docs' "two-part correctness
     /// argument" for why that is sound.
-    pub fn try_search<F, E>(&self, query: &str, mut levenshtein: F) -> Result<HashSet<String>, E>
+    pub fn try_search<F, E>(&self, query: &str, mut levenshtein: F) -> Result<Vec<String>, E>
     where
         F: FnMut(&str, &str) -> Result<i64, E>,
     {
@@ -393,7 +427,7 @@ impl PassjoinIndex {
         let s = chars.len() as i64;
         let k = self.k;
 
-        let mut matches: HashSet<String> = HashSet::new();
+        let mut matches = OrderedStringSet::default();
 
         for l in (s - k).max(0)..=(s + k) {
             let Some(by_length) = self.inverted_indices.get(&l) else {
@@ -430,18 +464,18 @@ impl PassjoinIndex {
                         // lose that distinction in a future edit.
                         #[allow(clippy::if_same_then_else)]
                         if s <= k && l <= k {
-                            matches.insert(candidate.clone());
+                            matches.add(candidate);
                         } else if !matches.contains(candidate)
                             && levenshtein(query, candidate)? <= k
                         {
-                            matches.insert(candidate.clone());
+                            matches.add(candidate);
                         }
                     }
                 }
             }
         }
 
-        Ok(matches)
+        Ok(matches.into_vec())
     }
 
     /// `#.forEach(callback)`.
@@ -459,6 +493,8 @@ impl PassjoinIndex {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use super::*;
 
     fn leven(a: &str, b: &str) -> i64 {
@@ -496,6 +532,15 @@ mod tests {
 
     fn set(items: &[&str]) -> HashSet<String> {
         items.iter().map(|s| s.to_string()).collect()
+    }
+
+    /// `search`'s membership, order-independent — every genuinely upstream
+    /// comparison in this file goes through this, since `assert.
+    /// deepStrictEqual` on two JS `Set`s is itself order-independent (real
+    /// insertion order is instead pinned by
+    /// `search_results_are_in_upstreams_own_insertion_order`, below).
+    fn as_set(results: Vec<String>) -> HashSet<String> {
+        results.into_iter().collect()
     }
 
     #[test]
@@ -631,15 +676,24 @@ mod tests {
         assert_eq!(k1.size(), STRINGS.len());
         assert_eq!(k1.k(), 1);
 
-        assert_eq!(k1.search("paul", leven), set(&["paul", "paule"]));
-        assert_eq!(k1.search("paulet", leven), set(&["paule"]));
-        assert_eq!(k1.search("a", leven), set(&["", "a", "b", "pa", "ab"]));
-
-        assert_eq!(k2.search("benjiman", leven), set(&["benjamin", "benjomon"]));
-
-        assert_eq!(k3.search("benja", leven), set(&["benjamin", "benja"]));
+        assert_eq!(as_set(k1.search("paul", leven)), set(&["paul", "paule"]));
+        assert_eq!(as_set(k1.search("paulet", leven)), set(&["paule"]));
         assert_eq!(
-            k3.search("pa", leven),
+            as_set(k1.search("a", leven)),
+            set(&["", "a", "b", "pa", "ab"])
+        );
+
+        assert_eq!(
+            as_set(k2.search("benjiman", leven)),
+            set(&["benjamin", "benjomon"])
+        );
+
+        assert_eq!(
+            as_set(k3.search("benja", leven)),
+            set(&["benjamin", "benja"])
+        );
+        assert_eq!(
+            as_set(k3.search("pa", leven)),
             set(&["", "a", "b", "pa", "ab", "paul", "paule"])
         );
     }
@@ -654,10 +708,47 @@ mod tests {
         index.add("flailed");
 
         assert_eq!(
-            index.search("agility's", leven),
+            as_set(index.search("agility's", leven)),
             set(&["agility's", "ability's"])
         );
-        assert_eq!(index.search("failed", leven), set(&["failed", "flailed"]));
+        assert_eq!(
+            as_set(index.search("failed", leven)),
+            set(&["failed", "flailed"])
+        );
+    }
+
+    /// `search`'s result order is upstream's own `Set` insertion order, not
+    /// merely its membership -- load-bearing for the differential fuzzer,
+    /// whose comparison (unlike `assert.deepStrictEqual` on two `Set`s) is
+    /// order-sensitive. A `HashSet`-backed `matches` would have passed every
+    /// assertion above while still being wrong here, since `HashSet`
+    /// iteration order has nothing to do with insertion order at all.
+    #[test]
+    fn search_results_are_in_upstreams_own_insertion_order() {
+        let mut index = PassjoinIndex::new(3).unwrap();
+
+        for &string in STRINGS {
+            index.add(string);
+        }
+
+        // `s <= k && l <= k` for every candidate here (`k=3`, `"pa"` has
+        // length 2), so every match is added in the exact order `search`'s
+        // nested `l`/segment-index/candidate-index loops reach it. The
+        // expected order below is verified ground truth -- run directly
+        // against real upstream `passjoin-index.js` (Node 24.18.1) with
+        // `leven` as the distance function, the identical constructor and
+        // `STRINGS` this test uses, not a guess: it printed
+        // `["","a","b","pa","ab","paul","paule"]`.
+        let ordered = index.search("pa", leven);
+
+        assert_eq!(
+            ordered,
+            vec!["", "a", "b", "pa", "ab", "paul", "paule"]
+                .into_iter()
+                .map(str::to_owned)
+                .collect::<Vec<_>>(),
+            "search should preserve upstream's own Set insertion order, not just its membership"
+        );
     }
 
     #[test]
@@ -691,7 +782,7 @@ mod tests {
 
         assert_eq!(index.size(), 0);
         assert!(index.values().is_empty());
-        assert_eq!(index.search("abc", leven), HashSet::new());
+        assert_eq!(index.search("abc", leven), Vec::<String>::new());
     }
 
     /// [`PassjoinIndex::try_search`] propagates a failing distance function's
@@ -706,7 +797,7 @@ mod tests {
         // A query long enough, and both entries long enough, that the
         // `s <= k && l <= k` shortcut cannot apply and the fallible
         // distance function must actually run.
-        let result: Result<HashSet<String>, &'static str> =
+        let result: Result<Vec<String>, &'static str> =
             index.try_search("pearl", |_, _| Err("distance function threw"));
 
         assert_eq!(result, Err("distance function threw"));

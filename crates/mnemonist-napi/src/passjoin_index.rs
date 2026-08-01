@@ -181,7 +181,7 @@ impl JsPassjoinIndex {
 
         let matches = index.try_search(&query, |a, b| self.call_levenshtein(&env, a, b))?;
 
-        Ok(RenderedSet(matches.into_iter().collect()))
+        Ok(RenderedSet(matches))
     }
 
     /// `#.forEach(callback)`.
