@@ -1626,3 +1626,78 @@ double-freeing.
 a `clear()` observes the now-released, inert value if read afterwards. Untested by
 `test/fuzzy-multi-map.js`.
 **Verify:** `crates/mnemonist-napi/src/fuzzy_multi_map.rs`'s own module docs.
+
+### D-170 — `MaxFibonacciHeap` is installed as evaluated JavaScript, not a second native class
+**Status:** CONFIRMED · **Category:** architecture · **Divergence:** no (reproduces upstream, does
+not repair it)
+**Upstream:** `MaxFibonacciHeap.prototype = FibonacciHeap.prototype;` at load time — the same
+anti-pattern `heap.js`'s D-74/B-75 already documents for `Heap`/`MaxHeap`, one file over. It makes
+`new FibonacciHeap() instanceof MaxFibonacciHeap` true and blurs the two constructors together
+(NOTES.md B-221).
+**Port:** `crates/mnemonist-napi/src/fibonacci_heap.rs`'s `install_fibonacci_heap_statics` evaluates
+a small JS installer at module load that closes over `FibonacciHeap.__max`/`__maxFrom` factories and
+performs the identical prototype assignment — the same mechanism `crate::heap`'s
+`install_heap_statics` already established for `MaxHeap`.
+**Rationale:** a second `#[napi]` class for `MaxFibonacciHeap` would have its own prototype object
+and would silently *repair* the `instanceof` blur instead of reproducing it — exactly the kind of
+"more correct than upstream" outcome CLAUDE.md's bug-for-bug mandate forbids.
+**Verify:** `crates/mnemonist-napi/src/fibonacci_heap.rs`'s `INSTALLER`/`install_fibonacci_heap_statics`;
+NOTES.md B-221.
+
+### D-171 — `FibonacciHeap::size` is `i64`, not `usize`
+**Status:** CONFIRMED · **Category:** behavioural · **Divergence:** no (matches upstream's own
+untyped-number arithmetic)
+**Upstream:** `pop`'s `this.size--` runs *after* `consolidate`, so a re-entrant comparator that calls
+`clear()` (`this.size = 0`) from inside that `consolidate` leaves the pending decrement to compute
+`0 - 1`. JavaScript has no unsigned integers: that is a real `-1`, held without complaint (NOTES.md
+B-220).
+**Port:** `size: Cell<i64>` throughout `mnemonist_core::structures::fibonacci_heap::FibonacciHeap`,
+matching `multi-set`'s D-163 precedent for the identical class of problem — a tracked counter whose
+upstream arithmetic can reach a state a "cleaner" derived or clamped value never would.
+**Rationale:** `usize` cannot represent `-1` at all; clamping to `0` (saturating) or panicking on
+underflow would each be a different, more "defensive" behaviour than upstream's own silent
+corruption, and CLAUDE.md is explicit that a port which quietly repairs upstream's arithmetic is a
+defect, not an improvement.
+**Verify:** `mnemonist_core::structures::fibonacci_heap`'s `size` field docs;
+`a_comparator_that_clears_the_heap_mid_pop_does_not_panic`, which pins the exact `-1`; NOTES.md
+B-220.
+
+### D-172 — B-220/B-222's crashes are reproduced as Rust panics whose message IS the exact upstream `TypeError` text
+**Status:** CONFIRMED · **Category:** architecture · **Divergence:** yes, in mechanism only
+**Upstream:** once `size`/`root`/`min` are left inconsistent by a re-entrant `clear()` (B-220,
+B-222), the *next* `pop` throws a real `TypeError` — `"Cannot read properties of null (reading
+'child')"` or `"...(reading 'right')"`, depending on which inconsistency it is.
+**Port:** `mnemonist-core` has no exceptions, so both sites are `Option::expect(msg)` panics — and
+`msg` is upstream's literal wording, not a description of the invariant, so a caller that catches
+the panic (the differential fuzz harness, `crates/difffuzz/src/modules/fibonacci_heap.rs`'s `pop`)
+can use the payload directly as the thrown text with no hand-maintained translation table to drift
+out of sync with what Node actually says.
+**Rationale — noted inconsistency with `_utils`'s D-104:** `merge.rs`'s B-180 chose the opposite
+shape, `Result<_, KWayError>`, because that call site already returns a `Result` its callers handle
+routinely. `FibonacciHeap::pop`/`consolidate` reaching this state is reachable only through one
+adversarial re-entrant `clear()` sequence, not through any input a normal caller supplies, and
+building a dedicated raised-message channel for it — a new error variant threaded through every
+`pop`/`consolidate` caller — was judged disproportionate to what it protects. The panic's message
+text is what closes that gap for the one caller (the fuzz harness) that needs to keep running past
+it.
+**Verify:** `FibonacciHeap::pop`/`consolidate`'s doc comments (NOTES.md B-220, B-222);
+`crates/difffuzz/src/modules/fibonacci_heap.rs`'s `pop`/`install_panic_capture`/`bare_message`.
+
+### D-173 — node storage is an arena of `NodeId`s, never `Rc<RefCell<Node>>`, and popped slots are never recycled
+**Status:** CONFIRMED · **Category:** architecture · **Divergence:** no (invisible to any public API)
+**Problem:** upstream's node graph is a circular doubly-linked list plus a parent/child tree, kept
+alive by JavaScript's tracing GC — an object stays valid for as long as anything references it,
+including a suspended re-entrant call frame. A literal `Rc<RefCell<Node<T>>>` translation is a
+strong-reference cycle that never reaches zero (measured: the singleton-heap case alone leaks), and
+an arena that DOES recycle a popped node's slot for the next allocation panics (or silently aliases
+two logically distinct nodes) the moment a re-entrant `pop` from inside another `pop`'s
+`consolidate` frees a node the outer call's own snapshot still references — found by the
+differential fuzzer inside its first fifty generated cases against the `fibPopper` factory.
+**Port:** `Arena<T>` addresses nodes by a plain `usize` (`NodeId`); slots are appended, never removed
+or reused, so no id a caller holds can ever be silently reassigned to an unrelated node.
+**Rationale:** this is the direct Rust analogue of the GC guarantee upstream depends on, not a new
+behaviour — nothing about the public API exposes node identity, memory address, or arena occupancy,
+so the choice is unobservable either way. The cost is that the arena grows with the heap's total
+lifetime creation count rather than its live size, which is bounded differently than V8's periodic
+GC but is the same shape of promise.
+**Verify:** `mnemonist_core::structures::fibonacci_heap`'s `Arena` and module-level doc comments.
