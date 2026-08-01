@@ -103,7 +103,7 @@ the first run of a clean checkout and worked on every run after.
 **Purpose.** The primary equivalence evidence. Tests written for the JavaScript library pass against
 Rust without alteration.
 
-**How it runs.** `./tests/run.sh` — currently **688 upstream specs passing**.
+**How it runs.** `./tests/run.sh` — currently **702 upstream specs passing**.
 
 **What it caught.** Everything a hand-written port forgets. It is also the gate that makes gate 6
 necessary: a suite that passes tells you nothing until you have shown it can fail.
@@ -145,6 +145,15 @@ each with a different cause:
 | `default-weak-map` — sabotaging the bridge's `get` | The sabotage sits in a **layer the fuzzer does not drive** | A structural blind spot — see *What these instruments cannot see* |
 | `fixed-critbit-tree-map` — corrupting the critical-bit isolator | The corruption is a **self-consistent mirror**: the same wrong direction function drives insert and lookup, so every query answer still matches | A property of the structure, not the harness. The native test, which checks visitation order, failed as predicted |
 
+A fourth case is the one the gate exists for, and unlike the three above it found a weakness in
+**our own tests** rather than a fact about the instruments. Disabling `kd-tree`'s "search the other
+side of the splitting plane" branch stayed green against the upstream-pinned fixture — that
+particular query resolves through the primary descent alone — and stayed green against the first
+native test written for it, a diagonal arrangement of points that happened to share the same
+weakness. Two independent tests, blind to the same defect, for the same reason. The differential
+fuzzer's dense-grid grammar caught it immediately; the native test was then rebuilt on a grid,
+confirmed red, reverted, and confirmed green.
+
 A falsification that stays green is not automatically a failed gate — it can be a true statement
 about which instrument covers what. The failure mode is staying green and nobody asking why.
 
@@ -155,7 +164,7 @@ about which instrument covers what. The failure mode is staying green and nobody
 **Purpose.** Cover what upstream's suite does not reach. Each divergence document lists those gaps
 explicitly.
 
-**How it runs.** `cargo test` — currently **744 tests**.
+**How it runs.** `cargo test` — currently **764 tests**.
 
 **What it caught.** A great deal, with one structural limitation worth stating plainly: these tests
 were written by whoever wrote the implementation, against the same reading of the upstream source. A
@@ -188,7 +197,7 @@ instead of silently healing.
 **How it runs.** Operation sequences are generated with `proptest`, replayed against both the Rust
 implementation and **real upstream JavaScript running in Node**, comparing observable state after
 every operation. Divergences are minimised by the shrinker and persisted as regression seeds.
-Currently **112 logged campaigns across 40 modules, 121.5 million operations, zero divergences**.
+Currently **116 logged campaigns across 42 modules, 124.5 million operations, zero divergences**.
 Every line in `fuzz/log.txt` carries its seed and replays exactly.
 
 Three design decisions determine whether such a harness means anything:
