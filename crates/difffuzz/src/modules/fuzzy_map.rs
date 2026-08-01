@@ -71,8 +71,8 @@ enum Hash {
 impl Hash {
     fn named(name: &str) -> Self {
         match name {
-            "identity" => Self::Identity,
-            "lower" => Self::Lower,
+            "fuzzyIdentity" => Self::Identity,
+            "fuzzyLower" => Self::Lower,
             other => panic!("`{other}` is not a hash this grammar generates"),
         }
     }
