@@ -39,6 +39,9 @@ use difffuzz::modules::sort::SortSpec;
 // Appended, never interleaved (CLAUDE.md, Git).
 use difffuzz::modules::bloom_filter::BloomFilterSpec;
 use difffuzz::modules::suffix_array::{GeneralizedSuffixArraySpec, SuffixArraySpec};
+// Appended at the end of the import list; see `modules/mod.rs`.
+use difffuzz::modules::fixed_reverse_heap::FixedReverseHeapSpec;
+use difffuzz::modules::heap::HeapSpec;
 use difffuzz::{Campaign, Report};
 // Appended at the END of the import run, never inserted: this file is edited
 // from several worktrees at once (CLAUDE.md, Git).
@@ -53,7 +56,7 @@ usage: difffuzz --module <name> [--seed N] [--duration SECONDS] [--cases N] [--b
               bit-vector, stack, queue, default-map, fixed-stack,
               fixed-deque, circular-buffer, sort, set, suffix-array,
               generalized-suffix-array, bloom-filter, vector,
-              static-interval-tree
+              static-interval-tree, heap, fixed-reverse-heap
   --seed      campaign seed (default 42); with --cases, reproduces exactly
   --duration  wall-clock budget in seconds (default 60)
   --cases     stop after N cases instead of after --duration
@@ -234,6 +237,21 @@ fn main() -> ExitCode {
             &StaticIntervalTreeSpec,
             &Campaign {
                 regressions: difffuzz::modules::static_interval_tree::REGRESSIONS,
+                ..campaign
+            },
+        ),
+        // Appended at the END of the match, never between two existing arms.
+        "heap" => difffuzz::run(
+            &HeapSpec,
+            &Campaign {
+                regressions: difffuzz::modules::heap::REGRESSIONS,
+                ..campaign
+            },
+        ),
+        "fixed-reverse-heap" => difffuzz::run(
+            &FixedReverseHeapSpec,
+            &Campaign {
+                regressions: difffuzz::modules::fixed_reverse_heap::REGRESSIONS,
                 ..campaign
             },
         ),

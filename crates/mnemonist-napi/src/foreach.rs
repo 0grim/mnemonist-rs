@@ -377,6 +377,19 @@ fn is_strictly_true(env: &Env, value: &Unknown) -> Result<bool> {
     Ok(result)
 }
 
+/// `iterables.isArrayLike(target)` — `Array.isArray(t) || typed.isTypedArray(t)`.
+///
+/// Lives here rather than in a `utils/iterables` module of its own for the
+/// reason DESIGN.md 3.5 gives: it is a JavaScript-value question, asked only
+/// from `.from()`-shaped entry points, and `mnemonist-core` never hears it.
+///
+/// Note the asymmetry with branch 1 of the dispatch below: `isArrayLike` does
+/// **not** accept a string or an `arguments` object, so `Heap.nsmallest(3, 'abc')`
+/// goes down the `forEach` path while `forEach('abc', cb)` walks code units.
+pub fn is_array_like(env: &Env, value: &Unknown) -> Result<bool> {
+    Ok(is_array(env, value)? || is_array_buffer_view(env, value)?)
+}
+
 pub(crate) fn is_array(env: &Env, value: &Unknown) -> Result<bool> {
     let mut result = false;
 

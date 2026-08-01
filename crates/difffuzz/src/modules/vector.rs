@@ -55,7 +55,10 @@ const MAX_VALUE: f64 = 70_000.0;
 pub struct VectorSpec;
 
 /// Path proptest writes a minimised failing seed to.
-pub const REGRESSIONS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/proptest-regressions/vector.txt");
+pub const REGRESSIONS: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/proptest-regressions/vector.txt"
+);
 
 impl ModuleSpec for VectorSpec {
     type Instance = CoreVector;
@@ -129,7 +132,7 @@ impl ModuleSpec for VectorSpec {
                 Err(error) => thrown(&error),
             },
             "pop" => match instance.pop() {
-                Some(value) => json!(value),
+                Some(value) => number_json(value),
                 None => json!({"$undefined": true}),
             },
             // `set` returns `this` upstream, which the oracle encodes as
@@ -139,7 +142,7 @@ impl ModuleSpec for VectorSpec {
                 Err(error) => thrown(&error),
             },
             "get" => match instance.get(number(&op.args[0])) {
-                Some(value) => json!(value),
+                Some(value) => number_json(value),
                 None => json!({"$undefined": true}),
             },
             "grow" => match instance.grow(op.args.first().map(number)) {
@@ -182,6 +185,21 @@ fn thrown(error: &CoreError) -> Value {
     json!({ "$throw": error.to_string() })
 }
 
+/// Encode an `f64` exactly as `JSON.stringify` renders the same JS number:
+/// whole numbers within the safe-integer range print without a decimal
+/// point, so `Value::from(0.0_f64)`'s `"0.0"` would otherwise diverge
+/// against the oracle's `"0"` on every all-zero `Float64Array`. Same
+/// helper as `sort`/`default_map`/`bloom_filter`/`set` (CLAUDE.md: grep
+/// before inventing shared machinery -- duplicated here rather than
+/// factored out, matching the existing pattern in this crate).
+fn number_json(value: f64) -> Value {
+    if value.fract() == 0.0 && value.abs() < 9_007_199_254_740_992.0 {
+        return json!(value as i64);
+    }
+
+    json!(value)
+}
+
 /// Encode the backing store exactly as the oracle encodes a JS typed array:
 /// `{$typed: value.constructor.name, values: Array.from(value)}`.
 fn typed_array(storage: &Storage) -> Value {
@@ -200,7 +218,7 @@ fn typed_array(storage: &Storage) -> Value {
         }
         Storage::F64(values) => json!({
             "$typed": "Float64Array",
-            "values": values.clone(),
+            "values": values.iter().copied().map(number_json).collect::<Vec<Value>>(),
         }),
     }
 }

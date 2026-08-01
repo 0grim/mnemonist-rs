@@ -120,7 +120,7 @@ pub struct Handle {
 }
 
 impl Handle {
-    fn new(env: &Env, value: &Unknown) -> Result<Self> {
+    pub(crate) fn new(env: &Env, value: &Unknown) -> Result<Self> {
         let mut reference = ptr::null_mut();
 
         // SAFETY: `env` is live and `value` is a handle from it. The caller has
@@ -136,7 +136,7 @@ impl Handle {
         })
     }
 
-    fn value(&self, env: sys::napi_env) -> Result<sys::napi_value> {
+    pub(crate) fn value(&self, env: sys::napi_env) -> Result<sys::napi_value> {
         let mut value = ptr::null_mut();
 
         // SAFETY: `self.reference` is live until `Drop` releases it.

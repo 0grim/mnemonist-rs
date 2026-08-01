@@ -36,3 +36,9 @@ pub mod suffix_array;
 // hunk (CLAUDE.md, Git).
 pub mod static_interval_tree;
 pub mod vector;
+
+// Appended at the end of the list rather than in alphabetical position: this
+// file is shared, and a conflict boundary landing mid-list has broken three
+// merges already.
+pub mod fixed_reverse_heap;
+pub mod heap;

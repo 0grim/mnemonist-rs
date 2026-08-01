@@ -32,6 +32,11 @@ use difffuzz::modules::suffix_array::{
     GeneralizedSuffixArraySpec, SuffixArraySpec, GENERALIZED_REGRESSIONS,
     REGRESSIONS as SUFFIX_ARRAY_REGRESSIONS,
 };
+// Appended at the end of the import list; see `modules/mod.rs`.
+use difffuzz::modules::fixed_reverse_heap::{
+    FixedReverseHeapSpec, REGRESSIONS as FIXED_REVERSE_HEAP_REGRESSIONS,
+};
+use difffuzz::modules::heap::{HeapSpec, REGRESSIONS as HEAP_REGRESSIONS};
 use difffuzz::Campaign;
 // Appended at the end of the import run, never inserted.
 use difffuzz::modules::circular_buffer::{
@@ -406,6 +411,32 @@ fn fixed_deque_matches_upstream() {
     }
 }
 
+// Appended at the END of the file, never between two existing tests.
+
+/// `heap` — the first module whose comparator is a callback.
+///
+/// Six comparator factories, four of which mutate or throw from inside a sift.
+/// The budgets they count in *comparisons* make this sharper than a black-box
+/// grammar: a sift that reaches the right ordering by a different number of
+/// comparisons diverges here.
+#[test]
+fn heap_matches_upstream() {
+    let campaign = Campaign::cases(0x11EA9, 96, HEAP_REGRESSIONS);
+
+    let report = difffuzz::run(&HeapSpec, &campaign)
+        .expect("oracle must be reachable; `node` is required for differential tests");
+
+    assert!(
+        report.ops > 0,
+        "campaign ran no operations, so it proved nothing: {}",
+        report.log_line()
+    );
+
+    if let Some(divergence) = report.divergence {
+        panic!("{divergence}");
+    }
+}
+
 /// The generalized variant, which is where `longestCommonSubsequence` -- the
 /// only method in this unit with branching logic outside the constructor --
 /// gets exercised.
@@ -550,6 +581,27 @@ fn static_interval_tree_matches_upstream() {
     let campaign = Campaign::cases(0x517, 96, STATIC_INTERVAL_TREE_REGRESSIONS);
 
     let report = difffuzz::run(&StaticIntervalTreeSpec, &campaign)
+        .expect("oracle must be reachable; `node` is required for differential tests");
+
+    assert!(
+        report.ops > 0,
+        "campaign ran no operations, so it proved nothing: {}",
+        report.log_line()
+    );
+
+    if let Some(divergence) = report.divergence {
+        panic!("{divergence}");
+    }
+}
+
+/// `fixed-reverse-heap` — the same comparators through a different pair of
+/// algorithms, plus a generated capacity that includes the `0` upstream's dead
+/// guard lets through.
+#[test]
+fn fixed_reverse_heap_matches_upstream() {
+    let campaign = Campaign::cases(0xF12ED, 96, FIXED_REVERSE_HEAP_REGRESSIONS);
+
+    let report = difffuzz::run(&FixedReverseHeapSpec, &campaign)
         .expect("oracle must be reachable; `node` is required for differential tests");
 
     assert!(

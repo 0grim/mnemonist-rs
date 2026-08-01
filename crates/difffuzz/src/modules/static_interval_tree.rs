@@ -128,7 +128,7 @@ impl ModuleSpec for StaticIntervalTreeSpec {
                 let point = op.args[0].as_f64().expect("a generated point is a number");
 
                 match instance.intervals_containing_point(point) {
-                    Ok(matches) => json!(matches),
+                    Ok(matches) => intervals_json(&matches),
                     Err(error) => thrown(&error),
                 }
             }
@@ -140,7 +140,7 @@ impl ModuleSpec for StaticIntervalTreeSpec {
                 let end = pair[1].as_f64().expect("end is a JSON number");
 
                 match instance.intervals_overlapping_interval(start, end) {
-                    Ok(matches) => json!(matches),
+                    Ok(matches) => intervals_json(&matches),
                     Err(error) => thrown(&error),
                 }
             }
@@ -163,6 +163,30 @@ impl ModuleSpec for StaticIntervalTreeSpec {
 /// docs); kept for symmetry with every other module's `apply`.
 fn thrown(error: &CoreError) -> Value {
     json!({ "$throw": error.to_string() })
+}
+
+/// Encode the matched `[start, end]` pairs exactly as `JSON.stringify` would
+/// render the same JS numbers: every generated bound in this grammar is a
+/// whole number carried in an `f64`, and `json!(f64)`'s default encoding
+/// prints `118.0` where the oracle's `Array.from`/`JSON.stringify` prints
+/// `118` -- a false divergence, not a real one. Same fix as `vector`'s
+/// `number_json` (CLAUDE.md: grep before inventing shared machinery;
+/// duplicated per-module here to match the existing pattern in this crate).
+fn intervals_json(matches: &[(f64, f64)]) -> Value {
+    Value::Array(
+        matches
+            .iter()
+            .map(|(start, end)| json!([number_json(*start), number_json(*end)]))
+            .collect(),
+    )
+}
+
+fn number_json(value: f64) -> Value {
+    if value.fract() == 0.0 && value.abs() < 9_007_199_254_740_992.0 {
+        return json!(value as i64);
+    }
+
+    json!(value)
 }
 
 /// Encode a `PointerVec` exactly as the oracle encodes a JS typed array:
