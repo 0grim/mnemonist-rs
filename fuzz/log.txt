@@ -564,3 +564,67 @@
 #        s.values().next()`.
 #   Seed A is committed with provenance in
 #   crates/difffuzz/proptest-regressions/fixed-stack.txt.
+2026-08-01T09:45:58Z  module=fixed-deque seed=42 cases=16921 ops=1730822 wall=90.0s divergences=0
+2026-08-01T09:47:04Z  module=fixed-deque seed=20260801 cases=11127 ops=1149893 wall=60.0s divergences=0
+2026-08-01T09:48:35Z  module=circular-buffer seed=42 cases=18564 ops=1899965 wall=90.0s divergences=0
+2026-08-01T09:49:35Z  module=circular-buffer seed=20260801 cases=11652 ops=1203311 wall=60.0s divergences=0
+#
+# fixed-deque
+#   ops          push(v) [weight 5] · unshift(v) [3] · pop() [2] · shift() [2]
+#                peekFirst() [1] · peekLast() [1] · get(i) [2] · clear() [1]
+#                $iter("values") [2] · $next() [4] · $spread() [1]
+#                $forEach(mutation|null, at) [3]
+#   observed     size · capacity · START · items · toArray()
+#                after EVERY op, on both sides. `start` is in the set because
+#                the upstream test file asserts on it directly and because it
+#                is the one number a wrong wrap moves first.
+#   ctor         both backing classes, capacities 1..=8, values 0..320
+#   get indices  0..=11 against capacities of 1..=8, so BOTH clauses of B-62's
+#                guard are hit constantly: past the size (returns debris) and
+#                past the capacity (the one guard that fires)
+#   program len  1..200 ops
+#   EXCLUDED     `from` in all its forms -- a static cannot appear in an op
+#                sequence; covered by test/fixed-deque.js and by 23
+#                differential probes recorded in docs/modules/fixed-deque.md.
+#                forEach's `scope` (D-61, a documented divergence).
+#                A NEGATIVE `get` index: the fuzzer drives mnemonist-core,
+#                whose `get` takes a usize, and the negative path -- where
+#                upstream's guard has no lower bound and `get(-1)` returns a
+#                shifted-out element -- is the bridge's. Four differential
+#                probes cover it instead. This exclusion is the reason those
+#                probes are written up rather than left as scratch work.
+#
+#   FALSIFIED before being trusted (D-32), reverted:
+#     `FixedDeque::get`'s guard changed from `index >= capacity` to
+#     `index >= size` -- the "obvious correction" of B-62. Caught in 823 cases
+#     / 1.2s, shrunk to five lines. Seed committed with provenance in
+#     crates/difffuzz/proptest-regressions/fixed-deque.txt.
+#
+# circular-buffer
+#   ops          same alphabet as fixed-deque
+#   observed     size · capacity · start · items · toArray()
+#   ctor         both backing classes, capacities 1..=8, values 0..320
+#   program len  1..200 ops
+#   EXCLUDED     the same three as fixed-deque, for the same reasons.
+#
+#   The contrast with the deque's grammar is the point: NEITHER INSERT CAN
+#   THROW here, so a generated program never stops growing and spends almost
+#   all of its length PAST the capacity, where every insert overwrites and
+#   `start` walks. At capacity 1..=8 over 200 ops a program wraps the ring tens
+#   of times, where the deque's programs stall at the ceiling. It also makes
+#   routine a case that is unreachable elsewhere in the wave: an insert that
+#   overwrites a slot an open cursor has not yet reached, so $next yields a
+#   value that was not in the buffer when the walk started (D-08).
+#
+#   The return value of every insert is compared like any other result, which
+#   is what pins the one thing upstream never asserts: an overwriting insert
+#   returns the size UNCHANGED, and that is the only externally visible signal
+#   that an element was dropped.
+#
+#   FALSIFIED before being trusted (D-32), reverted:
+#     `CircularBuffer::push` made to return `size + 1` when it overwrites --
+#     reading upstream's `return this.size` as `return ++this.size`, which is
+#     what the branch two lines below actually does. Caught in 497 cases /
+#     0.4s, shrunk to three lines. Note what that sabotage WOULD have
+#     survived: the entire original suite, which never asserts an overwriting
+#     insert's return value. Seed committed with provenance.

@@ -880,3 +880,53 @@ to "correct" it to `self.size`. Measured: with that sabotage in place, `test/fix
 the cleanest available demonstration of why gate 6 insists the sabotage be chosen by naming the
 assertion it must break: the sabotage that matters most here is precisely the one no assertion
 covers.
+
+### B-62 — `FixedDeque.prototype.get` is bounded by the CAPACITY, and has no lower bound
+
+`status: verified against Node 24.18.1` · `mnemonist fixed-deque.js`, and therefore
+`circular-buffer.js`
+
+```js
+FixedDeque.prototype.get = function (index) {
+  if (this.size === 0 || index >= this.capacity) return;
+  index = this.start + index;
+  if (index >= this.capacity) index -= this.capacity;
+  return this.items[index];
+};
+```
+
+Every other reader in the file guards on `this.size`. `get` guards on the capacity, and on nothing
+at the bottom end. Two consequences, both measured:
+
+```js
+var d = new FixedDeque(Array, 3); d.push(1); d.push(2); d.pop();
+d.size;    // 1
+d.get(1);  // 2      <- popped, still returned
+d.get(3);  // undefined -- 3 >= capacity, the one guard that fires
+
+var e = new FixedDeque(Array, 4);
+[1,2,3,4].forEach(function (v) { e.push(v); });
+e.shift(); e.shift();     // start === 2, holding [3, 4]
+e.get(-1);  // 2          <- shifted out, still returned
+e.get(-2);  // 1
+```
+
+`CircularBuffer` gets it **literally**: `circular-buffer.js` builds its prototype with
+`Object.keys(FixedDeque.prototype).forEach(paste)`, so the two classes share the same function
+object. One bug, two classes.
+
+**Why the suite cannot see it.** All four `get` calls in `test/fixed-deque.js` — and all four in
+`test/circular-buffer.js` — are on a *full* capacity-3 deque with `start === 0`, which is the single
+shape in which "bounded by the capacity" and "bounded by the size" are the same statement.
+
+There is a third form that the port deliberately does **not** reproduce (D-65): a non-numeric index
+reaches string concatenation, so `this.start + "1"` is `"21"` and the next comparison coerces it
+back to a number. On a deque with capacity > 21, `get("1")` can therefore return the element at
+physical slot 21.
+
+**Also worth filing alongside B-60: `CircularBuffer.from` bypasses the overwriting this class exists
+for.** The `from` static is the same fourteen lines in all three modules, so its array-like branch
+copies by index and assigns `size` rather than pushing — leaving `size > capacity` on the one class
+whose entire purpose is to prevent that. `CircularBuffer.from([1,2,3], Array, 2)` gives `size 3`,
+`items [1,2,3]` and `toArray() [1, 2, 1]`. Verified on Node 24.18.1. Kept under B-60's umbrella
+rather than given its own ID: the shared `from` is one piece of code with two problems.

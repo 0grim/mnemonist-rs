@@ -770,3 +770,18 @@ after `guessLength`, after the capacity guards, after `isArrayLike` says no.
 **Rationale:** the core porting rule. A port that quietly made the branch work would pass every
 upstream test and be a different library.
 **Verify:** differential probes for `Set` and for a string, all three classes.
+
+### D-65 — `#.get` with a non-numeric index returns `undefined`
+**Status:** CONFIRMED · **Category:** behavioural · **Divergence:** YES, narrow
+**Upstream:** `FixedDeque.prototype.get` (and, pasted, `CircularBuffer.prototype.get`) does
+`index = this.start + index` with no type check. For a string that is **concatenation**:
+`2 + "1"` is `"21"`, which the following `>=` coerces back to a number, and `this.items["21"]` is a
+real element on any deque with capacity > 21.
+**Port:** the type check refuses at the boundary and returns `undefined`.
+**What is NOT lost:** everything *numeric* is reproduced exactly, including the two forms of B-62
+that matter — a negative index (`get(-1)` returning a shifted-out element) and an index between the
+size and the capacity (returning debris) — as well as fractional, `NaN` and infinite indices.
+**Rationale:** reproducing string concatenation inside an index computation would mean carrying a
+JS value through arithmetic that has a well-defined numeric meaning everywhere else. The case is
+unreachable from any upstream test and from any sane caller; the divergence is stated instead.
+**Verify:** four differential probes per class in `docs/modules/fixed-deque.md`.

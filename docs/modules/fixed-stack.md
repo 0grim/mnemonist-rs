@@ -2,7 +2,7 @@
 
 Upstream: `fixed-stack.js` (242 LOC) + `utils/iterables.js` (93 LOC, `guessLength` and
 `isArrayLike` reachable) + `obliterator/iterator` · `test/fixed-stack.js` — **157 lines, 12 `it`
-blocks, 32 assertion statements**.
+blocks, 33 assertion statements**.
 
 Port: `crates/mnemonist-core/src/structures/fixed_stack.rs`,
 `crates/mnemonist-core/src/structures/backing.rs`, `crates/mnemonist-core/src/cursor/mod.rs`.

@@ -1,0 +1,25 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+#
+# PROVENANCE
+# ----------
+# The seed below came from a DELIBERATE SABOTAGE, run to falsify this module's
+# grammar before trusting it. It is not a defect the fuzzer found in real code;
+# the port has never diverged here.
+#
+#   `CircularBuffer::push` made to return `size + 1` when it overwrites --
+#   reading upstream's `return this.size` as `return ++this.size`, which is
+#   what the non-overwriting branch two lines below actually does. The return
+#   value of an overwriting insert is the ONLY externally visible signal that
+#   an element was dropped, and nothing upstream asserts it. Caught in 497
+#   cases (0.4s), shrunk to three lines:
+#
+#       var s = new CircularBuffer(Array, 1);
+#       s.push(0); s.push(0);   // port 2, upstream 1
+#
+# Reverted; the campaign is clean on the reverted tree.
+cc 44472e872ae14f2a5adb5b1f1cc13a11f2b29bd2edf824cd5a66c05893bd2420 # shrinks to Program { ctor: [Object {"$global": String("Array")}, Number(1)], ops: [Op { name: "push", args: [Number(0)] }, Op { name: "push", args: [Number(0)] }] }

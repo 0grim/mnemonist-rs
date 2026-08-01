@@ -23,6 +23,10 @@ use difffuzz::modules::sparse_set::{SparseSetSpec, REGRESSIONS as SPARSE_REGRESS
 use difffuzz::modules::static_disjoint_set::{StaticDisjointSetSpec, REGRESSIONS};
 use difffuzz::Campaign;
 // Appended at the end of the import run, never inserted.
+use difffuzz::modules::circular_buffer::{
+    CircularBufferSpec, REGRESSIONS as CIRCULAR_BUFFER_REGRESSIONS,
+};
+use difffuzz::modules::fixed_deque::{FixedDequeSpec, REGRESSIONS as FIXED_DEQUE_REGRESSIONS};
 use difffuzz::modules::fixed_stack::{FixedStackSpec, REGRESSIONS as FIXED_STACK_REGRESSIONS};
 
 #[test]
@@ -320,7 +324,11 @@ fn fixed_stack_matches_upstream() {
 fn wave_one_regression_corpora_explain_where_their_seeds_came_from() {
     // A slice rather than an array literal: the list grows as this wave lands
     // its remaining modules, and a one-element array is a clippy lint.
-    const CORPORA: &[&str] = &[FIXED_STACK_REGRESSIONS];
+    const CORPORA: &[&str] = &[
+        FIXED_STACK_REGRESSIONS,
+        FIXED_DEQUE_REGRESSIONS,
+        CIRCULAR_BUFFER_REGRESSIONS,
+    ];
 
     for corpus in CORPORA {
         let text = std::fs::read_to_string(corpus)
@@ -334,5 +342,41 @@ fn wave_one_regression_corpora_explain_where_their_seeds_came_from() {
             "{corpus} holds {seeds} seed(s) with no provenance block, so a reader \
              cannot tell a sabotage from a real defect"
         );
+    }
+}
+
+#[test]
+fn fixed_deque_matches_upstream() {
+    let campaign = Campaign::cases(0xF1DE, 96, FIXED_DEQUE_REGRESSIONS);
+
+    let report = difffuzz::run(&FixedDequeSpec, &campaign)
+        .expect("oracle must be reachable; `node` is required for differential tests");
+
+    assert!(
+        report.ops > 0,
+        "campaign ran no operations, so it proved nothing: {}",
+        report.log_line()
+    );
+
+    if let Some(divergence) = report.divergence {
+        panic!("{divergence}");
+    }
+}
+
+#[test]
+fn circular_buffer_matches_upstream() {
+    let campaign = Campaign::cases(0xC18F, 96, CIRCULAR_BUFFER_REGRESSIONS);
+
+    let report = difffuzz::run(&CircularBufferSpec, &campaign)
+        .expect("oracle must be reachable; `node` is required for differential tests");
+
+    assert!(
+        report.ops > 0,
+        "campaign ran no operations, so it proved nothing: {}",
+        report.log_line()
+    );
+
+    if let Some(divergence) = report.divergence {
+        panic!("{divergence}");
     }
 }

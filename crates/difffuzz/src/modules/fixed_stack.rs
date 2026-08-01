@@ -264,7 +264,7 @@ fn for_each(instance: &mut Instance, op: &Op) -> Value {
 
 /// Whether a missing slot was left as a hole or written as `undefined`.
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum Hole {
+pub(crate) enum Hole {
     /// A `new Array(n)` slot nothing assigned. `map` skips it; JSON says
     /// `null`.
     Skipped,
@@ -274,7 +274,7 @@ enum Hole {
 
 /// One array of slots, encoded exactly as `fuzz/oracle.js` encodes the JS value
 /// it corresponds to.
-fn slots(typed: bool, slots: &[Option<Value>], hole: Hole) -> Value {
+pub(crate) fn slots(typed: bool, slots: &[Option<Value>], hole: Hole) -> Value {
     if typed {
         // Zero filled, so a missing slot can only be a read past the end, which
         // a fresh typed array renders as its zero.
@@ -303,7 +303,7 @@ fn slots(typed: bool, slots: &[Option<Value>], hole: Hole) -> Value {
 /// The element store a `Uint8Array` performs and a plain `Array` does not.
 ///
 /// Modelled here rather than in core deliberately; see the module docs.
-fn store(typed: bool, value: &Value) -> Value {
+pub(crate) fn store(typed: bool, value: &Value) -> Value {
     let raw = value
         .as_u64()
         .expect("generated values are non-negative integers");
@@ -316,12 +316,12 @@ fn store(typed: bool, value: &Value) -> Value {
 }
 
 /// `undefined` is a value JSON has no word for; the oracle spells it this way.
-fn optional(value: Option<Value>) -> Value {
+pub(crate) fn optional(value: Option<Value>) -> Value {
     value.unwrap_or_else(|| json!({"$undefined": true}))
 }
 
 /// A step, in the shape `fuzz/oracle.js` normalises both sides to.
-fn step_value(step: Step<Value>) -> Value {
+pub(crate) fn step_value(step: Step<Value>) -> Value {
     match step {
         Step::Item(item) => json!({"done": false, "value": item}),
         Step::Gap => json!({"done": false, "value": {"$undefined": true}}),
