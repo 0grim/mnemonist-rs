@@ -187,9 +187,24 @@ function handle(request) {
 
     case 'op': {
       if (instance === null) throw new Error('op before init');
-      const result = request.name.charAt(0) === '$'
-        ? cursorOp(request)
-        : encode(instance[request.name](...request.args));
+
+      if (request.name.charAt(0) === '$')
+        return {ok: true, result: cursorOp(request), state: observe()};
+
+      let result;
+
+      // An exception thrown BY AN OPERATION is a comparable result, not
+      // apparatus failure. Reporting it as {ok:false} would reach the Rust
+      // side as OracleError and ABORT the campaign, when "upstream threw and
+      // the port did not" is precisely the divergence worth catching. See the
+      // "Trap for the next module" note on spec::CheckFailure, written before
+      // there was a module that throws; hashed-array-tree is that module.
+      try {
+        result = encode(instance[request.name](...request.args));
+      } catch (error) {
+        result = {$throw: String(error && error.message ? error.message : error)};
+      }
+
       return {ok: true, result: result, state: observe()};
     }
 

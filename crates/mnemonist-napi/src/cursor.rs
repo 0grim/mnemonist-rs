@@ -44,6 +44,7 @@
 //! on its own.
 
 use mnemonist_core::cursor::{CursorState, Sequence, Step};
+use mnemonist_core::structures::bits::BitWalk;
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 
@@ -111,6 +112,43 @@ pub fn yielded<T>(step: Step<T>) -> Option<Either<T, Undefined>> {
     }
 }
 
+/// A cursor over a bit store, which needs no handle to its parent.
+///
+/// The contrast with [`BridgeCursor`] is the point. `SparseSet.prototype.values`
+/// captures only `this.size` and then reads `this.dense` on every step, so its
+/// cursor must reach the live parent. `BitSet.prototype.values` captures the
+/// `length`, the array **object** and its length, and never touches `this`
+/// again — so the core [`BitWalk`] already owns everything it reads, and this
+/// is a plain wrapper. It is also why a `clear()` is invisible to an open
+/// cursor: the array it holds is the pre-clear one.
+pub struct BridgeBitCursor {
+    walk: BitWalk,
+}
+
+impl BridgeBitCursor {
+    pub fn new(walk: BitWalk) -> Self {
+        Self { walk }
+    }
+
+    /// One bit, or `None` for `{done: true}`.
+    ///
+    /// No `Either<_, Undefined>` here, unlike `SparseSet`: [`Step::Gap`] is
+    /// unreachable over a frozen array that the cursor itself keeps alive, so
+    /// the two-state `Option` really is the whole domain. See the `BitWalk`
+    /// docs for why.
+    pub fn next_bit(&mut self) -> Option<u32> {
+        self.walk.step().item()
+    }
+
+    /// One `[index, bit]` pair, as a two-element JS array.
+    pub fn next_entry(&mut self) -> Option<Vec<u32>> {
+        self.walk
+            .step_entry()
+            .item()
+            .map(|(index, bit)| vec![index as u32, bit])
+    }
+}
+
 /// Collection classes whose `Symbol.iterator` must be their cursor factory.
 ///
 /// One row per upstream `X.prototype[Symbol.iterator] = X.prototype.values`.
@@ -123,6 +161,8 @@ const ITERATOR_FACTORIES: &[(&str, &str)] = &[
     // yielding bare values and every `deepStrictEqual` against pairs failing.
     ("SparseMap", "entries"),
     ("SparseQueueSet", "values"),
+    ("BitSet", "values"),
+    ("BitVector", "values"),
 ];
 
 /// Wire every collection's `Symbol.iterator` to its cursor factory.

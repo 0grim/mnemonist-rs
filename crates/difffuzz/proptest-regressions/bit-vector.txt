@@ -1,0 +1,31 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+#
+# PROVENANCE OF THE ENTRY BELOW -- it did NOT record a port defect. It was
+# produced by a deliberate falsification of the fuzzer (D-32): a fuzzer that
+# has never been seen to fail is just a second green light. The sabotage was
+# reverted; the seed is replayed before any novel case on every run.
+#
+# The sabotage: `pop` made to clear the bit it returns and to decrement `size`,
+# which is what pop is supposed to do and what upstream's does not. Chosen
+# because it is the single most plausible "obvious" repair to this module --
+# upstream's pop moves `length` and nothing else, so the stale bit and the
+# stale counter both survive.
+#
+# Caught in 1,075 cases (1.0s) and shrunk from 200 ops to TWO:
+#
+#     var s = new BitVector(0);
+#     s.push(1);
+#     s.pop();
+#     // port     array [0], size 0, toJSON [0]
+#     // upstream array [1], size 1, toJSON [1]
+#
+# Two operations, three of the five observed fields disagreeing. Upstream's own
+# pop test performs this exact pair and then asserts only the returned value
+# and `length`, which is why the defect survives there.
+#
+cc b01b2019098a9efd0bc0a7df4322bb57530b780663671681f48cf4ee4856ebcb # shrinks to Program { ctor: [Number(0)], ops: [Op { name: "push", args: [Number(1)] }, Op { name: "pop", args: [] }] }

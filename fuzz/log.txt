@@ -192,6 +192,85 @@
 #
 #   The B-12 sentinel needs no special op to observe: `sparse` is in the
 #   observed state, so every dequeue compares the value written into it.
+# hashed-array-tree
+#   ops          push(v) [5] . pop() [3] . set(i, v) [3] . get(i) [3]
+#                grow(c) [1] . grow() [1] . resize(l) [2]
+#   observed     length . capacity . blockSize . offsetMask . blockMask . blocks
+#                after EVERY op, on both sides. `blocks` is every block, slot
+#                for slot -- which is what makes the truncating stores, the
+#                set(length) write and "a shrinking resize deallocates nothing"
+#                checkable directly rather than only through their effect on
+#                get().
+#   ctors        Uint8Array/Uint16Array/Uint32Array x blockSize {1,2,4,8}
+#                x initialLength 0..24 x initialCapacity 0..24
+#   indices      0..64 against lengths that rarely exceed 30
+#   values       0..320, above 255 so a Uint8Array tree truncates
+#   program len  1..200 ops
+#   EXCLUDED     non-integer arguments, and blockSize outside {1,2,4,8}.
+#                Nothing else -- out-of-bounds indices are generated freely.
+#
+#   Block sizes are TINY on purpose. Upstream's own test uses the 1024-element
+#   default and never leaves its first block, which is precisely why its pop
+#   bug (B-11) survives there. At blockSize 2 a 200-op program is almost
+#   entirely cross-block.
+#
+#   NOTE: this is the first module whose operations legitimately THROW, which
+#   is the case spec::CheckFailure's "Trap for the next module" note
+#   anticipated. fuzz/oracle.js now catches an exception thrown BY AN OPERATION
+#   and reports {"$throw": "<message>"}, compared like any other result --
+#   by its FULL TEXT, which ties these campaigns to Node 24.18.1 for the
+#   V8-worded TypeError. Previously such a throw arrived as OracleError and
+#   would have aborted the campaign instead of being reported.
+#
+# bit-set
+#   ops          set(i) [4] . set(i, 0) [2] . reset(i) [3] . flip(i) [2]
+#                get(i) [2] . test(i) [1] . rank(i) [2] . select(r) [2]
+#                clear() [1] . $iter("values") [1] . $iter("entries") [1]
+#                $next() [3] . $spread() [1]
+#   observed     size . length . array . toJSON()
+#                after EVERY op. `array` is the point: `size` alone would agree
+#                in plenty of programs where the words had already diverged.
+#   ctor lengths 0..=400 -- thirteen words. 0 included because new BitSet(0)
+#                allocates nothing at all; 400 is sparse enough that empty
+#                words between set bits are routine, which is what B-14 needs.
+#   indices      0..length+64, so a steady fraction land in B-19's band (past
+#                `length` but inside the last allocated word) and beyond it
+#   program len  1..200 ops
+#   EXCLUDED     NOTHING.
+#
+#   `reset` is weighted UP rather than down. B-13 only misfires on a bit that
+#   is ALREADY clear, so a low weight would make the interesting case rare
+#   rather than routine.
+#
+#   $iter alternates values/entries: they share an implementation in this port
+#   and are separate closures upstream, so fuzzing one would leave the other
+#   unchecked. clear() is in the alphabet BECAUSE it interacts with an open
+#   cursor -- it replaces this.array, and a cursor opened beforehand must keep
+#   reading the pre-clear words.
+#
+# bit-vector
+#   ops          set(i) [3] . set(i, 0) [2] . reset(i) [3] . flip(i) [2]
+#                get(i) [2] . test(i) [1] . rank(i) [2] . select(r) [2]
+#                push(1) [3] . push(0) [3] . pop() [3]
+#                resize(l) [2] . reallocate(c) [2] . grow(c) [1] . grow() [1]
+#                $iter("values") [1] . $iter("entries") [1] . $next() [3]
+#                $spread() [1]
+#   observed     size . length . capacity . array . toJSON()   after EVERY op
+#   ctor lengths 0..=200 . indices 0..length+64 . extents 0..512
+#   program len  1..200 ops
+#   EXCLUDED     CUSTOM GROWTH POLICIES.
+#
+#   Upstream's policy is a JS function and a generated program is JSON, so the
+#   default policy is the only one fuzzed. Because the default is strictly
+#   increasing, BOTH THROWS IN applyPolicy ARE UNREACHABLE from this grammar.
+#   They are covered by native tests in mnemonist-core instead
+#   (a_policy_can_fail_three_ways, a_non_integer_policy_result_is_rounded_up).
+#   Recorded here rather than left implicit: a silently narrowed grammar reads
+#   as "we covered everything" when it did not.
+#
+#   push(1) and push(0) are separate ops because only the former touches `size`
+#   and only the latter leaves a stale bit, and B-17 needs both interleaved
+#   with pop(). `set` is the only op here that throws.
 #
 # ---------------------------------------------------------------------------
 # THE FUZZER WAS FALSIFIED BEFORE IT WAS TRUSTED.
@@ -269,6 +348,40 @@
 #      Nothing else differs -- not size, not the members, not either backing
 #      array -- so this seed is simultaneously the justification for observing
 #      `start` and the proof that the ctor strategy really generates capacity 0.
+# hashed-array-tree was falsified twice, one sabotage per defect, both
+# reverted and both seeds committed with provenance:
+#
+#   A. pop() reading the block that actually holds the popped index -- the
+#      obvious cleanup. Caught in 1,228 cases (1.8s), shrunk to five ops:
+#          new HashedArrayTree(Uint8Array, {blockSize: 1});
+#          resize(2); pop(); pop(); push(1); pop();
+#          port 1   upstream 0
+#   B. set()'s `length < index` guard tightened to `<=`. Caught in 2,165 cases
+#      (5.2s). The port threw where upstream returned `this`, which is the
+#      divergence the new $throw encoding exists to be able to report at all.
+#
+# bit-set was falsified with B-13 FIXED -- `reset` given the `>>> 0` that
+# upstream forgot, which is the single most plausible thing a future cleanup
+# does to that file. Caught in 1,325 cases (2.0s), shrunk to TWO ops:
+#     var s = new BitSet(1); s.set(31); s.reset(0);
+#     port size 1   upstream size 0
+# Note what the two-op program shows: B-19 and B-13 COMPOUND. set(31) is only
+# possible because an index past `length` but inside the last word is accepted,
+# and it is what puts bit 31 into the word, which is the precondition for
+# reset's signed comparison to misfire.
+#
+# bit-vector was falsified with pop() made to clear its bit and decrement
+# `size` -- what pop is supposed to do, and what upstream's does not. Caught in
+# 1,075 cases (1.0s), shrunk to TWO ops:
+#     var s = new BitVector(0); s.push(1); s.pop();
+#     port array [0] size 0   upstream array [1] size 1
+# Upstream's own pop test performs that exact pair and asserts only the
+# returned value and `length`.
+#
+# Every one of these five sabotages makes the port strictly MORE CORRECT than
+# upstream. That is the only direction differential fuzzing works in on a
+# bug-for-bug port (D-33), and these three modules supply five independent
+# demonstrations of it.
 #
 # ---------------------------------------------------------------------------
 # Throughput: ~23,600 op/s including a full mapping()+compile() comparison
@@ -287,3 +400,30 @@
 2026-08-01T01:38:17Z  module=sparse-map seed=20260801 cases=8330 ops=860398 wall=60.0s divergences=0
 2026-08-01T01:51:39Z  module=sparse-queue-set seed=42 cases=21564 ops=2254268 wall=120.0s divergences=0
 2026-08-01T01:52:39Z  module=sparse-queue-set seed=20260801 cases=10535 ops=1103405 wall=60.0s divergences=0
+2026-08-01T01:42:40Z  module=hashed-array-tree seed=42 cases=14429 ops=1429629 wall=120.0s divergences=0
+2026-08-01T01:46:00Z  module=hashed-array-tree seed=20260801 cases=7319 ops=723058 wall=60.0s divergences=0
+2026-08-01T02:11:12Z  module=bit-set seed=42 cases=26373 ops=2625894 wall=120.0s divergences=0
+2026-08-01T02:12:38Z  module=bit-set seed=20260801 cases=12871 ops=1293656 wall=60.0s divergences=0
+2026-08-01T02:14:38Z  module=bit-vector seed=42 cases=21852 ops=2250634 wall=120.0s divergences=0
+# DUPLICATE RUNS, 2026-08-01 -- the two bit-vector campaigns below were
+# launched TWICE by mistake, concurrently with each other. Both pairs are
+# genuine clean campaigns, but a pair shares a seed and therefore largely the
+# same generated programs, so summing them would overstate coverage. One of
+# each pair is commented out; the surviving line is the earlier one, chosen
+# arbitrarily.
+#
+# Worth keeping the withdrawn numbers visible, because the pairs are an
+# accidental measurement of exactly the contention effect that has gate 10
+# deferred in this batch. Same seed, same wall budget, same machine, runs
+# overlapping in time:
+#
+#     seed 42       120s   21852 cases   vs   20657 cases    (-5.5%)
+#     seed 20260801  60s    9617 cases   vs   10603 cases   (+10.3%)
+#
+# A wall-clock-bounded campaign is not reproducible in case count; only
+# --cases is. That is why every line here is reproducible with --cases rather
+# than --duration, and it is a small live demonstration of why a benchmark
+# taken while three agents share a machine is worthless (NOTES.md, H+5).
+#2026-08-01T02:15:23Z  module=bit-vector seed=42 cases=20657 ops=2125754 wall=120.0s divergences=0
+2026-08-01T02:15:38Z  module=bit-vector seed=20260801 cases=9617 ops=981385 wall=60.0s divergences=0
+#2026-08-01T02:16:23Z  module=bit-vector seed=20260801 cases=10603 ops=1081279 wall=60.0s divergences=0

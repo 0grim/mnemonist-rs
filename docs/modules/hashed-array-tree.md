@@ -1,0 +1,263 @@
+# hashed-array-tree
+
+Upstream: `hashed-array-tree.js` (209 LOC) + `utils/typed-arrays.js` (only the width selection is
+reachable) · `test/hashed-array-tree.js` — **114 lines, 10 `it` blocks, 24 assertion statements**.
+
+Port: `crates/mnemonist-core/src/structures/hashed_array_tree.rs`.
+Bridge: `crates/mnemonist-napi/src/hashed_array_tree.rs`.
+Shim: `tests/bridge/hashed-array-tree.js`.
+
+Chosen first in Wave 1 because it needs **no new primitive** — `PointerVec` and nothing else — so it
+tests the pipeline rather than the machinery. It turned out to be the module with the most
+upstream defects per line so far: two, both structural, both invisible to a test file that never
+leaves the first block.
+
+---
+
+## What upstream tests
+
+Ten `it` blocks. Characterising the shape rather than restating them:
+
+* **The default block size, or a tiny one used only for capacity arithmetic.** `blockSize: 128` and
+  `blockSize: 2` appear, but the `2` case only ever calls `grow`, and the `128` case only reads
+  index 34 — inside the first block. **No assertion in the file ever reads or pops an element that
+  lives outside block 0.**
+* **Two array classes, `Uint8Array` and `Uint32Array`**, and no value above 250, so nothing
+  truncates.
+* **The two throws are matched loosely**: `/hashed-array/` and `/power of two/` and `/bounds/`.
+* `pop` is exercised on a tree that holds at most two elements in one 1024-element block.
+* The out-of-bounds read is checked at index `2` on a tree of length `0`.
+
+## What upstream does NOT test
+
+**The block indexing itself — which is the entire point of the structure**
+
+1. **No element outside block 0 is ever read back.** `array.get(34)` after 250 pushes into
+   128-element blocks is the only read, and 34 is in the first block. So the `index >> blockMask` /
+   `index & offsetMask` split is never checked against an index that needs it.
+2. **`pop` never crosses a block boundary**, which is why defect B-11 below survives.
+3. **`blockMask` and `offsetMask` are never asserted**, only `capacity`.
+4. **A `blockSize` of 1** — every element its own block — is never constructed.
+
+**The off-by-one in both bounds guards**
+
+5. **`get(length)` is never called.** The guard is `this.length < index`, not `<=`, so
+   `index === length` is admitted. Upstream's own "should return undefined on out-of-bound values"
+   test would have caught this had it asked for index `0` instead of index `2` on its length-0 tree.
+6. **`set(length, v)` is never called**, so the write that lands without moving `length` is unseen.
+7. **`get`/`set` at `index === capacity` is never called**, which is where upstream raises a
+   `TypeError` from indexing a block that does not exist.
+
+**Growth and shrink interactions**
+
+8. **A shrinking `resize` is done once and never followed by anything.** `resize(20)` from 23 is the
+   only shrink, and the test then only grows again. That the blocks and their *contents* survive —
+   and are re-exposed by a later `resize` up, or reachable by `pop` — is untested.
+9. **`push` after a shrinking `resize`** is never done.
+10. **`grow()` with no argument on a tree that has never allocated** is never done.
+11. **`resize` to the current length** (the early-return branch) is never done.
+
+**Values**
+
+12. **Truncation is never triggered.** The largest value pushed is 249, into a `Uint8Array`.
+13. **`Uint16Array` is never used**, so only two of the three widths are seen.
+
+**Constructor**
+
+14. **`initialLength` and `initialCapacity` are never given together**, so `Math.max` of the two is
+    unexercised.
+15. **Only `27` is rejected** as a block size. The guard is a ToInt32 test and its boundaries are
+    untouched.
+16. **`new HashedArrayTree(undefined)` passes upstream's `arguments.length` check** and leaves
+    `ArrayClass` undefined — never tested.
+
+**Never called at all**
+
+17. `inspect()` and the `nodejs.util.inspect.custom` symbol — ~22 LOC, a fifth of the module.
+
+## What we test in addition
+
+`crates/mnemonist-core/src/structures/hashed_array_tree.rs` — 15 tests:
+
+| Test | Closes gap |
+|---|---|
+| `reproduces_the_upstream_suite` | 1:1 port of all ten upstream blocks, as a baseline |
+| `pop_reads_the_last_block_rather_than_the_popped_index_s_block` | 2 — B-11, pinned value by value against Node |
+| `pop_after_a_shrinking_resize_reads_a_block_that_is_no_longer_live` | 2, 8 — the same defect reached a second way |
+| `get_at_length_reads_the_block_instead_of_reporting_absence` | 5 — B-12 |
+| `set_at_length_writes_a_slot_that_length_does_not_cover` | 6 — B-12's write half |
+| `indexing_at_capacity_raises_the_typeerror_upstream_raises` | 7 — including V8's exact message |
+| `the_out_of_bounds_message_names_the_array_class` | across all three widths; upstream matches `/bounds/` |
+| `stores_truncate_at_the_element_width` | 12, 13 |
+| `derives_the_index_split_constants_from_the_block_size` | 3 |
+| `a_bare_grow_adds_exactly_one_block` | 10 |
+| `a_shrinking_resize_keeps_the_blocks_and_their_contents` | 8, 11 |
+| `push_after_a_shrinking_resize_overwrites_the_stale_slot` | 9 |
+| `initial_capacity_is_the_larger_of_the_two_rounded_up_to_a_block` | 14 — seven combinations |
+| `rejects_every_non_power_of_two_block_size` | 15 — eleven rejected, seven accepted |
+| `a_block_size_upstream_only_accepts_by_truncation_is_refused` | 15 — the ToInt32 boundary at 2^32 |
+| `a_block_size_of_one_gives_every_element_its_own_block` | 4 |
+| `a_fresh_tree_pops_nothing` | — |
+| `indexes_across_block_boundaries` | 1 — ten elements over three blocks, every index read back |
+
+The **differential fuzzer** then covers gaps 1–14 continuously. Block sizes are drawn from
+`{1, 2, 4, 8}` rather than the 1024 default precisely because upstream's coverage gap is "never
+leaves block 0"; at `blockSize: 2` a 200-op program is almost entirely cross-block. Indices run to
+64 against lengths that rarely exceed 30, so roughly a third of generated `set`s are out of bounds
+and a steady trickle land exactly on `length`.
+
+**Still untested, stated rather than glossed:** gap 17 (`inspect`, not ported — a Node display
+convenience with no upstream assertion), gap 16 in its `arguments.length` form (see the divergence
+table), and non-integer lengths, which `usize` cannot hold.
+
+## Bugs this found
+
+**B-11 — `pop` reads the last *block*, not the block holding the popped index.**
+`status: VERIFIED against Node 24.18.1`. The sharpest defect in the file:
+
+```js
+var lastBlock = this.blocks[this.blocks.length - 1];   // the LAST block
+var i = (--this.length) & this.offsetMask;             // offset of the POPPED index
+return lastBlock[i];
+```
+
+The offset is computed from the popped index; the block is taken unconditionally from the end of
+`blocks`. They agree only while the tree occupies a single block — which is the whole of upstream's
+coverage, since its `pop` test uses the 1024-element default and pushes twice. Measured on Node with
+`blockSize: 2` after pushing `1, 2, 3`:
+
+```js
+blocks === [[1, 2], [3, 0]]
+pop()  // 3   -- index 2, offset 0, last block: right by luck
+pop()  // 0   -- index 1, offset 1, last block: reads the padding
+pop()  // 3   -- index 0, offset 0, last block: yields 3 a second time
+```
+
+The `2` is unreachable and the `3` comes back twice. `length` is decremented correctly throughout,
+so only the return value is wrong — which is why nothing downstream notices. A shrinking `resize`
+reaches the same defect without any growth at all, because `resize` never deallocates:
+`push 7,8,9,10; resize(1); pop()` gives `9`, not `7`.
+
+**B-12 — the `set`/`get` bounds guard is `length < index`, admitting `index === length`.**
+`status: VERIFIED against Node 24.18.1`. Three consequences:
+
+* `get(length)` returns the raw block slot rather than `undefined`. A **brand-new tree answers
+  `get(0)` with `0`**, not `undefined` — the value upstream's own out-of-bounds test asserts, one
+  index away.
+* `set(length, v)` **writes**, and `length` does not move. The value is invisible to `pop` and to
+  any subsequent `push` (which overwrites it), but visible to `get(length)`.
+* When that admitted index is also `capacity`, `blocks[capacity >> blockMask]` is `undefined` and
+  upstream raises `TypeError: Cannot set properties of undefined (setting '0')`. So the same guard
+  produces a silent write, a silent read and a hard throw depending on where `length` happens to sit.
+
+Both are reproduced, not fixed. Fixing either would change values a caller can observe.
+
+**Not a bug, but worth recording: `powerOfTwo` runs on a ToInt32.** `(x & (x - 1)) === 0` converts
+both operands to signed 32-bit, so `blockSize: 2**32` **passes** the guard and yields
+`blockMask === 32`. In JavaScript `index >> 32` is `index >> 0`, so the structure silently stops
+being a hashed array tree. Verified on Node: the constructor succeeds. This port reproduces the
+acceptance in `power_of_two` — so the truncation is visible and tested — and then refuses the size
+on the next line rather than misrepresenting the shift.
+
+## Deliberate divergences
+
+| # | Divergence | Why |
+|---|---|---|
+| — | **`ArrayClass` is a `PointerWidth`, not a constructor.** | Rust has no runtime constructor value. The bridge identifies the class by its `name` and maps it; `Uint8Array`/`Uint16Array`/`Uint32Array` are covered, and anything else is refused rather than reinterpreted. Upstream would happily take `Float64Array`. The class name survives because the `set` error message embeds it. |
+| — | **`blockSize >= 2^31` is refused.** | Upstream accepts `2**32` by ToInt32 truncation and then shifts by `blockMask mod 32`. Reproducing that would mean reproducing a structure that does not index. The acceptance is reproduced in `power_of_two` and pinned by a test; the *use* is refused. |
+| — | **`new HashedArrayTree(undefined)` throws.** | Upstream's guard is `arguments.length < 1`, and napi's typed signature cannot tell an omitted argument from one passed as `undefined`. Upstream leaves `ArrayClass` undefined and only fails later, if it ever allocates. The omitted case — the only one the original suite uses — is exact. |
+| — | **Non-integer lengths are truncated.** | `resize(3.5)` really does leave `length === 3.5` on Node. A `usize` cannot hold it; truncating toward zero is the closest honest reading. No upstream call site or test passes one. |
+| — | **`blocks` is not exposed to JS.** | A public array of typed arrays upstream, writable *through*. napi can only hand out a copy, which would silently break write-through — worse than its absence. Same call as the `SparseSet` bridge makes for `dense`/`sparse`. It is exposed in Rust, and the fuzzer compares it block for block after every op. |
+| — | **`get`/`pop` yield `Either<u32, Undefined>`, not `Option<u32>`.** | D-39, re-learned here: napi renders `None` as `null`, and both `assert.strictEqual(…, undefined)` assertions in the original file fail against `null`. This is the second module to hit it; it is now a checklist item, not a discovery. |
+| — | **`Error` is an enum whose `Display` is upstream's message.** | The `set` message embeds the array class and the `TypeError` embeds the block offset, so a `&'static str` could not carry either. `Display` renders exactly what upstream throws, which is also what makes the fuzzer's `$throw` comparison meaningful. |
+| — | **`inspect()` is not ported.** | A Node display convenience with no upstream assertion and no Rust equivalent. |
+| — | **The V8 `TypeError` text is reproduced verbatim.** | `Cannot set properties of undefined (setting '0')` is V8's phrasing, not the language's. Reproducing it is what lets the fuzzer compare thrown messages in full; it also ties these campaigns to Node 24.18.1, which is stated rather than hidden. |
+
+## Fuzz + bench
+
+### Fuzz
+
+```
+module=hashed-array-tree seed=42       cases=14429 ops=1429629 wall=120.0s divergences=0
+module=hashed-array-tree seed=20260801 cases=7319  ops=723058  wall=60.0s  divergences=0
+```
+
+Two campaigns, two seeds, **2.15 M operations, zero divergences**. Reproduce with
+`target/release/difffuzz --module hashed-array-tree --seed 42 --cases 14429`.
+
+* **Op alphabet:** `push(v)` (weight 5) · `pop()` (3) · `set(i, v)` (3) · `get(i)` (3) ·
+  `grow(c)` (1) · `grow()` (1) · `resize(l)` (2).
+* **Observable state, compared after every op:** `length`, `capacity`, `blockSize`, `offsetMask`,
+  `blockMask` and **`blocks`** — every block, slot for slot. That is what makes the truncating
+  stores, the `set(length)` write and "a shrinking resize deallocates nothing" checkable directly
+  rather than only through their eventual effect on `get`.
+* **Constructors:** all three widths × block sizes `{1, 2, 4, 8}` × `initialLength` and
+  `initialCapacity` each `0..24`.
+* **Indices:** `0..64`, against lengths that rarely exceed 30. **Values:** `0..320`, above 255 so a
+  `Uint8Array` tree truncates.
+* **Program length:** 1..200 ops.
+* **Deliberately excluded:** non-integer arguments (see the divergence table) and `blockSize`
+  values outside `{1, 2, 4, 8}`. Nothing else — in particular out-of-bounds indices are generated
+  freely, and both throws are compared by their full message.
+
+**The `$throw` encoding was added for this module.** `spec::CheckFailure` carried a note, written
+before any such module existed, that an exception thrown by an operation arrives as apparatus
+failure and would abort the campaign rather than being reported — and that the fix is to encode it
+on both sides. `fuzz/oracle.js` now does. Sabotage B below is the proof that it works, because it is
+a divergence *in the throwing itself*.
+
+**The fuzzer was falsified twice, once per defect** (D-32). Both sabotages were reverted and both
+seeds are committed with provenance in
+`crates/difffuzz/proptest-regressions/hashed-array-tree.txt`. Note that both make the port strictly
+*more correct* than upstream, which is the only direction differential fuzzing can work in on a
+bug-for-bug port (D-33) — and this module has two independent defects to demonstrate it with.
+
+**A — `pop` reading the right block.** The obvious cleanup: `blocks[length >> blockMask]` instead of
+`blocks[blocks.length - 1]`. Caught in **1,228 cases (1.8 s)**, shrunk from 200 ops to five:
+
+```js
+var s = new HashedArrayTree(Uint8Array, {blockSize: 1});
+s.resize(2);   // two one-element blocks, length 2
+s.pop();       // length 1
+s.pop();       // length 0
+s.push(1);     // writes block 0
+s.pop();       // port 1 (block 0), upstream 0 (block 1, the last one)
+```
+
+**B — `set`'s guard tightened from `<` to `<=`.** What anyone tidying the bounds check would write.
+Caught in **2,165 cases (5.2 s)**, shrunk to ten ops ending in `s.set(19, 0)`, where the port
+returned `{"$throw": "HashedArrayTree(Uint8Array).set: index out of bounds."}` and upstream returned
+`{"$self": true}`.
+
+### Falsification of the port (gate 6)
+
+Separate from the fuzzer falsifications: gate 6 asks that sabotaging the core turns the *original
+mocha suite* red, proving it exercises Rust rather than a JS fallback.
+
+**The first attempt failed the gate's own standard, and is recorded because that is the point of the
+gate.** Named assertion: `should be possible to push values.` →
+`assert.strictEqual(array.capacity, 256)` at `test/hashed-array-tree.js:61`. Sabotage: `push`'s
+growth guard weakened from `capacity == length` to `capacity < length`. It **did** go red — but at
+`test/hashed-array-tree.js:73`, in the *pop* test, because the off-by-one still grows, just one push
+late, and `capacity` still reaches 256 by the 250th push. A sabotage that goes red somewhere other
+than where it was predicted to is weaker evidence than one that goes red where predicted: it shows
+the suite runs Rust, but not that the named assertion depends on the named code. Reverted and redone.
+
+**Second attempt. Named assertion:** `should be possible to pop values.` →
+`assert.strictEqual(array.pop(), 2)` at `test/hashed-array-tree.js:71`. Chosen because `pop` is the
+one method whose defect this module exists to reproduce.
+
+**The sabotage:** mis-porting `(--this.length) & this.offsetMask` as a *post*-decrement — computing
+the offset from the pre-decrement length. This is the single most plausible way to get that line
+wrong, and it is a one-token change.
+
+**Confirmed red**, at exactly the named line: `9 passing, 1 failing`, the failure being
+`0 !== 2` at `test/hashed-array-tree.js:71`. Reverted; **confirmed green again**: 10 passing.
+
+### Bench
+
+**Not run.** Gate 10 is deliberately outstanding for this module: benchmarks need an idle machine,
+and this unit was ported alongside two others in parallel worktrees, where a contended run has
+already been measured on this project to inflate both sides 2–3× (NOTES.md, H+5). It is batched into
+a separate quiet pass, and `hashed-array-tree` is therefore **not** in `tests/scope.txt` yet — by
+DESIGN.md §1.1 it is not done until it is. Gates 1–9 are green.
