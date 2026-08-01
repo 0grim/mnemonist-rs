@@ -5,3 +5,6 @@ node_modules/
 *.node
 bench/raw/
 /.idea/
+
+# Agent worktrees live inside the repo; never commit them as gitlinks
+/.claude/worktrees/
