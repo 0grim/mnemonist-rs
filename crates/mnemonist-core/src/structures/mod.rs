@@ -11,3 +11,6 @@ pub mod sparse_queue_set;
 pub mod sparse_set;
 pub mod stack;
 pub mod static_disjoint_set;
+
+// Appended, never interleaved: this list is a shared registry (CLAUDE.md, Git).
+pub mod suffix_array;
