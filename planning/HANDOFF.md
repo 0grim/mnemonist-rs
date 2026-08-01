@@ -14,9 +14,10 @@ A Rust port of the JS library `mnemonist`, entered in Port Mortem 2026. Kickoff 
 
 `git log` is dense and deliberately so; the merge commits carry the reasoning.
 
-## Position as of 2026-08-01 ~18:00 UTC
+## Position as of 2026-08-01 ~20:00 UTC
 
-**77% ported, 0% scoped.** 655 Rust tests, 651 upstream harness specs, all green on `main`.
+**79% ported, 0% scoped.** 670 Rust tests, 657 upstream harness specs, all green on `main`.
+One worktree, one branch — all merged worktrees and branches have been pruned.
 
 The 0% is not a mistake and not a crisis — see "Why 0% scoped" below. It is the single most
 important thing to fix, and it is fixed by running benchmarks, not by porting more.
@@ -34,8 +35,8 @@ Remaining batches, in priority order so that stopping early stops at the best av
 
 | # | batch | lines | bug IDs | status |
 |---|---|---|---|---|
-| 1 | `fibonacci-heap` + close D-105 | 115 | B-220–239 | **in flight** |
-| 2 | `default-weak-map`, `linked-list`, `inverted-index` | 325 | B-240–259 | not started |
+| 1 | `fibonacci-heap` + close D-105 | 115 | B-220–239 | **merged** (B-220–222 used) |
+| 2 | `default-weak-map`, `linked-list`, `inverted-index` | 325 | B-240–259 | **in flight** |
 | 3 | `critbit-tree-map`, `fixed-critbit-tree-map` | 294 | B-260–279 | not started |
 | 4 | `vp-tree`, `kd-tree` | 344 | B-280–299 | not started |
 | 5 | `passjoin-index`, `symspell`, `multi-array` | 639 | B-300–319 | not started |
@@ -67,15 +68,21 @@ test flaked under agent contention during the last batch. Run it when nothing el
 - **`sparse-set` is deliberately descoped**, reason inline in `tests/scope.txt`. B-31 is fixed, but
   the `RefCell` added a borrow-flag check to every access that nobody has measured — which is gate
   10. Re-scope after benchmarking.
-- **D-105** — `_utils`'s k-way tie-break disagrees with `FibonacciHeap`'s ordering on 3+ way ties.
-  Batch 1 is closing this. Until it does, `_utils`'s 1M-op campaign is green over a region that
-  *excludes* the known disagreement. If batch 1 fails to close it, that caveat stands and must be
-  stated in the module doc — do not narrow the grammar again to get green.
+- **D-105 — CLOSED.** `_utils`'s k-way path now drives the real `FibonacciHeap`, and its grammar was
+  widened back to produce ties and NaN. No caveat remains on that campaign.
+- **D-106 — OPEN, and narrower.** Widening the `_utils` grammar immediately surfaced it:
+  `intersectionUnique`'s k-way path never used a heap at all and has its own NaN-sentinel gap. Its
+  `allow_nan` flag stays `false` **for that function only**, so its campaign is green over a region
+  excluding a known disagreement. Closing it means porting nothing new — it is a real gap in our
+  own code, and it is the one caveat left on `_utils`.
 - **D-201** — `trie`'s cursor-versus-delete divergence. **Accepted, not a defect.** Upstream's
   iterator holds a live object reference; ours is path-based because it must resume across the FFI
   boundary. Its campaign is likewise green over a narrowed region. State it in DECISIONS.md as an
   architectural divergence rather than revisiting it.
-- **Ten stale worktree branches.** Delete after merging; branch names never reach the final repo.
+- **Worktree hygiene.** All merged worktrees and branches were pruned (2.9 GB). Gate each deletion
+  on `git merge-base --is-ancestor <branch> HEAD`, never on the name: one worktree was **locked**
+  and its `--force` removal silently failed while its branch deletion succeeded. Run
+  `git worktree prune` afterwards or `scripts/status.sh` reports worktrees that no longer exist.
 
 ## When a background agent dies
 

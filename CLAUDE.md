@@ -86,6 +86,20 @@ If other agents are working, do not benchmark; gate 10 is batched into a quiet s
   allocations — two once claimed `B-11`–`B-14` for entirely different bugs, which had to be
   untangled by hand at merge. If you need more than your range, say so rather than spilling past it.
 
+## Prefer one agent at a time
+
+Ten merges of parallel work cost **ten split-block repairs** — a match arm or test function cut in
+half because git picks conflict boundaries by line similarity, not syntax. Every one was caught by
+the compiler and none by `git`. Four times, two agents also built the same machinery independently.
+
+Since going sequential, both costs are **zero**: an agent branching from a `main` that already
+contains all prior work has nothing to conflict with, and can *see* what exists instead of
+rebuilding it. Wall-clock is rarely the binding constraint here; orchestrator tokens are, and merge
+repair spends them.
+
+Run agents in parallel only when the work is genuinely disjoint *and* the schedule demands it —
+then merge them one at a time, never as a batch.
+
 ## Orientation
 
 | | |
