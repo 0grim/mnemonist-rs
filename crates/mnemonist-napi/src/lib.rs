@@ -26,6 +26,10 @@ pub mod sparse_set;
 pub mod stack;
 pub mod static_disjoint_set;
 pub mod statics;
+// Appended rather than filed alphabetically: this list is edited from several
+// worktrees at once, and a conflict boundary that lands inside it has already
+// broken three merges. New modules go on the end.
+pub mod sort;
 
 #[napi]
 pub fn ping() -> &'static str {

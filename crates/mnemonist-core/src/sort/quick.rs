@@ -210,7 +210,7 @@ mod tests {
     const DATA: [i32; 11] = [2, 7, 1, 5, 8, 9, 1, -3, 3, 18, 6];
 
     fn indices_of(len: usize) -> PointerVec {
-        crate::utils::typed_arrays::indices(len).expect("len fits a pointer array")
+        crate::utils::typed_arrays::indices(len as f64).expect("len fits a pointer array")
     }
 
     fn as_vec(indices: &PointerVec) -> Vec<u32> {
@@ -358,13 +358,13 @@ mod tests {
     fn every_pointer_width_sorts_the_same_way() {
         let array: Vec<i32> = (0..300).map(|k| (k * 7919) % 301).collect();
         let expected = {
-            let mut indices = crate::utils::typed_arrays::indices(300).unwrap();
+            let mut indices = crate::utils::typed_arrays::indices(300.0).unwrap();
             inplace_quick_sort_indices(&array, &mut indices, 0, 300);
             as_vec(&indices)
         };
 
         assert_eq!(
-            crate::utils::typed_arrays::indices(300).unwrap().width(),
+            crate::utils::typed_arrays::indices(300.0).unwrap().width(),
             PointerWidth::U16
         );
 

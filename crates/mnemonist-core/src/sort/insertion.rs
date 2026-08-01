@@ -101,7 +101,7 @@ mod tests {
     const DATA: [i32; 11] = [2, 7, 1, 5, 8, 9, 1, -3, 3, 18, 6];
 
     fn indices_of(len: usize) -> PointerVec {
-        crate::utils::typed_arrays::indices(len).expect("len fits a pointer array")
+        crate::utils::typed_arrays::indices(len as f64).expect("len fits a pointer array")
     }
 
     fn as_vec(indices: &PointerVec) -> Vec<u32> {
