@@ -45,3 +45,8 @@ pub mod lru_cache;
 // mid-list.
 pub mod fixed_reverse_heap;
 pub mod heap;
+
+// Appended at the end, never inserted: this file is edited by several agents
+// at once and a new line anywhere else is a merge conflict (CLAUDE.md, Git).
+pub mod multi_map;
+pub mod multi_set;
