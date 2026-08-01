@@ -1164,7 +1164,7 @@ letting the temporary outlive the call.
 peek() runs", and "should not run ANY user JavaScript from clear()", which asserts the cause rather
 than the symptom.
 
-### D-82 — `BiMap`'s two size counters are real state, reset asymmetrically by `clear`
+### D-89 — `BiMap`'s two size counters are real state, reset asymmetrically by `clear`
 **Status:** CONFIRMED · **Category:** behavioural · **Divergence:** no
 **Upstream:** `BiMap`/`InverseMap` share one `clear` function — `this.size = 0; this.items.clear();
 this.inverse.items.clear();` — that empties both underlying `Map`s regardless of which side calls

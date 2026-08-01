@@ -128,7 +128,7 @@ the second fuzzing round caught (below).
 Fixed by resynchronising `delete`/`delete_reverse` only when something was actually removed. Both
 seeds are committed with provenance in `crates/difffuzz/proptest-regressions/bi-map.txt` — see "Fuzz"
 below for what that file's un-labelled first entry turned out to be. See `planning/NOTES.md` (B-120)
-and `planning/DECISIONS-CANDIDATES.md` (D-82) for the full writeup.
+and `planning/DECISIONS-CANDIDATES.md` (D-89) for the full writeup.
 
 **Strong candidate**, and worth reading past the bug itself: the module doc for
 `mnemonist_core::structures::bi_map` had already analysed and *named* this exact defect in prose,
