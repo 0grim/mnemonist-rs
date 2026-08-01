@@ -810,3 +810,73 @@ same bridge pattern from a different angle.
 
 *Strongest argument yet for the write-up: passing your own verification is not the same as being
 correct, and the only thing that caught this was a second, independent look.*
+
+---
+
+## Wave 1 — fixed-capacity modules (B-60..B-69 range)
+
+Appended at the end of the file rather than into the bug-candidate section above: several agents
+edit this file at once and only an addition at the very end can never land inside another one's
+hunk.
+
+### B-60 — `X.from(iterable, ...)` calls `iterables.forEach`, which `utils/iterables.js` never exported
+
+`status: verified against Node 24.18.1` · `mnemonist fixed-stack.js`, `fixed-deque.js`,
+`circular-buffer.js`
+
+`utils/iterables.js` exports exactly four functions — `isArrayLike`, `guessLength`, `toArray`,
+`toArrayWithIndices`. All three fixed-capacity modules end their `from` static with
+
+```js
+iterables.forEach(iterable, function (value) { structure.push(value); });
+```
+
+so the branch that would accept a `Set`, a `Map`, a generator or a string is not a slow path, it is
+a `TypeError`:
+
+```
+FixedStack.from(new Set([1,2,3]), Array, 3)
+TypeError: iterables.forEach is not a function
+```
+
+Confirmed for all three classes. Every `from` call in all three upstream test files passes an array
+or a typed array, which takes the array-like fast path and returns before the last line — so the
+branch has, as far as the suite is concerned, never run. The fix is one identifier: these files'
+siblings already `require('obliterator/foreach')`.
+
+**Strong candidate.** Concrete, reproducible in three lines, obviously unintended, and it makes a
+documented API (`X.from(anyIterable)`) not work at all.
+
+### B-61 — `FixedStack.prototype.forEach` walks `items.length`, not `this.size`
+
+`status: verified against Node 24.18.1` · `mnemonist fixed-stack.js`
+
+Every other method in the file is written against `this.size`. `forEach` alone:
+
+```js
+for (var i = 0, l = this.items.length; i < l; i++)
+  callback.call(scope, this.items[l - i - 1], i, this);
+```
+
+`this.items.length` is the **capacity**, so an under-full stack invokes the callback `capacity`
+times, handing it the unused slots first — `undefined` from an `Array`, `0` from a `Uint8Array`:
+
+```js
+var s = new FixedStack(Array, 5); s.push(1); s.push(2);
+s.forEach(function (v, i) { … });
+// (undefined, 0) (undefined, 1) (undefined, 2) (2, 3) (1, 4)
+```
+
+`FixedDeque.prototype.forEach`, three files away, does it correctly (`l = this.size`), which makes
+this a slip rather than a choice.
+
+**The suite is structurally unable to see it.** Its one `forEach` block builds a capacity-3 stack
+and pushes three items — the single shape in which `items.length === size`.
+
+**A seventh entry for the empty-green-signal table.** The most plausible mis-port of this module is
+to "correct" it to `self.size`. Measured: with that sabotage in place, `test/fixed-stack.js` stays
+**fully green, 12 passing**. It is caught in 57 fuzz cases once the grammar has a mutating
+`forEach` op, and by two native tests written from the source rather than from the tests. This is
+the cleanest available demonstration of why gate 6 insists the sabotage be chosen by naming the
+assertion it must break: the sabotage that matters most here is precisely the one no assertion
+covers.
