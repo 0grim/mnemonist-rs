@@ -11,6 +11,10 @@
 # Reproduce any line exactly:
 #   target/release/difffuzz --module <name> --seed <seed> --cases <cases>
 #
+# A line commented out with `#` is SUPERSEDED, not deleted: it stays readable
+# but tests/verify.sh does not count it, so a withdrawn number cannot creep
+# back into a total.
+#
 # `cases` is the case budget rather than the clock, so the replay is not cut
 # short on a slower machine. Verified deterministic: seed 7 / 100 cases gives
 # ops=20760 on every run, seed 8 gives ops=22096.
@@ -148,8 +152,9 @@
 # off: at one `node` spawn per op the 120s campaign would have taken ~33 hours.
 # ---------------------------------------------------------------------------
 
-2026-07-31T20:58:46Z  module=static-disjoint-set seed=42 cases=16666 ops=2837506 wall=120.0s divergences=0
-2026-07-31T21:00:12Z  module=static-disjoint-set seed=20260731 cases=8179 ops=1394965 wall=60.0s divergences=0
+# SUPERSEDED — coverage overstated, see the CORRECTION block above.
+#2026-07-31T20:58:46Z  module=static-disjoint-set seed=42 cases=16666 ops=2837506 wall=120.0s divergences=0
+#2026-07-31T21:00:12Z  module=static-disjoint-set seed=20260731 cases=8179 ops=1394965 wall=60.0s divergences=0
 2026-08-01T00:19:00Z  module=static-disjoint-set seed=42 cases=4683 ops=1403272 wall=120.1s divergences=0
 2026-08-01T00:20:00Z  module=static-disjoint-set seed=20260731 cases=2301 ops=700097 wall=60.0s divergences=0
 2026-08-01T00:31:30Z  module=sparse-set seed=42 cases=19006 ops=1961772 wall=120.0s divergences=0

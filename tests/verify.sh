@@ -123,14 +123,19 @@ for unit in $UNITS; do
     bad "gate 6  no falsification recorded in $DOC"
   fi
 
-  # gate 9 -- a logged campaign with zero divergences
-  if [ -f fuzz/log.txt ] && grep -q "module=$unit " fuzz/log.txt; then
-    BAD_RUNS=$(grep "module=$unit " fuzz/log.txt | grep -vc "divergences=0")
-    TOTAL_OPS=$(grep "module=$unit " fuzz/log.txt \
-                | grep -oE 'ops=[0-9]+' | cut -d= -f2 \
+  # gate 9 -- a logged campaign with zero divergences.
+  #
+  # Commented lines are skipped, which is load-bearing rather than tidy: a
+  # campaign whose coverage was later found to be overstated is commented out
+  # with its reason instead of deleted, and summing it back in would restate
+  # the very number the correction withdrew.
+  CAMPAIGNS=$(grep -v '^[[:space:]]*#' fuzz/log.txt 2>/dev/null | grep "module=$unit " || true)
+  if [ -n "$CAMPAIGNS" ]; then
+    BAD_RUNS=$(echo "$CAMPAIGNS" | grep -vc "divergences=0")
+    TOTAL_OPS=$(echo "$CAMPAIGNS" | grep -oE 'ops=[0-9]+' | cut -d= -f2 \
                 | awk '{s+=$1} END {print s+0}')
     if [ "$BAD_RUNS" -eq 0 ]; then
-      ok "gate 9  fuzz clean ($(grep -c "module=$unit " fuzz/log.txt) campaign(s), ${TOTAL_OPS} ops)"
+      ok "gate 9  fuzz clean ($(echo "$CAMPAIGNS" | grep -c .) campaign(s), ${TOTAL_OPS} ops)"
     else
       bad "gate 9  $BAD_RUNS fuzz campaign(s) reported divergences"
     fi
