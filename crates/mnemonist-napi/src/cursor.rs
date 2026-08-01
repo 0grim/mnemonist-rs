@@ -143,7 +143,11 @@ impl BridgeBitCursor {
 /// One row per upstream `X.prototype[Symbol.iterator] = X.prototype.values`.
 /// Kept as data rather than as code per module so the count of modules and the
 /// count of places to get this wrong stay unrelated.
-const ITERATOR_FACTORIES: &[(&str, &str)] = &[("SparseSet", "values"), ("BitSet", "values")];
+const ITERATOR_FACTORIES: &[(&str, &str)] = &[
+    ("SparseSet", "values"),
+    ("BitSet", "values"),
+    ("BitVector", "values"),
+];
 
 /// Wire every collection's `Symbol.iterator` to its cursor factory.
 ///
