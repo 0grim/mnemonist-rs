@@ -14,3 +14,8 @@ pub mod sparse_queue_set;
 pub mod sparse_set;
 pub mod stack;
 pub mod static_disjoint_set;
+// Appended at the end of the list rather than in alphabetical position: this
+// file is shared, and a conflict boundary landing mid-list has broken three
+// merges already.
+pub mod fixed_reverse_heap;
+pub mod heap;

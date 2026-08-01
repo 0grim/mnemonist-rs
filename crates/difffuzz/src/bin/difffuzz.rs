@@ -27,6 +27,9 @@ use difffuzz::modules::sparse_queue_set::SparseQueueSetSpec;
 use difffuzz::modules::sparse_set::SparseSetSpec;
 use difffuzz::modules::stack::StackSpec;
 use difffuzz::modules::static_disjoint_set::StaticDisjointSetSpec;
+// Appended at the end of the import list; see `modules/mod.rs`.
+use difffuzz::modules::fixed_reverse_heap::FixedReverseHeapSpec;
+use difffuzz::modules::heap::HeapSpec;
 use difffuzz::{Campaign, Report};
 
 const USAGE: &str = "\
@@ -34,7 +37,8 @@ usage: difffuzz --module <name> [--seed N] [--duration SECONDS] [--cases N] [--b
 
   --module    module to fuzz; currently: static-disjoint-set, sparse-set,
               sparse-map, sparse-queue-set, hashed-array-tree, bit-set,
-              bit-vector, stack, queue, default-map
+              bit-vector, stack, queue, default-map, heap,
+              fixed-reverse-heap
   --seed      campaign seed (default 42); with --cases, reproduces exactly
   --duration  wall-clock budget in seconds (default 60)
   --cases     stop after N cases instead of after --duration
@@ -134,6 +138,21 @@ fn main() -> ExitCode {
             &DefaultMapSpec,
             &Campaign {
                 regressions: difffuzz::modules::default_map::REGRESSIONS,
+                ..campaign
+            },
+        ),
+        // Appended at the END of the match, never between two existing arms.
+        "heap" => difffuzz::run(
+            &HeapSpec,
+            &Campaign {
+                regressions: difffuzz::modules::heap::REGRESSIONS,
+                ..campaign
+            },
+        ),
+        "fixed-reverse-heap" => difffuzz::run(
+            &FixedReverseHeapSpec,
+            &Campaign {
+                regressions: difffuzz::modules::fixed_reverse_heap::REGRESSIONS,
                 ..campaign
             },
         ),

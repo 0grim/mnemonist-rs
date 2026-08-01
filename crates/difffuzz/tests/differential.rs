@@ -21,6 +21,11 @@ use difffuzz::modules::sparse_queue_set::{
 };
 use difffuzz::modules::sparse_set::{SparseSetSpec, REGRESSIONS as SPARSE_REGRESSIONS};
 use difffuzz::modules::static_disjoint_set::{StaticDisjointSetSpec, REGRESSIONS};
+// Appended at the end of the import list; see `modules/mod.rs`.
+use difffuzz::modules::fixed_reverse_heap::{
+    FixedReverseHeapSpec, REGRESSIONS as FIXED_REVERSE_HEAP_REGRESSIONS,
+};
+use difffuzz::modules::heap::{HeapSpec, REGRESSIONS as HEAP_REGRESSIONS};
 use difffuzz::Campaign;
 
 #[test]
@@ -280,5 +285,52 @@ fn every_regression_corpus_explains_where_its_seeds_came_from() {
             "{corpus} holds {seeds} seed(s) with no provenance block, so a reader \
              cannot tell a sabotage from a real defect"
         );
+    }
+}
+
+// Appended at the END of the file, never between two existing tests.
+
+/// `heap` — the first module whose comparator is a callback.
+///
+/// Six comparator factories, four of which mutate or throw from inside a sift.
+/// The budgets they count in *comparisons* make this sharper than a black-box
+/// grammar: a sift that reaches the right ordering by a different number of
+/// comparisons diverges here.
+#[test]
+fn heap_matches_upstream() {
+    let campaign = Campaign::cases(0x11EA9, 96, HEAP_REGRESSIONS);
+
+    let report = difffuzz::run(&HeapSpec, &campaign)
+        .expect("oracle must be reachable; `node` is required for differential tests");
+
+    assert!(
+        report.ops > 0,
+        "campaign ran no operations, so it proved nothing: {}",
+        report.log_line()
+    );
+
+    if let Some(divergence) = report.divergence {
+        panic!("{divergence}");
+    }
+}
+
+/// `fixed-reverse-heap` — the same comparators through a different pair of
+/// algorithms, plus a generated capacity that includes the `0` upstream's dead
+/// guard lets through.
+#[test]
+fn fixed_reverse_heap_matches_upstream() {
+    let campaign = Campaign::cases(0xF12ED, 96, FIXED_REVERSE_HEAP_REGRESSIONS);
+
+    let report = difffuzz::run(&FixedReverseHeapSpec, &campaign)
+        .expect("oracle must be reachable; `node` is required for differential tests");
+
+    assert!(
+        report.ops > 0,
+        "campaign ran no operations, so it proved nothing: {}",
+        report.log_line()
+    );
+
+    if let Some(divergence) = report.divergence {
+        panic!("{divergence}");
     }
 }

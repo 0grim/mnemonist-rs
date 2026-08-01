@@ -301,12 +301,22 @@ fn typed_array(values: &PointerVec) -> Value {
 
 /// Encode `vals`, which is *not* always a typed array.
 ///
-/// The `Array` form is a plain JS array with holes in it. `Array.prototype.map`
-/// preserves holes and `JSON.stringify` renders one as `null`, so a hole must
-/// be [`Value::Null`] here — not `{"$undefined": true}`, which is what an
-/// element explicitly set to `undefined` would encode to. Nothing in this
-/// grammar can store `undefined`, so the two never have to be told apart, but
-/// getting the hole wrong would fail every `Array`-backed program immediately.
+/// The `Array` form is a plain JS array with holes in it, and a hole reads as
+/// `undefined` — `vals[i]` on one is `undefined`, and that is the only way this
+/// structure ever exposes a hole.
+///
+/// This used to be [`Value::Null`], because `fuzz/oracle.js` encoded arrays
+/// with `Array.prototype.map`, which *skips* holes and leaves them holes for
+/// `JSON.stringify` to render as `null`. That encoding could not tell a hole
+/// from an element explicitly assigned `undefined`, which is a distinction
+/// `heap` genuinely produces: a comparator that shrinks the array mid-sift
+/// makes the sift read past the end and write the `undefined` back. The oracle
+/// now walks arrays by index and encodes both as `{"$undefined": true}`, so
+/// this follows.
+///
+/// Nothing in *this* grammar can store `undefined`, so the change is exact for
+/// `sparse-map` either way; it is strictly more accurate, because upstream's
+/// hole really does read as `undefined` and never as `null`.
 fn value_store(values: &Values<u32>) -> Value {
     match values {
         Values::Typed(slots) => typed_array(slots),
@@ -315,7 +325,7 @@ fn value_store(values: &Values<u32>) -> Value {
                 .iter()
                 .map(|slot| match slot {
                     Some(value) => json!(value),
-                    None => Value::Null,
+                    None => json!({"$undefined": true}),
                 })
                 .collect(),
         ),
