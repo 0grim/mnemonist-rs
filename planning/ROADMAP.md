@@ -138,6 +138,28 @@ abstraction needed before any of T4's 1,036 lines are reachable.
 **All-or-nothing units punish running out of time mid-cluster** (§1.1). `_utils` needs five modules
 and 886 LOC are still missing; the `lru-cache` unit needs four. 4/5 through at freeze scores zero.
 
+**`_utils` is further away than "five modules" suggests — `merge` drags in a heap.**
+`utils/merge.js` requires `typed-arrays` (have), `iterables` (in flight), `binary-search`, **and
+`fibonacci-heap`**. So the 389-line `_utils` unit transitively needs a T2 heap module that is not
+in the current T2 batch (which is `heap` + `fixed-reverse-heap`). Chain in full:
+
+    _utils.js → typed-arrays ✓ · iterables · binary-search · hash-tables · merge → fibonacci-heap
+
+Treat `_utils` as one of the *last* things reachable, not a lull-filler. `binary-search` and
+`hash-tables` are worth porting early anyway — zero dependencies each, and `binary-search` is also
+required by `merge` and `vp-tree`.
+
+**Dependency facts worth not re-deriving** (checked against the vendored sources):
+
+| module | requires | status |
+|---|---|---|
+| `binary-search`, `hash-tables` | nothing | fully independent |
+| `suffix-array` | nothing | fully independent |
+| `bloom-filter` | `murmurhash3`, `foreach` | unblocked (foreach exists) |
+| `bk-tree`, `symspell` | `foreach` only | unblocked |
+| `vp-tree` | `iterables`, `typed-arrays`, `sort/quick`, `binary-search`, `heap` | blocked on four |
+| `merge` | `typed-arrays`, `iterables`, `binary-search`, `fibonacci-heap` | blocked |
+
 **Cross-tier units.** Under §1.1 a unit is a test file's *require-closure*, which cuts across the
 wave boundaries in §6:
 - `multi-map` unit = `multi-map` + **`vector`** (Wave 1)
@@ -154,7 +176,12 @@ wave boundaries in §6:
 - **`tests/scope.txt` never contains a module whose evidence is not real.** This is the property
   that makes the submission credible; a breadth push must not be allowed to erode it.
 - **Gates 1–9 pipeline; gate 10 does not** (§7.3). Benchmarks need an idle machine — measured.
-  Batch them into one quiet serial pass.
+- **Run gate 10 as one long unattended pass while nobody is working**, not as a pause between
+  batches. At ~10 min per module it is ~2h of machine time that would otherwise block porting, and
+  it is the *only* work here that requires the machine to be doing nothing else. Porting continues
+  right up until that window opens.
+  Consequence, and it is fine: modules sit complete-except-gate-10 for longer, so `scope.txt` lags
+  reality. `scripts/status.sh` shows them as `pend` with `bench --`, which is the honest picture.
 - **Isolated worktrees per agent**, shared-file edits additive only. Four branches merging into
   three registry files is the practical ceiling on parallelism.
 - **Stop-and-review before a design is inherited.** Applied to the cursor, to `forEach`, and now to
