@@ -95,6 +95,14 @@ function encode(value) {
 
   if (Array.isArray(value)) return value.map(encode);
 
+  // A `Map` has no own enumerable properties, so the generic object branch
+  // below would encode every T3 module's entire state as `{}` -- an
+  // observation that can never disagree. Entry order is part of what is being
+  // compared, so entries go out as a list, not as an object.
+  if (value instanceof Map) {
+    return {$map: Array.from(value.entries()).map(([k, v]) => [encode(k), encode(v)])};
+  }
+
   if (typeof value === 'number') {
     if (Number.isNaN(value)) return {$nan: true};
     if (!Number.isFinite(value)) return {$infinity: Math.sign(value)};
@@ -149,6 +157,48 @@ function cursorOp(request) {
   }
 }
 
+// Arguments travel as JSON, which has no `undefined`, no `-0`, no NaN and no
+// functions. All four are ordinary inputs to a T3 module -- `undefined` is the
+// value that reaches DefaultMap's size drift, `-0` and NaN are the two places
+// SameValueZero differs from `===`, and a factory IS a function. So the same
+// envelopes `encode` produces are recognised on the way in.
+//
+// Factories are named rather than transmitted as source: a generated program
+// has to be reproducible from its seed, and `eval` of a generated string is
+// neither reproducible nor readable in a repro.
+// Builders, not functions: `autoIncrement` is stateful, and one shared counter
+// would make a program's result depend on the programs that ran before it.
+// Every `init` gets a fresh one.
+const FACTORIES = {
+  undefined: () => () => undefined,
+  null: () => () => null,
+  autoIncrement: () => {
+    let next = 0;
+    return () => next++;
+  },
+  key: () => (key) => key,
+  size: () => (key, size) => size,
+};
+
+function decode(value) {
+  if (Array.isArray(value)) return value.map(decode);
+  if (value === null || typeof value !== 'object') return value;
+
+  if (value.$undefined) return undefined;
+  if (value.$nan) return NaN;
+  if (value.$negativeZero) return -0;
+
+  if (typeof value.$factory === 'string') {
+    const name = value.$factory;
+    if (!Object.prototype.hasOwnProperty.call(FACTORIES, name)) {
+      throw new Error('unknown factory: ' + name);
+    }
+    return FACTORIES[name]();
+  }
+
+  return value;
+}
+
 function handle(request) {
   switch (request.cmd) {
     case 'ping':
@@ -156,7 +206,7 @@ function handle(request) {
 
     case 'init': {
       const Ctor = require(path.join(UPSTREAM, request.module + '.js'));
-      instance = new Ctor(...request.ctor);
+      instance = new Ctor(...request.ctor.map(decode));
       observations = request.observe;
       cursor = null;
       return {ok: true, state: observe()};
@@ -166,7 +216,7 @@ function handle(request) {
       if (instance === null) throw new Error('op before init');
       const result = request.name.charAt(0) === '$'
         ? cursorOp(request)
-        : encode(instance[request.name](...request.args));
+        : encode(instance[request.name](...request.args.map(decode)));
       return {ok: true, result: result, state: observe()};
     }
 

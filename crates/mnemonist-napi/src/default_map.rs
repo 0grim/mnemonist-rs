@@ -53,7 +53,7 @@ type Cursor = MapBridgeCursor<JsDefaultMap, JsKey, Option<Retained>>;
 ///
 /// The second argument is `f64`, not an integer, for two reasons: JavaScript
 /// numbers are doubles, and `size` here is upstream's *drifting* counter
-/// (B-11), which is not bounded by the entry count.
+/// (B-40), which is not bounded by the entry count.
 type Factory = FunctionRef<FnArgs<(JsKey, f64)>, Received>;
 
 /// Upstream's constructor message, matched by the original test's `/function/`.
@@ -91,7 +91,7 @@ impl JsDefaultMap {
     /// Upstream's `size` **property**.
     ///
     /// A drifting counter, not the entry count. See
-    /// `mnemonist_core::structures::default_map` and B-11.
+    /// `mnemonist_core::structures::default_map` and B-40.
     #[napi(getter)]
     pub fn size(&self) -> f64 {
         self.inner.size() as f64
