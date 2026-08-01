@@ -49,6 +49,34 @@ pub fn get_pointer_array(size: f64) -> Result<PointerWidth, &'static str> {
     Err(POINTER_ARRAY_TOO_LARGE)
 }
 
+/// Upstream's message when a typed array is asked for an impossible length.
+///
+/// `new Uint8Array(-1)` and `new Uint8Array(3.5)` both throw a `RangeError`
+/// reading `Invalid typed array length: <value>`. Only the fixed prefix is
+/// reproduced; the bridge appends the offending value.
+pub const INVALID_TYPED_ARRAY_LENGTH: &str = "Invalid typed array length";
+
+/// A pointer array of `length` slots, filled with `0..length`.
+///
+/// Upstream's `exports.indices`, which is `getPointerArray(length)` followed
+/// by `new PointerArray(length)` and a fill loop. The width is chosen to index
+/// `length` elements, so the fill never truncates — the largest value written
+/// is `length - 1`, which is precisely what the width was selected to hold.
+///
+/// # Errors
+///
+/// [`POINTER_ARRAY_TOO_LARGE`] for a length past `2³²`, as upstream throws.
+pub fn indices(length: usize) -> Result<PointerVec, &'static str> {
+    let width = get_pointer_array(length as f64)?;
+    let mut array = PointerVec::zeroed(width, length);
+
+    for slot in 0..length {
+        array.set(slot, slot as u32);
+    }
+
+    Ok(array)
+}
+
 /// A value that can be stored into a JS typed array, and read back out.
 ///
 /// Upstream `SparseMap` is constructed with a *value array constructor* —
@@ -368,6 +396,35 @@ mod tests {
         assert!(!values.is_empty());
         assert!(PointerVec::zeroed(PointerWidth::U8, 0).is_empty());
         assert_eq!(values, PointerVec::U16(vec![0, 0, 0]));
+    }
+
+    /// `indices(n)` picks the width from `n` and then cannot truncate, because
+    /// the largest value it writes is `n - 1`. Checked at both sides of each
+    /// boundary, since that is where a width off by one would show.
+    #[test]
+    fn indices_fills_with_its_own_positions_at_every_width() {
+        for length in [0usize, 1, 255, 256, 257, 65_535, 65_536, 65_537] {
+            let array = indices(length).expect("length fits a pointer array");
+
+            assert_eq!(array.len(), length, "length {length}");
+            assert_eq!(
+                array.width(),
+                get_pointer_array(length as f64).unwrap(),
+                "width for {length}"
+            );
+
+            for slot in 0..length {
+                assert_eq!(array.get(slot), slot as u32, "slot {slot} of {length}");
+            }
+        }
+    }
+
+    #[test]
+    fn indices_refuses_a_length_no_pointer_array_can_index() {
+        assert_eq!(
+            indices(4_294_967_297).map(|array| array.len()),
+            Err(POINTER_ARRAY_TOO_LARGE)
+        );
     }
 
     #[test]
