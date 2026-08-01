@@ -455,6 +455,19 @@ function heapAscending(a, b) {
   return 0;
 }
 
+// A fixed pool of real objects, created ONCE and held here for the whole
+// life of this process -- `default-weak-map`'s key identity. A JSON value
+// cannot carry object identity, so a key travels as `{"$weakKey": n}` and
+// `decode` resolves it against pool slot `n`. Held by a plain module-level
+// array (a strong reference) so that none of these objects is EVER eligible
+// for collection during a campaign: `default-weak-map`'s own module docs
+// (`mnemonist_core::structures::default_weak_map`, and
+// `crates/difffuzz/src/modules/default_weak_map.rs`) are explicit that GC
+// timing is not observable through this module's API at all, so a campaign
+// that let a key die mid-run would be measuring an apparatus accident, not
+// the port. Eight slots, matching the Rust side's `KEY_POOL`.
+const WEAK_KEY_POOL = Array.from({length: 8}, () => ({}));
+
 function decode(value) {
   if (Array.isArray(value)) return value.map(decode);
   if (value === null || typeof value !== 'object') return value;
@@ -462,6 +475,7 @@ function decode(value) {
   if (value.$undefined) return undefined;
   if (value.$nan) return NaN;
   if (value.$negativeZero) return -0;
+  if (typeof value.$weakKey === 'number') return WEAK_KEY_POOL[value.$weakKey];
 
   // The inverses of `encode`'s `$set` and `$typed`, needed because a
   // free-function module takes these as ARGUMENTS rather than building them

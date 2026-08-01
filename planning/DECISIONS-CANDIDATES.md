@@ -1701,3 +1701,94 @@ so the choice is unobservable either way. The cost is that the arena grows with 
 lifetime creation count rather than its live size, which is bounded differently than V8's periodic
 GC but is the same shape of promise.
 **Verify:** `mnemonist_core::structures::fibonacci_heap`'s `Arena` and module-level doc comments.
+
+## linked-list, default-weak-map, inverted-index (D-240 .. D-244)
+
+Same numbering caveat as D-160..D-169/D-200..D-202 above: chosen to mirror the B-240..B-259 range
+allocated to this batch, not a continuation of D-173's sequence. Full write-ups in
+`docs/modules/linked-list.md`, `default-weak-map.md`, `inverted-index.md`.
+
+### D-240 — `linked-list`'s arena never frees or recycles a slot
+**Status:** CONFIRMED · **Category:** memory shape · **Divergence:** yes
+**Upstream:** a shifted-off node becomes eligible for V8's GC the moment nothing (no list, no open
+cursor) references it any longer, and is reclaimed on the engine's own schedule.
+**Port:** `LinkedList::arena` is append-only; `shift()` advances `head` but never removes the node
+from the arena, and nothing else ever does either. A list that has pushed and shifted heavily over
+its lifetime keeps every item it has ever held until the whole `LinkedList` itself is dropped.
+**Rationale:** this is the same shape `fibonacci-heap`'s own arena docs already accepted (D-173):
+recycling a slot the moment its node becomes unreachable would require knowing an open cursor does
+not still hold that index, which this port cannot answer without a live reference count per node —
+the identical FFI-boundary constraint D-201 accepts for `trie-map`'s path-based walk (a cursor must
+be resumable from a fresh handle per call, so it cannot be the thing that keeps a node's liveness
+information current). Nothing about the public API exposes node identity or arena occupancy, so the
+choice is unobservable except as a memory-shape difference: at the bridge, a stored item is a real
+JS value (`JsSlot`) kept alive by the arena for longer than upstream would keep the equivalent node
+alive, never permanently and never incorrectly, just later.
+**Verify:** `mnemonist_core::structures::linked_list`'s module docs; `docs/modules/linked-list.md`.
+
+### D-241 — `default-weak-map`'s collected key is never proactively released
+**Status:** CONFIRMED · **Category:** memory shape · **Divergence:** yes
+**Upstream:** a real `WeakMap` entry (key and value together) becomes eligible for reclamation the
+moment its key is unreachable elsewhere, on the engine's own schedule.
+**Port:** `WeakKey` wraps a genuinely weak `napi_ref` (initial refcount 0), so the *key* itself is
+never kept alive by this port — matching upstream exactly. But no finalizer is registered per key
+to notice the exact moment of collection; a dead `WeakKey` (one whose `napi_ref` upgrade fails)
+simply never matches any future candidate again, which is the correct answer since a caller could
+never present that exact object as an argument again either, but its stored *value* stays retained
+— occupying one slot in the linear scan — until the whole `DefaultWeakMap` is finalized.
+**Rationale:** nothing upstream exposes can distinguish this from prompt reclamation — there is no
+`size`, no iteration, nothing that reads as "how many entries remain" — so implementing per-key
+finalization would be machinery built for a distinction no test, and no upstream API surface, can
+observe. The identical judgement call as D-240, applied to a structure whose entire contract is
+already "you cannot observe the whole state" (see `docs/modules/default-weak-map.md`'s own opening
+section).
+**Verify:** `crates/mnemonist-napi/src/default_weak_map.rs`'s module docs;
+`docs/modules/default-weak-map.md`.
+
+### D-242 — `default-weak-map`'s `get` rejects a non-object key before running the factory; upstream runs the factory first
+**Status:** CONFIRMED · **Category:** behavioural · **Divergence:** yes
+**Upstream:** `get`'s internal shape is read (`this.items.get(key)`, never throws for any key
+type), then — on a miss — call the factory (any type, any side effects), then write
+(`this.items.set(key, value)`, a real `WeakMap.prototype.set`, which throws `TypeError: Invalid
+value used as weak map key` for anything but an object). So `get(1)` on a fresh map runs the
+factory and *then* throws. Verified against Node 24.18.1.
+**Port:** `JsDefaultWeakMap::get` checks the key's type first and returns the same `TypeError`
+immediately, without running the factory, for a non-object key.
+**Rationale:** reproducing the exact order would require calling this port's typed factory
+(`FunctionRef<FnArgs<(JsSlot,)>, Received>`) with a value its own signature has no slot for.
+`test/default-weak-map.js` never calls `get` with a non-object key at all, so no test — original or
+this port's own — reaches the ordering distinction; every other path (`peek`/`has`/`delete` never
+throwing for any key type, `get`/`set` eventually throwing the identical message for one) matches
+exactly.
+**Verify:** `crates/mnemonist-napi/src/default_weak_map.rs`'s `get` doc comment;
+`docs/modules/default-weak-map.md`.
+
+### D-243 — `inverted-index`'s `identity` tokenizer fallback is modelled as `Option::None`, not a materialised JS closure
+**Status:** CONFIRMED · **Category:** scope · **Divergence:** no (observationally identical)
+**Upstream:** `function identity(x) { return x; }` is a real function object, assigned to
+`this.documentTokenizer`/`this.queryTokenizer` when the constructor's `descriptor` argument is
+falsy.
+**Port:** `resolve_tokenizer` returns `None` for a falsy descriptor half, and
+`JsInvertedIndex::tokenize` applies the identical `Array.isArray`-then-convert rule directly to the
+untouched input for that case, without ever constructing or calling a JS function.
+**Rationale:** observationally identical — the input is handed back and validated exactly as
+calling `identity` and validating its return value would be — and avoids the `Function`-lifetime
+re-adoption machinery (see `default_map.rs`'s `autoIncrement` for what that would look like) a real
+closure would need here for no behavioural difference. Listed as a candidate rather than skipped
+because CLAUDE.md asks every divergence to be recorded, even one this port considers a wash.
+**Verify:** `crates/mnemonist-napi/src/inverted_index.rs`'s `tokenize` doc comment;
+`docs/modules/inverted-index.md`.
+
+### D-244 — `default-weak-map` accepts only plain objects as keys; a real `WeakMap` also accepts functions and symbols
+**Status:** CONFIRMED · **Category:** scope · **Divergence:** yes
+**Upstream:** `WeakMap` keys may be any object, function, or (unregistered) symbol.
+**Port:** `WeakKey::new` (via `as_object`) accepts `ValueType::Object` only; a function or symbol
+key is rejected with a message naming the limit, the same way an object key is rejected for the
+`Map`-backed T3 family (`js_key.rs`'s own `UNSUPPORTED`).
+**Rationale:** `test/default-weak-map.js` never constructs a key any way but a bare object literal
+`{}`. Implementing napi's function/symbol reference paths for a distinction nothing here exercises
+would be exactly the "machinery no test can reach" `js_key.rs` already declines to build, mirrored
+in the opposite direction: there, object keys are out of scope because nothing tests them; here,
+object keys are the entire point, and function/symbol keys are what nothing tests.
+**Verify:** `crates/mnemonist-napi/src/default_weak_map.rs`'s `as_object`/`UNSUPPORTED`;
+`docs/modules/default-weak-map.md`.

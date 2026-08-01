@@ -975,3 +975,40 @@
 2026-08-01T16:34:28Z  module=fibonacci-heap seed=20260801 cases=4702 ops=945478 wall=60.0s divergences=0
 2026-08-01T16:44:18Z  module=_utils seed=42 cases=16966 ops=678098 wall=60.0s divergences=0
 2026-08-01T16:45:23Z  module=_utils seed=20260801 cases=16969 ops=675304 wall=60.0s divergences=0
+# linked-list: the FIRST campaign (seed 42, --cases 200, unlogged) diverged twice, one op apart,
+# before any grammar tuning. (1) forEach shared its stepping primitive with values()/entries(),
+# which advances eagerly; upstream's forEach advances AFTER its callback runs, so a callback that
+# pushes while the walk sits on the current tail must see the pushed node too, and the eager
+# primitive missed it. (2) push() branched on `tail` instead of `head` (unlike upstream's own guard
+# and unlike this port's own unshift()), indistinguishable except in the exact state B-241 produces
+# (head None, tail stale), where it linked onto the stale tail instead of starting a fresh list and
+# left head stuck at None. Both fixed in core (ListCursor::current/advance; push() now checks head);
+# see crates/mnemonist-core/src/structures/linked_list.rs's module docs and push()'s own doc comment.
+# The two lines below are the post-fix campaigns.
+2026-08-01T18:28:34Z  module=linked-list seed=42 cases=29 ops=3140 wall=61.5s divergences=0
+2026-08-01T18:28:34Z  module=linked-list seed=20260801 cases=43 ops=3803 wall=69.8s divergences=0
+2026-08-01T18:44:17Z  module=default-weak-map seed=42 cases=10931 ops=1089673 wall=60.0s divergences=0
+2026-08-01T18:44:17Z  module=default-weak-map seed=20260801 cases=10814 ops=1090089 wall=60.0s divergences=0
+# inverted-index: the FIRST campaign (seed 42, unlogged) panicked inside a few hundred cases --
+# `index out of bounds: the len is 0 but the index is 0` in DocumentsCursor::step, reached by a
+# generated program that opened a documents() cursor, called clear(), then stepped again. Cause:
+# clear() emptied `self.items` (a plain Vec) in place while the cursor's frozen length still
+# reflected the pre-clear size, and upstream's own clear() actually REBINDS this.items/this.mapping
+# rather than emptying them (confirmed against Node 24.18.1: an open documents()/tokens() cursor
+# survives a clear() and keeps yielding the pre-clear state). Fixed by making both Rc<RefCell<_>>,
+# rebound on clear, captured by the cursor at open time -- see
+# crates/mnemonist-core/src/structures/inverted_index.rs's module docs. The two lines below are the
+# post-fix campaigns.
+2026-08-01T18:44:17Z  module=inverted-index seed=42 cases=9600 ops=968510 wall=60.0s divergences=0
+2026-08-01T18:44:17Z  module=inverted-index seed=20260801 cases=9632 ops=967012 wall=60.0s divergences=0
+# linked-list correction: the two campaigns logged above (cases=29/43, ~60-70s wall for ~3-4k ops)
+# were measuring a grammar with a latent hang, not a slow port. `$forEach`'s `push` mutation used the
+# same uncapped FOR_EACH_MANY limit every other mutation table in this port uses, but push-while-the-
+# walk-sits-on-the-tail relinks that exact tail's `.next` to the node just pushed, and this module's
+# walk advances onto THAT node next -- which is now itself the tail. Uncapped, that chases its own
+# tail forever (matches a real Node forEach in the identical shape; not a divergence). Capped push's
+# own limit to 8 in crates/difffuzz/src/modules/linked_list.rs; per-case throughput went from ~2s to
+# ~5ms. The two lines below are the same two seeds, re-run after the fix, and are the campaigns that
+# actually count.
+2026-08-01T18:53:12Z  module=linked-list seed=42 cases=11790 ops=1184507 wall=60.0s divergences=0
+2026-08-01T18:53:12Z  module=linked-list seed=20260801 cases=11865 ops=1187723 wall=60.0s divergences=0

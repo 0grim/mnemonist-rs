@@ -72,6 +72,11 @@ use difffuzz::modules::multi_set::MultiSetSpec;
 // Appended at the end, never inserted (CLAUDE.md, Git): a new line anywhere
 // else is a merge conflict.
 use difffuzz::modules::fibonacci_heap::FibonacciHeapSpec;
+// Appended at the end, never inserted (CLAUDE.md, Git): a new line anywhere
+// else is a merge conflict.
+use difffuzz::modules::default_weak_map::DefaultWeakMapSpec;
+use difffuzz::modules::inverted_index::InvertedIndexSpec;
+use difffuzz::modules::linked_list::LinkedListSpec;
 
 const USAGE: &str = "\
 usage: difffuzz --module <name> [--seed N] [--duration SECONDS] [--cases N] [--batch N]
@@ -86,7 +91,8 @@ usage: difffuzz --module <name> [--seed N] [--duration SECONDS] [--cases N] [--b
               bk-tree, heap, fixed-reverse-heap, trie-map, trie
               bk-tree, heap, fixed-reverse-heap, lru-cache,
               lru-cache-with-delete, lru-map, lru-map-with-delete,
-              multi-map, multi-set, fuzzy-multi-map, fibonacci-heap
+              multi-map, multi-set, fuzzy-multi-map, fibonacci-heap,
+              linked-list, default-weak-map, inverted-index
   --seed      campaign seed (default 42); with --cases, reproduces exactly
   --duration  wall-clock budget in seconds (default 60)
   --cases     stop after N cases instead of after --duration
@@ -392,6 +398,30 @@ fn main() -> ExitCode {
             &FibonacciHeapSpec,
             &Campaign {
                 regressions: difffuzz::modules::fibonacci_heap::REGRESSIONS,
+                ..campaign
+            },
+        ),
+        // Appended at the END of the module arms, never between them: a
+        // merge conflict boundary inside a match arm has broken this tree
+        // before (CLAUDE.md, Git).
+        "linked-list" => difffuzz::run(
+            &LinkedListSpec,
+            &Campaign {
+                regressions: difffuzz::modules::linked_list::REGRESSIONS,
+                ..campaign
+            },
+        ),
+        "default-weak-map" => difffuzz::run(
+            &DefaultWeakMapSpec,
+            &Campaign {
+                regressions: difffuzz::modules::default_weak_map::REGRESSIONS,
+                ..campaign
+            },
+        ),
+        "inverted-index" => difffuzz::run(
+            &InvertedIndexSpec,
+            &Campaign {
+                regressions: difffuzz::modules::inverted_index::REGRESSIONS,
                 ..campaign
             },
         ),

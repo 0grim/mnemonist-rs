@@ -2443,3 +2443,138 @@ Recorded because the shape recurs: **an instruction to exercise a path assumes t
 The honest answer to "make X fire" is sometimes "X does not exist", and that answer is only
 available to someone who reads the source rather than tuning the grammar until the report looks
 right.
+
+## linked-list, default-weak-map, inverted-index (B-240..B-259 range)
+
+Full write-ups: `docs/modules/linked-list.md`, `docs/modules/default-weak-map.md`,
+`docs/modules/inverted-index.md`. Only three IDs used this batch (B-240..B-242); B-243..B-259 are
+unused and available to a later agent working in this file, should one need them — do not assume
+they are claimed.
+
+### B-240 — `InvertedIndex.prototype.forEach` never calls its callback, on any index
+
+`status: verified against Node 24.18.1` · `inverted-index.js`.
+
+```js
+InvertedIndex.prototype.forEach = function(callback, scope) {
+  scope = arguments.length > 1 ? scope : this;
+  for (var i = 0, l = this.documents.length; i < l; i++)
+    callback.call(scope, this.documents[i], i, this);
+};
+```
+
+`this.documents` is the **method** defined a few lines above (`InvertedIndex.prototype.documents`),
+not `this.items`, the property that actually holds the document array. A function's `.length` is
+its declared parameter count; `documents` takes none, so `this.documents.length` is `0` —
+permanently, regardless of how many documents the index holds. The loop never runs once:
+
+```js
+var index = InvertedIndex.from(['a b', 'b c'], s => s.split(' '));
+var times = 0;
+index.forEach(function () { times++; });
+times;   // 0
+```
+
+`test/inverted-index.js`'s own `forEach` block asserts the callback's arguments on every
+invocation but never counts how many happened, so it passes identically whether the callback runs
+zero times or *n* times — gate 4 cannot find this on its own. Reproduced rather than "fixed": a
+walk visiting every document would be the useful, correct behaviour a careful porter writes by
+default, which is exactly why keeping it broken is the bug-for-bug-correct choice. Port:
+`InvertedIndex::for_each` hands back a cursor frozen at length zero unconditionally.
+
+### B-241 — `LinkedList.prototype.shift` never updates `tail`, so emptying the list leaves `last()` stale
+
+`status: verified against Node 24.18.1` · `linked-list.js`.
+
+```js
+LinkedList.prototype.shift = function() {
+  if (!this.size) return undefined;
+  var node = this.head;
+  this.head = node.next;
+  this.size--;
+  return node.item;                 // `this.tail` is never read or written
+};
+```
+
+Shifting the list down to exactly zero elements leaves `head` correctly `null` but `tail` still
+pointing at the just-removed node:
+
+```text
+var list = new LinkedList(); list.push('a');
+list.shift();      // -> 'a'
+list.last();        // 'a'  -- STALE: the removed item, not undefined
+```
+
+Silent and self-healing, the same shape as B-40: the next `push`/`unshift` on an empty list
+resynchronises `tail` unconditionally (`if (!this.head) { this.head = node; this.tail = node; }`),
+so the staleness is observable only in the narrow window between "shifted to empty" and "the next
+insert." `test/linked-list.js` never shifts a list fully empty and then reads `last()`, so gate 4
+has zero coverage. Port: `LinkedList::shift` deliberately does not touch `tail`; `LinkedList::last`
+reads it verbatim with no `size == 0` guard, matching upstream's own absence of one.
+
+### B-242 — `DefaultWeakMap.prototype.get` tests the *value*, not the key, so the factory re-runs on every read of a key holding `undefined`
+
+`status: verified against Node 24.18.1` · `default-weak-map.js`.
+
+```js
+DefaultWeakMap.prototype.get = function(key) {
+  var value = this.items.get(key);
+  if (typeof value === 'undefined') {   // tests the VALUE, not "is the key present"
+    value = this.factory(key);
+    this.items.set(key, value);
+  }
+  return value;
+};
+```
+
+The same defect class as `default-map.js`'s B-40 (`this.items.get(key)` cannot distinguish "no
+such key" from "the key is present and holds `undefined`"), minus B-40's `size++` side effect,
+because a `WeakMap` has no `size` to drift. The consequence that remains: the factory keeps
+re-running on every `get` of such a key, while `has()` correctly reports the key present the whole
+time. `test/default-weak-map.js`'s `FACTORY` never returns `undefined`, so this is entirely
+unreached by gate 4. Port: `DefaultWeakMap::peek` flattens "missing" and "stored `undefined`" into
+one `None`, and the bridge's `get` re-runs the factory whenever `peek` misses, mirroring
+`default_map.rs`'s identical `get`/B-40 shape.
+
+## Two port defects found by fuzzing, both fixed before any campaign was logged (not upstream bugs, no B-id)
+
+Recorded here rather than only in `docs/modules/linked-list.md`/`inverted-index.md`, per this
+project's own precedent (`docs/modules/lru-cache.md`'s "Bugs this found" section for its own two
+port defects) — a defect a gate never caught but the fuzzer did is exactly the kind of thing this
+file exists to capture, even though it carries no `B-nn` (that range is upstream bugs only).
+
+**`linked-list`'s first campaign (`--seed 42 --cases 63`) found two, one operation apart, before
+any grammar tuning:**
+
+1. `forEach` shared its stepping primitive with `values()`/`entries()`, which advances *eagerly*
+   (read item, advance, return). Upstream's `forEach` advances *after* its callback runs — two
+   separate statements, with the callback free to mutate in between — while the lazy iterators'
+   `n = n.next` runs inside the same call that produced the previous value, before the caller
+   regains control. A callback that `push`es while the walk sits on the (old) tail must see the
+   pushed node too; the eager primitive missed it. Fixed by `ListCursor::current`/`::advance`, a
+   peek-then-commit split `forEach` alone uses.
+2. `push()` branched on `self.tail` instead of `self.head` — indistinguishable from upstream's own
+   `if (!this.head) {...}` guard in every state except the one B-241 produces (`head` `None`,
+   `tail` stale-`Some`), where the wrong branch linked onto the stale tail and left `head` stuck at
+   `None` permanently. Fixed to check `head`, matching upstream's guard and this port's own
+   (already-correct) `unshift`.
+
+Both are documented in full, with repros, in `crates/mnemonist-core/src/structures/linked_list.rs`'s
+own module docs and `docs/modules/linked-list.md`.
+
+**`inverted-index`'s first campaign found one:** an open `documents()` cursor panicked
+(`index out of bounds`) the moment `clear()` ran between two of its steps, because the cursor
+re-read `self.items` (a plain `Vec`) against a length frozen before the clear — unsound, since
+upstream's own `clear()` **rebinds** `this.items`/`this.mapping` (`this.items = [];`) rather than
+emptying them in place (the opposite of `default-map.js`'s `this.items.clear()`, on the same `Map`
+object). Fixed by making both `Rc<RefCell<_>>`, captured by the cursor at open time. Full account
+in `crates/mnemonist-core/src/structures/inverted_index.rs`'s module docs and
+`docs/modules/inverted-index.md`.
+
+**A grammar hazard in `linked-list`'s own fuzz spec, not the port:** `$forEach`'s `push` mutation
+used the same uncapped limit every other mutation table in this port uses, but a `push` while the
+walk sits on the tail relinks that exact tail's `.next` to the node just pushed, and the walk then
+advances onto precisely that node — now itself the tail — chasing its own tail forever. Not a
+divergence (a real Node `forEach` in the identical shape loops identically); a program the grammar
+must not generate. Capped at 8; see `fuzz/log.txt` for the throughput before/after (~2s/case to
+~5ms/case).
