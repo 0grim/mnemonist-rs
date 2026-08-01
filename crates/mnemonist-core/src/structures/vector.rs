@@ -160,9 +160,13 @@ pub enum Error {
     /// `(NaN)`. Not an upstream message; see the module docs and the
     /// `bit-vector` divergence it mirrors.
     PolicyNotRepresentable,
-    /// `Vector(<ArrayClass>).set: index out of bounds.` The class name is
-    /// only known at the bridge, so the full text is assembled there.
-    IndexOutOfBounds,
+    /// `Vector(<ArrayClass>).set: index out of bounds.` `class` is upstream's
+    /// `this.ArrayClass.name`, resolved from [`Storage::class_name`] --
+    /// carried in the error itself (rather than assembled at the bridge, as
+    /// an earlier draft did) so the message this crate produces already
+    /// matches upstream byte for byte, which the differential fuzzer
+    /// compares literally.
+    IndexOutOfBounds { class: &'static str },
     /// The `PointerVector` factory's width cannot index the requested
     /// capacity — upstream's `getPointerArray` throw,
     /// [`crate::utils::typed_arrays::POINTER_ARRAY_TOO_LARGE`].
@@ -184,7 +188,9 @@ impl fmt::Display for Error {
                 "mnemonist-rs/vector.applyPolicy: policy returned a value that is not \
                  a finite capacity.",
             ),
-            Self::IndexOutOfBounds => formatter.write_str("Vector.set: index out of bounds."),
+            Self::IndexOutOfBounds { class } => {
+                write!(formatter, "Vector({class}).set: index out of bounds.")
+            }
             Self::LengthTooLarge => {
                 formatter.write_str(crate::utils::typed_arrays::POINTER_ARRAY_TOO_LARGE)
             }
@@ -220,6 +226,22 @@ impl Storage {
 
     pub fn is_empty(&self) -> bool {
         self.len() == 0
+    }
+
+    /// `this.ArrayClass.name`, for the one upstream message that interpolates
+    /// it. `"pointerArrayFactory"` for [`Storage::Pointer`] is the *variable*
+    /// name upstream's own `var pointerArrayFactory = function (capacity) {
+    /// ... }` infers for it, verified against Node 24.18.1.
+    fn class_name(&self) -> &'static str {
+        match self {
+            Self::Fixed(values) => match values.width() {
+                PointerWidth::U8 => "Uint8Array",
+                PointerWidth::U16 => "Uint16Array",
+                PointerWidth::U32 => "Uint32Array",
+            },
+            Self::Pointer(_) => "pointerArrayFactory",
+            Self::F64(_) => "Float64Array",
+        }
     }
 
     /// `this.array[index]`, unconditionally in range: the caller has already
@@ -419,7 +441,9 @@ impl Vector {
     /// capacity region without moving `length`. See the module docs.
     pub fn set(&mut self, index: usize, value: f64) -> Result<(), Error> {
         if self.length < index {
-            return Err(Error::IndexOutOfBounds);
+            return Err(Error::IndexOutOfBounds {
+                class: self.storage.class_name(),
+            });
         }
 
         // `index == capacity` only when the vector is exactly full: the real
@@ -639,7 +663,12 @@ mod tests {
 
         // "setting an out-of-bound index should throw."
         let mut vector = fixed(PointerWidth::U8, 4);
-        assert_eq!(vector.set(56, 4.0), Err(Error::IndexOutOfBounds));
+        assert_eq!(
+            vector.set(56, 4.0),
+            Err(Error::IndexOutOfBounds {
+                class: "Uint8Array"
+            })
+        );
 
         // "should be possible to push values."
         let mut vector = fixed(PointerWidth::U8, 5);
@@ -963,5 +992,45 @@ mod tests {
         assert_eq!((vector.length(), vector.capacity()), (300, 300));
         assert_eq!(vector.get(299), Some(299.0));
         assert_eq!(vector.get(300), None);
+    }
+
+    /// The out-of-bounds message names the actual backing class -- verified
+    /// against Node 24.18.1 for all four widths this port models, plus the
+    /// `PointerVector` factory's inferred function name.
+    #[test]
+    fn the_out_of_bounds_message_names_the_actual_backing_class() {
+        assert_eq!(
+            fixed(PointerWidth::U8, 1)
+                .set(5, 0.0)
+                .unwrap_err()
+                .to_string(),
+            "Vector(Uint8Array).set: index out of bounds."
+        );
+        assert_eq!(
+            fixed(PointerWidth::U16, 1)
+                .set(5, 0.0)
+                .unwrap_err()
+                .to_string(),
+            "Vector(Uint16Array).set: index out of bounds."
+        );
+        assert_eq!(
+            fixed(PointerWidth::U32, 1)
+                .set(5, 0.0)
+                .unwrap_err()
+                .to_string(),
+            "Vector(Uint32Array).set: index out of bounds."
+        );
+        assert_eq!(
+            Vector::f64(1, 0).set(5, 0.0).unwrap_err().to_string(),
+            "Vector(Float64Array).set: index out of bounds."
+        );
+        assert_eq!(
+            Vector::pointer(1, 0)
+                .unwrap()
+                .set(5, 0.0)
+                .unwrap_err()
+                .to_string(),
+            "Vector(pointerArrayFactory).set: index out of bounds."
+        );
     }
 }

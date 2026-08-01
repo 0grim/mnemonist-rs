@@ -98,8 +98,6 @@ pub struct JsVector {
     inner: RefCell<CoreVector>,
     /// Where [`JsPolicy`] leaves an exception thrown by the JS policy.
     thrown: Rc<RefCell<Option<Error>>>,
-    /// `this.ArrayClass.name`, for the `set` out-of-bounds message.
-    class_name: &'static str,
 }
 
 #[napi]
@@ -115,7 +113,7 @@ impl JsVector {
         // observe through an omitted first parameter.
         let array_class =
             array_class.ok_or_else(|| Error::new(Status::InvalidArg, MISSING_ARRAY_CLASS))?;
-        let (kind, class_name) = resolve_array_class(&env, &array_class)?;
+        let (kind, _class_name) = resolve_array_class(&env, &array_class)?;
         let (capacity, length, policy) = resolve_options(&env, initial_capacity_or_options)?;
         let thrown = Rc::new(RefCell::new(None));
 
@@ -124,7 +122,6 @@ impl JsVector {
         Ok(Self {
             inner: RefCell::new(inner),
             thrown,
-            class_name,
         })
     }
 
@@ -145,7 +142,6 @@ impl JsVector {
             .map(|inner| Self {
                 inner: RefCell::new(inner),
                 thrown,
-                class_name: "pointerArrayFactory",
             })
             .map_err(raise)
     }
@@ -283,7 +279,7 @@ impl JsVector {
         array_class: Unknown,
         capacity: Option<f64>,
     ) -> Result<Self> {
-        let (kind, class_name) = resolve_array_class(&env, &array_class)?;
+        let (kind, _class_name) = resolve_array_class(&env, &array_class)?;
 
         // `arguments.length < 3`: guess when the capacity is omitted.
         let capacity = match capacity {
@@ -307,7 +303,6 @@ impl JsVector {
         Ok(Self {
             inner: RefCell::new(inner),
             thrown: Rc::new(RefCell::new(None)),
-            class_name,
         })
     }
 
@@ -336,7 +331,6 @@ impl JsVector {
         Ok(Self {
             inner: RefCell::new(inner),
             thrown: Rc::new(RefCell::new(None)),
-            class_name: "pointerArrayFactory",
         })
     }
 
@@ -356,18 +350,13 @@ impl JsVector {
     }
 
     /// Prefer an exception thrown *by the JS policy* over the core's
-    /// classification of its result, and interpolate `this.ArrayClass.name`
-    /// into the one message that needs it.
+    /// classification of its result. The core's own `Display` already
+    /// interpolates `this.ArrayClass.name` where upstream does (see
+    /// `mnemonist_core::structures::vector::Storage::class_name`), so nothing
+    /// else needs assembling here.
     fn raise(&self, error: CoreError) -> Error {
         if let Some(thrown) = self.thrown.borrow_mut().take() {
             return thrown;
-        }
-
-        if error == CoreError::IndexOutOfBounds {
-            return Error::new(
-                Status::GenericFailure,
-                format!("Vector({}).set: index out of bounds.", self.class_name),
-            );
         }
 
         Error::new(Status::GenericFailure, error.to_string())
