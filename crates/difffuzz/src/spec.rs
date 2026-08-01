@@ -58,7 +58,18 @@ impl Program {
             })
             .collect();
 
-        let ctor: Vec<String> = self.ctor.iter().map(ToString::to_string).collect();
+        // `{"$global": "Uint8Array"}` is how a constructor argument travels
+        // over JSON (see `fuzz/oracle.js`). Rendering it literally would give a
+        // repro that constructs a plain object where upstream wants
+        // `Uint8Array`, so it is unwrapped back to the identifier it stands for.
+        let ctor: Vec<String> = self
+            .ctor
+            .iter()
+            .map(|arg| match arg.get("$global").and_then(Value::as_str) {
+                Some(name) => name.to_owned(),
+                None => arg.to_string(),
+            })
+            .collect();
         let mut out = format!("var s = new {constructor}({});\n", ctor.join(", "));
 
         for op in &self.ops {

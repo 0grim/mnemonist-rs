@@ -1,0 +1,53 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+#
+# PROVENANCE OF THE ENTRIES BELOW -- read before assuming either recorded a
+# real port defect. Neither did. Both were produced by deliberate
+# falsifications of the fuzzer, one per half of this module's new grammar, in
+# the spirit of DoD gate 6: a fuzzer that has never been seen to fail is just a
+# second green light. Both sabotages were reverted; both seeds are replayed
+# before any novel case on every run.
+#
+# --- A: `delete` "fixed" to move the value along with the key ---
+#
+# Upstream's delete is SparseSet's swap-with-last, copied verbatim: the last
+# MEMBER is moved into the hole and the last VALUE is not, so the moved member
+# inherits the deleted member's value (B-11). The sabotage was to move the
+# value too -- which is not a typo but the change a reader makes on purpose,
+# having decided the omission was an oversight.
+#
+# This is the most interesting seed in the repo, because the same sabotage
+# leaves the UPSTREAM TEST SUITE fully green (9 passing, 0 failing) while
+# turning four of our native tests red. The upstream file only ever deletes
+# from a one-element map, where the swap is a self-assignment. The fuzzer found
+# it in 1,474 cases (3.0s) and shrank 200 ops to three:
+#
+#     var s = new SparseMap(5);
+#     s.set(0, 0);
+#     s.set(1, 1);
+#     s.delete(0);   // port vals [1,1,...], upstream [0,1,...]
+#
+cc e7f472d086e35894173b68ce616fb633b61d6683d34d859923cb4a69f17e74cf # shrinks to Program { ctor: [Number(5)], ops: [Op { name: "set", args: [Number(0), Number(0)] }, Op { name: "set", args: [Number(1), Number(1)] }, Op { name: "delete", args: [Number(0)] }] }
+#
+# --- B: the `Array` value store made unable to grow ---
+#
+# `new SparseMap(length)` allocates `new Array(length)`, and a JS array store
+# past the end EXTENDS the array. A typed store drops the same write. The
+# sabotage was to give the Array form the typed form's behaviour -- which is
+# the natural Rust assumption, since a `Vec` allocated at `length` has a length
+# and a store past it is a bug in every other context.
+#
+# Found in 1,147 cases (4.6s) and shrunk to a single operation:
+#
+#     var s = new SparseMap(0);
+#     s.set(0, 0);   // port vals [], upstream [0]
+#
+# One call past the constructor. It proves the store half of the grammar is
+# doing work, and it is the reason the ctor strategy generates all four value
+# constructors rather than only the one the upstream test file uses.
+#
+cc a5e3aa8de361e733d9cfd12044e11a017e1e058dc8f98f199f463a51095f7045 # shrinks to Program { ctor: [Number(0)], ops: [Op { name: "set", args: [Number(0), Number(0)] }] }

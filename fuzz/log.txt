@@ -114,6 +114,45 @@
 #   the repo that satisfies D-21's iteration-interleaved-with-mutation
 #   requirement; static-disjoint-set had no iterator surface to reach it with.
 #
+# sparse-map
+#   ops          set(m, v) [weight 5] · delete(m) [2] · has(m) [2] · get(m) [2]
+#                clear() [1] · $iter("keys"|"values"|"entries") [1 each]
+#                $next() [3] · $spread() [1]
+#   observed     size · length · dense · sparse · vals
+#                after EVERY op, on both sides. `vals` is the one that carries
+#                this module: delete() moves the KEY into the hole and leaves
+#                the VALUE where it was (B-11), so a port that "tidied that up"
+#                would still agree on size, dense, sparse and every has() --
+#                and disagree only on get() and on vals itself.
+#   ctor         BOTH upstream signatures, four value stores:
+#                  new SparseMap(length)                  -> Array
+#                  new SparseMap(Uint8Array,  length)     -> 8-bit
+#                  new SparseMap(Uint16Array, length)     -> 16-bit
+#                  new SparseMap(Uint32Array, length)     -> 32-bit
+#                A constructor cannot travel over JSON, so the Rust side sends
+#                {"$global": "Uint8Array"} and fuzz/oracle.js resolves it
+#                against the real global -- deliberately only for `init` ctor
+#                arguments, never for an op's.
+#   lengths      0..=400, as sparse-set, and for the same two reasons
+#   members      0..length+64, so roughly one in eight is OUT OF RANGE
+#   values       0..=1000, so an 8-bit value store truncates often
+#   program len  1..200 ops
+#   EXCLUDED     the op alphabet, nothing. The VALUES are integers, which is
+#                narrower than every JS number: the bridge takes f64, this spec
+#                takes u32, because the oracle compares JSON and a float that
+#                renders 13.0 on one side and 13 on the other is a false
+#                divergence rather than a finding. Disclosed here rather than
+#                left implicit.
+#
+#   Why all three iterator factories are generated. Once size has run past
+#   length the three projections DISAGREE, and that is exactly where a port
+#   goes wrong: keys() gaps on dense, values() may still have real data from an
+#   Array store that grew past the map's length, and entries() never gaps at
+#   all -- upstream builds the pair [dense[i], vals[i]] and yields the ARRAY,
+#   so a missing half is `undefined` inside a yielded value. $spread goes
+#   through the collection's Symbol.iterator, which upstream aliases to
+#   entries() rather than values().
+#
 # ---------------------------------------------------------------------------
 # THE FUZZER WAS FALSIFIED BEFORE IT WAS TRUSTED.
 #
@@ -146,6 +185,30 @@
 #      because no upstream TEST reaches it, but it is reachable from the
 #      public API in two calls and the fuzzer sees it immediately.
 #
+# sparse-map was falsified twice as well, one sabotage per half of its NEW
+# grammar -- the value store and the projections -- both reverted and both
+# seeds committed with provenance in
+# crates/difffuzz/proptest-regressions/sparse-map.txt:
+#
+#   A. `delete` "fixed" to move the value along with the key, i.e. B-11
+#      repaired. Caught in 1,474 cases (3.0s), shrunk to three ops:
+#          var s = new SparseMap(5); s.set(0,0); s.set(1,1); s.delete(0);
+#          port vals [1,1,...]   upstream [0,1,...]
+#      This is the most instructive seed in the repo: the SAME sabotage leaves
+#      the upstream mocha suite at 9 passing / 0 failing, because that file
+#      only ever deletes from a one-element map, where the swap is a
+#      self-assignment. Measured both ways -- see docs/modules/sparse-map.md.
+#
+#   B. The `Array` value store made unable to grow, i.e. given the typed
+#      store's behaviour. That is the natural Rust assumption: a Vec allocated
+#      at `length` has a length. Caught in 1,147 cases (4.6s), shrunk to ONE
+#      operation:
+#          var s = new SparseMap(0); s.set(0, 0);
+#          port vals []   upstream [0]
+#      It proves the store half of the grammar is doing work, and it is why
+#      the ctor strategy generates all four value constructors rather than the
+#      one the upstream test file happens to use.
+#
 # ---------------------------------------------------------------------------
 # Throughput: ~23,600 op/s including a full mapping()+compile() comparison
 # after every single op. That is the persistent-oracle decision (D-23) paying
@@ -159,3 +222,5 @@
 2026-08-01T00:20:00Z  module=static-disjoint-set seed=20260731 cases=2301 ops=700097 wall=60.0s divergences=0
 2026-08-01T00:31:30Z  module=sparse-set seed=42 cases=19006 ops=1961772 wall=120.0s divergences=0
 2026-08-01T00:35:52Z  module=sparse-set seed=20260801 cases=9425 ops=980895 wall=60.0s divergences=0
+2026-08-01T01:37:17Z  module=sparse-map seed=42 cases=17268 ops=1789276 wall=120.0s divergences=0
+2026-08-01T01:38:17Z  module=sparse-map seed=20260801 cases=8330 ops=860398 wall=60.0s divergences=0

@@ -110,6 +110,29 @@ function encode(value) {
   return value;
 }
 
+// Some constructors take another CONSTRUCTOR as an argument: `SparseMap` is
+// `new SparseMap(Values, length)`, where `Values` is `Array` or a typed-array
+// constructor. JSON cannot carry a function, so the Rust side sends
+// `{"$global": "Uint8Array"}` and it is resolved here, against the real global
+// rather than by name-matching a lookalike.
+//
+// Deliberately narrow: only `init`'s ctor arguments go through this, never an
+// op's arguments. An op that could smuggle in an arbitrary global would make
+// the generated programs unbounded in a way the Rust side cannot mirror.
+function decodeCtorArg(arg) {
+  if (arg === null || typeof arg !== 'object' || typeof arg.$global !== 'string') {
+    return arg;
+  }
+
+  const resolved = globalThis[arg.$global];
+
+  if (typeof resolved === 'undefined') {
+    throw new Error('unknown global in ctor argument: ' + arg.$global);
+  }
+
+  return resolved;
+}
+
 function observe() {
   const state = {};
 
@@ -156,7 +179,7 @@ function handle(request) {
 
     case 'init': {
       const Ctor = require(path.join(UPSTREAM, request.module + '.js'));
-      instance = new Ctor(...request.ctor);
+      instance = new Ctor(...request.ctor.map(decodeCtorArg));
       observations = request.observe;
       cursor = null;
       return {ok: true, state: observe()};
