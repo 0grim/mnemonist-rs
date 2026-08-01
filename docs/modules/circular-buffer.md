@@ -117,7 +117,8 @@ Characterising the shape of that coverage:
 
 ## What we test in addition
 
-`crates/mnemonist-core/src/structures/circular_buffer.rs` — 11 tests:
+`crates/mnemonist-core/src/structures/circular_buffer.rs` — **13 tests**; the eleven substantive
+ones are below, plus the error-text and `Debug` checks:
 
 | Test | Closes gap |
 |---|---|
@@ -133,7 +134,7 @@ Characterising the shape of that coverage:
 | `an_overwriting_push_is_visible_to_an_open_cursor` | 13 — the sharpest hybrid-capture case in the wave |
 | `cursors_do_not_restart_but_the_buffer_can_be_walked_again` | 13 |
 
-Plus the whole of `fixed_deque.rs`'s 12 tests and `backing.rs`'s 4, which this class inherits by
+Plus the whole of `fixed_deque.rs`'s 17 tests and `backing.rs`'s 4, which this class inherits by
 construction rather than by copy — the delegation is what makes that true rather than merely
 claimed.
 

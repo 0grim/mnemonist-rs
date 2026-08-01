@@ -115,7 +115,8 @@ and never exercised by the original suite.
 
 ## What we test in addition
 
-`crates/mnemonist-core/src/structures/fixed_stack.rs` — 18 tests:
+`crates/mnemonist-core/src/structures/fixed_stack.rs` — **19 tests**; the eighteen substantive
+ones are below, plus a `Debug` smoke test:
 
 | Test | Closes gap |
 |---|---|

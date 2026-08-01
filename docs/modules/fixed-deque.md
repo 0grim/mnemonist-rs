@@ -93,7 +93,8 @@ Characterising the shape of that coverage:
 
 ## What we test in addition
 
-`crates/mnemonist-core/src/structures/fixed_deque.rs` — 12 tests:
+`crates/mnemonist-core/src/structures/fixed_deque.rs` — **17 tests**; the sixteen substantive
+ones are below, plus a `Debug` smoke test:
 
 | Test | Closes gap |
 |---|---|
