@@ -203,11 +203,15 @@ impl JsBiMapInverse {
         self.source.borrow().inverse_size() as u32
     }
 
-    /// Same function as `BiMap::clear`: both `this.items` and
-    /// `this.inverse.items` are cleared regardless of which view called it.
+    /// Same upstream function as `BiMap::clear`, called with `this` being the
+    /// inverse view: both `this.items` and `this.inverse.items` are cleared
+    /// regardless of which view called it, but only `this.size` (i.e.
+    /// `inverse.size` from the outer `BiMap`'s perspective) is reset — B-120.
+    /// `Core::clear_reverse` is the direction-aware half of that; calling
+    /// `Core::clear` here would zero the wrong counter.
     #[napi]
     pub fn clear(&self) {
-        self.source.borrow_mut().clear();
+        self.source.borrow_mut().clear_reverse();
     }
 
     #[napi]

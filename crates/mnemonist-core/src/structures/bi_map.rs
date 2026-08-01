@@ -104,6 +104,14 @@ use crate::map::OrderedMap;
 pub struct BiMap<K> {
     items: OrderedMap<K, K>,
     inverse: OrderedMap<K, K>,
+    /// Upstream's `this.size`. A real stored counter, not `items.len()` — see
+    /// "`clear` desyncs it from `inverse.size`" above. `set`/`delete` refresh
+    /// it from `items.len()` on every call (from either direction), but
+    /// `clear`/`clear_reverse` touch only one of the two counters, exactly as
+    /// upstream's shared `clear` function touches only `this.size`.
+    size: usize,
+    /// Upstream's `this.inverse.size`. See [`BiMap::size`].
+    inverse_size: usize,
 }
 
 impl<K> Default for BiMap<K> {
@@ -117,6 +125,8 @@ impl<K> BiMap<K> {
         Self {
             items: OrderedMap::new(),
             inverse: OrderedMap::new(),
+            size: 0,
+            inverse_size: 0,
         }
     }
 
@@ -132,24 +142,36 @@ impl<K> BiMap<K> {
         &self.inverse
     }
 
-    /// Upstream's `size`: always `items().len()`. See the module docs for why
-    /// no stored counter is needed.
+    /// Upstream's `size`. A stored counter — see the module docs (B-120) for
+    /// why this must not be `items().len()`.
     pub fn size(&self) -> usize {
-        self.items.len()
+        self.size
     }
 
-    /// Upstream's `inverse.size`: always equal to [`BiMap::size`], because the
-    /// structure is a bijection.
+    /// Upstream's `inverse.size`. See [`BiMap::size`].
     pub fn inverse_size(&self) -> usize {
-        self.inverse.len()
+        self.inverse_size
     }
 
-    /// Upstream's `clear`, shared verbatim by `BiMap` and `InverseMap`:
-    /// `this.items.clear(); this.inverse.items.clear();` empties both sides
-    /// regardless of which one `this` was.
+    /// Upstream's `clear`, called through the forward view: empties **both**
+    /// underlying maps but resets only `this.size` — B-120. `inverse_size` is
+    /// left exactly as it was; it is not recomputed from the now-empty
+    /// `inverse` map, because upstream's `this.inverse.size` is not touched
+    /// either.
     pub fn clear(&mut self) {
         self.items.clear();
         self.inverse.clear();
+        self.size = 0;
+    }
+
+    /// `InverseMap.prototype.clear` — the *same* upstream function as
+    /// [`BiMap::clear`], called with `this` being the inverse view: empties
+    /// both maps but resets only `this.size`, which from the inverse side is
+    /// `inverse_size`. `size` is left stale — B-120.
+    pub fn clear_reverse(&mut self) {
+        self.items.clear();
+        self.inverse.clear();
+        self.inverse_size = 0;
     }
 }
 
@@ -174,9 +196,17 @@ impl<K: Hash + Eq + Clone> BiMap<K> {
     }
 
     /// Upstream's `set`. See the module docs for the four-branch constraint
-    /// resolution this reproduces.
+    /// resolution this reproduces. Unconditionally resyncs both counters from
+    /// the live maps afterwards: upstream's `set` only touches `this.size` /
+    /// `this.inverse.size` on the falling-through insert path, never on an
+    /// early-return no-op, but a no-op is only reachable when `items`/
+    /// `inverse` already hold the colliding entry — which cannot be true right
+    /// after a `clear()` left a stale counter, since `clear` genuinely empties
+    /// both maps. So an unconditional resync here can only ever recompute the
+    /// value the maps already have, and stays exactly in step with upstream.
     pub fn set(&mut self, key: K, value: K) {
         link(&mut self.items, &mut self.inverse, key, value);
+        self.resync_counters();
     }
 
     /// `InverseMap.prototype.set`, called on the inverse view: the same
@@ -184,17 +214,47 @@ impl<K: Hash + Eq + Clone> BiMap<K> {
     /// order the inverse map's callers give them (`value` first).
     pub fn set_reverse(&mut self, value: K, key: K) {
         link(&mut self.inverse, &mut self.items, value, key);
+        self.resync_counters();
     }
 
     /// Upstream's `delete`. `None` is upstream's `false`; `Some(value)` is
     /// `true`, carrying the value that was released from both sides.
+    ///
+    /// Resyncs the counters ONLY when something was actually released.
+    /// Unlike `set`, a no-op `delete` (key absent) is very much reachable with
+    /// a stale counter still sitting there — right after `clear()` the maps
+    /// are genuinely empty, so `delete` on any key is a no-op — and upstream's
+    /// `del` does not touch either counter on that path. Resyncing
+    /// unconditionally here would "heal" the stale counter early and hide
+    /// B-120 on exactly the case fuzzing found first.
     pub fn delete(&mut self, key: &K) -> Option<K> {
-        unlink(&mut self.items, &mut self.inverse, key)
+        let released = unlink(&mut self.items, &mut self.inverse, key);
+
+        if released.is_some() {
+            self.resync_counters();
+        }
+
+        released
     }
 
-    /// `InverseMap.prototype.delete`, called on the inverse view.
+    /// `InverseMap.prototype.delete`, called on the inverse view. See
+    /// [`BiMap::delete`] for why the resync is conditional.
     pub fn delete_reverse(&mut self, value: &K) -> Option<K> {
-        unlink(&mut self.inverse, &mut self.items, value)
+        let released = unlink(&mut self.inverse, &mut self.items, value);
+
+        if released.is_some() {
+            self.resync_counters();
+        }
+
+        released
+    }
+
+    /// Both counters from the live maps. Called after every `set`/`delete` —
+    /// never after `clear`/`clear_reverse`, which is exactly what makes the
+    /// two counters able to desync in the first place (B-120).
+    fn resync_counters(&mut self) {
+        self.size = self.items.len();
+        self.inverse_size = self.inverse.len();
     }
 }
 
@@ -431,13 +491,56 @@ mod tests {
 
         // `InverseMap.prototype.clear` is the SAME function as `BiMap`'s; the
         // bridge calls it through the inverse view, but the effect on the
-        // shared core is identical either way.
-        map.clear();
+        // shared core is identical either way: both underlying maps empty.
+        map.clear_reverse();
 
-        assert_eq!(map.size(), 0);
-        assert_eq!(map.inverse_size(), 0);
         assert!(!map.has(&"one"));
         assert!(!map.has_reverse(&"hello"));
+    }
+
+    /// B-120: `clear` empties both maps but resets only the counter on the
+    /// side it was called from — verified against Node 24.18.1 (see the
+    /// module docs). A port that also zeroes `inverse_size` here is *more
+    /// correct* than upstream, which this project treats as a defect, not an
+    /// improvement.
+    #[test]
+    fn clear_desyncs_size_from_inverse_size_b_120() {
+        let mut forward: BiMap<&str> = BiMap::new();
+        forward.set("a", "a");
+        forward.clear();
+
+        assert_eq!(forward.size(), 0, "clear() always resets its own side");
+        assert_eq!(
+            forward.inverse_size(),
+            1,
+            "clear() must NOT resync inverse_size — B-120"
+        );
+        assert!(
+            !forward.has(&"a"),
+            "the underlying maps are empty either way"
+        );
+        assert!(!forward.has_reverse(&"a"));
+
+        let mut reverse: BiMap<&str> = BiMap::new();
+        reverse.set("a", "a");
+        reverse.clear_reverse();
+
+        assert_eq!(
+            reverse.inverse_size(),
+            0,
+            "clear_reverse() resets its own side"
+        );
+        assert_eq!(
+            reverse.size(),
+            1,
+            "clear_reverse() must NOT resync size — B-120"
+        );
+
+        // The stale counter heals on the very next set/delete, exactly as it
+        // does upstream, because that call recomputes both from the live maps.
+        forward.set("b", "c");
+        assert_eq!(forward.size(), 1);
+        assert_eq!(forward.inverse_size(), 1);
     }
 
     #[test]
