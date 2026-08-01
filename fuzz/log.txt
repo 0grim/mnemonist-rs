@@ -1012,3 +1012,32 @@
 # actually count.
 2026-08-01T18:53:12Z  module=linked-list seed=42 cases=11790 ops=1184507 wall=60.0s divergences=0
 2026-08-01T18:53:12Z  module=linked-list seed=20260801 cases=11865 ops=1187723 wall=60.0s divergences=0
+# critbit-tree-map: the first smoke run (--seed 1 --duration 5, unlogged) found a real port bug
+# within a handful of ops -- CritBitTreeMap::set's "tree is empty" fast path hardcoded
+# root = external_ptr(0), correct only the first time it runs. Minimised by proptest to
+# set("a", undefined); delete("a"); set("a", undefined): after a delete back to empty, keys/values
+# already hold a stale entry at index 0 (this port's arena is append-only, unlike upstream's real,
+# GC'd object references), the third op's insert correctly pushed at index 1, but root kept
+# pointing at the stale index 0, and RootNode's own "always holds a value" panic caught it. Not
+# upstream's bug -- see NOTES.md's "Two port defects found by fuzzing" entry. Fixed by capturing
+# the real pushed index instead of hardcoding 0. The two lines below are the post-fix campaigns.
+2026-08-01T20:41:03Z  module=critbit-tree-map seed=42 cases=10987 ops=1096914 wall=60.0s divergences=0
+2026-08-01T20:42:15Z  module=critbit-tree-map seed=20260801 cases=10634 ops=1054262 wall=60.0s divergences=0
+# fixed-critbit-tree-map: the first smoke run (--seed 1 --duration 5, unlogged) crashed the whole
+# process, not merely reported a divergence -- set's "tree is empty" check tested
+# self.keys.is_empty() instead of self.size == 0, so a clear()-then-set() (clear resets size but
+# never truncates keys/values, matching upstream) fell through to the walk loop with
+# pointer == EMPTY unguarded, computing an out-of-bounds index and panicking. Not upstream's bug
+# either -- same NOTES.md entry. Fixed by adding a real size field and a store_external helper that
+# overwrites low indices post-clear instead of always pushing. Once that and the critbit-tree-map
+# bug above were both fixed, the differential fuzzer also confirmed two genuine, disclosed upstream
+# bugs by direct comparison against real Node: B-260 (root is 0 fresh off the constructor, null
+# after clear -- reproduced via a root_is_null flag) and B-261 (no capacity guard at all; exceeding
+# it silently corrupts a node then crashes a later set -- reproduced as Error::Corrupted with
+# upstream's own message text). Both documented in full in NOTES.md and
+# crates/mnemonist-core/src/structures/fixed_critbit_tree_map.rs's module docs. The two lines below
+# are the post-fix campaigns, with capacity drawn from 2..=5 against the same 8-key pool so B-261's
+# crash is reached in nearly every generated program (measured: pool_self_check_capacity_is_
+# actually_exceeded_and_hits_the_crash, ~60%/100% respectively over 500 sampled programs).
+2026-08-01T20:43:28Z  module=fixed-critbit-tree-map seed=42 cases=9987 ops=1020404 wall=60.0s divergences=0
+2026-08-01T20:44:40Z  module=fixed-critbit-tree-map seed=20260801 cases=10061 ops=1025762 wall=60.0s divergences=0
