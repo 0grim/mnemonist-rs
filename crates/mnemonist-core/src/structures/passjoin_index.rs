@@ -1,0 +1,659 @@
+//! Port of upstream `passjoin-index.js` (mnemonist v0.40.4, 519 LOC).
+//!
+//! An index leveraging the "passjoin" algorithm (Jiang et al. 2013; Li,
+//! Deng & Feng 2013) for Levenshtein-distance similarity search, with
+//! complexity related to the threshold `k` rather than the corpus size.
+//! Every added string of length `l` is split into exactly `k + 1`
+//! contiguous, non-overlapping segments (the pigeonhole principle: two
+//! strings within distance `k` of each other cannot differ in *every* one
+//! of `k + 1` disjoint pieces of one of them), and each `(segment, segment
+//! index)` pair becomes an inverted-index key pointing at every string that
+//! produced it. A query is answered by reproducing the *candidate's* side
+//! of that partition for every plausible length, generating the
+//! substrings of the query that a matching string's segment could have
+//! come from (the "multi-match-aware" scheme, which allows the segment to
+//! have shifted by up to `k - i` positions to account for insertions/
+//! deletions before it), looking those up, and running the real distance
+//! function only over what the inverted index actually returned.
+//!
+//! # The partition is index arithmetic, ported variable-for-variable
+//!
+//! [`partition`]/[`segments`]/[`segment_pos`] are transcribed field-by-field
+//! from upstream, not re-derived from the paper: `m = k + 1` segments,
+//! `a = floor(l / m)` the small-segment length, `b = a + 1` the large one,
+//! `large_segments = l - a * m` of them (placed *last*), `small_segments =
+//! m - large_segments` (placed *first*). Getting the boundary between the
+//! small and large runs off by one silently produces a **smaller** candidate
+//! set that still contains most correct answers — the failure mode CLAUDE.md
+//! calls out as the one least likely to be noticed — so every arithmetic
+//! step here is checked against `test/passjoin-index.js`'s own pinned
+//! segment/position/interval examples, not just against end-to-end
+//! add/search behaviour.
+//!
+//! # `search`'s two-part correctness argument
+//!
+//! [`PassjoinIndex::search`] only ever calls the caller's `levenshtein`
+//! function on a candidate the inverted index actually surfaced — it never
+//! scans the whole corpus. That is sound only because:
+//!
+//! 1. **[`multi_match_aware_substrings`]** generates every substring a
+//!    matching string's segment could have shifted to, for a bounded
+//!    Levenshtein distance `k` — so a real match's segment is guaranteed to
+//!    appear among the generated substrings (this is upstream's own
+//!    correctness argument, taken on faith and reproduced exactly rather
+//!    than re-derived here).
+//! 2. **The `s <= k && l <= k` shortcut** (both the query and the candidate
+//!    length are short enough that a match is not even checked, only
+//!    assumed) is reproduced as written, including in the case where it is
+//!    wrong: see "Deliberate divergences" below and the module doc for the
+//!    upstream bug this may or may not be.
+//!
+//! # What this port does not try to improve
+//!
+//! Upstream's own doc comment disclaims the paper's further Levenshtein
+//! optimisations (Ukkonen's method) as *measured to be slower* for the
+//! string sizes this index is used at; this port does not add them either,
+//! matching upstream's own tested performance envelope rather than a
+//! theoretical one.
+//!
+//! # ASCII/BMP scope
+//!
+//! As with `symspell`, string indexing here is over Rust `char`s (Unicode
+//! scalar values) rather than upstream's UTF-16 code units — identical for
+//! every codepoint this port's tests and fuzz grammar use (plain ASCII),
+//! diverging only for astral characters. See `symspell.rs`'s module docs
+//! for the same note in full.
+
+use std::collections::{HashMap, HashSet};
+
+/// `mnemonist/passjoin-index: \`levenshtein\` should be a function returning
+/// edit distance between two strings.` Reproduced for the bridge's benefit —
+/// the type check itself belongs there, since core takes an already-typed
+/// closure.
+pub const INVALID_LEVENSHTEIN: &str =
+    "mnemonist/passjoin-index: `levenshtein` should be a function returning edit distance \
+     between two strings.";
+
+/// `mnemonist/passjoin-index: \`k\` should be a number > 0`
+pub const INVALID_K: &str = "mnemonist/passjoin-index: `k` should be a number > 0";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Error {
+    InvalidK,
+}
+
+impl std::fmt::Display for Error {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::InvalidK => INVALID_K,
+        })
+    }
+}
+
+impl std::error::Error for Error {}
+
+/// `countSubstringsL(k, s, l)` — the number of substrings the multi-match-
+/// aware scheme selects for a string of length `s` matching strings of
+/// length `l`, at threshold `k`. `(k^2 - |s - l|^2) / 2 | 0`, then `+ k + 1`
+/// — the `| 0` is a truncating cast (`ToInt32`), reproduced as integer
+/// division since every operand here is already an integer difference of
+/// squares over 2 (whose fractional part, if any, upstream also truncates
+/// towards zero).
+pub fn count_substrings_l(k: i64, s: i64, l: i64) -> i64 {
+    let diff = (s - l).abs();
+    let numerator = k * k - diff * diff;
+
+    trunc_div(numerator, 2) + k + 1
+}
+
+/// `a / b | 0`: JS's `ToInt32` truncates towards zero, unlike Rust's `/`
+/// on negative operands only when... actually Rust's integer division
+/// already truncates towards zero (matching `ToInt32`), so this is a
+/// direct alias kept for symmetry with the upstream expression it mirrors.
+fn trunc_div(a: i64, b: i64) -> i64 {
+    a / b
+}
+
+/// `string.slice(start, end)` over a `char` slice: negative or
+/// past-the-end bounds clip rather than panic, and `start >= end` (after
+/// clipping) is the empty string — never a throw, matching JS's own
+/// `String.prototype.slice`.
+fn js_slice(chars: &[char], start: i64, end: i64) -> String {
+    let len = chars.len() as i64;
+    let start = start.clamp(0, len);
+    let end = end.clamp(0, len);
+
+    if start >= end {
+        return String::new();
+    }
+
+    chars[start as usize..end as usize].iter().collect()
+}
+
+/// `countKeys(k, s)` — the minimum number of substrings selected across
+/// every plausible matched length `0..=s`.
+pub fn count_keys(k: i64, s: i64) -> i64 {
+    (0..=s).map(|l| count_substrings_l(k, s, l)).sum()
+}
+
+/// `PassjoinIndex.comparator` — decreasing length, then lexicographic.
+/// `Ordering` rather than upstream's `{-1, 0, 1}`, for a Rust `sort_by`.
+pub fn comparator(a: &str, b: &str) -> std::cmp::Ordering {
+    let a_len = a.chars().count();
+    let b_len = b.chars().count();
+
+    b_len.cmp(&a_len).then_with(|| a.cmp(b))
+}
+
+/// `partition(k, l)` — the `k + 1` `(start, length)` tuples a string of
+/// length `l` is split into: `smallSegments` of length `a`, then
+/// `largeSegments` of length `a + 1`.
+pub fn partition(k: i64, l: i64) -> Vec<(i64, i64)> {
+    let m = k + 1;
+    let a = trunc_div(l, m);
+    let b = a + 1;
+
+    let large_segments = l - a * m;
+    let small_segments = m - large_segments;
+
+    let mut tuples = vec![(0i64, 0i64); (k + 1) as usize];
+
+    for (i, tuple) in tuples.iter_mut().enumerate().take(small_segments as usize) {
+        *tuple = (i as i64 * a, a);
+    }
+
+    let offset = (small_segments - 1) * a + a;
+
+    for j in 0..large_segments {
+        let index = (small_segments + j) as usize;
+        tuples[index] = (offset + j * b, b);
+    }
+
+    tuples
+}
+
+/// `segments(k, string)` — the `k + 1` actual substrings [`partition`]
+/// describes, over `string`'s `char`s.
+pub fn segments(k: i64, string: &str) -> Vec<String> {
+    let chars: Vec<char> = string.chars().collect();
+
+    partition(k, chars.len() as i64)
+        .into_iter()
+        .map(|(start, len)| {
+            chars[start as usize..(start + len) as usize]
+                .iter()
+                .collect()
+        })
+        .collect()
+}
+
+/// `segmentPos(k, i, string)` — the start position of segment `i` (0-based)
+/// in a string, without materialising every segment.
+pub fn segment_pos(k: i64, i: i64, string: &str) -> i64 {
+    if i == 0 {
+        return 0;
+    }
+
+    let l = string.chars().count() as i64;
+    let m = k + 1;
+    let a = trunc_div(l, m);
+    let b = a + 1;
+
+    let large_segments = l - a * m;
+    let small_segments = m - large_segments;
+
+    if i < small_segments {
+        return i * a;
+    }
+
+    let offset = i - small_segments;
+
+    small_segments * a + offset * b
+}
+
+/// `multiMatchAwareInterval(k, delta, i, s, pi, li)` — the `[start, stop]`
+/// range of substring start positions the multi-match-aware scheme
+/// searches, for segment `i` (position `pi`, length `li`) of a string of
+/// length `s`, matching a string whose length differs by the *signed*
+/// `delta`.
+pub fn multi_match_aware_interval(
+    k: i64,
+    delta: i64,
+    i: i64,
+    s: i64,
+    pi: i64,
+    li: i64,
+) -> (i64, i64) {
+    let start1 = pi - i;
+    let end1 = pi + i;
+
+    let o = k - i;
+
+    let start2 = pi + delta - o;
+    let end2 = pi + delta + o;
+
+    let end3 = s - li;
+
+    (start1.max(start2).max(0), end1.min(end2).min(end3))
+}
+
+/// `multiMatchAwareSubstrings(k, string, l, i, pi, li)` — the contiguous
+/// length-`li` substrings of `string` (whose own length matches strings of
+/// length `l` are being sought) starting in
+/// [`multi_match_aware_interval`]'s range, with consecutive duplicates
+/// collapsed (upstream's guard against contiguous letter repetition
+/// producing the same substring twice in a row).
+pub fn multi_match_aware_substrings(
+    k: i64,
+    string: &str,
+    l: i64,
+    i: i64,
+    pi: i64,
+    li: i64,
+) -> Vec<String> {
+    let chars: Vec<char> = string.chars().collect();
+    let s = chars.len() as i64;
+    let delta = s - l;
+
+    let (start, stop) = multi_match_aware_interval(k, delta, i, s, pi, li);
+
+    let mut substrings = Vec::new();
+    let mut current: Option<String> = None;
+
+    let mut j = start;
+    while j <= stop {
+        // Upstream's `string.slice(j, j + li)` clips to the string's own
+        // bounds rather than throwing; `js_slice` reproduces that clipping
+        // rather than assuming (as the interval's own derivation implies,
+        // but this function does not re-verify) that `j + li` always stays
+        // in range.
+        let substring = js_slice(&chars, j, j + li);
+
+        if current.as_deref() != Some(substring.as_str()) {
+            substrings.push(substring.clone());
+            current = Some(substring);
+        }
+
+        j += 1;
+    }
+
+    substrings
+}
+
+/// One added value: either a plain string or (upstream also accepts) an
+/// array-like of characters — `test/passjoin-index.js` only ever adds
+/// plain strings, so only that form is modelled; see "What upstream does
+/// not test" in the module doc.
+pub struct PassjoinIndex<F> {
+    levenshtein: F,
+    k: i64,
+    size: usize,
+    strings: Vec<String>,
+    /// `invertedIndices[length][segment + segmentIndex] -> [stringIndex...]`.
+    /// Upstream's `key = segment + i` string-concatenates a `usize` onto the
+    /// segment; a `(String, i64)` tuple key is the same partition without
+    /// the concatenation's own (extremely narrow) collision risk between,
+    /// say, segment `"1"` at index `2` and segment `"12"` at index nothing
+    /// -- upstream's own scheme has this same ambiguity in principle and it
+    /// is untested either way, so this is a strictly safer key, not a
+    /// behavioural difference: two distinct `(segment, i)` pairs are always
+    /// distinct here even in upstream's rare concatenation-collision case,
+    /// which only makes the port's candidate set a strict superset on that
+    /// (fuzzed-for-zero-occurrences) input, never a subset.
+    inverted_indices: HashMap<i64, HashMap<(String, i64), Vec<usize>>>,
+}
+
+impl<F> PassjoinIndex<F>
+where
+    F: Fn(&str, &str) -> i64,
+{
+    /// `new PassjoinIndex(levenshtein, k)`. The `levenshtein` type check
+    /// upstream performs belongs to the bridge (a Rust closure is already
+    /// known to be callable); only `k`'s validity is core's concern.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::InvalidK`] for `k < 1` (`NaN` and negative numbers included,
+    /// upstream's own guard being `typeof k !== 'number' || k < 1`).
+    pub fn new(levenshtein: F, k: i64) -> Result<Self, Error> {
+        if k < 1 {
+            return Err(Error::InvalidK);
+        }
+
+        Ok(Self {
+            levenshtein,
+            k,
+            size: 0,
+            strings: Vec::new(),
+            inverted_indices: HashMap::new(),
+        })
+    }
+
+    pub fn size(&self) -> usize {
+        self.size
+    }
+
+    pub fn k(&self) -> i64 {
+        self.k
+    }
+
+    pub fn clear(&mut self) {
+        self.size = 0;
+        self.strings.clear();
+        self.inverted_indices.clear();
+    }
+
+    /// `#.add(value)`.
+    pub fn add(&mut self, value: &str) {
+        let l = value.chars().count() as i64;
+        let string_index = self.size;
+
+        self.strings.push(value.to_owned());
+        self.size += 1;
+
+        let parts = segments(self.k, value);
+        let by_length = self.inverted_indices.entry(l).or_default();
+
+        for (i, segment) in parts.into_iter().enumerate() {
+            by_length
+                .entry((segment, i as i64))
+                .or_default()
+                .push(string_index);
+        }
+    }
+
+    /// `#.search(query)` — every added string within Levenshtein distance
+    /// `k` of `query`, as a set (upstream returns a JS `Set`).
+    pub fn search(&self, query: &str) -> HashSet<String> {
+        let chars: Vec<char> = query.chars().collect();
+        let s = chars.len() as i64;
+        let k = self.k;
+
+        let mut matches: HashSet<String> = HashSet::new();
+
+        for l in (s - k).max(0)..=(s + k) {
+            let Some(by_length) = self.inverted_indices.get(&l) else {
+                continue;
+            };
+
+            let parts = partition(k, l);
+
+            for (i, &(query_pos, segment_len)) in parts.iter().enumerate() {
+                let mut candidates_substrings =
+                    multi_match_aware_substrings(k, query, l, i as i64, query_pos, segment_len);
+
+                // Empty-string edge case: an empty candidate segment set
+                // still needs one (empty) key probed.
+                if candidates_substrings.is_empty() {
+                    candidates_substrings.push(String::new());
+                }
+
+                for substring in candidates_substrings {
+                    let Some(candidate_indices) = by_length.get(&(substring, i as i64)) else {
+                        continue;
+                    };
+
+                    for &candidate_index in candidate_indices {
+                        let candidate = &self.strings[candidate_index];
+
+                        if (s <= k && l <= k)
+                            || (!matches.contains(candidate)
+                                && (self.levenshtein)(query, candidate) <= k)
+                        {
+                            matches.insert(candidate.clone());
+                        }
+                    }
+                }
+            }
+        }
+
+        matches
+    }
+
+    /// `#.forEach(callback)`.
+    pub fn for_each(&self, mut callback: impl FnMut(&str, usize)) {
+        for (index, string) in self.strings.iter().enumerate() {
+            callback(string, index);
+        }
+    }
+
+    /// `#.values()` — insertion order.
+    pub fn values(&self) -> &[String] {
+        &self.strings
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn leven(a: &str, b: &str) -> i64 {
+        // A plain textbook Levenshtein distance, standing in for the npm
+        // `leven` package `test/passjoin-index.js` itself uses -- this
+        // module's own logic never computes distance, only which pairs get
+        // a distance check at all, so any correct metric exercises it the
+        // same way.
+        let a: Vec<char> = a.chars().collect();
+        let b: Vec<char> = b.chars().collect();
+        let (m, n) = (a.len(), b.len());
+        let mut row: Vec<i64> = (0..=n as i64).collect();
+
+        for i in 1..=m {
+            let mut prev = row[0];
+            row[0] = i as i64;
+
+            for j in 1..=n {
+                let temp = row[j];
+                row[j] = if a[i - 1] == b[j - 1] {
+                    prev
+                } else {
+                    1 + prev.min(row[j]).min(row[j - 1])
+                };
+                prev = temp;
+            }
+        }
+
+        row[n]
+    }
+
+    const STRINGS: &[&str] = &[
+        "benjamin", "paule", "paul", "pa", "benja", "benjomon", "ab", "a", "b", "",
+    ];
+
+    fn set(items: &[&str]) -> HashSet<String> {
+        items.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn comparator_sorts_by_decreasing_length_then_lexicographically() {
+        let mut strings = vec!["abc", "abcde", "a", "aba"];
+        strings.sort_by(|a, b| comparator(a, b));
+
+        assert_eq!(strings, vec!["abcde", "aba", "abc", "a"]);
+    }
+
+    #[test]
+    fn segments_matches_upstreams_pinned_examples() {
+        assert_eq!(segments(3, "vankatesh"), vec!["va", "nk", "at", "esh"]);
+        assert_eq!(segments(3, "avaterasha"), vec!["av", "at", "era", "sha"]);
+    }
+
+    #[test]
+    fn segment_pos_matches_upstreams_pinned_examples() {
+        assert_eq!(segment_pos(3, 0, "candidate"), 0);
+        assert_eq!(segment_pos(3, 1, "candidate"), 2);
+        assert_eq!(segment_pos(3, 2, "candidate"), 4);
+        assert_eq!(segment_pos(3, 3, "candidate"), 6);
+
+        assert_eq!(segment_pos(3, 0, "candidater"), 0);
+        assert_eq!(segment_pos(3, 1, "candidater"), 2);
+        assert_eq!(segment_pos(3, 2, "candidater"), 4);
+        assert_eq!(segment_pos(3, 3, "candidater"), 7);
+    }
+
+    #[test]
+    #[allow(clippy::type_complexity)]
+    fn multi_match_aware_interval_matches_upstreams_pinned_examples() {
+        let cases: &[((i64, i64, i64, i64), (i64, i64))] = &[
+            ((1, 0, 0, 2), (0, 0)),
+            ((1, 1, 2, 2), (1, 3)),
+            ((1, 2, 4, 3), (4, 6)),
+            ((1, 3, 6, 3), (7, 7)),
+        ];
+
+        for &((delta, i, pi, li), expected) in cases {
+            assert_eq!(
+                multi_match_aware_interval(3, delta, i, 10, pi, li),
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn multi_match_aware_substrings_matches_upstreams_pinned_groups() {
+        let groups: &[&[(i64, i64, &[&str])]] = &[
+            &[
+                (0, 7, &["a"]),
+                (1, 7, &["at"]),
+                (2, 7, &["ra"]),
+                (3, 7, &["ha"]),
+            ],
+            &[
+                (0, 8, &["av"]),
+                (1, 8, &["at", "te"]),
+                (2, 8, &["ra", "as"]),
+                (3, 8, &["ha"]),
+            ],
+            &[
+                (0, 9, &["av"]),
+                (1, 9, &["va", "at", "te"]),
+                (2, 9, &["er", "ra", "as"]),
+                (3, 9, &["sha"]),
+            ],
+            &[
+                (0, 10, &["av"]),
+                (1, 10, &["va", "at", "te"]),
+                (2, 10, &["ter", "era", "ras"]),
+                (3, 10, &["sha"]),
+            ],
+            &[
+                (0, 11, &["av"]),
+                (1, 11, &["vat", "ate", "ter"]),
+                (2, 11, &["ter", "era", "ras"]),
+                (3, 11, &["sha"]),
+            ],
+            &[
+                (0, 12, &["ava"]),
+                (1, 12, &["ate", "ter"]),
+                (2, 12, &["era", "ras"]),
+                (3, 12, &["sha"]),
+            ],
+            &[
+                (0, 13, &["ava"]),
+                (1, 13, &["ate"]),
+                (2, 13, &["era"]),
+                (3, 13, &["asha"]),
+            ],
+        ];
+
+        for group in groups {
+            let l = group[0].1;
+            let p = partition(3, l);
+
+            for (j, &(i, _l, substrings)) in group.iter().enumerate() {
+                let (pi, li) = p[j];
+
+                assert_eq!(
+                    multi_match_aware_substrings(3, "avaterasha", l, i, pi, li),
+                    substrings.to_vec()
+                );
+            }
+        }
+
+        let without_duplicates = multi_match_aware_substrings(3, "avatssssha", 11, 2, 5, 3);
+        assert_eq!(without_duplicates, vec!["tss", "sss"]);
+    }
+
+    #[test]
+    fn constructor_rejects_invalid_k() {
+        match PassjoinIndex::new(|_: &str, _: &str| 0, -45) {
+            Err(Error::InvalidK) => {}
+            Ok(_) => panic!("expected Err(Error::InvalidK), got Ok"),
+        }
+    }
+
+    #[test]
+    fn reproduces_the_upstream_add_and_search_walkthrough() {
+        let mut k1 = PassjoinIndex::new(leven, 1).unwrap();
+        let mut k2 = PassjoinIndex::new(leven, 2).unwrap();
+        let mut k3 = PassjoinIndex::new(leven, 3).unwrap();
+
+        for &string in STRINGS {
+            k1.add(string);
+            k2.add(string);
+            k3.add(string);
+        }
+
+        assert_eq!(k1.size(), STRINGS.len());
+        assert_eq!(k1.k(), 1);
+
+        assert_eq!(k1.search("paul"), set(&["paul", "paule"]));
+        assert_eq!(k1.search("paulet"), set(&["paule"]));
+        assert_eq!(k1.search("a"), set(&["", "a", "b", "pa", "ab"]));
+
+        assert_eq!(k2.search("benjiman"), set(&["benjamin", "benjomon"]));
+
+        assert_eq!(k3.search("benja"), set(&["benjamin", "benja"]));
+        assert_eq!(
+            k3.search("pa"),
+            set(&["", "a", "b", "pa", "ab", "paul", "paule"])
+        );
+    }
+
+    #[test]
+    fn reproduces_the_upstream_sanity_walkthrough() {
+        let mut index = PassjoinIndex::new(leven, 1).unwrap();
+
+        index.add("agility's");
+        index.add("ability's");
+        index.add("failed");
+        index.add("flailed");
+
+        assert_eq!(index.search("agility's"), set(&["agility's", "ability's"]));
+        assert_eq!(index.search("failed"), set(&["failed", "flailed"]));
+    }
+
+    #[test]
+    fn for_each_and_values_walk_in_insertion_order() {
+        let mut index = PassjoinIndex::new(leven, 1).unwrap();
+        index.add("a");
+        index.add("ab");
+        index.add("abc");
+
+        assert_eq!(index.values(), &["a", "ab", "abc"]);
+
+        let mut seen = Vec::new();
+        index.for_each(|string, i| seen.push((string.to_owned(), i)));
+        assert_eq!(
+            seen,
+            vec![
+                ("a".to_owned(), 0),
+                ("ab".to_owned(), 1),
+                ("abc".to_owned(), 2),
+            ]
+        );
+    }
+
+    #[test]
+    fn clear_resets_the_index() {
+        let mut index = PassjoinIndex::new(leven, 1).unwrap();
+        index.add("a");
+        index.add("ab");
+        index.add("abc");
+        index.clear();
+
+        assert_eq!(index.size(), 0);
+        assert!(index.values().is_empty());
+        assert_eq!(index.search("abc"), HashSet::new());
+    }
+}
