@@ -2101,3 +2101,39 @@ the two-array merge is tie-order-invariant and swap-side-invariant by constructi
 can interleave), which is exactly why the k-way case (§ above) is the one place that invariant
 breaks down — a third array's advancing pointer can land between what looked, in the two-array
 case, like an unobservable choice.
+
+## Empty green signals nine and ten, and one of a different shape
+
+Appended at the end of the file rather than into the section above: several agents edit this file at
+once and only an addition at the very end can never land inside another one's hunk.
+
+- **A fuzz spec that had never run, reporting clean.** `fuzzy-map`'s `Hash::named` matched
+  `"identity"`/`"lower"` while `fuzz/oracle.js` registers `fuzzyIdentity`/`fuzzyLower`, so every
+  case panicked at construction — and the campaign reported zero divergences *truthfully*, because
+  zero comparisons produce zero disagreements. The strongest instance yet: nothing was broken, the
+  arithmetic was correct, and the number still meant nothing. 1,210,496 real ops after the fix.
+- **Our own float decoding manufacturing divergences.** Both `vector` specs opened with 1-ULP
+  disagreements indistinguishable from genuine port bugs. `serde_json`'s default float parser is
+  not correctly-rounded: `38403.356486892444` lands one ULP from `f64::from_str`. Fixed with the
+  `float_roundtrip` feature (D-103). The inverse of the usual failure — a check answering a
+  different question and reporting *red*.
+
+### And the gate catching itself, which is the point of gate 6
+
+`_utils` named three sabotages in advance. **Two stayed green.** Relaxing the k-way tie-break and
+reversing `merge_two`'s swap condition both left every assertion passing. They were reported as
+findings — tie-invariance and swap-invariance in our own tests — rather than quietly replaced with
+an easier target that would have gone red. The third went red exactly as predicted.
+
+This is the first time the falsification gate has failed *and been recorded as a failure*. That is
+the behaviour the rule was written for: a falsification that cannot fail is a second green light,
+and two of these could not fail.
+
+### A green campaign that is narrower than it sounds
+
+`_utils` logs 1,012,101 ops and zero divergences, but D-105 is a real, **unfixed** divergence: the
+k-way tie-break uses a linear scan and disagrees with `FibonacciHeap`'s ordering whenever three or
+more arrays tie. Fixing it requires porting `fibonacci-heap`. The grammar was changed to generate
+globally distinct k-way values, so the campaign is green *over a region that excludes the known
+disagreement*. Documented rather than hidden — but it must be re-examined before `_utils` is
+scoped, on the same reasoning that descoped `sparse-set`.
