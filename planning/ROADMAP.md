@@ -55,7 +55,8 @@ Every tier is a *bridge* capability, not a core one — the pattern has held thr
 
 | Tier | Unlocks | Test lines | Share |
 |---|---|---|---|
-| **T3 — JS `Map` semantics** | `lru-cache` 497 · `multi-map` 381 · `multi-set` 361 · `set` 194 · `bi-map` 189 · `fuzzy-multi-map` 189 · `fuzzy-map` 161 · `default-map` 111 | **2,083** | **26%** |
+| **T3 — JS `Map` semantics** | `lru-cache` unit 497 · `multi-map` 381 · `multi-set` 361 · `bi-map` 189 · `fuzzy-multi-map` 189 · `fuzzy-map` 161 · `default-map` 111 | **1,889** | **24%** |
+| **`set` — native `Set` free functions** *(was miscounted as T3)* | `set` 194 | 194 | 2% |
 | T5 — spatial/probabilistic | kd/vp/bk-tree, symspell, passjoin, bloom, critbit ×2 | 1,209 | 15% |
 | T4 — tries/strings | `trie-map` 305 · `trie` 254 · `multi-array` 238 · `inverted-index` 126 · `suffix-array` 113 | 1,036 | 13% |
 | T2 — comparator callbacks | `heap` 232 · `fixed-reverse-heap` 123 · `fibonacci-heap` 115 · `static-interval-tree` 95 | 565 | 7% |
@@ -82,9 +83,32 @@ semantics in Rust with JS values as keys**:
 from `std`. Core is generic over `K: Hash + Eq`; the bridge supplies `JsKey`. Core never sees a JS
 value.
 
-**Open question, deliberately delegated with the tests in hand:** object identity across napi may
-be unreachable or unnecessary. If upstream's tests only use string and number keys, scope to what
-is reachable and document the limit — do not build machinery no test can reach.
+### Answered by the Phase 1 pilot — three corrections to what §3.3 assumed
+
+Audited against the vendored sources, not inferred:
+
+- **`set.js` is not a T3 module.** Zero `new Map(`, six `new Set(`, and it exports free functions
+  (`intersection`, `union`, `difference`, `symmetricDifference`, `isSubset`, `isSuperset`) over
+  native `Set`s. It is a boundary-coercion problem — read JS `Set`s, return a JS `Set` — not a
+  storage one, and probably much cheaper than T3. **Its 194 lines came out of the T3 total.**
+- **`lru-cache` and `lru-cache-with-delete` are backed by a plain `{}`, not a `Map`.** Their index
+  therefore *string-coerces* keys while `entries()` reads the raw key array, and
+  `test/lru-cache.js:65` asserts both halves. Only `lru-map`/`lru-map-with-delete` are Map-backed —
+  so the 497-line unit needs **both** mechanisms, not one.
+- `sparse-map` was called T0-not-T3; it does contain one `new Map(` (likely a `.from()` static), so
+  that claim is not propagated. Moot in practice — it is already ported and green as T0.
+
+**Object keys are deliberately not implemented.** Every key reaching a `Map` across all ten
+T3-family test files is a **string or a number** — no object, `NaN`, `-0`, boolean, `null`,
+`undefined` or Symbol anywhere. `fuzzy-map` accepts objects publicly but hashes them to strings
+first. The two implementable identity designs (hidden `Symbol` tag: O(1) but mutates the caller's
+object and fails on frozen ones; `napi_strict_equals` association list: O(n) plus a strong
+reference to every key ever seen) are recorded in DESIGN §3.8 for when a module needs one.
+
+**The harder problem turned out to be values, not keys.** `map.get('one').push(1)` mutates a stored
+array in place, so values must be the caller's actual objects — but `napi_create_reference` rejects
+a primitive at NAPI_VERSION 9 (measured: it failed 2 of 7 upstream assertions on first run), and one
+V8 global handle per stored value would mean a million handles for a million-entry `lru-cache`.
 
 ### Pilot order
 `default-map` (111 test lines, 162 LOC, single `Map`) → **stop and review the design** → `set` (194)
@@ -94,6 +118,13 @@ principle paid off for the cursor and for `forEach`.
 ---
 
 ## Known blockers, not just work
+
+**B-31 is systemic across the bridge, not a `sparse-set` defect.** A `#[napi]` method taking `&self`
+on a `Freeze` type is `noalias readonly`, so LLVM hoists reads across a re-entrant JS callback. Two
+agents reached this independently from opposite directions — one by probing `queue`'s `forEach`,
+one by reasoning about `&self`/`&mut self` aliasing in the T3 bridge. **Every class with a
+callback-taking method is exposed**, and the fix is interior mutability at the boundary. Count
+callback-taking methods before scoping any module; `static-disjoint-set` has zero and is immune.
 
 **`default-weak-map` may be unportable.** `WeakMap` entries vanish when the key is garbage
 collected; Rust cannot observe JS GC. Holding napi `Reference`s means entries never vanish — a
