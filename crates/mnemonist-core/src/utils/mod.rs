@@ -1,6 +1,7 @@
 //! Ports of the `utils/` helpers.
 
 pub mod bitwise;
+pub mod comparators;
 pub mod typed_arrays;
 
 // Appended, never interleaved: this list is a shared registry and every

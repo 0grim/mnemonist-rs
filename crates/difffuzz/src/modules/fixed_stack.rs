@@ -34,14 +34,16 @@
 //!
 //! ## The one encoding subtlety
 //!
-//! A `new Array(n)` slot that was never written is a **hole**, and
-//! `fuzz/oracle.js` encodes an array with `value.map(encode)` — which skips
-//! holes and leaves them holes, so `JSON.stringify` writes `null`. The Rust
-//! side therefore encodes a `None` slot of an `Array`-backed stack as JSON
-//! `null` too. That is only injective because the generator's values are
-//! non-negative integers and `null` is not among them; if a `null` value were
-//! ever added to this alphabet, the two would become indistinguishable and the
-//! observation would have to change. Stated rather than assumed.
+//! A `new Array(n)` slot that was never written is a **hole**. `fuzz/oracle.js`
+//! used to encode an array with `value.map(encode)`, which SKIPS holes and
+//! leaves them holes for `JSON.stringify` to render as `null` — and this side
+//! matched that with `Value::Null`. The oracle now walks arrays by index
+//! instead (`heap` needed it: a comparator that shrinks the array mid-sift
+//! makes the sift write an explicit `undefined` past the array's old end, and
+//! that is not distinguishable from a hole through any API a stack, deque or
+//! buffer exposes — `items[i]` reads `undefined` either way). Both now encode
+//! as `{"$undefined": true}`, so the Rust side follows: a `None` slot of an
+//! `Array`-backed stack is `{"$undefined": true}`, never `null`.
 //!
 //! A `Uint8Array`-backed stack has no holes — it is zero filled — so its
 //! `items` goes out as the oracle's `{"$typed": …}` envelope instead.
@@ -257,18 +259,28 @@ impl ModuleSpec for FixedStackSpec {
 }
 
 /// Whether a missing slot was left as a hole or written as `undefined`.
+///
+/// The two are still genuinely different mutations on the JS side — a
+/// `new Array(n)` slot nothing has assigned to, versus a slot an explicit
+/// `array[i] = undefined` touched (upstream's `FixedStack.prototype.toArray`
+/// writes every index explicitly; `FixedDeque.prototype.toArray`'s fast path
+/// is `items.slice(...)`, which preserves a hole as a hole). But
+/// `fuzz/oracle.js` no longer tells them apart: it walks arrays by index
+/// rather than by `.map()` (which used to skip holes), so both read back
+/// through the same `{"$undefined": true}` envelope. The variant is kept at
+/// each call site as documentation of which one is in play; it no longer
+/// changes what gets encoded.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Hole {
-    /// A `new Array(n)` slot nothing assigned. `map` skips it; JSON says
-    /// `null`.
+    /// A `new Array(n)` slot nothing has assigned.
     Skipped,
-    /// A slot explicitly assigned `undefined`, which `map` visits.
+    /// A slot an explicit assignment set to `undefined`.
     Written,
 }
 
 /// One array of slots, encoded exactly as `fuzz/oracle.js` encodes the JS value
 /// it corresponds to.
-pub(crate) fn slots(typed: bool, slots: &[Option<Value>], hole: Hole) -> Value {
+pub(crate) fn slots(typed: bool, slots: &[Option<Value>], _hole: Hole) -> Value {
     if typed {
         // Zero filled, so a missing slot can only be a read past the end, which
         // a fresh typed array renders as its zero.
@@ -281,15 +293,13 @@ pub(crate) fn slots(typed: bool, slots: &[Option<Value>], hole: Hole) -> Value {
         });
     }
 
+    // Both provenances above now encode identically: `fuzz/oracle.js` walks
+    // arrays by index, so a hole and an explicit `undefined` are the same
+    // `{"$undefined": true}` on the wire. See the `Hole` doc comment.
     Value::Array(
         slots
             .iter()
-            .map(|slot| {
-                slot.clone().unwrap_or(match hole {
-                    Hole::Skipped => Value::Null,
-                    Hole::Written => json!({"$undefined": true}),
-                })
-            })
+            .map(|slot| slot.clone().unwrap_or_else(|| json!({"$undefined": true})))
             .collect(),
     )
 }

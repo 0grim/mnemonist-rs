@@ -1,0 +1,29 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+#
+# PROVENANCE OF THE ENTRY BELOW -- same as crates/difffuzz/proptest-regressions/
+# heap.txt: a deliberate falsification of the fuzzer, not a real port defect.
+#
+# The sabotage was to make `FixedReverseHeap::clear` blank the backing array as
+# well as resetting `size` -- that is, to *fix* upstream's B-74, where `clear()`
+# leaves the discarded contents in place and `peek()` afterwards answers with an
+# item that is no longer in the heap.
+#
+# Chosen because it is the most plausible "obvious improvement" anyone would
+# make to this file, and because it makes the port strictly more correct than
+# upstream and therefore wrong. Under the sabotage all 7 assertions of
+# test/fixed-reverse-heap.js still passed -- upstream's own suite calls
+# `clear()` and then only ever `push`es again, so it never looks -- while the
+# fuzzer found it in 84 operations and shrank it to a `clear()` on a
+# capacity-1 heap.
+#
+# This is also what earns `items` its place in the observation set: the
+# divergence is visible in the backing array one operation before any method
+# call could have reported it.
+#
+# Reverted, and kept as a guard.
+cc 65f118cabf29b26b37bfab9b3f2e1fef3bedcd6f48defdf1f975e6b13dfacf00 # shrinks to Program { ctor: [Object {"$global": String("Array")}, Object {"$factory": String("ascending")}, Number(1)], ops: [Op { name: "toArray", args: [] }, Op { name: "toArray", args: [] }, Op { name: "clear", args: [] }, Op { name: "peek", args: [] }, Op { name: "peek", args: [] }, Op { name: "push", args: [Number(17)] }, Op { name: "push", args: [Number(11)] }, Op { name: "push", args: [Number(18)] }, Op { name: "peek", args: [] }, Op { name: "push", args: [Number(23)] }, Op { name: "push", args: [Number(15)] }, Op { name: "push", args: [Number(10)] }, Op { name: "toArray", args: [] }, Op { name: "toArray", args: [] }, Op { name: "peek", args: [] }, Op { name: "consume", args: [] }, Op { name: "consume", args: [] }, Op { name: "consume", args: [] }, Op { name: "push", args: [Number(19)] }, Op { name: "consume", args: [] }, Op { name: "toArray", args: [] }, Op { name: "push", args: [Number(16)] }] }

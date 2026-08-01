@@ -68,8 +68,19 @@ If other agents are working, do not benchmark; gate 10 is batched into a quiet s
 - **Branches: commit to the branch your worktree already has. Do not create additional branches.**
   Naming is handled at merge time by the orchestrator. Do not push unless told to.
 - Edits to shared files — `crates/*/src/lib.rs`, `structures/mod.rs`, `utils/mod.rs`, the difffuzz
-  registry, `fuzz/log.txt` — must be **additive only**. Never reorder or reformat them: every extra
-  change becomes another agent's merge conflict.
+  registry and CLI match, `differential.rs`, `ITERATOR_FACTORIES`, `fuzz/log.txt` — must be
+  **additive only**, appended at the **end** of the existing list. Never reorder or reformat: every
+  extra change becomes another agent's merge conflict.
+- **Appending is necessary and not sufficient.** Git picks conflict boundaries by line similarity,
+  not syntax, and has repeatedly split the *previous* entry — closing an existing match arm or test
+  function mid-body, so both sides share its tail. Seven such repairs across two merges, all caught
+  by the compiler, none by `git`. So: make each addition a **complete, self-contained block**, and
+  after resolving any conflict **run `cargo test`, not `cargo build`** — three of those seven
+  compiled fine and only failed under test.
+- **Two agents will solve the same sub-problem twice.** Already happened three times: the
+  `{"$global": …}` encoding, the `tests/run.sh` fresh-clone bug, and a `$forEach` fuzz op built
+  with *incompatible signatures* whose duplicate handlers landed in one JS `switch` — where the
+  first silently wins and a syntax check passes. Before inventing shared machinery, grep for it.
 - **Bug-candidate IDs (`B-nn` in `planning/NOTES.md`) are allocated by the orchestrator.** Use the
   range you were given and no other. Agents working in isolated worktrees cannot see each other's
   allocations — two once claimed `B-11`–`B-14` for entirely different bugs, which had to be

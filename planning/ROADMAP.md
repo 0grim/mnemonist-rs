@@ -119,12 +119,26 @@ principle paid off for the cursor and for `forEach`.
 
 ## Known blockers, not just work
 
+**B-31 — RESOLVED.** Six bridges converted to `inner: RefCell<Core>`; `static_disjoint_set` and
+`hashed_array_tree` verified immune against the real precondition (can JS run while a `&self`
+method is on the stack), not against "has no `forEach`". Repro falsified both ways: pre-fix
+`[1,2,3,4]`, post-fix `[1,2]`. `tests/boundary/reentrancy.js` pins it with 22 specs, 8 of which
+fail on the pre-fix build — and only against a **release** build, because the hoist is an
+optimisation. `sparse-set` stays descoped until gate 10 measures the borrow-flag cost.
+
+Kept below because the *shape* recurs: any new bridge taking a callback has the same exposure, and
+`bk-tree`'s distance function is the next instance.
+
+<details><summary>original entry</summary>
+
 **B-31 is systemic across the bridge, not a `sparse-set` defect.** A `#[napi]` method taking `&self`
 on a `Freeze` type is `noalias readonly`, so LLVM hoists reads across a re-entrant JS callback. Two
 agents reached this independently from opposite directions — one by probing `queue`'s `forEach`,
 one by reasoning about `&self`/`&mut self` aliasing in the T3 bridge. **Every class with a
 callback-taking method is exposed**, and the fix is interior mutability at the boundary. Count
 callback-taking methods before scoping any module; `static-disjoint-set` has zero and is immune.
+
+</details>
 
 **`default-weak-map` may be unportable.** `WeakMap` entries vanish when the key is garbage
 collected; Rust cannot observe JS GC. Holding napi `Reference`s means entries never vanish — a
@@ -186,6 +200,17 @@ wave boundaries in §6:
   three registry files is the practical ceiling on parallelism.
 - **Stop-and-review before a design is inherited.** Applied to the cursor, to `forEach`, and now to
   `JsKey`.
+- **Route by task shape, not by default.** Nine of the first ten agents ran on the session default
+  (Opus) because no `model` was passed — including work that was pure template-following. Measured
+  cost: Opus batches ran **440k–570k** tokens each; the one Sonnet agent did a contained
+  protocol-reconciliation in **133k** and found *three* defects where one was specified.
+  **Sonnet for template-following ports against an existing reference, doc writing and registry
+  plumbing. Opus for a genuinely new capability tier.** The expensive design work — cursor,
+  `forEach`, `JsKey`, B-31 — is done, so most remaining work is the former.
+- **Tier-first ordering compounds.** Merging `foreach` + `iterables` + `fixed-stack` took eight
+  modules from blocked to available in a single step (`vector`, `static-interval-tree`, `bi-map`,
+  `fuzzy-map`, `lru-cache`, `bk-tree`, `symspell`, `passjoin-index` — 1,659 test lines, 21% of the
+  repo). Unblocking is worth more than the module it ships with.
 - **Rules live in `CLAUDE.md`, not in prompts.** It auto-loads for every agent in this repo. Hand-
   repeating the same lessons in each brief is how they drift — the `cargo clippy | tail -5` bug
   shipped because one agent's hand-written check differed from another's.

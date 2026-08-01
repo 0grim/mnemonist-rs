@@ -128,7 +128,20 @@ function encode(value) {
     return {$typed: value.constructor.name, values: Array.from(value)};
   }
 
-  if (Array.isArray(value)) return value.map(encode);
+  // Indexed rather than `value.map(encode)`, because `map` SKIPS holes and
+  // leaves them holes, which `JSON.stringify` then writes as `null` -- while an
+  // explicitly assigned `undefined` in the same array becomes `{$undefined}`.
+  // The two are indistinguishable through every API the heaps expose (`a[i]` is
+  // `undefined` either way), so encoding them differently would be a false
+  // divergence waiting to happen. `heap` is the first module that can produce a
+  // hole at all: a comparator that shrinks the array mid-sift makes the sift
+  // write past the new end. No earlier module has a sparse observation, so this
+  // changes nothing for them.
+  if (Array.isArray(value)) {
+    const out = new Array(value.length);
+    for (let i = 0; i < value.length; i++) out[i] = encode(value[i]);
+    return out;
+  }
 
   // A `Map` has no own enumerable properties, so the generic object branch
   // below would encode every T3 module's entire state as `{}` -- an
@@ -329,7 +342,69 @@ const FACTORIES = {
   // repeated `add`s collide on distance constantly -- see
   // `difffuzz::modules::bk_tree`'s docs.
   bkAbsDiff: () => (a, b) => Math.abs(a - b),
+  // ---- T2: comparator callbacks -----------------------------------------
+  //
+  // Appended at the end of the table, never in the middle.
+  //
+  // A comparator is called FROM INSIDE a sift, once per comparison, so these
+  // are the only factories whose behaviour depends on *when* they run. Each
+  // carries a budget counted in comparisons, which makes them deterministic
+  // only if the port performs exactly the same comparisons in exactly the same
+  // order -- so the budget is itself part of what is being compared.
+  //
+  // `instance` is read lazily on purpose: it is assigned after `new Ctor(...)`
+  // returns, and no constructor in this tier invokes its comparator.
+  ascending: () => heapAscending,
+  descending: () => (a, b) => {
+    if (a < b) return 1;
+    if (a > b) return -1;
+    return 0;
+  },
+  // Grows the array the sift is walking. The sift wrote `heap[i] = item` at an
+  // index it chose before the array changed length.
+  pushy: () => {
+    let budget = 3;
+    return (a, b) => {
+      if (budget-- > 0) instance.items.push(99);
+      return heapAscending(a, b);
+    };
+  },
+  // Shrinks it, so the walk reads past its own frozen `endIndex` and gets
+  // `undefined` -- and then writes it back somewhere else.
+  popper: () => {
+    let budget = 2;
+    return (a, b) => {
+      if (budget-- > 0) instance.items.pop();
+      return heapAscending(a, b);
+    };
+  },
+  // REBINDS it. `Heap.prototype.clear` installs a new array, so the sift
+  // finishes into one nothing can reach. This is D-41 reached from inside a
+  // comparator rather than from a cursor.
+  clearer: () => {
+    let budget = 1;
+    return (a, b) => {
+      if (budget-- > 0) instance.clear();
+      return heapAscending(a, b);
+    };
+  },
+  // Throws mid-sift. Upstream has no try/finally, so `push` has already grown
+  // the array while `++this.size` never runs.
+  boom: () => {
+    let budget = 5;
+    return (a, b) => {
+      if (budget-- <= 0) throw new Error('boom');
+      return heapAscending(a, b);
+    };
+  },
 };
+
+// Upstream's DEFAULT_COMPARATOR, written out so the factories above can wrap it.
+function heapAscending(a, b) {
+  if (a < b) return -1;
+  if (a > b) return 1;
+  return 0;
+}
 
 function decode(value) {
   if (Array.isArray(value)) return value.map(decode);
