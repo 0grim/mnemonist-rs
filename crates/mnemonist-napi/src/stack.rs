@@ -15,10 +15,8 @@
 //!    simplified one.
 //! 3. **`of` is installed as JavaScript, deliberately.** See
 //!    [`crate::statics`]: `Stack.of = function () { return Stack.from(arguments); }`
-//!    is upstream's definition, and `arguments` has no Rust representation.
-//!    Writing it natively would work and would silently stop exercising branch
-//!    1's `[object Arguments]` clause, which is the only place the original
-//!    suite reaches it.
+//!    is upstream's definition, and `arguments` has no Rust representation, so
+//!    this is the only way `of` puts a real one through the real dispatch.
 //! 4. **`forEach`'s `scope` argument.** Upstream keys off `arguments.length`,
 //!    which napi's typed signature cannot see; same divergence, and same
 //!    reasoning, as the `SparseSet` bridge.

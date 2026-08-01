@@ -18,20 +18,27 @@
 //! every raw argument, so `of` could be written natively — collect the
 //! arguments, build the structure, return it. It would pass every test.
 //!
-//! It would also stop `Stack.of(1, 2, 3)` from being a test of anything. The
-//! interesting part of upstream's `of` is not that it collects arguments; it is
-//! that it routes a genuine `arguments` object through `from`, and therefore
-//! through the `iterable.toString() === '[object Arguments]'` clause of the
-//! `forEach` dispatch (`crate::foreach`, branch 1). That clause is otherwise
-//! reached only by `tests/boundary/foreach.js`; through `of` it is reached by
-//! the original suite as well.
+//! What it would cost is that `Stack.of(1, 2, 3)` would stop putting a real
+//! `arguments` object through the real dispatch. The installer below is
+//! upstream's line, verbatim, evaluated once at module load, so it does. The
+//! script is a fixed literal — no interpolation, nothing caller-supplied — and
+//! it makes the addon self-contained: a shim that added `of` would mean
+//! `require('@port/addon').Stack` was incomplete without the test harness,
+//! which is exactly backwards (D-07's reasoning, applied to a static instead of
+//! to `Symbol.iterator`).
 //!
-//! So the installer below is upstream's line, verbatim, evaluated once at
-//! module load. The script is a fixed literal — no interpolation, nothing
-//! caller-supplied — and it makes the addon self-contained: a shim that added
-//! `of` would mean `require('@port/addon').Stack` was incomplete without the
-//! test harness, which is exactly backwards (D-07's reasoning, applied to a
-//! static instead of to `Symbol.iterator`).
+//! # What this does NOT buy, corrected after measuring
+//!
+//! An earlier draft of this comment claimed that routing `of` through `from`
+//! makes the original suite exercise the `toString() === '[object Arguments]'`
+//! clause of `crate::foreach`'s branch 1. **That is false, and deleting the
+//! clause proves it:** with the clause removed, all 22 assertions in
+//! `test/stack.js` and `test/queue.js` still pass, `of` included. A modern
+//! `arguments` object carries `Symbol.iterator`, so it simply falls through to
+//! branches 3 and 4, which drain it in the same order with the same numeric
+//! second argument. The clause is observable only for something that claims the
+//! tag without being iterable — a hijacked `toString`, which is what
+//! `tests/boundary/foreach.js` uses and the only coverage it has.
 
 use napi::bindgen_prelude::*;
 
