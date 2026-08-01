@@ -626,36 +626,59 @@ mod tests {
     /// in both `nearestNeighbor` and `kNearestNeighbors`.
     #[test]
     fn finds_neighbors_across_the_splitting_plane() {
-        // A dense diagonal line: the tree's first split is near the middle,
-        // and a query placed just barely on one side of it, but far along
-        // the OTHER axis, has its true nearest neighbor on the other side of
-        // that first split.
-        let rows: Vec<(usize, Vec<f64>)> = (0..64).map(|i| (i, vec![i as f64, i as f64])).collect();
-        let tree = KdTree::from_rows(rows, 2);
-
-        // Splits are on x first; query sits just left of x=32 but its true
-        // nearest neighbor (32, 32) sits just across that plane.
-        let query = [31.6, 31.6];
-        let expected_nn = 32usize;
-
-        assert_eq!(tree.nearest_neighbor(&query), Some(&expected_nn));
-
-        let by_tree: std::collections::BTreeSet<usize> = tree
-            .k_nearest_neighbors(3, &query)
-            .unwrap()
-            .into_iter()
+        // A dense diagonal line turns out NOT to be adversarial enough here:
+        // when every point's x equals its y, the primary "trust the split"
+        // descent already converges on the true answer coordinate by
+        // coordinate, so it is not a case that needs the "go the other way
+        // too" branch at all -- confirmed empirically: this construction
+        // alone did not go red under gate 6's falsification of that branch
+        // (see `docs/modules/kd-tree.md`). A dense 2D *grid* (not a line) is
+        // what actually forces it: many points share a coordinate on
+        // whichever axis the tree splits on, so a query can land close to a
+        // plane with the true nearest neighbor on its far side while the
+        // primary descent's own path does not happen to pass close enough
+        // first. This is also what `crates/difffuzz/src/modules/kd_tree.rs`'s
+        // `grammar_self_check` uses, and what actually caught the sabotage
+        // during gate 6 (this test did not, at first -- see the module doc's
+        // Bugs/Fuzz section for the investigation).
+        let side = 10i64;
+        let rows: Vec<(usize, Vec<f64>)> = (0..side * side)
+            .map(|i| (i as usize, vec![(i % side) as f64, (i / side) as f64]))
             .collect();
-        let by_brute: std::collections::BTreeSet<usize> = {
-            let mut candidates: Vec<(f64, usize)> = (0..64)
-                .map(|i| {
-                    let p = [i as f64, i as f64];
-                    (squared_distance_labelled(&query, &p), i)
-                })
-                .collect();
-            candidates.sort_by(|a, b| a.partial_cmp(b).unwrap());
-            candidates.into_iter().take(3).map(|(_, i)| i).collect()
+        let tree = KdTree::from_rows(rows.clone(), 2);
+
+        let mut state = 0x9E3779B97F4A7C15u64;
+        let mut next = move || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
         };
 
-        assert_eq!(by_tree, by_brute);
+        for _ in 0..200 {
+            let qx = (next() % (side as u64 * 2)) as f64 - side as f64 / 2.0;
+            let qy = (next() % (side as u64 * 2)) as f64 - side as f64 / 2.0;
+            let query = [qx, qy];
+
+            // `nearest_neighbor` specifically -- its recursion is the one
+            // with the "go the other way too" branch this test exists to
+            // exercise; `k_nearest_neighbors` walks an entirely different
+            // recursive function with its own copy of that branch, and does
+            // not exercise this one at all.
+            let found = tree.nearest_neighbor(&query).copied();
+            let found_distance =
+                found.map(|label| squared_distance_labelled(&query, &rows[label].1));
+
+            let brute_best_distance = rows
+                .iter()
+                .map(|(_, p)| squared_distance_labelled(&query, p))
+                .fold(f64::INFINITY, f64::min);
+
+            assert_eq!(
+                found_distance,
+                Some(brute_best_distance),
+                "tree's nearest_neighbor must be exactly as close as brute force's for {query:?}"
+            );
+        }
     }
 }
