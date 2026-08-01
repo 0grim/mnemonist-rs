@@ -897,3 +897,41 @@ rule folded its arithmetic into the argument selection, so an `undefined` callba
 upstream's `sparse[NaN]` comparison falls through and increments `size`, and the port cannot follow
 because core takes a `usize`. A fuzzer bug, not a port bug; fixed by separating selection from
 arithmetic, seed kept, log line commented out with its reason rather than deleted.
+
+### The B-31 post-mortem corrects my own diagnosis: it was a LAYER gap, not a grammar gap
+
+I recorded — and put in a commit message — that 2.94M fuzz operations missed B-31 because
+`sparse-set`'s alphabet had no `forEach` op. True, and not the reason.
+
+**`difffuzz` compares `mnemonist-core` against upstream JS. The napi bridge is not in that loop
+at all.** B-31 lives entirely in the bridge. So adding `$forEach` to the grammar — which we did,
+across all eight callback-taking modules — **still cannot catch it.** A grammar gap is a hole in
+what you ask; a layer gap is a hole in what you are asking *about*, and no amount of asking
+harder closes it.
+
+What the new `$forEach` op does earn is real but different: upstream's `forEach` loop shape is
+deliberately inconsistent across modules — live `this.size` in `sparse-set`/`sparse-map`, frozen
+bounds in `sparse-queue-set`/`stack`/`queue`, snapshotted words in `bit-set`/`bit-vector`, a live
+`Map` walk in `default-map`. **Seven modules, four different answers, and no program in the old
+alphabet could tell them apart.**
+
+B-31 needed a different instrument entirely: `tests/boundary/reentrancy.js`, 22 differential specs
+run through the *bridge*, of which **8 fail against the pre-fix build**. And it only works against
+a release build — a debug addon passes while wrong, because the hoist is an optimisation. That is
+the argument for fixing the **type** rather than rearranging the loop.
+
+**Ask of every clean campaign: which layer did this actually exercise?**
+
+### Two more empty green signals, making seven
+
+- **The fuzzer had a defect that produced a real red.** Re-fuzzing went red immediately — not on
+  the port, but on the harness: `arg0+1` folded its arithmetic into argument *selection*, so
+  `undefined + 1` became `NaN`, slipped the skip, and hit `SparseSet.add(NaN)`. A fuzzer bug
+  wearing a divergence's clothes. Seed kept with provenance, log line commented rather than deleted.
+- **I broke my own falsification of the B-31 fix.** I stashed the fix, rebuilt, copied the
+  artefact to `prefix.node` — and the repro loads `addon.node`. Both runs therefore tested the
+  *fixed* addon and both said MATCH, which I nearly reported as confirmation. Redone against the
+  file the repro actually reads: pre-fix `[1,2,3,4]` DIVERGENCE, post-fix `[1,2]` MATCH.
+
+*Seven instances now, and the through-line has sharpened: it is never "the check was wrong", it is
+always "the check was answering a different question than the one I thought I asked".*
