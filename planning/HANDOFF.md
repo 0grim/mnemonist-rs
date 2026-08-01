@@ -11,6 +11,8 @@ A Rust port of the JS library `mnemonist`, entered in Port Mortem 2026. Kickoff 
 3. `planning/ROADMAP.md` — the governing arithmetic (coverage 40% and proportional; rigor 50%).
 4. `planning/DESIGN.md` §1.1 — the **Definition of Done**. Ten gates. Everything else is detail.
 5. `planning/NOTES.md` — upstream bug candidates and the capture log for the write-up.
+6. `planning/ADMIN-GUIDANCE.md` — **organiser statements, quoted verbatim.** What the deliverable
+   is, and what the Bug Catcher prize requires. Cite it before arguing from assumption about either.
 
 `git log` is dense and deliberately so; the merge commits carry the reasoning.
 
