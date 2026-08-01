@@ -79,6 +79,12 @@ test flaked under agent contention during the last batch. Run it when nothing el
   `allow_nan` flag stays `false` **for that function only**, so its campaign is green over a region
   excluding a known disagreement. Closing it means porting nothing new — it is a real gap in our
   own code, and it is the one caveat left on `_utils`.
+- **Unregistered divergences — do this before assembling `DECISIONS.md`.** At least four module
+  docs (`bk-tree`, `default-weak-map`, `fuzzy-map`, `utils-bitwise`) record divergences in their
+  *Deliberate divergences* table numbered `—` rather than `D-nnn`, so they exist **only** in the
+  module doc and are absent from `DECISIONS-CANDIDATES.md`. Roughly 16 items. `DECISIONS.md` will be
+  built from the registry, so these would be silently dropped. Reconcile every module doc's
+  divergence table against the registry first; the docs are the more complete source.
 - **D-201** — `trie`'s cursor-versus-delete divergence. **Accepted, not a defect.** Upstream's
   iterator holds a live object reference; ours is path-based because it must resume across the FFI
   boundary. Its campaign is likewise green over a narrowed region. State it in DECISIONS.md as an
