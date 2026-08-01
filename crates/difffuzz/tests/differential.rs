@@ -21,6 +21,11 @@ use difffuzz::modules::sparse_queue_set::{
 };
 use difffuzz::modules::sparse_set::{SparseSetSpec, REGRESSIONS as SPARSE_REGRESSIONS};
 use difffuzz::modules::static_disjoint_set::{StaticDisjointSetSpec, REGRESSIONS};
+// Appended, never interleaved (CLAUDE.md, Git).
+use difffuzz::modules::suffix_array::{
+    GeneralizedSuffixArraySpec, SuffixArraySpec, GENERALIZED_REGRESSIONS,
+    REGRESSIONS as SUFFIX_ARRAY_REGRESSIONS,
+};
 use difffuzz::Campaign;
 
 #[test]
@@ -268,6 +273,9 @@ fn every_regression_corpus_explains_where_its_seeds_came_from() {
         SPARSE_REGRESSIONS,
         SPARSE_MAP_REGRESSIONS,
         SPARSE_QUEUE_REGRESSIONS,
+        // Appended at the END of the list (CLAUDE.md, Git).
+        SUFFIX_ARRAY_REGRESSIONS,
+        GENERALIZED_REGRESSIONS,
     ] {
         let text = std::fs::read_to_string(corpus)
             .unwrap_or_else(|_| panic!("{corpus} must be checked in"));
@@ -280,5 +288,50 @@ fn every_regression_corpus_explains_where_its_seeds_came_from() {
             "{corpus} holds {seeds} seed(s) with no provenance block, so a reader \
              cannot tell a sabotage from a real defect"
         );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Appended at the END of the file, never between existing tests (CLAUDE.md).
+
+/// `suffix-array` is the first module here with no mutating method: the whole
+/// computation is the constructor, so the campaign spends its budget on
+/// constructions rather than on op sequences. See the spec's module docs.
+#[test]
+fn suffix_array_matches_upstream() {
+    let campaign = Campaign::cases(0x5FFA, 96, SUFFIX_ARRAY_REGRESSIONS);
+
+    let report = difffuzz::run(&SuffixArraySpec, &campaign)
+        .expect("oracle must be reachable; `node` is required for differential tests");
+
+    assert!(
+        report.ops > 0,
+        "campaign ran no operations, so it proved nothing: {}",
+        report.log_line()
+    );
+
+    if let Some(divergence) = report.divergence {
+        panic!("{divergence}");
+    }
+}
+
+/// The generalized variant, which is where `longestCommonSubsequence` -- the
+/// only method in this unit with branching logic outside the constructor --
+/// gets exercised.
+#[test]
+fn generalized_suffix_array_matches_upstream() {
+    let campaign = Campaign::cases(0x65FA, 96, GENERALIZED_REGRESSIONS);
+
+    let report = difffuzz::run(&GeneralizedSuffixArraySpec, &campaign)
+        .expect("oracle must be reachable; `node` is required for differential tests");
+
+    assert!(
+        report.ops > 0,
+        "campaign ran no operations, so it proved nothing: {}",
+        report.log_line()
+    );
+
+    if let Some(divergence) = report.divergence {
+        panic!("{divergence}");
     }
 }

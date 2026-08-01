@@ -27,6 +27,8 @@ use difffuzz::modules::sparse_queue_set::SparseQueueSetSpec;
 use difffuzz::modules::sparse_set::SparseSetSpec;
 use difffuzz::modules::stack::StackSpec;
 use difffuzz::modules::static_disjoint_set::StaticDisjointSetSpec;
+// Appended, never interleaved (CLAUDE.md, Git).
+use difffuzz::modules::suffix_array::{GeneralizedSuffixArraySpec, SuffixArraySpec};
 use difffuzz::{Campaign, Report};
 
 const USAGE: &str = "\
@@ -34,7 +36,8 @@ usage: difffuzz --module <name> [--seed N] [--duration SECONDS] [--cases N] [--b
 
   --module    module to fuzz; currently: static-disjoint-set, sparse-set,
               sparse-map, sparse-queue-set, hashed-array-tree, bit-set,
-              bit-vector, stack, queue, default-map
+              bit-vector, stack, queue, default-map, suffix-array,
+              generalized-suffix-array
   --seed      campaign seed (default 42); with --cases, reproduces exactly
   --duration  wall-clock budget in seconds (default 60)
   --cases     stop after N cases instead of after --duration
@@ -134,6 +137,22 @@ fn main() -> ExitCode {
             &DefaultMapSpec,
             &Campaign {
                 regressions: difffuzz::modules::default_map::REGRESSIONS,
+                ..campaign
+            },
+        ),
+        // Appended at the END of the module arms, never between them: a merge
+        // conflict boundary inside a match arm has broken this tree before.
+        "suffix-array" => difffuzz::run(
+            &SuffixArraySpec,
+            &Campaign {
+                regressions: difffuzz::modules::suffix_array::REGRESSIONS,
+                ..campaign
+            },
+        ),
+        "generalized-suffix-array" => difffuzz::run(
+            &GeneralizedSuffixArraySpec,
+            &Campaign {
+                regressions: difffuzz::modules::suffix_array::GENERALIZED_REGRESSIONS,
                 ..campaign
             },
         ),

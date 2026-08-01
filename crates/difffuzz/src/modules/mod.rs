@@ -14,3 +14,9 @@ pub mod sparse_queue_set;
 pub mod sparse_set;
 pub mod stack;
 pub mod static_disjoint_set;
+
+// Appended, never interleaved: this list is a shared registry (CLAUDE.md, Git).
+// `suffix_array` declares two specs, `SuffixArraySpec` and
+// `GeneralizedSuffixArraySpec`, because they are two exports of one upstream
+// file; see that module's docs.
+pub mod suffix_array;

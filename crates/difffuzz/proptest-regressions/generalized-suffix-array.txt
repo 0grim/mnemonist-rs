@@ -1,0 +1,19 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+#
+# PROVENANCE OF THE ENTRY BELOW -- read before assuming it recorded a real port
+# defect. It did not. It was produced by a deliberate falsification, in the
+# spirit of DoD gate 6.
+#
+# The sabotage: `longestCommonSubsequence`'s second guard was changed from
+# `s > firstLength && t > firstLength` to `>=`, i.e. the separator position was
+# folded into the "both in the second half" case instead of escaping both
+# guards. proptest minimised it to a two-member array whose first member is
+# empty -- so `firstLength` is 0 and position 0 IS the boundary -- and the two
+# sides then disagree about whether the separator itself is a common substring.
+# The sabotage was reverted; the seed is replayed before any novel case.
+cc fc8949a40074917ef57bf44544fcde8f4455b8212f446ba4f3c6e06b426c1645 # shrinks to Program { ctor: [Array [Array [], Array [String("\u{1}")]]], ops: [Op { name: "longestCommonSubsequence", args: [] }] }

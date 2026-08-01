@@ -503,3 +503,7 @@
 2026-08-01T02:19:13Z  module=queue seed=20260801 cases=15805 ops=1573126 wall=60.0s divergences=0
 2026-08-01T02:31:44Z  module=default-map seed=42 cases=29525 ops=2939502 wall=120.0s divergences=0
 2026-08-01T02:32:53Z  module=default-map seed=20260801 cases=14492 ops=1432987 wall=60.0s divergences=0
+2026-08-01T09:53:49Z  module=suffix-array seed=42 cases=274418 ops=548743 wall=60.0s divergences=0
+2026-08-01T09:54:55Z  module=generalized-suffix-array seed=42 cases=169107 ops=343616 wall=60.0s divergences=0
+2026-08-01T09:56:02Z  module=suffix-array seed=20260801 cases=257468 ops=515381 wall=60.0s divergences=0
+2026-08-01T09:57:09Z  module=generalized-suffix-array seed=20260801 cases=161214 ops=327320 wall=60.0s divergences=0
