@@ -132,14 +132,21 @@ Everything below is reachable through the public API and never exercised.
 | `reverse_swaps_arguments_rather_than_negating`, `the_two_reverses_agree_pointwise` | 6, 7 |
 | `tuple_comparator_is_lexicographic`, `tuple_comparator_reads_past_a_short_tuple_as_undefined` | 9 |
 
-**JavaScript boundary spec** — `tests/boundary/heap.js`, **34 assertions**, covering everything that
+**JavaScript boundary spec** — `tests/boundary/heap.js`, **47 cases**, covering everything that
 needs a real JS comparator, a real array or a real typed array. Its provenance is the important
 part: **every expectation was run against the pinned upstream source first** (`bench/upstream/`,
-Node 24.18.1) and is what upstream printed. Re-pointed at upstream, 33 of the 34 pass unchanged;
+Node 24.18.1) and is what upstream printed. Re-pointed at upstream, 46 of the 47 pass unchanged;
 the only failure is the one explicitly about the bridge's own surface. So the file measures
 divergence in *either* direction, not merely "the port does what I expected".
 
-It closes gaps 1–6, 10–15, 17, 22, and adds several the Rust side cannot reach: the whole
+Thirteen of the cases are a **re-entrancy matrix**: every method that can be on the stack when a
+comparator fires, crossed with twelve re-entrant actions it could take — 145 combinations. What
+they guard is the borrow discipline of D-70/D-43, whose failure mode is a `BorrowMutError` that
+aborts the process, so "the loop finished" *is* the assertion. The values were checked separately:
+the same matrix run against the pinned upstream source and diffed came back **byte identical on
+all 145 lines**.
+
+The rest closes gaps 1–6, 10–15, 17, 22, and adds several the Rust side cannot reach: the whole
 delegated-`<` regime of D-72 (mixed types, `valueOf`, `toString`-only objects, BigInt heaps,
 UTF-16 string order, a comparator returning a `Symbol`), and that a thrown
 comparator propagates the caller's own error **object** (not a wrapper), and that the ten statics
