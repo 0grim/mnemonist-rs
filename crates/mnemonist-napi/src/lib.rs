@@ -68,6 +68,14 @@ pub mod bi_map;
 pub mod bk_tree;
 pub mod fuzzy_map;
 
+// Appended at the end, never inserted (CLAUDE.md, Git): a line anywhere else
+// is a merge conflict inside this shared registry.
+pub mod multi_map;
+pub mod multi_set;
+
+// Appended at the end, never inserted (CLAUDE.md, Git).
+pub mod fuzzy_multi_map;
+
 #[napi]
 pub fn ping() -> &'static str {
     "pong"
