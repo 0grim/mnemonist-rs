@@ -138,6 +138,84 @@ as fuzzer falsification sabotage A — caught in 6.6s and shrunk to seven ops.
 *Lesson worth keeping: for a bug-for-bug port, read JS one statement at a time and confirm each
 against the runtime. Reading for intent is how you write the correct version by accident.*
 
+### B-11 — `SparseMap.delete` moves the key and leaves the value behind
+`status: VERIFIED against Node 24.18.1` · `mnemonist sparse-map.js`
+**The best find of the port so far, and the only one that needs no out-of-range input.**
+`delete` is `SparseSet`'s swap-with-last copied verbatim into a structure that has a third
+parallel array, and the third array is never touched:
+```js
+index = this.dense[this.size - 1];
+this.dense[this.sparse[member]] = index;   // the last MEMBER moves into the hole
+this.sparse[index]              = this.sparse[member];
+this.size--;                               // and `vals` is never touched
+```
+Measured: `set(3,'a') set(4,'b') set(5,'c')` then `delete(3)` gives `get(5) === 'a'` and
+`[...m] === [[5,'a'],[4,'b']]`. Member 5's value is member 3's. Holds for a typed value store too,
+so it is the swap and not the `Array`.
+
+**Why it survived, measured rather than argued.** The upstream file deletes exactly twice, both
+times from a map holding ONE entry, where the swap is a self-assignment. Sabotaging our port to
+*fix* the bug leaves `test/sparse-map.js` at **9 passing, 0 failing** — while turning **four** of
+our native tests red and being caught by the differential fuzzer in **3.0 seconds**, shrunk to
+three ops. That pair of numbers is the cleanest statement of the rigor gap this project has
+produced: the suite is not weak in an obvious way (it covers both constructor signatures and all
+three iterators), it just never builds a map big enough for its own `delete` to do anything.
+
+*Write-up beat: "the test suite covered every method and still could not see the bug, because
+every deletion it performs is a no-op by construction." Also the sharpest possible answer to
+"why differential-fuzz a library with 525 passing tests".*
+
+### B-12 — `SparseQueueSet.dequeue`'s absence sentinel does not fit its own array
+`status: VERIFIED against Node 24.18.1` · `mnemonist sparse-queue-set.js`
+`dequeue` marks a member absent by writing the capacity, as a value no live slot can hold:
+```js
+this.sparse[member] = this.capacity;
+```
+But `sparse` is `getPointerArray(capacity)` wide, and that function sizes for the largest *index*,
+`capacity - 1`. At **capacity exactly 256** the array is a `Uint8Array` and the sentinel truncates
+to **0** — an ordinary slot. Measured:
+```js
+var q = new SparseQueueSet(256);
+q.enqueue(5); q.dequeue();     // sparse[5] is 0, not 256
+q.enqueue(7);
+q.has(5)        // true   <- 5 was dequeued
+q.enqueue(5); [...q]           // [7]  <- and it can never be re-admitted
+```
+Control at capacity 255: `sparse[5] === 255`, `has(5) === false`, re-enqueue works. Same defect one
+width up at **capacity 65536** (`Uint16Array`), confirmed. So the bug is at exactly the two powers
+of two where `getPointerArray` switches, and 2³² is unreachable.
+**Two symptoms, and the second is worse:** a false-positive `has`, and an `enqueue` that believes
+it and refuses to re-admit the member. Reproduced, not fixed — `try_set` narrows, so the port gets
+it for free.
+
+### B-13 — `SparseQueueSet.enqueue` never checks whether the ring is full
+`status: VERIFIED against Node 24.18.1` · `mnemonist sparse-queue-set.js`
+Nothing bounds `size` by `capacity`. In range that is unreachable — a queue holding every member of
+`0..capacity` rejects any further enqueue as a duplicate — but ONE out-of-range member is enough,
+because `sparse[member]` is then `undefined` and the duplicate check cannot fire:
+```js
+var q = new SparseQueueSet(4);
+q.enqueue(0); q.enqueue(1); q.enqueue(2); q.enqueue(3);
+q.enqueue(100);          // out of range
+q.dense                  // [100, 1, 2, 3]  <- member 0 silently evicted
+q.size                   // 5, against a capacity of 4
+q.has(0)                 // false
+[...q]                   // [100, 1, 2, 3, 100]  — five members from a four-slot ring
+```
+The out-of-range write lands on a **live slot** rather than off the end, which is what makes this
+different from B-8: `SparseSet.add(300)` corrupts a slot nobody was using, `enqueue(100)` evicts a
+member that was legitimately queued.
+
+### B-14 — `SparseQueueSet` with `capacity === 0` divides by zero
+`status: VERIFIED against Node 24.18.1` · `mnemonist sparse-queue-set.js`
+`(this.start + this.size) % this.capacity` is `NaN`, and `dense[NaN] = member` is a string-keyed
+expando rather than an element store, so both writes vanish while `size` still increments. Then:
+* `Array.from(q)` is `[undefined]` after one `enqueue` — DESIGN.md §3.7's shrink window, reached in
+  **two calls**, on a different module from `sparse-set` and by a different route;
+* `dequeue()` returns `undefined` and sets `sparse.undefined = 0`, the B-10 expando again;
+* and `start` climbs **without bound**, because the wrap check is `start === capacity`, i.e.
+  `1 === 0`, which is never true. Every other structure in this family bounds its indices.
+
 ### B-6 — `Stack.values()` captures `items.length`, not `this.size`
 `status: unverified` · `mnemonist stack.js`
 Other structures capture `this.size`. These coincide for `Stack` today; the inconsistency is latent
