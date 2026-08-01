@@ -1041,3 +1041,25 @@
 # actually_exceeded_and_hits_the_crash, ~60%/100% respectively over 500 sampled programs).
 2026-08-01T20:43:28Z  module=fixed-critbit-tree-map seed=42 cases=9987 ops=1020404 wall=60.0s divergences=0
 2026-08-01T20:44:40Z  module=fixed-critbit-tree-map seed=20260801 cases=10061 ops=1025762 wall=60.0s divergences=0
+# vp-tree: read-only after construction (no `add`), so every op is a query and `nodes`/`lefts`/
+# `rights`/`mus` are observed directly on every generated program -- a byte-for-byte tree-shape
+# comparison on random input, not only the two fixed fixtures the core module's native tests pin.
+# Items are integers in 0..24 with distance=|a-b| (reusing bk-tree's `bkAbsDiff` factory), narrow
+# enough that repeated distance collisions are constant -- grammar_self_check_radius_spans_full_
+# pruning_and_none confirms a radius of 0 visits strictly fewer of 80 items than a radius covering
+# the whole range (which visits all 80, i.e. zero pruning is possible there). Two seeds, no
+# divergences.
+2026-08-01T21:20:00Z  module=vp-tree seed=42 cases=8256 ops=819286 wall=90.0s divergences=0
+2026-08-01T21:22:00Z  module=vp-tree seed=7 cases=5532 ops=552919 wall=60.0s divergences=0
+# kd-tree: `.from`'s own entry point, not `new KDTree(...)` -- upstream's raw constructor takes an
+# already-built internal shape only `.from`/`.fromAxes` produce, so this is the first module whose
+# ModuleSpec names a `static_factory` ("from") and whose ctor argument order is `.from`'s own
+# (`[data, dimensions]`); see `fuzz/oracle.js`'s additive `staticFactory` handling in its `init`
+# case. Points are drawn from a dense 12x12 integer grid specifically so queries land close to
+# splitting planes and distance ties are common -- grammar_self_check_queries_land_across_the_
+# splitting_plane measured both directly over 500 sampled queries against a 60-point grid: every
+# query's tree answer matches the brute-force minimum distance exactly, and a non-zero fraction of
+# queries have their true nearest neighbor on the far side of a naive single-axis guess, plus a
+# non-zero fraction of genuine distance ties. Two seeds, no divergences.
+2026-08-01T21:24:00Z  module=kd-tree seed=42 cases=9713 ops=970441 wall=90.0s divergences=0
+2026-08-01T21:26:00Z  module=kd-tree seed=7 cases=6462 ops=650306 wall=60.0s divergences=0

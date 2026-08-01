@@ -1964,3 +1964,149 @@ catchable exception — the same reasoning `static_disjoint_set`'s bridge alread
 different out-of-range read (see that module's docs, adaptation 3).
 **Verify:** `crates/mnemonist-core/src/structures/fixed_critbit_tree_map.rs`'s module docs, part 1,
 and `Error::Corrupted`; `docs/modules/fixed-critbit-tree-map.md`.
+
+## vp-tree, kd-tree (D-400..D-449 range)
+
+### D-400 — `VPTree`'s distance function is passed per call, never stored on the struct
+**Status:** CONFIRMED · **Category:** architecture · **Divergence:** no
+**Upstream:** `this.distance = distance` in the constructor, reused by both `nearestNeighbors` and
+`neighbors`.
+**Port:** `VpTree<I>` stores no distance function at all; every query method takes one as a
+parameter, exactly the same reasoning `crates/mnemonist-core/src/structures/bk_tree.rs` already
+applies (see that module's docs) — a Rust caller passing the identical function each time is
+observationally the same as upstream storing it once.
+**Verify:** `crates/mnemonist-core/src/structures/vp_tree.rs` module docs, "Distance is passed per
+call, never stored".
+
+### D-401 — an empty `VPTree`'s query returns no results rather than crashing the caller's own distance function
+**Status:** CONFIRMED · **Category:** behavioural · **Divergence:** yes (narrower than upstream)
+**Upstream:** `new VPTree(distance, [])` builds cleanly (every backing array ends up length zero),
+but `nearestNeighbors`/`neighbors` on it reads `this.nodes[0]` as `undefined`, then
+`this.items[undefined]` as `undefined`, and hands that `undefined` "vantage point" to the caller's
+own `distance` function — which throws for every metric in the upstream suite (`levenshtein`
+included). No test anywhere builds an empty tree and queries it.
+**Port:** `VpTree::try_nearest_neighbors`/`try_neighbors` return `Ok(vec![])` immediately when
+`size == 0`.
+**Rationale:** the crash this would otherwise reproduce lives entirely in a caller-supplied
+function nothing in this port controls; there is no single "correct" crash to reproduce, only
+whichever one a given metric happens to throw. Returning no results is the more defensible answer
+to a case no test exercises.
+**Verify:** `vp_tree.rs`'s `an_empty_tree_builds_cleanly_and_answers_no_queries` test; module docs,
+"What this deliberately does not model".
+
+### D-402 — `VPTree.nearestNeighbors(0, query)` returns no results rather than reading `undefined.distance`
+**Status:** CONFIRMED · **Category:** behavioural · **Divergence:** yes (narrower than upstream)
+**Upstream:** `if (neighbors.size >= k) tau = neighbors.peek().distance` — with `k = 0` this fires
+immediately after the heap is trimmed straight back to empty, so `neighbors.peek()` is `undefined`
+and `.distance` throws a `TypeError` unrelated to any distance function. Untested upstream.
+**Port:** `try_nearest_neighbors` returns `Ok(vec![])` immediately when `k == 0`.
+**Verify:** same test/docs as D-401.
+
+### D-403 — a distance function that calls back into the same `VPTree` sees independent state, not upstream's shared, corruptible `this.heap`/`this.D`
+**Status:** CONFIRMED · **Category:** behavioural · **Divergence:** yes, and in the "more correct" direction
+**Upstream:** `this.heap`/`this.D` are single instance fields, reused (not recreated) across every
+call to `nearestNeighbors`. A distance function that recursively calls `tree.nearestNeighbors(...)`
+again interleaves the outer call's in-progress heap state with the inner call's, producing
+whatever upstream's un-arbitrated interleaving happens to leave behind.
+**Port:** every query builds its heap and stack locally; nothing is shared on `self`, and the core
+type's queries take `&self` rather than `&mut self` specifically because there is no mutable
+tree-wide state to protect. A reentrant call here is simply an independent, correct query.
+**Rationale:** CLAUDE.md is explicit that "more correct" is still a divergence that must be
+disclosed, not silently kept. No test (upstream's or this port's fuzz grammar) inspects
+`this.heap`/`this.D` directly, so this is unreachable through any instrument currently in place —
+recorded here rather than left implicit, the same posture `bk_tree.rs`'s D-302 takes for a related
+but distinct hazard (a re-entrant *bridge* borrow, which does not arise here at all since no method
+needs `&mut self` — see D-404).
+**Verify:** `vp_tree.rs` module docs, "What this deliberately does not model", third bullet.
+
+### D-404 — the napi bridge holds no `RefCell` at all for `VPTree`
+**Status:** CONFIRMED · **Category:** architecture · **Divergence:** no
+**Upstream:** n/a — a design note, not a behavioural difference.
+**Port:** unlike `bk_tree.rs` (which needs `try_borrow`/`try_borrow_mut` because `add` requires
+exclusive access), every `JsVpTree` method only ever needs a shared reference: there is no mutation
+after construction, so the wrapper struct holds `CoreTree<JsSlot>` directly.
+**Rationale:** stated to make D-403 legible — the reason a reentrant distance call cannot panic or
+deadlock here is structural (no exclusive borrow is ever taken), not a policy decision to tolerate
+reentrancy the way `bk_tree.rs`'s `REENTRANT_DISTANCE` catch does.
+**Verify:** `crates/mnemonist-napi/src/vp_tree.rs` module docs.
+
+### D-405 — `this.D` (the per-query distance-call counter) is not exposed by the bridge at all
+**Status:** CONFIRMED · **Category:** scope · **Divergence:** yes (narrower — a property removed)
+**Upstream:** `this.D` is a real, enumerable, public instance property, reset to `0` and
+incremented once per node visited on every `nearestNeighbors`/`neighbors` call.
+**Port:** not modelled in `mnemonist_core::structures::vp_tree::VpTree`, and therefore not exposed
+by `crates/mnemonist-napi/src/vp_tree.rs`.
+**Rationale:** no test anywhere reads `tree.D`; it is a diagnostic aside on upstream's own
+traversal, not part of any behaviour the original suite pins. The equivalent measurement — how
+often a query prunes at least one node versus visits every node — is taken directly in
+`crates/difffuzz/src/modules/vp_tree.rs`'s `grammar_self_check` by wrapping the distance function
+with a counter closure instead, which needs no core-level change at all.
+**Verify:** `crates/difffuzz/src/modules/vp_tree.rs`'s `grammar_self_check_radius_spans_full_pruning_and_none`.
+
+### D-406 — `KDTree`'s bridge exposes no direct constructor; only `.from`/`.fromAxes`
+**Status:** CONFIRMED · **Category:** scope · **Divergence:** yes (narrower surface)
+**Upstream:** `function KDTree(dimensions, build)` is a real, callable constructor — `new
+KDTree(2, {axes, labels, pivots, lefts, rights})` would run, provided the caller has already
+produced `build`'s exact internal shape by some other means. No test anywhere does this; both
+`test/kd-tree.js` and every call site in `bench/upstream` reach `KDTree` only through `.from` or
+`.fromAxes`.
+**Port:** `crates/mnemonist-napi/src/kd_tree.rs`'s `JsKdTree` declares no `#[napi(constructor)]`;
+it is reachable only through its two `#[napi(factory)]` methods.
+**Rationale:** there is no honest way to expose the raw constructor without either (a) requiring a
+caller to hand-assemble `build`'s internal shape, which is scaffolding nothing needs, or (b)
+silently deriving it from friendlier arguments, which is `.from` under a different name. Since no
+test calls it, narrowing the surface to how the module is actually used is the more defensible
+choice.
+**Verify:** `crates/mnemonist-napi/src/kd_tree.rs` module docs; `tests/bridge/kd-tree.js`.
+
+### D-407 — an empty `KDTree`'s `nearestNeighbor` returns `None`/`undefined` rather than cascading through `undefined` arithmetic
+**Status:** CONFIRMED · **Category:** behavioural · **Divergence:** yes (narrower than upstream)
+**Upstream:** `KDTree.from([], dimensions)` builds cleanly (`pivots`/`lefts`/`rights` all end up
+length zero), but `nearestNeighbor`/`kNearestNeighbors` on it reads `this.pivots[0]` as `undefined`
+and cascades from there — untested upstream, and not a single well-defined crash the way
+`VPTree`'s caller-supplied-metric crash is (D-401): here the cascade is entirely inside
+`mnemonist`'s own code, through several `undefined`-arithmetic steps, before it does anything
+observable.
+**Port:** `KdTree::nearest_neighbor` returns `None` immediately when `size == 0`;
+`k_nearest_neighbors`/`linear_k_nearest_neighbors` return `Ok(vec![])`.
+**Verify:** `kd_tree.rs`'s `an_empty_tree_builds_cleanly_and_answers_no_queries` test; module docs.
+
+### D-408 — `KDTree`'s `k <= 0` guard only fires for `k == 0` in this port
+**Status:** CONFIRMED · **Category:** scope · **Divergence:** yes (narrower — fewer inputs rejected)
+**Upstream:** `if (k <= 0) throw new Error('mnemonist/kd-tree.kNearestNeighbors: k should be a
+positive number.')` — reachable with a negative number, `-0`, or (since `NaN <= 0` is `false`) NOT
+reachable with `NaN`, which instead falls through to `Math.min(NaN, this.size)` and cascades.
+**Port:** `k: usize` cannot represent a negative value at all, so
+`crates/mnemonist-napi/src/kd_tree.rs` maps any out-of-range JS number to the same rejection
+message at the boundary; `mnemonist_core::structures::kd_tree::KdTree::k_nearest_neighbors` itself
+only ever sees `k == 0` as the invalid case, because that is the only one `usize` can carry.
+**Rationale:** untested upstream for both the negative and `NaN` cases; `usize` cannot honestly
+distinguish "the caller passed a negative number" from "the caller passed zero" the way a full
+`f64` guard could, and reproducing the `NaN` fall-through would need to reproduce
+`Math.min`/typed-array-length arithmetic on `NaN` for a case nothing observes.
+**Verify:** `kd_tree.rs`'s `zero_k_is_rejected_with_upstreams_message` test; `NON_POSITIVE_K`.
+
+### D-409 — `dimensions == 0` is unguarded; the two ports fail differently, and both are untested
+**Status:** CONFIRMED · **Category:** behavioural · **Divergence:** yes (different failure mode, not a repair)
+**Upstream:** `(d + 1) % dimensions` is `NaN` when `dimensions` is `0`; every later index derived
+from it is `undefined`, and the traversal produces silent garbage rather than a clean throw.
+**Port:** `(d + 1) % dimensions` in Rust panics on an integer division/remainder by zero, aborting
+rather than producing garbage.
+**Rationale:** no test anywhere constructs a zero-dimensional tree; this is recorded rather than
+guarded specifically because a guard would be an invented behaviour (there is no real "right
+answer" to reproduce — upstream's own answer is unobservable garbage), and a panic is at least
+loud rather than silently wrong. Left as a known, disclosed gap.
+**Verify:** `kd_tree.rs` module docs, "What this deliberately does not model", third bullet.
+
+### D-410 — `KDTree`'s bridge exposes `pivots`/`lefts`/`rights`/`size`/`dimensions` only; `axes`, `labels` and the query diagnostic `this.visited` are not exposed
+**Status:** CONFIRMED · **Category:** scope · **Divergence:** yes (narrower surface)
+**Upstream:** `axes`, `labels` and `visited` are real, enumerable, public instance properties.
+**Port:** not exposed by `crates/mnemonist-napi/src/kd_tree.rs`.
+**Rationale:** no test reads any of the three. `axes`/`labels` are reconstructable by a caller from
+the constructor arguments it already has; `visited`, like `VPTree`'s `this.D` (D-405), is a
+diagnostic aside on the traversal rather than a behaviour the original suite pins.
+`crates/difffuzz/src/modules/kd_tree.rs` observes `pivots`/`lefts`/`rights` directly instead, which
+is where the tree's real *shape* — as opposed to the caller's own input echoed back — actually
+lives.
+**Verify:** `crates/mnemonist-napi/src/kd_tree.rs`; `crates/difffuzz/src/modules/kd_tree.rs`'s
+`observations()`.

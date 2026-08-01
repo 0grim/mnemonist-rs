@@ -540,7 +540,19 @@ function handle(request) {
       // rebuilds the values JSON cannot carry -- NaN, -0, undefined, factories.
       // `decodeCtorArg` passes non-$global values through untouched and `decode`
       // returns a function unchanged, so the order is safe either way.
-      instance = new Ctor(...request.ctor.map((arg) => decode(decodeCtorArg(arg))));
+      const ctorArgs = request.ctor.map((arg) => decode(decodeCtorArg(arg)));
+      // `kd-tree.js`'s own raw constructor, `function KDTree(dimensions,
+      // build)`, takes an already-built internal shape only `.from`/
+      // `.fromAxes` themselves ever produce -- there is no directly usable
+      // `new KDTree(...)` the way every other fuzzed module has one.
+      // `staticFactory` names one of the constructor's own static methods to
+      // call instead of `new Ctor(...)`, so this module's real entry point is
+      // exercised rather than a synthetic re-derivation of `build`'s shape.
+      // Optional and additive: every other module's `init` omits it and gets
+      // the same `new Ctor(...)` behaviour as before.
+      instance = request.staticFactory
+        ? Ctor[request.staticFactory](...ctorArgs)
+        : new Ctor(...ctorArgs);
       observations = request.observe;
       cursor = null;
       return {ok: true, state: observe()};
