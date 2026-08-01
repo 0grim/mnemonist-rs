@@ -233,6 +233,38 @@ impl<K: Hash + Eq + Clone, V> DefaultMap<K, V> {
         }
     }
 
+    /// The **write half** of upstream's `get`, for a caller that has already
+    /// run the factory itself.
+    ///
+    /// ```js
+    /// this.items.set(key, value);
+    /// this.size++;
+    /// ```
+    ///
+    /// Exists for the bridge, and the reason is specific: there the factory is
+    /// a JavaScript function, and the bridge holds the map in a `RefCell`
+    /// (B-31), so it cannot run the factory from *inside*
+    /// [`try_get_or_insert_with`](DefaultMap::try_get_or_insert_with) without
+    /// keeping a borrow alive across a call that may re-enter. Upstream does
+    /// not hold its map either — its factory runs between the read and the
+    /// write — so splitting the two halves is closer to upstream, not further
+    /// from it.
+    ///
+    /// Unconditional on purpose. Upstream does not re-check the key after the
+    /// factory returns, so a factory that inserted the same key gets
+    /// overwritten and `size` is incremented a second time. `size += 1` rather
+    /// than a resynchronisation is B-40, and it is deliberate; see
+    /// [`set`](DefaultMap::set) for the write that heals it.
+    pub fn insert_from_factory(&mut self, key: K, value: Option<V>) -> Option<&V> {
+        self.items.set(key.clone(), value);
+        self.size += 1;
+
+        self.items
+            .get(&key)
+            .expect("the value was just inserted under this key")
+            .as_ref()
+    }
+
     /// [`get_or_insert_with`](DefaultMap::get_or_insert_with) with a factory
     /// that can fail.
     ///

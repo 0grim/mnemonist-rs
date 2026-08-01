@@ -314,3 +314,30 @@ claim it disproved was withdrawn from two source comments.
 batched into a quiet pass (DESIGN.md §7.3). `stack` is ready for it: the workloads it needs are
 push/pop churn and a full drain, both of which the existing `bench/runner` shape already supports.
 Until that pass lands, this unit is **not** in `tests/scope.txt` and does not claim to be done.
+
+### `$forEach` — the op that was missing (added 2026-08-01, B-31)
+
+`stack`'s grammar had no `forEach` op at all. That omission is what let B-31 — a `forEach`
+callback mutating the collection it is walking — through 4.40 M clean operations: an op alphabet
+that omits a method omits every bug reachable only through it.
+
+`$forEach(method, rule, limit)` now walks the instance with a callback that calls back into it.
+The compared result is the sequence of callback argument pairs, so the walk's **shape** is checked
+and not only the state it leaves behind. This module's mutations:
+
+* `pop()`, `push(a0)` and `clear()`, all uncapped.
+
+Safe uncapped because `l = this.items.length` is captured before the first step. The interesting
+program is a callback that pops: `l - i - 1` is then computed from the **old** length against the
+**new** array, which opens an `undefined` hole mid-walk — the behaviour `tests/boundary/stack-queue.js`
+pins by hand and this op now generates by the thousand.
+
+**What it does not reach, stated so the campaign is not over-read.** `difffuzz` compares
+`mnemonist-core` against upstream JS; the napi bridge, where B-31's hoisted read actually lived, is
+not in that loop. No op alphabet can catch that class of bug here. The specs that do are
+`tests/boundary/reentrancy.js`, which drive the real addon with real JS callbacks — red on the
+pre-fix bridges, green after.
+
+One deliberate narrowing, mirrored on both sides: a selected callback argument that is `undefined`
+skips the mutation. Feeding it back in reaches upstream's `NaN`-indexed swap, which `usize` cannot
+express and the core does not model. Fully disclosed in `fuzz/log.txt`.

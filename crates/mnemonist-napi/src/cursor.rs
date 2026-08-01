@@ -131,6 +131,20 @@ impl<Owner: 'static, S: Sequence + 'static> CellCursor<Owner, S> {
         Self { source, state }
     }
 
+    /// As [`open`](CellCursor::open), for a source offering several walks.
+    ///
+    /// The [`BridgeCursor::open_projected`] contract, over a `RefCell` source:
+    /// `SparseMap` hands out three cursors over one frozen `size`, and which
+    /// one is a [`Sequence::Frozen`] payload rather than a separate type.
+    pub fn open_projected(
+        source: SharedReference<Owner, &'static std::cell::RefCell<S>>,
+        frozen: S::Frozen,
+    ) -> Self {
+        let state = CursorState::open_projected(&*source.borrow(), frozen);
+
+        Self { source, state }
+    }
+
     /// One step, against the parent as it is *now*.
     pub fn step(&mut self) -> Step<S::Item> {
         self.state.step(&self.source.borrow())

@@ -3,8 +3,9 @@
 
 use std::fmt;
 
+use proptest::prelude::*;
 use proptest::strategy::BoxedStrategy;
-use serde_json::Value;
+use serde_json::{json, Value};
 
 /// One operation in a generated program.
 ///
@@ -30,6 +31,141 @@ impl fmt::Display for Op {
 
         write!(f, "{}({})", self.name, args.join(", "))
     }
+}
+
+/// The `$forEach` op: walk the collection, and mutate it from inside the walk.
+///
+/// # Why this op exists
+///
+/// B-31 was reachable only through a `forEach` whose callback mutated the
+/// collection, and no module's alphabet had a `forEach` at all — so 2.94M
+/// generated operations could not express the program that breaks it. An
+/// alphabet that omits a method omits every bug reachable only through it, and
+/// a clean campaign then reads as coverage it never had.
+///
+/// # What it does and does not reach
+///
+/// It compares the **loop shape**: which bound is live and which is frozen,
+/// and what the walk sees after the collection moves under it. Upstream is
+/// inconsistent about this on purpose — `SparseSet.forEach` re-reads
+/// `this.size` every iteration while `SparseQueueSet.forEach` captures it —
+/// and getting one of them wrong is exactly the kind of thing a hand-written
+/// loop does.
+///
+/// It does **not** reach B-31 itself. The differential fuzzer compares
+/// `mnemonist-core` against upstream JS; the napi bridge, where the hoisted
+/// read lived, is not in that loop at all. Those specs are
+/// `tests/boundary/reentrancy.js`, which needs the real addon and a real JS
+/// callback. Stated here rather than left to be assumed, because "we added a
+/// forEach op" would otherwise read as "B-31 is now fuzz-covered".
+#[derive(Debug, Clone, Copy)]
+pub struct ForEach<'a> {
+    /// Method the callback calls back into, or `None` for a plain walk.
+    pub method: Option<&'a str>,
+    /// How that method's arguments are built from the callback's own.
+    pub rule: &'a str,
+    /// How many times the mutation may fire, counted from the first step.
+    pub limit: usize,
+}
+
+/// Stand-in for "every step", small enough to stay a plain JSON integer.
+pub const FOR_EACH_MANY: u64 = 1_000_000;
+
+/// Read a `$forEach` op's arguments.
+pub fn for_each(op: &Op) -> ForEach<'_> {
+    ForEach {
+        method: op.args[0].as_str(),
+        rule: op.args[1].as_str().unwrap_or("none"),
+        limit: op.args[2].as_u64().unwrap_or(0) as usize,
+    }
+}
+
+/// The mutating call's arguments, or `None` when the op must not fire.
+///
+/// `None` covers two cases that are deliberately identical: no method at all,
+/// and a rule that selected an `undefined`.
+///
+/// # The one narrowing, and why
+///
+/// A callback argument can be `undefined` — `dense[i]` past the end of a
+/// corrupted `SparseSet`, `items[i]` after a `pop`. Passing it on to the
+/// mutating method is legal JavaScript and does something specific and awful:
+/// `this.sparse[undefined]` is `undefined`, `undefined >= size` is false, and
+/// upstream falls through into a swap indexed by `undefined`, which on a typed
+/// array is a silently discarded expando write plus a `size--`. `usize` cannot
+/// express that and `mnemonist-core` does not model it, so the mutation is
+/// **skipped on both sides** rather than guessed at. Disclosed in
+/// `fuzz/log.txt`; the plain ops still generate every out-of-range member.
+pub fn for_each_args<'v>(spec: &ForEach<'_>, received: &'v [Value]) -> Option<Vec<&'v Value>> {
+    // A plain walk has no method, and therefore nothing to fire.
+    spec.method?;
+
+    let selected: Vec<&Value> = match spec.rule {
+        "none" => Vec::new(),
+        "arg0" | "arg0+1" => vec![&received[0]],
+        "arg1" => vec![&received[1]],
+        "arg1,arg0" => vec![&received[1], &received[0]],
+        other => panic!("`{other}` is not a $forEach argument rule"),
+    };
+
+    if selected.iter().any(|value| is_undefined(value)) {
+        return None;
+    }
+
+    Some(selected)
+}
+
+/// `{"$undefined": true}`, which is how the oracle spells a value JSON has no
+/// word for.
+pub fn is_undefined(value: &Value) -> bool {
+    value
+        .get("$undefined")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+}
+
+/// A `$forEach` argument as the non-negative integer the core methods take.
+///
+/// `+1` is applied here rather than by the caller so the Rust side and
+/// `fuzz/oracle.js` implement the rule in exactly one place each.
+pub fn for_each_index(spec: &ForEach<'_>, value: &Value) -> usize {
+    let number = value.as_u64().expect("a $forEach index is a JSON integer") as usize;
+
+    match spec.rule {
+        "arg0+1" => number + 1,
+        _ => number,
+    }
+}
+
+/// The `$forEach` alphabet for one module.
+///
+/// `mutations` is a table of `(method, rule, many)`: the method the callback
+/// calls, how its arguments come out of the callback's own, and the "fires on
+/// every step" limit for that mutation. The limit is per row because a
+/// mutation that *grows* the collection has to be bounded — for a module whose
+/// `forEach` bound is live, firing a growth on every step does not terminate,
+/// upstream included.
+///
+/// A plain walk is always generated alongside them, because a `forEach` that
+/// mutates nothing still compares the callback arguments and their order.
+pub fn for_each_strategy(
+    mutations: &'static [(&'static str, &'static str, u64)],
+) -> BoxedStrategy<Op> {
+    (0..=mutations.len(), 0usize..2)
+        .prop_map(move |(choice, repeat)| {
+            if choice == mutations.len() {
+                return Op::new("$forEach", vec![Value::Null, json!("none"), json!(0)]);
+            }
+
+            let (method, rule, many) = mutations[choice];
+            // Both limits matter and neither subsumes the other: "mutate once,
+            // then keep walking" is the classic re-entrancy shape, and "mutate
+            // on every step" is the one that races the loop bound.
+            let limit = if repeat == 0 { 1 } else { many };
+
+            Op::new("$forEach", vec![json!(method), json!(rule), json!(limit)])
+        })
+        .boxed()
 }
 
 /// A complete generated test case: how to build the instance, then what to do
@@ -86,12 +222,48 @@ impl Program {
                 }
                 "$next" => out.push_str("it.next();\n"),
                 "$spread" => out.push_str("Array.from(s);\n"),
+                "$forEach" => out.push_str(&render_for_each(op)),
                 _ => out.push_str(&format!("s.{op};\n")),
             }
         }
 
         out
     }
+}
+
+/// A `$forEach` op as the JavaScript it stands for.
+///
+/// Rendered rather than dumped for the same reason the other `$` ops are: the
+/// point of shrinking is a case small enough to paste into an upstream issue,
+/// and `s.$forEach("delete", "arg0", 1)` would not run.
+fn render_for_each(op: &Op) -> String {
+    let spec = for_each(op);
+    let Some(method) = spec.method else {
+        return String::from("s.forEach(function (a, b) {});\n");
+    };
+
+    let call = match spec.rule {
+        "none" => format!("s.{method}()"),
+        "arg0" => format!("s.{method}(a)"),
+        "arg0+1" => format!("s.{method}(a + 1)"),
+        "arg1" => format!("s.{method}(b)"),
+        "arg1,arg0" => format!("s.{method}(b, a)"),
+        other => panic!("`{other}` is not a $forEach argument rule"),
+    };
+    // The guard mirrors `for_each_args`' skip, over exactly the arguments the
+    // rule selects — see the narrowing note there.
+    let guard = match spec.rule {
+        "none" => "",
+        "arg0" | "arg0+1" => "if (a === undefined) return; ",
+        "arg1" => "if (b === undefined) return; ",
+        _ => "if (a === undefined || b === undefined) return; ",
+    };
+
+    format!(
+        "var fired = 0;\ns.forEach(function (a, b) {{ \
+         {guard}if (fired++ < {}) {call}; }});\n",
+        spec.limit
+    )
 }
 
 /// Everything the generic driver needs to fuzz one module.

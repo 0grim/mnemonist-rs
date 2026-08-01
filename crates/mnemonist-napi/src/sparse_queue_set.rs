@@ -18,13 +18,19 @@
 //!    write *through* them, but napi can only hand out a copy. They are exposed
 //!    in Rust, and the differential fuzzer compares both slot for slot after
 //!    every op.
+//!
+//! Like [`crate::queue`] and [`crate::stack`], the core structure is held in a
+//! [`RefCell`] so that `&self` is not `noalias readonly` and a JS callback's
+//! mutation is actually seen — see [`crate::cursor::CellCursor`] and B-31.
+
+use std::cell::RefCell;
 
 use mnemonist_core::cursor::{CursorState, Step};
 use mnemonist_core::structures::sparse_queue_set::SparseQueueSet as CoreQueue;
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 
-use crate::cursor::{yielded, BridgeCursor};
+use crate::cursor::{yielded, CellCursor};
 
 /// What upstream's `forEach` callback is invoked with: the member (possibly
 /// `undefined`), the ordinal, and the queue itself.
@@ -33,7 +39,7 @@ type ForEachArgs<'a> = FnArgs<(Either<u32, Undefined>, u32, Object<'a>)>;
 /// A FIFO queue over the members `0..capacity`, with O(1) membership.
 #[napi(js_name = "SparseQueueSet")]
 pub struct JsSparseQueueSet {
-    inner: CoreQueue,
+    inner: RefCell<CoreQueue>,
 }
 
 #[napi]
@@ -41,19 +47,21 @@ impl JsSparseQueueSet {
     #[napi(constructor)]
     pub fn new(capacity: u32) -> Result<Self> {
         CoreQueue::new(capacity as usize)
-            .map(|inner| Self { inner })
+            .map(|inner| Self {
+                inner: RefCell::new(inner),
+            })
             .map_err(|message| Error::new(Status::GenericFailure, message))
     }
 
     /// Members currently queued. Can exceed `capacity`; see the core docs.
     #[napi(getter)]
     pub fn size(&self) -> u32 {
-        self.inner.size() as u32
+        self.inner.borrow().size() as u32
     }
 
     #[napi(getter)]
     pub fn capacity(&self) -> u32 {
-        self.inner.capacity() as u32
+        self.inner.borrow().capacity() as u32
     }
 
     /// Index of the front of the ring.
@@ -63,30 +71,30 @@ impl JsSparseQueueSet {
     /// something bounded by the capacity.
     #[napi(getter)]
     pub fn start(&self) -> u32 {
-        self.inner.start() as u32
+        self.inner.borrow().start() as u32
     }
 
     #[napi]
-    pub fn clear(&mut self) {
-        self.inner.clear();
+    pub fn clear(&self) {
+        self.inner.borrow_mut().clear();
     }
 
     #[napi]
     pub fn has(&self, member: u32) -> bool {
-        self.inner.has(member as usize)
+        self.inner.borrow().has(member as usize)
     }
 
     /// Upstream returns `this` for chaining.
     #[napi]
-    pub fn enqueue<'a>(&mut self, this: This<'a>, member: u32) -> This<'a> {
-        self.inner.enqueue(member as usize);
+    pub fn enqueue<'a>(&self, this: This<'a>, member: u32) -> This<'a> {
+        self.inner.borrow_mut().enqueue(member as usize);
 
         this
     }
 
     #[napi]
-    pub fn dequeue(&mut self) -> Either<u32, Undefined> {
-        self.inner.dequeue().into()
+    pub fn dequeue(&self) -> Either<u32, Undefined> {
+        self.inner.borrow_mut().dequeue().into()
     }
 
     /// A fresh cursor over the queued members, front to back.
@@ -104,7 +112,7 @@ impl JsSparseQueueSet {
         let source = this.share_with(env, |queue| Ok(&queue.inner))?;
 
         Ok(JsSparseQueueSetValues {
-            cursor: BridgeCursor::open(source),
+            cursor: CellCursor::open(source),
         })
     }
 
@@ -140,11 +148,15 @@ impl JsSparseQueueSet {
         callback: Function<ForEachArgs, Unknown>,
         scope: Option<Unknown>,
     ) -> Result<()> {
-        let mut walk = CursorState::open(&self.inner);
+        let mut walk = CursorState::open(&*self.inner.borrow());
         let mut ordinal = 0u32;
 
         loop {
-            let member: Either<u32, Undefined> = match walk.step(&self.inner) {
+            // The borrow is taken and dropped per step, before the callback
+            // runs: a callback that enqueues or dequeues through the same
+            // object must not meet an outstanding borrow, and the `RefCell` is
+            // what stops the walk reading a hoisted snapshot (B-31).
+            let member: Either<u32, Undefined> = match walk.step(&self.inner.borrow()) {
                 Step::Item(member) => Either::A(member),
                 Step::Gap => Either::B(()),
                 Step::Done => return Ok(()),
@@ -168,7 +180,7 @@ impl JsSparseQueueSet {
 /// object's own `Symbol.iterator` returns itself, so it is non-restartable.
 #[napi(iterator, js_name = "SparseQueueSetValues")]
 pub struct JsSparseQueueSetValues {
-    cursor: BridgeCursor<JsSparseQueueSet, CoreQueue>,
+    cursor: CellCursor<JsSparseQueueSet, CoreQueue>,
 }
 
 impl Generator for JsSparseQueueSetValues {

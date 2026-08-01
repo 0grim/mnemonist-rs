@@ -16,6 +16,16 @@
 //!   Separate from `$next` on purpose: the factory half of D-07 is only
 //!   observable by comparing an op that must restart against one that must
 //!   not.
+//! * `$forEach(method, rule, limit)` walks the set with a callback that calls
+//!   back into it. This module's `forEach` re-reads `this.size` on **every**
+//!   iteration, so a callback that deletes shortens the walk and a callback
+//!   that adds extends it — the opposite of the frozen cursors above, and the
+//!   op exists to make that difference generated rather than asserted once.
+//!   See [`crate::spec::ForEach`] for what it does and does not reach.
+//!
+//!   The `add` row is capped at a small limit for a reason that is upstream's,
+//!   not ours: `s.forEach(m => s.add(m + 1))` with no cap never terminates,
+//!   because the live bound grows exactly as fast as the index.
 //!
 //! # What is NOT excluded, and why that is the point
 //!
@@ -51,7 +61,9 @@ use mnemonist_core::utils::typed_arrays::{PointerVec, PointerWidth};
 use proptest::prelude::*;
 use serde_json::{json, Value};
 
-use crate::spec::{ModuleSpec, Op};
+use crate::spec::{
+    for_each, for_each_args, for_each_index, for_each_strategy, ModuleSpec, Op, FOR_EACH_MANY,
+};
 
 /// Largest set the generator builds.
 ///
@@ -120,6 +132,7 @@ impl ModuleSpec for SparseSetSpec {
             2 => Just(Op::new("$iter", vec![json!("values")])),
             3 => Just(Op::new("$next", vec![])),
             1 => Just(Op::new("$spread", vec![])),
+            2 => for_each_strategy(MUTATIONS),
         ]
         .boxed()
     }
@@ -167,6 +180,52 @@ impl ModuleSpec for SparseSetSpec {
             // `Symbol.iterator` does upstream. Reusing `instance.cursor` here
             // would quietly turn the factory into the identity and the test
             // would still pass on every non-interleaved program.
+            // Upstream's own loop, re-read bound and all:
+            //
+            // ```js
+            // for (var i = 0; i < this.size; i++) {
+            //   item = this.dense[i];
+            //   callback.call(scope, item, item);
+            // }
+            // ```
+            "$forEach" => {
+                let spec = for_each(op);
+                let mut seen = Vec::new();
+                let mut fired = 0usize;
+                let mut index = 0usize;
+
+                // `this.size`, re-read every iteration -- NOT hoisted, which
+                // is the whole reason this op is worth generating.
+                while index < instance.set.size() {
+                    let item = slot(instance.set.dense().try_get(index));
+                    let received = vec![item.clone(), item];
+
+                    seen.push(Value::Array(received.clone()));
+
+                    if fired < spec.limit {
+                        if let Some(args) = for_each_args(&spec, &received) {
+                            fired += 1;
+
+                            match spec.method.expect("for_each_args returned Some") {
+                                "add" => {
+                                    instance.set.add(for_each_index(&spec, args[0]));
+                                }
+                                "delete" => {
+                                    instance.set.delete(for_each_index(&spec, args[0]));
+                                }
+                                "clear" => instance.set.clear(),
+                                other => {
+                                    panic!("`{other}` is not a $forEach mutation for this module")
+                                }
+                            }
+                        }
+                    }
+
+                    index += 1;
+                }
+
+                json!({ "seen": seen })
+            }
             "$spread" => {
                 let mut cursor = CursorState::open(&instance.set);
                 let mut items = Vec::new();
@@ -192,6 +251,25 @@ impl ModuleSpec for SparseSetSpec {
             "dense": typed_array(instance.set.dense()),
             "sparse": typed_array(instance.set.sparse()),
         })
+    }
+}
+
+/// What the callback's arguments may do to the set, and how often.
+///
+/// `add` is capped at two firings: its bound is live, so an uncapped growth
+/// never terminates. `delete` and `clear` both shrink and are safe uncapped.
+const MUTATIONS: &[(&str, &str, u64)] = &[
+    ("delete", "arg0", FOR_EACH_MANY),
+    ("add", "arg0+1", 2),
+    ("clear", "none", FOR_EACH_MANY),
+];
+
+/// A `dense` slot as the oracle encodes it: a number, or `undefined` past the
+/// end of a corrupted set.
+fn slot(value: Option<u32>) -> Value {
+    match value {
+        Some(item) => json!(item),
+        None => json!({"$undefined": true}),
     }
 }
 

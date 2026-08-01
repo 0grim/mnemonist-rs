@@ -266,6 +266,15 @@ differential fuzzing structurally cannot find them (D-33). B-40 was found by rea
 by line and confirming each step against Node. What the fuzzer is for is the other direction, and
 here it is *sharper than the original suite by a wide margin*: see "Fuzz".
 
+
+### B-31 — `&self` on a `Freeze` type was `noalias readonly` (fixed 2026-08-01)
+
+This bridge held a bare core value, so `&self` compiled to a `noalias readonly` pointer and LLVM was
+entitled to hoist reads across the JS callback — which it did. It now holds `RefCell<Core>`, which
+is not `Freeze`, and every `&mut self` method became `&self` + `borrow_mut()`. The borrow is taken
+per step and released before the callback runs, so a re-entrant callback never meets an outstanding
+borrow. See `planning/NOTES.md` B-31 and `crates/mnemonist-napi/src/cursor.rs`'s `CellCursor`.
+
 ## Deliberate divergences
 
 | # | Divergence | Why |
@@ -275,7 +284,7 @@ here it is *sharper than the original suite by a wide margin*: see "Fuzz".
 | — | **`forEach`'s third callback argument is the `DefaultMap`, not the inner `Map`.** | Upstream delegates to `this.items.forEach(...)`, and a native `Map` passes *itself* to the callback — so upstream's third argument is the internal map, an object this port does not have. The `DefaultMap` is passed instead. Untested upstream (gap 18); the first two arguments, which the original test does use, are exact. |
 | — | **`forEach(cb, undefined)` binds `this` to the map.** | Upstream keys off `arguments.length > 1`, which napi's typed signature cannot see: "omitted" and "passed as `undefined`" are the same value. Identical to `SparseSet::for_each` and recorded the same way. The omitted-argument case — the only one the original suite uses — is exact, and passing a real scope object is exact. |
 | — | **`inspect()` is not ported.** | It returns the inner `Map`, which does not exist in this port, and nothing asserts on it. |
-| — | **A re-entrant factory or `forEach` callback is not supported.** | Upstream allows a callback to call back into the same map. Here that would alias `&self` with `&mut self` across the FFI boundary. Not reachable from the original suite, and the same exposure every `#[napi]` class in the repo already has; recorded rather than fixed, because fixing it properly means interior mutability throughout and that is a decision for the whole bridge, not for one module. |
+| — | ~~**A re-entrant factory or `forEach` callback is not supported.**~~ **WITHDRAWN 2026-08-01 — both are now supported.** | This row said fixing it "means interior mutability throughout and that is a decision for the whole bridge, not for one module". That decision was then forced by B-31, which turned out to be the same exposure miscompiling rather than merely aliasing. The bridge now holds `RefCell<Core>`, `forEach` re-borrows per step, and `get` runs the factory between its read and its write exactly as upstream does — so a callback or factory that calls back into the same map behaves as upstream's. Verified differentially in `tests/boundary/reentrancy.js`. |
 | — | **The key is stored twice.** | `OrderedMap` keeps a `HashMap<K, usize>` index alongside the entry vector. `indexmap` avoids the second copy with `hashbrown`'s raw-entry API; the core crate is zero-dependency by declaration and `std`'s `HashMap` exposes no equivalent on stable. Mitigated rather than hidden: the bridge's string keys are `Rc<str>`, so the second copy is a refcount, not the text. |
 | — | **`undefined` is spelled `None`.** | Core has no JavaScript values, so `DefaultMap<K, V>` stores `Option<V>` and `None` *is* `undefined`. This is what makes B-40 expressible and testable from pure Rust, and it gets `peek` right for free — upstream's `peek` cannot distinguish a missing key from a key holding `undefined` either. |
 | — | **The factory is not stored in core.** | Upstream keeps it on the instance; here it is a per-call argument to `get_or_insert_with`, and the bridge holds the `FunctionRef`. The constructor's `typeof factory !== 'function'` check is a JavaScript type test and belongs at the boundary — its message is kept verbatim. A stored `F` would also put a JS callback inside a crate that must not know JavaScript exists. |
@@ -382,3 +391,31 @@ Two things to watch when it does run, both consequences of decisions recorded ab
 * **`get` on a hit is two hash lookups**, not one — `slot_of` then `get` — because the borrow has to
   end before the factory can run. A single-lookup version needs either a slot-based API or polonius;
   whether it is worth it is a question for the measurement, not for this document.
+
+### `$forEach` — the op that was missing (added 2026-08-01, B-31)
+
+`default-map`'s grammar had no `forEach` op at all. That omission is what let B-31 — a `forEach`
+callback mutating the collection it is walking — through 4.37 M clean operations: an op alphabet
+that omits a method omits every bug reachable only through it.
+
+`$forEach(method, rule, limit)` now walks the instance with a callback that calls back into it.
+The compared result is the sequence of callback argument pairs, so the walk's **shape** is checked
+and not only the state it leaves behind. This module's mutations:
+
+* `delete(a1)`, `set(a1, a0)` and `clear()`, all uncapped.
+
+This module's walk is the one that differs from every other in the port: a `Map` iteration is
+**live in both directions**, so an entry the callback adds *is* visited and one it deletes ahead of
+the cursor is *not*. `set` writes back the pair it was handed, so it overwrites rather than adds —
+which matters here and nowhere else, because a growing walk here would never terminate. The op is
+driven by the same cursor `$next` uses, so a second hand-written walk cannot drift from it.
+
+**What it does not reach, stated so the campaign is not over-read.** `difffuzz` compares
+`mnemonist-core` against upstream JS; the napi bridge, where B-31's hoisted read actually lived, is
+not in that loop. No op alphabet can catch that class of bug here. The specs that do are
+`tests/boundary/reentrancy.js`, which drive the real addon with real JS callbacks — red on the
+pre-fix bridges, green after.
+
+One deliberate narrowing, mirrored on both sides: a selected callback argument that is `undefined`
+skips the mutation. Feeding it back in reaches upstream's `NaN`-indexed swap, which `usize` cannot
+express and the core does not model. Fully disclosed in `fuzz/log.txt`.

@@ -31,12 +31,14 @@
 //! silently narrowed grammar reads as "we covered everything" when it did not.
 
 use mnemonist_core::structures::bit_vector::BitVector;
-use mnemonist_core::structures::bits::{BitEntries, BitWalk};
+use mnemonist_core::structures::bits::{bits_in_word, BitEntries, BitWalk};
 use proptest::prelude::*;
 use serde_json::{json, Value};
 
 use crate::modules::bit_set::{step_entry, step_value, typed_array};
-use crate::spec::{ModuleSpec, Op};
+use crate::spec::{
+    for_each, for_each_args, for_each_index, for_each_strategy, ModuleSpec, Op, FOR_EACH_MANY,
+};
 
 /// Largest initial length the generator builds.
 const MAX_LENGTH: u32 = 200;
@@ -110,6 +112,7 @@ impl ModuleSpec for BitVectorSpec {
             1 => Just(Op::new("$iter", vec![json!("entries")])),
             3 => Just(Op::new("$next", vec![])),
             1 => Just(Op::new("$spread", vec![])),
+            2 => for_each_strategy(MUTATIONS),
         ]
         .boxed()
     }
@@ -187,6 +190,93 @@ impl ModuleSpec for BitVectorSpec {
                 Some(Cursor::Values(walk)) => step_value(walk.step()),
                 Some(Cursor::Entries(entries)) => step_entry(entries.0.step_entry()),
             },
+            // Upstream's own loop, which snapshots each word and freezes both
+            // bounds:
+            //
+            // ```js
+            // var length = this.length, byte, bit, b = 32;
+            // for (var i = 0, l = this.array.length; i < l; i++) {
+            //   byte = this.array[i];
+            //   if (i === l - 1) b = length % 32 || 32;
+            //   for (var j = 0; j < b; j++) {
+            //     bit = (byte >> j) & 1;
+            //     callback.call(scope, bit, i * 32 + j);
+            //   }
+            // }
+            // ```
+            //
+            // Three things are captured -- `length`, `l`, and `byte` for the
+            // duration of the inner loop -- and only `this.array[i]` is a live
+            // read. So a callback that writes to the word being walked is
+            // invisible for the rest of that word and visible in the next one,
+            // and a callback that pushes does not extend the walk.
+            "$forEach" => {
+                let spec = for_each(op);
+                let word_count = instance.vector.words().word_count();
+                let length = instance.vector.length();
+                let mut seen = Vec::new();
+                let mut fired = 0usize;
+
+                for index in 0..word_count {
+                    // Live, exactly as `this.array[i]` is -- and re-read here
+                    // rather than lifted, because the callback may have
+                    // rewritten it.
+                    let word = instance.vector.words().word(index).unwrap_or(0);
+                    let bits = bits_in_word(index, word_count, length);
+
+                    for offset in 0..bits {
+                        let bit = ((word as i32) >> offset) & 1;
+                        let position = index * 32 + offset;
+                        let received = vec![json!(bit), json!(position)];
+
+                        seen.push(Value::Array(received.clone()));
+
+                        if fired < spec.limit {
+                            if let Some(args) = for_each_args(&spec, &received) {
+                                fired += 1;
+                                match spec.method.expect("for_each_args returned Some") {
+                                    "set" => {
+                                        // `set` past the capacity throws
+                                        // upstream, and the oracle reports it
+                                        // alongside the steps already taken.
+                                        if let Err(error) = instance
+                                            .vector
+                                            .set(for_each_index(&spec, args[0]) as i64, true)
+                                        {
+                                            return json!({
+                                                "seen": seen,
+                                                "$throw": error.to_string(),
+                                            });
+                                        }
+                                    }
+                                    "reset" => {
+                                        instance.vector.reset(for_each_index(&spec, args[0]) as i64)
+                                    }
+                                    "flip" => {
+                                        instance.vector.flip(for_each_index(&spec, args[0]) as i64)
+                                    }
+                                    "push" => {
+                                        if let Err(error) = instance.vector.push(true) {
+                                            return json!({
+                                                "seen": seen,
+                                                "$throw": error.to_string(),
+                                            });
+                                        }
+                                    }
+                                    "pop" => {
+                                        instance.vector.pop();
+                                    }
+                                    other => panic!(
+                                        "`{other}` is not a $forEach mutation for this module"
+                                    ),
+                                }
+                            }
+                        }
+                    }
+                }
+
+                json!({ "seen": seen })
+            }
             "$spread" => Value::Array(instance.vector.values().map(|bit| json!(bit)).collect()),
             other => panic!("op `{other}` is not in this module's alphabet"),
         }
@@ -202,6 +292,21 @@ impl ModuleSpec for BitVectorSpec {
         })
     }
 }
+
+/// What the callback may do to the vector, and how often.
+///
+/// `push` grows the vector, but the outer bound is `this.array.length` read
+/// once, so the walk cannot be extended and an uncapped push still terminates.
+/// It is capped at four anyway: a push per bit over a 400-bit vector is
+/// hundreds of reallocations per case, and the throughput matters more than
+/// the extra depth.
+const MUTATIONS: &[(&str, &str, u64)] = &[
+    ("set", "arg1", FOR_EACH_MANY),
+    ("reset", "arg1", FOR_EACH_MANY),
+    ("flip", "arg1", FOR_EACH_MANY),
+    ("push", "none", 4),
+    ("pop", "none", FOR_EACH_MANY),
+];
 
 fn index(op: &Op) -> i64 {
     op.args[0].as_i64().expect("generated indices are integers")

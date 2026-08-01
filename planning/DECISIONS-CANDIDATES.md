@@ -699,3 +699,31 @@ Core spells absence `None` and stores `Option<V>`, which is what makes B-40 expr
 Rust. The bridge cannot use napi's `Option<T>` conversion, which folds `null` into `None` as well —
 `test/lru-cache.js` asserts that a stored `null` round-trips.
 
+### B31-a — The bridge holds its core structure in a `RefCell`, and no borrow may cross a JS call
+`&self` on a `Freeze` type is `noalias readonly`, and LLVM used it: a `forEach` callback's mutation
+was invisible to the walk it ran inside (B-31). `RefCell` is not `Freeze`, so the assumption
+disappears. The rule the fix imposes is the interesting part — **a borrow must never be alive across
+a call that can run JavaScript** — because a `RefCell` panic inside a `#[napi]` method does not
+become a JS exception. napi 3.12 does not `catch_unwind` a sync call, and a panic unwinding out of
+an `extern "C"` frame **aborts the process**. Measured, twice, on real re-entrancy.
+**Consequence:** `forEach` re-borrows per step; `DefaultMap::get` runs its factory between the read
+and the write, which is where upstream runs it too, so the split is *closer* to upstream than the
+single core call it replaced.
+**Rejected alternative:** a `volatile` read or a compiler barrier. Neither addresses the aliasing
+assumption; both would be pinning a particular codegen rather than fixing the type.
+
+### B31-b — A `BitVector` growth policy that re-enters the vector is refused, catchably
+The one place the rule above cannot be met structurally. The policy is a JS function that
+`mnemonist-core` calls from *inside* `grow`, so `push`/`set`/`grow`/`resize`/`reallocate`/
+`apply_policy` genuinely hold the vector while JavaScript runs. Upstream serves such a call from a
+half-grown vector; every borrow in that bridge is therefore fallible and raises a named error
+instead. **This is a narrowing of upstream's behaviour and is stated as one** — but it replaces a
+process abort, and before that, undefined behaviour.
+**Rejected alternative:** resolve the policy before taking the borrow. Core's `grow` calls
+`apply_policy` again even when handed an explicit capacity, so avoiding the second call means the
+bridge deciding *whether* to grow — duplicating in the bridge the one thing that is supposed to live
+only in core.
+**Rejected alternative:** `mem::take` the vector out of the cell for the duration. A re-entrant read
+would then see an empty vector instead of an error: a silently wrong answer in place of a loud one.
+**Revisit if:** core grows a `grow_to(capacity)` that does not consult the policy. Then the bridge
+can call the policy unlocked and the divergence disappears.

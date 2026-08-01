@@ -50,6 +50,20 @@
 // is a separate op precisely because it must construct a fresh cursor every
 // time while `$next` must not.
 //
+//   -> {"cmd":"op","name":"$forEach","args":["delete","arg0",1]}
+//   <- {"ok":true,"result":{"seen":[[1,1],[2,2]]},"state":{...}}
+//
+// `$forEach` walks the instance and, from inside the callback, calls one of
+// its own mutating methods. `args` is `[method, rule, limit]`: the method to
+// call (or `null` for a plain walk), how to build its arguments out of the
+// callback's own, and how many times it may fire. `result` is the list of
+// callback argument pairs, so the walk's SHAPE is compared and not only the
+// state it leaves behind.
+//
+// The third callback argument -- the collection itself, where a module passes
+// one -- is deliberately not recorded: it encodes as `{"$self": true}` on
+// every step and can never disagree.
+//
 // Any thrown error is reported as {"ok":false,"error":"..."} rather than
 // killing the process, so a divergence in error behaviour is comparable data
 // rather than a dead oracle.
@@ -175,9 +189,85 @@ function cursorOp(request) {
     case '$spread':
       return Array.from(instance).map(encode);
 
+    case '$forEach':
+      return forEachOp(request);
+
     default:
       throw new Error('unknown cursor op: ' + request.name);
   }
+}
+
+// How a `$forEach` mutation's arguments come out of the callback's own.
+// Mirrored by `spec::for_each_args` on the Rust side; the two must agree
+// exactly or every campaign is a false divergence.
+//
+// SELECTION IS SEPARATE FROM ARITHMETIC, and the order is load-bearing. The
+// first version of this table folded `+ 1` into the selection, so an
+// `undefined` argument became `NaN` -- which is not `undefined`, sailed
+// through the skip below, and reached `SparseSet.add(NaN)`, where upstream's
+// `sparse[NaN]` comparison falls through and increments `size`. Caught by the
+// first 20-second campaign after the op was added; the minimised seed is in
+// crates/difffuzz/proptest-regressions/sparse-set.txt and is kept, so the
+// ordering stays pinned.
+const FOR_EACH_RULES = {
+  'none': function () { return []; },
+  'arg0': function (a) { return [a[0]]; },
+  'arg0+1': function (a) { return [a[0]]; },
+  'arg1': function (a) { return [a[1]]; },
+  'arg1,arg0': function (a) { return [a[1], a[0]]; },
+};
+
+// Applied AFTER the undefined skip, never before.
+function forEachArithmetic(rule, args) {
+  return rule === 'arg0+1' ? [args[0] + 1] : args;
+}
+
+// `forEach`, with a callback that calls back into the collection it is
+// walking.
+//
+// Two deliberate narrowings, both mirrored on the Rust side and both recorded
+// in fuzz/log.txt:
+//
+//   1. A selected argument that is `undefined` skips the mutation. Passing it
+//      on is legal JS and reaches upstream's NaN-indexed swap, which
+//      `mnemonist-core` does not model -- see `spec::for_each_args`.
+//   2. An exception thrown by the walk is reported as `$throw` ALONGSIDE the
+//      steps taken before it, not instead of them. `BitVector.push` can throw
+//      from a growth policy, and losing the prefix would make the two sides
+//      agree on strictly less than they know.
+function forEachOp(request) {
+  const method = request.args[0];
+  const name = request.args[1] || 'none';
+  const rule = FOR_EACH_RULES[name];
+  const limit = request.args[2] || 0;
+
+  if (!rule) throw new Error('unknown $forEach rule: ' + name);
+
+  const seen = [];
+  let fired = 0;
+
+  try {
+    instance.forEach(function () {
+      // Only the first two: the third is the collection itself.
+      const received = Array.prototype.slice.call(arguments, 0, 2);
+
+      seen.push(received.map(encode));
+
+      if (method === null || method === undefined || fired >= limit) return;
+
+      const selected = rule(received);
+
+      if (selected.some(function (value) { return value === undefined; })) return;
+
+      fired++;
+      instance[method].apply(instance, forEachArithmetic(name, selected));
+    });
+  }
+  catch (error) {
+    return {seen: seen, $throw: String(error && error.message ? error.message : error)};
+  }
+
+  return {seen: seen};
 }
 
 // Arguments travel as JSON, which has no `undefined`, no `-0`, no NaN and no

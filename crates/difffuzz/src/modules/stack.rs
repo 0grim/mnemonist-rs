@@ -36,7 +36,7 @@ use mnemonist_core::structures::stack::Stack;
 use proptest::prelude::*;
 use serde_json::{json, Value};
 
-use crate::spec::{ModuleSpec, Op};
+use crate::spec::{for_each, for_each_args, for_each_strategy, ModuleSpec, Op, FOR_EACH_MANY};
 
 /// Range the generator draws pushed values from.
 ///
@@ -88,6 +88,7 @@ impl ModuleSpec for StackSpec {
             2 => Just(Op::new("$iter", vec![json!("values")])),
             4 => Just(Op::new("$next", vec![])),
             1 => Just(Op::new("$spread", vec![])),
+            2 => for_each_strategy(MUTATIONS),
         ]
         .boxed()
     }
@@ -121,6 +122,56 @@ impl ModuleSpec for StackSpec {
             // `Symbol.iterator` is a factory (D-07), and reusing the stored one
             // here would turn it into the identity and still pass every
             // non-interleaved program.
+            // Upstream's own loop, whose bound is frozen:
+            //
+            // ```js
+            // for (var i = 0, l = this.items.length; i < l; i++)
+            //   callback.call(scope, this.items[l - i - 1], i, this);
+            // ```
+            //
+            // `l` is captured, so a callback that pushes does not lengthen the
+            // walk -- but `l - i - 1` is computed from the OLD length against
+            // the NEW array, so a callback that pops opens an `undefined` hole
+            // and one that pushes shifts what every later step reads. Both are
+            // upstream's, and neither is reachable by any program the old
+            // alphabet could generate.
+            "$forEach" => {
+                let spec = for_each(op);
+                let frozen = instance.stack.items_len();
+                let mut seen = Vec::new();
+                let mut fired = 0usize;
+
+                for ordinal in 0..frozen {
+                    let value = instance
+                        .stack
+                        .lifo_slot(frozen, ordinal)
+                        .unwrap_or_else(|| json!({"$undefined": true}));
+                    let received = vec![value, json!(ordinal)];
+
+                    seen.push(Value::Array(received.clone()));
+
+                    if fired < spec.limit {
+                        if let Some(args) = for_each_args(&spec, &received) {
+                            fired += 1;
+
+                            match spec.method.expect("for_each_args returned Some") {
+                                "push" => {
+                                    instance.stack.push(args[0].clone());
+                                }
+                                "pop" => {
+                                    instance.stack.pop();
+                                }
+                                "clear" => instance.stack.clear(),
+                                other => {
+                                    panic!("`{other}` is not a $forEach mutation for this module")
+                                }
+                            }
+                        }
+                    }
+                }
+
+                json!({ "seen": seen })
+            }
             "$spread" => {
                 let mut cursor = CursorState::open(&instance.stack);
                 let mut items = Vec::new();
@@ -147,6 +198,16 @@ impl ModuleSpec for StackSpec {
         })
     }
 }
+
+/// What the callback may do to the stack, and how often.
+///
+/// All three are safe uncapped: `l` is captured before the first step, so a
+/// push cannot extend the walk.
+const MUTATIONS: &[(&str, &str, u64)] = &[
+    ("pop", "none", FOR_EACH_MANY),
+    ("push", "arg0", FOR_EACH_MANY),
+    ("clear", "none", FOR_EACH_MANY),
+];
 
 /// `undefined` is a value JSON has no word for; the oracle spells it this way.
 fn optional(value: Option<Value>) -> Value {

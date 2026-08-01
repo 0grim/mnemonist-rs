@@ -34,11 +34,13 @@
 
 use mnemonist_core::cursor::Step;
 use mnemonist_core::structures::bit_set::BitSet;
-use mnemonist_core::structures::bits::{BitEntries, BitWalk};
+use mnemonist_core::structures::bits::{bits_in_word, BitEntries, BitWalk};
 use proptest::prelude::*;
 use serde_json::{json, Value};
 
-use crate::spec::{ModuleSpec, Op};
+use crate::spec::{
+    for_each, for_each_args, for_each_index, for_each_strategy, ModuleSpec, Op, FOR_EACH_MANY,
+};
 
 /// Largest set the generator builds. Thirteen words, so empty words between
 /// set bits are routine and B-14 is reachable.
@@ -112,6 +114,7 @@ impl ModuleSpec for BitSetSpec {
             1 => Just(Op::new("$iter", vec![json!("entries")])),
             3 => Just(Op::new("$next", vec![])),
             1 => Just(Op::new("$spread", vec![])),
+            2 => for_each_strategy(MUTATIONS),
         ]
         .boxed()
     }
@@ -167,6 +170,66 @@ impl ModuleSpec for BitSetSpec {
             },
             // `Array.from(set)` goes through the COLLECTION's Symbol.iterator,
             // which upstream aliases to `values` -- so a fresh cursor each time.
+            // Upstream's own loop, which snapshots each word and freezes both
+            // bounds:
+            //
+            // ```js
+            // var length = this.length, byte, bit, b = 32;
+            // for (var i = 0, l = this.array.length; i < l; i++) {
+            //   byte = this.array[i];
+            //   if (i === l - 1) b = length % 32 || 32;
+            //   for (var j = 0; j < b; j++) {
+            //     bit = (byte >> j) & 1;
+            //     callback.call(scope, bit, i * 32 + j);
+            //   }
+            // }
+            // ```
+            //
+            // Three things are captured -- `length`, `l`, and `byte` for the
+            // duration of the inner loop -- and only `this.array[i]` is a live
+            // read. So a callback that writes to the word being walked is
+            // invisible for the rest of that word and visible in the next one,
+            // and a callback that clears does not extend the walk.
+            "$forEach" => {
+                let spec = for_each(op);
+                let word_count = instance.set.words().word_count();
+                let length = instance.set.length();
+                let mut seen = Vec::new();
+                let mut fired = 0usize;
+
+                for index in 0..word_count {
+                    // Live, exactly as `this.array[i]` is -- and re-read here
+                    // rather than lifted, because the callback may have
+                    // rewritten it.
+                    let word = instance.set.words().word(index).unwrap_or(0);
+                    let bits = bits_in_word(index, word_count, length);
+
+                    for offset in 0..bits {
+                        let bit = ((word as i32) >> offset) & 1;
+                        let position = index * 32 + offset;
+                        let received = vec![json!(bit), json!(position)];
+
+                        seen.push(Value::Array(received.clone()));
+
+                        if fired < spec.limit {
+                            if let Some(args) = for_each_args(&spec, &received) {
+                                fired += 1;
+                                match spec.method.expect("for_each_args returned Some") {
+                                    "set" => instance.set.set_to(bit_index(&spec, &args), true),
+                                    "reset" => instance.set.reset(bit_index(&spec, &args)),
+                                    "flip" => instance.set.flip(bit_index(&spec, &args)),
+                                    "clear" => instance.set.clear(),
+                                    other => panic!(
+                                        "`{other}` is not a $forEach mutation for this module"
+                                    ),
+                                }
+                            }
+                        }
+                    }
+                }
+
+                json!({ "seen": seen })
+            }
             "$spread" => Value::Array(instance.set.values().map(|bit| json!(bit)).collect()),
             other => panic!("op `{other}` is not in this module's alphabet"),
         }
@@ -180,6 +243,23 @@ impl ModuleSpec for BitSetSpec {
             "toJSON": instance.set.to_json(),
         })
     }
+}
+
+/// What the callback may do to the set, and how often.
+///
+/// All four are safe uncapped: the outer bound is `this.array.length`, read
+/// once, and `BitSet` cannot grow at all.
+const MUTATIONS: &[(&str, &str, u64)] = &[
+    ("set", "arg1", FOR_EACH_MANY),
+    ("reset", "arg1", FOR_EACH_MANY),
+    ("flip", "arg1", FOR_EACH_MANY),
+    ("clear", "none", FOR_EACH_MANY),
+];
+
+/// The bit index a `$forEach` mutation was handed. Both bit indices here come
+/// from the callback's second argument, which is always a number.
+fn bit_index(spec: &crate::spec::ForEach<'_>, args: &[&Value]) -> i64 {
+    for_each_index(spec, args[0]) as i64
 }
 
 fn index(op: &Op) -> i64 {

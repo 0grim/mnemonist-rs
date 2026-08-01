@@ -323,6 +323,94 @@
 #   expresses that as Sequence::limit (D-42).
 #
 # ---------------------------------------------------------------------------
+# $forEach — THE OP THAT WAS MISSING, ADDED 2026-08-01 AFTER B-31.
+#
+# Appended rather than folded into the eight module blocks above, so nothing
+# already written here moves.
+#
+# WHAT WAS WRONG WITH THE GRAMMARS ABOVE
+#
+# Every module block above discloses what it excludes, and none of them
+# disclosed this: no module's alphabet contained `forEach` at all. sparse-set
+# had $iter/$next/$spread interleaved with mutation and therefore satisfied
+# D-21, so the omission read as coverage. It was not. B-31 -- a JS callback
+# mutating the collection it is walking -- is reachable ONLY through forEach,
+# and 2.94M operations could not express a single program that tried. An
+# alphabet that omits a method omits every bug reachable only through it.
+#
+# THE OP
+#
+#   $forEach(method, rule, limit)
+#
+#   Walks the instance and, from inside the callback, calls one of its own
+#   mutating methods. `method` is null for a plain walk; `rule` says how that
+#   method's arguments come out of the callback's own; `limit` is how many
+#   times it may fire. The compared RESULT is {"seen": [[a0, a1], ...]} -- the
+#   callback's argument pairs, so the walk's shape is compared and not only
+#   the state it leaves behind. Observable state is still compared after the
+#   op, as for every other op.
+#
+#   Rules:  none · arg0 · arg0+1 · arg1 · arg1,arg0
+#   Limits: 1 (the classic "mutate on the first step, then keep walking") and
+#           the per-mutation "every step" cap. Both are generated; neither
+#           subsumes the other.
+#
+# PER MODULE — (method, rule, every-step limit)
+#
+#   sparse-set        delete/arg0/every · add/arg0+1/2 · clear/none/every
+#   sparse-map        delete/arg1/every · set/arg1,arg0/every · clear/none/every
+#   sparse-queue-set  dequeue/none/every · enqueue/arg0+1/every · clear/none/every
+#   bit-set           set/arg1/every · reset/arg1/every · flip/arg1/every
+#                     clear/none/every
+#   bit-vector        set/arg1/every · reset/arg1/every · flip/arg1/every
+#                     push/none/4 · pop/none/every
+#   stack             pop/none/every · push/arg0/every · clear/none/every
+#   queue             dequeue/none/every · enqueue/arg0/every · clear/none/every
+#   default-map       delete/arg1/every · set/arg1,arg0/every · clear/none/every
+#
+#   The caps are not tuning. sparse-set's forEach bound is LIVE, so an
+#   uncapped `s.forEach(m => s.add(m + 1))` never terminates -- upstream
+#   included -- and the cap is what makes the op well-defined rather than what
+#   makes it fast. bit-vector's push cap of 4 IS tuning, and is stated as
+#   such: a push per bit over a 400-bit vector is hundreds of reallocations
+#   per case, and the throughput buys more programs than the depth does.
+#
+#   What this op puts under test is the LOOP SHAPE, and upstream is
+#   deliberately inconsistent about it: sparse-set and sparse-map re-read
+#   `this.size` every iteration, sparse-queue-set/stack/queue capture their
+#   bound before the first step, bit-set/bit-vector snapshot each word, and
+#   default-map's is a live `Map` walk that visits entries added during it.
+#   Seven modules, four different answers, and no program the old alphabets
+#   could generate distinguished any of them.
+#
+# EXCLUDED, and it is a real narrowing
+#
+#   A selected callback argument that is `undefined` SKIPS the mutation, on
+#   both sides. Passing it on is legal JavaScript and does something specific:
+#   `this.sparse[undefined]` is `undefined`, `undefined >= size` is false, and
+#   upstream falls through into a swap indexed by `undefined` -- a silently
+#   discarded expando write on a typed array, plus a `size--`. `usize` cannot
+#   carry that and mnemonist-core does not model it. The plain ops still
+#   generate every out-of-range member, so the corrupted regime itself is not
+#   excluded; only the specific act of feeding an `undefined` back in is.
+#
+# WHAT $forEach DOES *NOT* REACH, AND THIS IS THE IMPORTANT LINE
+#
+#   B-31 itself. This fuzzer compares mnemonist-core against upstream JS. The
+#   napi bridge -- where the `noalias readonly` hoist actually happened -- is
+#   not in that loop at all, so no op alphabet, however complete, can catch
+#   that class of bug here. The specs that DO catch it are
+#   tests/boundary/reentrancy.js, which drive the real addon with real JS
+#   callbacks; they were red on seven cases against the pre-fix bridges and
+#   green after. Recorded here so that "we added a forEach op" is never read
+#   as "B-31 is now fuzz-covered".
+#
+# FALSIFIED, like everything else here
+#
+#   Freezing the live `this.size` bound in SparseSetSpec's $forEach arm turned
+#   a campaign red in 0.7s. See the commented seed=777 line below.
+#
+# ---------------------------------------------------------------------------
 # THE FUZZER WAS FALSIFIED BEFORE IT WAS TRUSTED.
 #
 # Gate 6's lesson applies to the fuzzer itself: one that has never been seen to
@@ -503,3 +591,52 @@
 2026-08-01T02:19:13Z  module=queue seed=20260801 cases=15805 ops=1573126 wall=60.0s divergences=0
 2026-08-01T02:31:44Z  module=default-map seed=42 cases=29525 ops=2939502 wall=120.0s divergences=0
 2026-08-01T02:32:53Z  module=default-map seed=20260801 cases=14492 ops=1432987 wall=60.0s divergences=0
+# SUPERSEDED, and the reason is worth reading: the divergence this line records
+# was in the FUZZER, not in the port. `$forEach`'s `arg0+1` rule folded the
+# arithmetic into the argument selection, so an `undefined` callback argument
+# became `NaN`, which is not `undefined`, slipped past the skip, and reached
+# `SparseSet.add(NaN)` -- where upstream's `sparse[NaN]` comparison falls
+# through and increments `size`. The port could not follow, because
+# `mnemonist-core` takes a `usize`. Fixed in `fuzz/oracle.js` by separating
+# selection from arithmetic; the minimised seed is kept in
+# crates/difffuzz/proptest-regressions/sparse-set.txt so the ordering stays
+# pinned. Left here rather than deleted, per the header.
+# 2026-08-01T08:53:40Z  module=sparse-set seed=424242 cases=756 ops=34459 wall=2.4s divergences=1
+2026-08-01T08:54:48Z  module=sparse-set seed=424242 cases=4293 ops=455477 wall=25.0s divergences=0
+2026-08-01T08:56:12Z  module=sparse-map seed=424242 cases=2802 ops=283656 wall=20.0s divergences=0
+2026-08-01T08:56:40Z  module=sparse-queue-set seed=424242 cases=3618 ops=373673 wall=20.0s divergences=0
+2026-08-01T08:57:46Z  module=bit-set seed=424242 cases=4029 ops=401864 wall=20.0s divergences=0
+2026-08-01T08:58:12Z  module=bit-vector seed=424242 cases=3729 ops=384389 wall=20.0s divergences=0
+2026-08-01T08:59:09Z  module=stack seed=424242 cases=5370 ops=536044 wall=20.0s divergences=0
+2026-08-01T08:59:34Z  module=queue seed=424242 cases=5213 ops=525370 wall=20.0s divergences=0
+2026-08-01T09:00:29Z  module=default-map seed=424242 cases=4441 ops=438473 wall=20.0s divergences=0
+# FALSIFICATION, deliberate: this line is the gate-6 check on the `$forEach` op
+# itself. A new grammar op that is never actually generated would log clean
+# campaigns forever and prove nothing, so the live `this.size` bound in
+# `SparseSetSpec::apply`'s `$forEach` arm was frozen and the campaign re-run.
+# It went red in 0.7s, minimising to:
+#
+#     var s = new SparseSet(0); s.add(0); s.add(0);
+#     var fired = 0;
+#     s.forEach(function (a, b) { if (fired++ < 1) s.clear(); });
+#
+# — upstream visits one member, a frozen bound visits two. Reverted; the clean
+# lines below are the same alphabet with the bound live again.
+# 2026-08-01T09:00:44Z  module=sparse-set seed=777 cases=431 ops=66 wall=0.7s divergences=1
+2026-08-01T09:03:20Z  module=sparse-set seed=42 cases=15186 ops=1603180 wall=120.0s divergences=0
+2026-08-01T09:05:20Z  module=sparse-map seed=42 cases=13490 ops=1389452 wall=120.0s divergences=0
+2026-08-01T09:07:20Z  module=sparse-queue-set seed=42 cases=15723 ops=1647966 wall=120.0s divergences=0
+2026-08-01T09:09:20Z  module=bit-set seed=42 cases=17379 ops=1733747 wall=120.0s divergences=0
+2026-08-01T09:13:31Z  module=bit-vector seed=42 cases=15840 ops=1624395 wall=120.0s divergences=0
+2026-08-01T09:15:31Z  module=stack seed=42 cases=25720 ops=2561977 wall=120.0s divergences=0
+2026-08-01T09:17:34Z  module=queue seed=42 cases=25492 ops=2555342 wall=120.0s divergences=0
+2026-08-01T09:19:34Z  module=default-map seed=42 cases=21572 ops=2163952 wall=120.0s divergences=0
+2026-08-01T09:22:04Z  module=sparse-set seed=20260801 cases=6780 ops=711776 wall=60.0s divergences=0
+2026-08-01T09:23:04Z  module=sparse-map seed=20260801 cases=5171 ops=531325 wall=60.0s divergences=0
+2026-08-01T09:24:04Z  module=sparse-queue-set seed=20260801 cases=7105 ops=743087 wall=60.0s divergences=0
+2026-08-01T09:25:04Z  module=bit-set seed=20260801 cases=9733 ops=974253 wall=60.0s divergences=0
+2026-08-01T09:26:04Z  module=bit-vector seed=20260801 cases=9371 ops=963137 wall=60.0s divergences=0
+2026-08-01T09:27:04Z  module=stack seed=20260801 cases=13109 ops=1290297 wall=60.0s divergences=0
+2026-08-01T09:28:07Z  module=queue seed=20260801 cases=13018 ops=1291401 wall=60.0s divergences=0
+2026-08-01T09:29:07Z  module=default-map seed=20260801 cases=11582 ops=1165178 wall=60.0s divergences=0
+2026-08-01T09:32:19Z  module=sparse-set seed=99 cases=1878 ops=203783 wall=15.0s divergences=0

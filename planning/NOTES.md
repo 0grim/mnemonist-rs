@@ -810,3 +810,90 @@ same bridge pattern from a different angle.
 
 *Strongest argument yet for the write-up: passing your own verification is not the same as being
 correct, and the only thing that caught this was a second, independent look.*
+
+---
+
+### B-31 — RESOLVED 2026-08-01, across every exposed bridge
+
+`status: FIXED` · repro flipped from `*** DIVERGENCE ***` to `MATCH`
+
+Six bridges held a bare core value and had a callback-taking method:
+`bit_set` · `bit_vector` · `sparse_map` · `sparse_queue_set` · `sparse_set` · `default_map`.
+All six now hold `RefCell<Core>`, every `&mut self` method became `&self` + `borrow_mut()`, and the
+`SharedReference` cursors project to the cell rather than to the structure — `CellCursor` and the
+new `CellMapCursor` re-borrow on every `step()`. `queue`/`stack` were already correct and were the
+reference.
+
+**The two "immune" bridges really are immune, and it is worth saying why rather than that.**
+`static_disjoint_set` and `hashed_array_tree` were re-checked for the actual precondition, which is
+not "has no `forEach`" but "JavaScript cannot run while a `&self` method is on the stack". Neither
+takes a `Function` or `FunctionRef` anywhere; neither hands out a `Reference`/`share_with` cursor;
+and every argument either is a plain number (napi's `f64`/`u32` extractors do **not** call
+`valueOf`) or reaches only a constructor, where no `self` exists yet. Left alone.
+
+#### The rule the fix imposes, and the two places that nearly broke it
+
+`RefCell` alone is not the fix. **No borrow may be alive across a call that can run JavaScript** —
+because a `RefCell` panic inside a `#[napi]` method does not become a JS exception. napi 3.12 does
+not `catch_unwind` a sync call, and a panic unwinding out of an `extern "C"` frame **aborts the
+process**. Measured twice, on a first draft of this fix that had shipped the abort:
+
+* `DefaultMap.get` ran the JS factory *inside* `try_get_or_insert_with`, which owns the map for the
+  whole insertion. A factory that did nothing but read `map.size` aborted Node. Fixed by splitting
+  the call into upstream's own three steps — read, factory (map unlocked), write — which needed one
+  new core method (`insert_from_factory`) and is **closer** to upstream than the single core call it
+  replaced, since upstream's factory also runs between its read and its write. A re-entrant factory
+  now behaves exactly as upstream's, reading and writing included; verified differentially.
+* `BitVector`'s growth policy is JS that *core* calls from inside `grow`, so the borrow genuinely
+  cannot be released around it. A policy that read `vector.length` aborted Node. Every borrow in
+  that bridge is now fallible and raises a named error. Upstream serves such a call from a half-grown
+  vector; this port refuses it — a stated narrowing (decision B31-b) that replaces an abort, which
+  replaced UB.
+
+*Both were caught the same way, and it is the transferable part: after fixing the `forEach` case,
+ask what **else** can run JavaScript while a `&self` method is on the stack. The answer was "a
+factory" and "a growth policy", and neither is shaped like a callback.* A `code-reviewer` pass over
+the diff independently flagged the same two, from the call graph rather than from a repro.
+
+#### Regression cover: `tests/boundary/reentrancy.js`
+
+Twenty-two specs, differential against `bench/upstream/` wherever the two sides are supposed to
+agree, over all six fixed bridges plus `stack`/`queue` as controls, plus the two non-`forEach`
+re-entry paths above. Falsified before being trusted: run against the pre-fix bridges, **7 of the
+first 18 fail**; after, all pass. Note which ones failed — `sparse-set` (3), `sparse-map` (2),
+`default-map` (2). `bit-set`, `bit-vector` and `sparse-queue-set` passed even pre-fix, because
+their loops snapshot a word or freeze a bound and the hoist had nothing to change; they were still
+UB and are still fixed.
+
+**The specs must be run against a release build.** A debug addon has no `noalias` optimisation to
+exploit and would pass while wrong. `tests/run.sh` builds `--release`, so this is already true —
+but it is a property of the bug, and it is why the fix is a *type* and not a rearranged loop.
+
+#### The grammar gap: closed, but not by as much as it looks
+
+Every module whose bridge takes a callback now has a `$forEach(method, rule, limit)` op:
+`sparse-set` · `sparse-map` · `sparse-queue-set` · `bit-set` · `bit-vector` · `stack` · `queue` ·
+`default-map`. It generates a `forEach` whose callback calls back into the collection, and compares
+both the callback argument sequence and the state left behind. Falsified: freezing the live
+`this.size` bound in the Rust `sparse-set` walk turns a campaign red in 0.7s.
+
+**It does not, and cannot, catch B-31.** `difffuzz` compares `mnemonist-core` against upstream JS;
+the napi bridge is not in that loop. What the op does catch is the *loop shape*, where upstream is
+inconsistent on purpose — live `this.size` in `sparse-set`/`sparse-map`, a frozen bound in
+`sparse-queue-set`/`stack`/`queue`, a snapshotted word in `bit-set`/`bit-vector`, and a live `Map`
+walk in `default-map`. Seven modules, four answers, and no program the old alphabets could generate
+told any of them apart.
+
+*So the honest version of the lesson is one step further than the entry above: the grammar gap was
+real and worth closing, but the layer gap was the one that let B-31 through. A differential fuzzer
+that skips a layer cannot find bugs in it, however complete its alphabet — and the alphabet being
+incomplete made that easy to not notice.*
+
+#### And the fuzzer found something on its first run — in itself
+
+The first 20-second `sparse-set` campaign after `$forEach` landed went red immediately. The `arg0+1`
+rule folded its arithmetic into the argument selection, so an `undefined` callback argument became
+`NaN`, which is not `undefined`, sailed past the skip, and reached `SparseSet.add(NaN)` — where
+upstream's `sparse[NaN]` comparison falls through and increments `size`, and the port cannot follow
+because core takes a `usize`. A fuzzer bug, not a port bug; fixed by separating selection from
+arithmetic, seed kept, log line commented out with its reason rather than deleted.

@@ -172,6 +172,31 @@ and B-18 (`select` losing 32 positions per skipped word). Both re-measured again
 Node. See `docs/modules/bit-set.md` for the analysis and `docs/modules/utils-bitwise.md` for B-19
 and B-20, also in this unit's require-closure.
 
+
+### B-31 — `&self` on a `Freeze` type was `noalias readonly` (fixed 2026-08-01)
+
+This bridge held a bare core value, so `&self` compiled to a `noalias readonly` pointer and LLVM was
+entitled to hoist reads across the JS callback — which it did. It now holds `RefCell<Core>`, which
+is not `Freeze`, and every `&mut self` method became `&self` + `borrow_mut()`. The borrow is taken
+per step and released before the callback runs, so a re-entrant callback never meets an outstanding
+borrow. See `planning/NOTES.md` B-31 and `crates/mnemonist-napi/src/cursor.rs`'s `CellCursor`.
+
+**And the one place the fix could not be applied cleanly — worth reading before copying this
+pattern.** The rule the `RefCell` imposes is that no borrow may be alive across a call that can run
+JavaScript. Everywhere else in the bridge that is achievable: `forEach` re-borrows per step,
+`DefaultMap::get` runs its factory between the read and the write. Here it is not, because the
+**growth policy is JavaScript that `mnemonist-core` calls from inside `grow`** — so `push`, `set`,
+`grow`, `resize`, `reallocate` and `apply_policy` hold the vector while a JS function runs.
+
+The failure mode is not graceful. A `RefCell` panic inside a `#[napi]` method **aborts the
+process**: napi 3.12 does not `catch_unwind` a sync call, and a panic unwinding out of an
+`extern "C"` frame is an abort. Measured on a policy that did nothing but read `vector.length`.
+Every borrow in this bridge is therefore fallible and raises a named error instead — see
+`REENTRANT_POLICY`, decision B31-b, and the two `BitVector` policy specs in
+`tests/boundary/reentrancy.js`. Upstream would serve such a call from a half-grown vector; this port
+refuses it. That is a stated narrowing, and it replaces an abort, which replaced undefined
+behaviour.
+
 ## Deliberate divergences
 
 Everything in `docs/modules/bit-set.md`'s table applies — the shared store, the word-caching cursor,
@@ -281,3 +306,31 @@ that upstream does not pay for. On operations that are otherwise one load, one O
 that overhead is not obviously negligible. It bought exact reproduction of `clear`/`reallocate`
 detaching an open cursor; whether it costs anything measurable is an open question, not an assumed
 answer.
+
+### `$forEach` — the op that was missing (added 2026-08-01, B-31)
+
+`bit-vector`'s grammar had no `forEach` op at all. That omission is what let B-31 — a `forEach`
+callback mutating the collection it is walking — through 3.23 M clean operations: an op alphabet
+that omits a method omits every bug reachable only through it.
+
+`$forEach(method, rule, limit)` now walks the instance with a callback that calls back into it.
+The compared result is the sequence of callback argument pairs, so the walk's **shape** is checked
+and not only the state it leaves behind. This module's mutations:
+
+* `set(a1)`, `reset(a1)`, `flip(a1)`, `pop()` uncapped; `push()` capped at four.
+
+`push`'s cap **is** tuning and is stated as such: the outer bound is captured, so an uncapped push
+still terminates, but a push per bit over a 400-bit vector is hundreds of reallocations per case and
+the throughput buys more programs than the depth does. `set` and `push` can throw from the growth
+policy; the throw is reported alongside the steps already taken rather than instead of them, so the
+two sides never agree on less than they know.
+
+**What it does not reach, stated so the campaign is not over-read.** `difffuzz` compares
+`mnemonist-core` against upstream JS; the napi bridge, where B-31's hoisted read actually lived, is
+not in that loop. No op alphabet can catch that class of bug here. The specs that do are
+`tests/boundary/reentrancy.js`, which drive the real addon with real JS callbacks — red on the
+pre-fix bridges, green after.
+
+One deliberate narrowing, mirrored on both sides: a selected callback argument that is `undefined`
+skips the mutation. Feeding it back in reaches upstream's `NaN`-indexed swap, which `usize` cannot
+express and the core does not model. Fully disclosed in `fuzz/log.txt`.

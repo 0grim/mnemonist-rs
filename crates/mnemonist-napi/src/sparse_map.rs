@@ -29,6 +29,12 @@
 //!    napi can only hand out a copy, which would silently break write-through.
 //!    They are exposed in Rust, and the differential fuzzer compares all three
 //!    slot for slot after every op.
+//!
+//! Like [`crate::queue`] and [`crate::stack`], the core structure is held in a
+//! [`RefCell`] so that `&self` is not `noalias readonly` and a JS callback's
+//! mutation is actually seen — see [`crate::cursor::CellCursor`] and B-31.
+
+use std::cell::RefCell;
 
 use mnemonist_core::cursor::Step;
 use mnemonist_core::structures::sparse_map::{Projected, Projection, SparseMap as CoreMap};
@@ -36,7 +42,7 @@ use mnemonist_core::utils::typed_arrays::{PointerWidth, POINTER_ARRAY_TOO_LARGE}
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 
-use crate::cursor::{yielded, BridgeCursor};
+use crate::cursor::{yielded, CellCursor};
 
 /// The value array constructors this bridge can resolve, and the width each
 /// one maps to. `None` is `Array`, which is not a width at all.
@@ -57,7 +63,7 @@ type ForEachArgs = FnArgs<(Either<f64, Undefined>, Either<u32, Undefined>)>;
 /// A map from the members `0..length` to JS numbers.
 #[napi(js_name = "SparseMap")]
 pub struct JsSparseMap {
-    inner: CoreMap<f64>,
+    inner: RefCell<CoreMap<f64>>,
 }
 
 #[napi]
@@ -108,29 +114,33 @@ impl JsSparseMap {
             Some(width) => CoreMap::typed(length as usize, width),
         };
 
-        inner.map(|inner| Self { inner }).map_err(failure)
+        inner
+            .map(|inner| Self {
+                inner: RefCell::new(inner),
+            })
+            .map_err(failure)
     }
 
     /// Entries currently in the map. Can exceed `length`; see the core docs.
     #[napi(getter)]
     pub fn size(&self) -> u32 {
-        self.inner.size() as u32
+        self.inner.borrow().size() as u32
     }
 
     /// Capacity the map was built with.
     #[napi(getter)]
     pub fn length(&self) -> u32 {
-        self.inner.length() as u32
+        self.inner.borrow().length() as u32
     }
 
     #[napi]
-    pub fn clear(&mut self) {
-        self.inner.clear();
+    pub fn clear(&self) {
+        self.inner.borrow_mut().clear();
     }
 
     #[napi]
     pub fn has(&self, member: u32) -> bool {
-        self.inner.has(member as usize)
+        self.inner.borrow().has(member as usize)
     }
 
     /// `Either<f64, Undefined>` rather than `Option<f64>`: napi renders `None`
@@ -138,27 +148,27 @@ impl JsSparseMap {
     /// which `assert.strictEqual` distinguishes.
     #[napi]
     pub fn get(&self, member: u32) -> Either<f64, Undefined> {
-        self.inner.get(member as usize).into()
+        self.inner.borrow().get(member as usize).into()
     }
 
     /// Upstream returns `this` for chaining.
     #[napi]
-    pub fn set<'a>(&mut self, this: This<'a>, member: u32, value: f64) -> This<'a> {
-        self.inner.set(member as usize, value);
+    pub fn set<'a>(&self, this: This<'a>, member: u32, value: f64) -> This<'a> {
+        self.inner.borrow_mut().set(member as usize, value);
 
         this
     }
 
     #[napi(js_name = "delete")]
-    pub fn delete(&mut self, member: u32) -> bool {
-        self.inner.delete(member as usize)
+    pub fn delete(&self, member: u32) -> bool {
+        self.inner.borrow_mut().delete(member as usize)
     }
 
     /// A fresh cursor over the members — upstream's `keys()`.
     #[napi]
     pub fn keys(&self, env: Env, this: Reference<JsSparseMap>) -> Result<JsSparseMapKeys> {
         Ok(JsSparseMapKeys {
-            cursor: BridgeCursor::open_projected(project(env, this)?, Projection::Keys),
+            cursor: CellCursor::open_projected(project(env, this)?, Projection::Keys),
         })
     }
 
@@ -166,7 +176,7 @@ impl JsSparseMap {
     #[napi]
     pub fn values(&self, env: Env, this: Reference<JsSparseMap>) -> Result<JsSparseMapValues> {
         Ok(JsSparseMapValues {
-            cursor: BridgeCursor::open_projected(project(env, this)?, Projection::Values),
+            cursor: CellCursor::open_projected(project(env, this)?, Projection::Values),
         })
     }
 
@@ -175,7 +185,7 @@ impl JsSparseMap {
     #[napi]
     pub fn entries(&self, env: Env, this: Reference<JsSparseMap>) -> Result<JsSparseMapEntries> {
         Ok(JsSparseMapEntries {
-            cursor: BridgeCursor::open_projected(project(env, this)?, Projection::Entries),
+            cursor: CellCursor::open_projected(project(env, this)?, Projection::Entries),
         })
     }
 
@@ -204,9 +214,14 @@ impl JsSparseMap {
     ) -> Result<()> {
         let mut index = 0;
 
-        while index < self.inner.size() {
-            let value: Either<f64, Undefined> = self.inner.vals().slot(index).into();
-            let key: Either<u32, Undefined> = self.inner.dense().try_get(index).into();
+        // Each iteration re-borrows and drops before the callback runs: the
+        // callback may `set`, `delete` or `clear` through the same object, and
+        // an outstanding borrow would turn upstream's ordinary behaviour into
+        // a `BorrowMutError`. The `RefCell` is also what stops LLVM hoisting
+        // the `size` read out of this loop entirely (B-31).
+        while index < self.inner.borrow().size() {
+            let value: Either<f64, Undefined> = self.inner.borrow().vals().slot(index).into();
+            let key: Either<u32, Undefined> = self.inner.borrow().dense().try_get(index).into();
 
             match &scope {
                 Some(scope) => callback.apply(*scope, (value, key).into())?,
@@ -223,7 +238,7 @@ impl JsSparseMap {
 /// The cursor `SparseMap.prototype.keys()` hands out.
 #[napi(iterator, js_name = "SparseMapKeys")]
 pub struct JsSparseMapKeys {
-    cursor: BridgeCursor<JsSparseMap, CoreMap<f64>>,
+    cursor: CellCursor<JsSparseMap, CoreMap<f64>>,
 }
 
 impl Generator for JsSparseMapKeys {
@@ -246,7 +261,7 @@ impl Generator for JsSparseMapKeys {
 /// The cursor `SparseMap.prototype.values()` hands out.
 #[napi(iterator, js_name = "SparseMapValues")]
 pub struct JsSparseMapValues {
-    cursor: BridgeCursor<JsSparseMap, CoreMap<f64>>,
+    cursor: CellCursor<JsSparseMap, CoreMap<f64>>,
 }
 
 impl Generator for JsSparseMapValues {
@@ -275,7 +290,7 @@ impl Generator for JsSparseMapValues {
 /// gap. `Option::None` therefore keeps its plain meaning of `{done: true}`.
 #[napi(iterator, js_name = "SparseMapEntries")]
 pub struct JsSparseMapEntries {
-    cursor: BridgeCursor<JsSparseMap, CoreMap<f64>>,
+    cursor: CellCursor<JsSparseMap, CoreMap<f64>>,
 }
 
 impl Generator for JsSparseMapEntries {
@@ -310,7 +325,7 @@ impl Generator for JsSparseMapEntries {
 fn project(
     env: Env,
     this: Reference<JsSparseMap>,
-) -> Result<SharedReference<JsSparseMap, &'static CoreMap<f64>>> {
+) -> Result<SharedReference<JsSparseMap, &'static RefCell<CoreMap<f64>>>> {
     this.share_with(env, |map| Ok(&map.inner))
 }
 

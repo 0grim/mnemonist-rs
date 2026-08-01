@@ -43,7 +43,9 @@ use mnemonist_core::utils::typed_arrays::{PointerVec, PointerWidth};
 use proptest::prelude::*;
 use serde_json::{json, Value};
 
-use crate::spec::{ModuleSpec, Op};
+use crate::spec::{
+    for_each, for_each_args, for_each_index, for_each_strategy, ModuleSpec, Op, FOR_EACH_MANY,
+};
 
 /// Largest map the generator builds.
 ///
@@ -127,6 +129,10 @@ impl ModuleSpec for SparseMapSpec {
             1 => Just(Op::new("$iter", vec![json!("entries")])),
             3 => Just(Op::new("$next", vec![])),
             1 => Just(Op::new("$spread", vec![])),
+            // `forEach` re-reads `this.size` every iteration, exactly as
+            // `sparse-set` does and exactly as `sparse-queue-set` does NOT.
+            // See `crate::spec::ForEach`.
+            2 => for_each_strategy(MUTATIONS),
         ]
         .boxed()
     }
@@ -181,6 +187,56 @@ impl ModuleSpec for SparseMapSpec {
             // `Symbol.iterator` — which upstream aliases to `entries`, not to
             // `values`. Reusing `instance.cursor` here would quietly turn the
             // factory into the identity.
+            // Upstream's own loop, re-read bound and all:
+            //
+            // ```js
+            // for (var i = 0; i < this.size; i++)
+            //   callback.call(scope, this.vals[i], this.dense[i]);
+            // ```
+            //
+            // Note the argument ORDER: the value is first and the key second,
+            // which is why the `set` mutation's rule is `arg1,arg0`.
+            "$forEach" => {
+                let spec = for_each(op);
+                let mut seen = Vec::new();
+                let mut fired = 0usize;
+                let mut index = 0usize;
+
+                while index < instance.map.size() {
+                    let value = slot(instance.map.vals().slot(index));
+                    let key = slot(instance.map.dense().try_get(index));
+                    let received = vec![value, key];
+
+                    seen.push(Value::Array(received.clone()));
+
+                    if fired < spec.limit {
+                        if let Some(args) = for_each_args(&spec, &received) {
+                            fired += 1;
+
+                            match spec.method.expect("for_each_args returned Some") {
+                                "set" => {
+                                    let value =
+                                        args[1].as_u64().expect("a stored value is a JSON integer")
+                                            as u32;
+
+                                    instance.map.set(for_each_index(&spec, args[0]), value);
+                                }
+                                "delete" => {
+                                    instance.map.delete(for_each_index(&spec, args[0]));
+                                }
+                                "clear" => instance.map.clear(),
+                                other => {
+                                    panic!("`{other}` is not a $forEach mutation for this module")
+                                }
+                            }
+                        }
+                    }
+
+                    index += 1;
+                }
+
+                json!({ "seen": seen })
+            }
             "$spread" => {
                 let mut cursor = CursorState::open_projected(&instance.map, Projection::Entries);
                 let mut items = Vec::new();
@@ -232,6 +288,24 @@ fn projection_of(op: &Op) -> Projection {
         Some("values") => Projection::Values,
         Some("entries") => Projection::Entries,
         other => panic!("`{other:?}` is not an iterator factory on this module"),
+    }
+}
+
+/// What the callback may do to the map, and how often.
+///
+/// `set` writes back the pair it was just handed, so it overwrites rather than
+/// grows and is safe uncapped even though this module's bound is live.
+const MUTATIONS: &[(&str, &str, u64)] = &[
+    ("delete", "arg1", FOR_EACH_MANY),
+    ("set", "arg1,arg0", FOR_EACH_MANY),
+    ("clear", "none", FOR_EACH_MANY),
+];
+
+/// A `vals` or `dense` slot as the oracle encodes it.
+fn slot(value: Option<u32>) -> Value {
+    match value {
+        Some(item) => json!(item),
+        None => json!({"$undefined": true}),
     }
 }
 

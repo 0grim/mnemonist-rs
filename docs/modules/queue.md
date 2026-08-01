@@ -243,3 +243,30 @@ batched into a quiet pass (DESIGN.md §7.3). `queue` is ready for it, and its in
 is not the same as `stack`'s: the compaction makes enqueue/dequeue churn amortised rather than
 flat, so a workload that dequeues in bursts is worth having alongside a balanced one. Until that
 pass lands, this unit is **not** in `tests/scope.txt` and does not claim to be done.
+
+### `$forEach` — the op that was missing (added 2026-08-01, B-31)
+
+`queue`'s grammar had no `forEach` op at all. That omission is what let B-31 — a `forEach`
+callback mutating the collection it is walking — through 4.13 M clean operations: an op alphabet
+that omits a method omits every bug reachable only through it.
+
+`$forEach(method, rule, limit)` now walks the instance with a callback that calls back into it.
+The compared result is the sequence of callback argument pairs, so the walk's **shape** is checked
+and not only the state it leaves behind. This module's mutations:
+
+* `dequeue()`, `enqueue(a0)` and `clear()`, all uncapped.
+
+The `dequeue` row is the one that matters: enough dequeues **compact**, and the compaction rebinds
+`this.items` to a shorter array while `i` and `l` still refer to the old one, so the remaining reads
+run off the end and yield `undefined`. That is the exact program in `CellCursor`'s doc comment,
+which was written from a hand-built repro; it is now generated.
+
+**What it does not reach, stated so the campaign is not over-read.** `difffuzz` compares
+`mnemonist-core` against upstream JS; the napi bridge, where B-31's hoisted read actually lived, is
+not in that loop. No op alphabet can catch that class of bug here. The specs that do are
+`tests/boundary/reentrancy.js`, which drive the real addon with real JS callbacks — red on the
+pre-fix bridges, green after.
+
+One deliberate narrowing, mirrored on both sides: a selected callback argument that is `undefined`
+skips the mutation. Feeding it back in reaches upstream's `NaN`-indexed swap, which `usize` cannot
+express and the core does not model. Fully disclosed in `fuzz/log.txt`.

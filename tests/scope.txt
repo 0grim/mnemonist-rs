@@ -5,3 +5,11 @@
 static-disjoint-set
 # sparse-set  -- DESCOPED 2026-08-01: forEach with a mutating callback diverges
 #                (upstream [1,2], port [1,2,3,4]). See B-31. Re-add once fixed and fuzzed.
+#
+#                STILL DESCOPED, and deliberately so. B-31 is FIXED (the bridge holds
+#                RefCell<Core>; the repro prints MATCH) and re-fuzzed with the new
+#                $forEach op, two seeds, zero divergences. What is missing is gate 10:
+#                the RefCell adds a borrow flag check to every access and nobody has
+#                measured it. Benchmarks need an idle machine (DESIGN.md 7.3), so the
+#                figure has to come from the quiet serial pass, not from a run taken
+#                while agents are working. Re-add after that pass, not before.

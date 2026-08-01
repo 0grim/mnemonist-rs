@@ -255,6 +255,15 @@ B-13 and B-14 were all found by reading the file statement by statement and conf
 against Node. What the fuzzer is for is the other direction, and it was proven to work in that
 direction twice (see Fuzz, below).
 
+
+### B-31 — `&self` on a `Freeze` type was `noalias readonly` (fixed 2026-08-01)
+
+This bridge held a bare core value, so `&self` compiled to a `noalias readonly` pointer and LLVM was
+entitled to hoist reads across the JS callback — which it did. It now holds `RefCell<Core>`, which
+is not `Freeze`, and every `&mut self` method became `&self` + `borrow_mut()`. The borrow is taken
+per step and released before the callback runs, so a re-entrant callback never meets an outstanding
+borrow. See `planning/NOTES.md` B-31 and `crates/mnemonist-napi/src/cursor.rs`'s `CellCursor`.
+
 ## Deliberate divergences
 
 | # | Divergence | Why |
@@ -378,3 +387,30 @@ taken under load is not a slow benchmark, it is a wrong one, and this host has a
 a contended run inflating both sides 2–3× (`planning/NOTES.md`, H+5). This module is therefore
 **not** in `tests/scope.txt`: gates 1–9 are green and gate 10 is outstanding, which is exactly what
 `tests/verify.sh` will report. See `planning/DESIGN.md` §7.3.
+
+### `$forEach` — the op that was missing (added 2026-08-01, B-31)
+
+`sparse-queue-set`'s grammar had no `forEach` op at all. That omission is what let B-31 — a `forEach`
+callback mutating the collection it is walking — through 3.36 M clean operations: an op alphabet
+that omits a method omits every bug reachable only through it.
+
+`$forEach(method, rule, limit)` now walks the instance with a callback that calls back into it.
+The compared result is the sequence of callback argument pairs, so the walk's **shape** is checked
+and not only the state it leaves behind. This module's mutations:
+
+* `dequeue()`, `enqueue(a0 + 1)` and `clear()`, all uncapped.
+
+All three are safe uncapped, and that is the finding this op pins: unlike `sparse-set` and
+`sparse-map`, this module's `forEach` captures `c`, `l` and `i` **before** the loop, so nothing the
+callback does can lengthen or shorten the walk. The inconsistency is upstream's, and no program the
+old alphabet could generate distinguished the two behaviours.
+
+**What it does not reach, stated so the campaign is not over-read.** `difffuzz` compares
+`mnemonist-core` against upstream JS; the napi bridge, where B-31's hoisted read actually lived, is
+not in that loop. No op alphabet can catch that class of bug here. The specs that do are
+`tests/boundary/reentrancy.js`, which drive the real addon with real JS callbacks — red on the
+pre-fix bridges, green after.
+
+One deliberate narrowing, mirrored on both sides: a selected callback argument that is `undefined`
+skips the mutation. Feeding it back in reaches upstream's `NaN`-indexed swap, which `usize` cannot
+express and the core does not model. Fully disclosed in `fuzz/log.txt`.

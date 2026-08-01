@@ -5,11 +5,12 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 #
-# PROVENANCE OF THE ENTRIES BELOW -- read before assuming either recorded a
-# real port defect. Neither did. Both were produced by deliberate
+# PROVENANCE OF THE ENTRIES BELOW -- read before assuming any of them recorded
+# a real port defect. None did. A and B were produced by deliberate
 # falsifications of the fuzzer, in the spirit of DoD gate 6: a fuzzer that has
 # never been seen to fail is just a second green light. Both sabotages were
-# reverted; both seeds are replayed before any novel case on every run.
+# reverted. C is a defect in the fuzzer itself, found by the fuzzer. All three
+# are replayed before any novel case on every run.
 #
 # --- A: the two swap stores in `delete` treated as if they behaved alike ---
 #
@@ -51,3 +52,30 @@ cc a22059c1d2499c99a9cec3e3edd8204714dcb04c916d13cc1bd97056b96c21ce # shrinks to
 # sees it.
 #
 cc 8c43169b9fbb9a421d0e2eb1758336c0b183681efb2898bd8ee552dc7464e5d8 # shrinks to Program { ctor: [Number(0)], ops: [Op { name: "add", args: [Number(0)] }, Op { name: "$spread", args: [] }] }
+#
+# --- C: the fuzzer's own `$forEach` rule applied its arithmetic too early ---
+#
+# NOT a sabotage, and not a port defect: this one was found by the first
+# 20-second campaign after the `$forEach` op was added, on 2026-08-01. The
+# `arg0+1` rule folded `+ 1` into the argument SELECTION, so an `undefined`
+# callback argument became `NaN` -- which is not `undefined`, sailed past the
+# skip that exists to keep NaN indexing out of the grammar, and reached
+# `SparseSet.add(NaN)`. Upstream's `sparse[NaN]` comparison falls through and
+# increments `size`; the port cannot follow, because mnemonist-core takes a
+# `usize`. Shrunk to two operations:
+#
+#     var s = new SparseSet(0);
+#     s.add(0);                                  // out of range: dense stays
+#                                                // empty, size becomes 1
+#     var fired = 0;
+#     s.forEach(function (a, b) {                // a is undefined
+#       if (a === undefined) return;
+#       if (fired++ < 1) s.add(a + 1);
+#     });
+#     // upstream walked twice, the port once
+#
+# Fixed in fuzz/oracle.js by separating selection from arithmetic, with the
+# skip in between. Kept so the ordering stays pinned: a future edit that folds
+# them back together fails on this seed before any novel case runs.
+#
+cc cb7a0a9a24e9e9b72756ac0286931097724d56c813b4b6ce8b595117bf03b1d6 # shrinks to Program { ctor: [Number(0)], ops: [Op { name: "add", args: [Number(0)] }, Op { name: "$forEach", args: [String("add"), String("arg0+1"), Number(1)] }] }

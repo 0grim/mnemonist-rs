@@ -46,7 +46,9 @@ use mnemonist_core::utils::typed_arrays::{PointerVec, PointerWidth};
 use proptest::prelude::*;
 use serde_json::{json, Value};
 
-use crate::spec::{ModuleSpec, Op};
+use crate::spec::{
+    for_each, for_each_args, for_each_index, for_each_strategy, ModuleSpec, Op, FOR_EACH_MANY,
+};
 
 /// Upper end of the ordinary capacity range.
 ///
@@ -128,6 +130,13 @@ impl ModuleSpec for SparseQueueSetSpec {
             2 => Just(Op::new("$iter", vec![json!("values")])),
             3 => Just(Op::new("$next", vec![])),
             1 => Just(Op::new("$spread", vec![])),
+            // The point of contrast with `sparse-set` and `sparse-map`: this
+            // module's `forEach` FREEZES `c`, `l` and `i` before the loop, so
+            // a callback that dequeues does not shorten it and a callback that
+            // enqueues does not lengthen it. Generating the same shape of
+            // program against both is the only way that difference is checked
+            // rather than assumed. See `crate::spec::ForEach`.
+            2 => for_each_strategy(MUTATIONS),
         ]
         .boxed()
     }
@@ -175,6 +184,65 @@ impl ModuleSpec for SparseQueueSetSpec {
             },
             // A *fresh* cursor every time, which is what the collection-level
             // `Symbol.iterator` does upstream.
+            // Upstream's own loop, frozen bounds and all:
+            //
+            // ```js
+            // var c = this.capacity, l = this.size, i = this.start, j = 0;
+            // while (j < l) {
+            //   callback.call(scope, this.dense[i], j, this);
+            //   i++; j++;
+            //   if (i === c) i = 0;
+            // }
+            // ```
+            //
+            // `dense[i]` is a live read; everything else is captured. At
+            // `capacity === 0` the wrap check never fires and `i` runs off the
+            // end, so every argument is `undefined` -- B-14's shape, now
+            // reachable through `forEach` and not only through the cursor.
+            "$forEach" => {
+                let spec = for_each(op);
+                let capacity = instance.queue.capacity();
+                let length = instance.queue.size();
+                let mut ring = instance.queue.start();
+                let mut ordinal = 0usize;
+                let mut seen = Vec::new();
+                let mut fired = 0usize;
+
+                while ordinal < length {
+                    let member = slot(instance.queue.dense().try_get(ring));
+                    let received = vec![member, json!(ordinal)];
+
+                    seen.push(Value::Array(received.clone()));
+
+                    if fired < spec.limit {
+                        if let Some(args) = for_each_args(&spec, &received) {
+                            fired += 1;
+
+                            match spec.method.expect("for_each_args returned Some") {
+                                "enqueue" => {
+                                    instance.queue.enqueue(for_each_index(&spec, args[0]));
+                                }
+                                "dequeue" => {
+                                    instance.queue.dequeue();
+                                }
+                                "clear" => instance.queue.clear(),
+                                other => {
+                                    panic!("`{other}` is not a $forEach mutation for this module")
+                                }
+                            }
+                        }
+                    }
+
+                    ring += 1;
+                    ordinal += 1;
+
+                    if ring == capacity {
+                        ring = 0;
+                    }
+                }
+
+                json!({ "seen": seen })
+            }
             "$spread" => {
                 let mut cursor = CursorState::open(&instance.queue);
                 let mut items = Vec::new();
@@ -201,6 +269,24 @@ impl ModuleSpec for SparseQueueSetSpec {
             "dense": typed_array(instance.queue.dense()),
             "sparse": typed_array(instance.queue.sparse()),
         })
+    }
+}
+
+/// What the callback may do to the queue, and how often.
+///
+/// All three are safe uncapped: the loop bound is captured before the first
+/// step, so nothing the callback does can extend the walk.
+const MUTATIONS: &[(&str, &str, u64)] = &[
+    ("dequeue", "none", FOR_EACH_MANY),
+    ("enqueue", "arg0+1", FOR_EACH_MANY),
+    ("clear", "none", FOR_EACH_MANY),
+];
+
+/// A `dense` slot as the oracle encodes it.
+fn slot(value: Option<u32>) -> Value {
+    match value {
+        Some(item) => json!(item),
+        None => json!({"$undefined": true}),
     }
 }
 

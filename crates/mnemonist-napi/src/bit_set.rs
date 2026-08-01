@@ -21,6 +21,14 @@
 //! 4. **`select` yields `Either<i64, Undefined>`.** Upstream returns `-1`, a
 //!    position, or falls out of its loop and returns `undefined` — three
 //!    outcomes, and D-39 says `Option` renders the third as `null`.
+//!
+//! Like [`crate::queue`] and [`crate::stack`], the core structure is held in a
+//! [`RefCell`] so that `&self` is not `noalias readonly` and a JS callback's
+//! mutation is actually seen — see [`crate::cursor::CellCursor`] and B-31.
+//! `forEach` is this module's re-entry point; the cursors need no cell,
+//! because they own everything they read.
+
+use std::cell::RefCell;
 
 use mnemonist_core::structures::bit_set::BitSet as CoreSet;
 use napi::bindgen_prelude::*;
@@ -31,7 +39,7 @@ use crate::cursor::BridgeBitCursor;
 /// A fixed-length bit set over a `Uint32Array`.
 #[napi(js_name = "BitSet")]
 pub struct JsBitSet {
-    inner: CoreSet,
+    inner: RefCell<CoreSet>,
 }
 
 #[napi]
@@ -39,77 +47,72 @@ impl JsBitSet {
     #[napi(constructor)]
     pub fn new(length: u32) -> Self {
         Self {
-            inner: CoreSet::new(length as usize),
+            inner: RefCell::new(CoreSet::new(length as usize)),
         }
     }
 
     #[napi(getter)]
     pub fn length(&self) -> u32 {
-        self.inner.length() as u32
+        self.inner.borrow().length() as u32
     }
 
     /// Upstream's `size` counter — see B-13 for why this is signed.
     #[napi(getter)]
     pub fn size(&self) -> i64 {
-        self.inner.size()
+        self.inner.borrow().size()
     }
 
     /// The backing `Uint32Array`. A **copy**; see adaptation 1.
     #[napi(getter)]
     pub fn array(&self) -> Uint32Array {
-        Uint32Array::new(self.inner.to_json())
+        Uint32Array::new(self.inner.borrow().to_json())
     }
 
     #[napi]
-    pub fn clear(&mut self) {
-        self.inner.clear();
+    pub fn clear(&self) {
+        self.inner.borrow_mut().clear();
     }
 
     #[napi]
-    pub fn set<'a>(
-        &mut self,
-        this: This<'a>,
-        index: i64,
-        value: Option<Unknown>,
-    ) -> Result<This<'a>> {
-        self.inner.set_to(index, !clears(value)?);
+    pub fn set<'a>(&self, this: This<'a>, index: i64, value: Option<Unknown>) -> Result<This<'a>> {
+        self.inner.borrow_mut().set_to(index, !clears(value)?);
 
         Ok(this)
     }
 
     #[napi]
-    pub fn reset<'a>(&mut self, this: This<'a>, index: i64) -> This<'a> {
-        self.inner.reset(index);
+    pub fn reset<'a>(&self, this: This<'a>, index: i64) -> This<'a> {
+        self.inner.borrow_mut().reset(index);
 
         this
     }
 
     #[napi]
-    pub fn flip<'a>(&mut self, this: This<'a>, index: i64) -> This<'a> {
-        self.inner.flip(index);
+    pub fn flip<'a>(&self, this: This<'a>, index: i64) -> This<'a> {
+        self.inner.borrow_mut().flip(index);
 
         this
     }
 
     #[napi]
     pub fn get(&self, index: i64) -> u32 {
-        self.inner.get(index)
+        self.inner.borrow().get(index)
     }
 
     #[napi]
     pub fn test(&self, index: i64) -> bool {
-        self.inner.test(index)
+        self.inner.borrow().test(index)
     }
 
     #[napi]
     pub fn rank(&self, i: i64) -> i64 {
-        self.inner.rank(i)
+        self.inner.borrow().rank(i)
     }
 
     /// `-1`, a position, or `undefined`. See adaptation 4.
     #[napi]
     pub fn select(&self, r: i64) -> Either<i64, Undefined> {
-        match self.inner.select(r) {
+        match self.inner.borrow().select(r) {
             Some(position) => Either::A(position),
             None => Either::B(()),
         }
@@ -133,11 +136,18 @@ impl JsBitSet {
         callback: Function<FnArgs<(u32, u32)>, Unknown>,
         scope: Option<Unknown>,
     ) -> Result<()> {
-        let word_count = self.inner.words().word_count();
-        let length = self.inner.length();
+        let (word_count, length) = {
+            let inner = self.inner.borrow();
+
+            (inner.words().word_count(), inner.length())
+        };
 
         for index in 0..word_count {
-            let word = self.inner.words().word(index).unwrap_or(0);
+            // Re-borrowed and dropped per word, before any callback runs:
+            // upstream's `byte = this.array[i]` is a fresh read of the live
+            // array each time round the outer loop, and a callback that
+            // `set`s or `clear`s must not meet an outstanding borrow.
+            let word = self.inner.borrow().words().word(index).unwrap_or(0);
             let bits = mnemonist_core::structures::bits::bits_in_word(index, word_count, length);
 
             for bit in 0..bits {
@@ -163,20 +173,20 @@ impl JsBitSet {
     #[napi]
     pub fn values(&self) -> JsBitSetValues {
         JsBitSetValues {
-            cursor: BridgeBitCursor::new(self.inner.values()),
+            cursor: BridgeBitCursor::new(self.inner.borrow().values()),
         }
     }
 
     #[napi]
     pub fn entries(&self) -> JsBitSetEntries {
         JsBitSetEntries {
-            cursor: BridgeBitCursor::new(self.inner.values()),
+            cursor: BridgeBitCursor::new(self.inner.borrow().values()),
         }
     }
 
     #[napi(js_name = "toJSON")]
     pub fn to_json(&self) -> Vec<u32> {
-        self.inner.to_json()
+        self.inner.borrow().to_json()
     }
 }
 

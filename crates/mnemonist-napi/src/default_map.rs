@@ -25,12 +25,17 @@
 //!   `SparseSet::for_each`, and recorded the same way.
 //! * **`inspect()` is not ported.** It returns the inner `Map`, which does not
 //!   exist here, and nothing asserts on it.
-//! * **A re-entrant factory or `forEach` callback** — one that calls back into
-//!   the same map — is not supported. Upstream allows it. See
-//!   `docs/modules/default-map.md`.
+//! * **A re-entrant `forEach` callback and a re-entrant factory are both
+//!   supported**, where both were undefined behaviour before — see B-31 and
+//!   [`crate::cursor::CellCursor`]. Holding the core map in a [`RefCell`] is
+//!   what fixes them, and the rule the fix imposes is that **no borrow may be
+//!   alive across a call that can run JavaScript**. `forEach` re-borrows per
+//!   step; `get` runs the factory between its read and its write, exactly as
+//!   upstream does. See `docs/modules/default-map.md`.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 
+use mnemonist_core::map::OrderedMap;
 use mnemonist_core::structures::default_map::DefaultMap as CoreMap;
 use napi::bindgen_prelude::*;
 use napi::sys;
@@ -38,7 +43,7 @@ use napi_derive::napi;
 
 use crate::js_key::JsKey;
 use crate::js_value::{release_slot, Loaned, Received, Retained};
-use crate::map_cursor::MapBridgeCursor;
+use crate::map_cursor::CellMapCursor;
 
 /// The map as core sees it: JS keys, JS values, `None` for `undefined`.
 type Core = CoreMap<JsKey, Retained>;
@@ -47,7 +52,12 @@ type Core = CoreMap<JsKey, Retained>;
 ///
 /// Core stores `Option<V>`, where `None` is `undefined`; the three iterators
 /// differ only in what they project out of each step.
-type Cursor = MapBridgeCursor<JsDefaultMap, JsKey, Option<Retained>>;
+type Cursor = CellMapCursor<JsDefaultMap, Core, JsKey, Option<Retained>>;
+
+/// How the cursors and `forEach` reach the entry list inside the core map.
+fn items(map: &Core) -> &OrderedMap<JsKey, Option<Retained>> {
+    map.items()
+}
 
 /// The factory's JS signature: `(key, size) -> value`.
 ///
@@ -61,7 +71,7 @@ const NOT_A_FUNCTION: &str = "mnemonist/DefaultMap.constructor: expecting a func
 
 #[napi(js_name = "DefaultMap", custom_finalize)]
 pub struct JsDefaultMap {
-    inner: Core,
+    inner: RefCell<Core>,
     factory: Factory,
 }
 
@@ -83,7 +93,7 @@ impl JsDefaultMap {
         let function = unsafe { factory.cast::<Function<FnArgs<(JsKey, f64)>, Received>>()? };
 
         Ok(Self {
-            inner: Core::new(),
+            inner: RefCell::new(Core::new()),
             factory: function.create_ref()?,
         })
     }
@@ -94,16 +104,18 @@ impl JsDefaultMap {
     /// `mnemonist_core::structures::default_map` and B-40.
     #[napi(getter)]
     pub fn size(&self) -> f64 {
-        self.inner.size() as f64
+        self.inner.borrow().size() as f64
     }
 
     #[napi]
-    pub fn clear(&mut self, env: Env) -> Result<()> {
-        for slot in self.inner.values_mut() {
+    pub fn clear(&self, env: Env) -> Result<()> {
+        let mut inner = self.inner.borrow_mut();
+
+        for slot in inner.values_mut() {
             release_slot(slot, &env)?;
         }
 
-        self.inner.clear();
+        inner.clear();
 
         Ok(())
     }
@@ -111,18 +123,45 @@ impl JsDefaultMap {
     /// Upstream's `get`: a **mutating** read that manufactures and stores a
     /// value when the stored one is `undefined`.
     #[napi]
-    pub fn get(&mut self, env: Env, key: JsKey) -> Result<Loaned> {
-        // Split the borrow: the factory is read while the map is written.
-        let Self { inner, factory } = self;
-        let manufacture = factory.borrow_back(&env)?;
+    pub fn get(&self, env: Env, key: JsKey) -> Result<Loaned> {
+        // Upstream's three steps, kept as three, because the middle one runs
+        // JavaScript and **must not** hold the `RefCell`:
+        //
+        // ```js
+        // var value = this.items.get(key);          // 1. read
+        // if (typeof value === 'undefined') {
+        //   value = this.factory(key, this.size);   // 2. factory, map unlocked
+        //   this.items.set(key, value);             // 3. write
+        //   this.size++;
+        // }
+        // ```
+        //
+        // The obvious shape — one `try_get_or_insert_with` with the JS call
+        // inside it — keeps a `borrow_mut` alive across step 2. A factory that
+        // merely reads `map.size` then meets an outstanding borrow, and a
+        // `RefCell` panic inside a `#[napi]` method does not unwind into a JS
+        // exception: napi 3.12 does not `catch_unwind` a sync call, so it
+        // ABORTS THE PROCESS. Measured, not assumed.
+        //
+        // Each borrow below therefore ends with its own statement.
+        if let Some(loaned) = self.inner.borrow().peek(&key).map(|value| value.loan()) {
+            return Ok(loaned);
+        }
 
-        let value = inner.try_get_or_insert_with(key, |key, size| {
-            manufacture
-                .call((key.clone(), size as f64).into())
-                .map(Received::into_slot)
-        })?;
+        // Upstream passes `this.size` as it is *before* the factory runs.
+        let size = self.inner.borrow().size();
+        let manufacture = self.factory.borrow_back(&env)?;
+        // A factory that throws returns here, leaving the map untouched --
+        // `size` included, because step 3 has not happened yet. That is
+        // upstream's behaviour and the reason `try_get_or_insert_with` exists
+        // at all; the split preserves it for free.
+        let value = manufacture
+            .call((key.clone(), size as f64).into())
+            .map(Received::into_slot)?;
 
-        Ok(Loaned::of(value))
+        Ok(Loaned::of(
+            self.inner.borrow_mut().insert_from_factory(key, value),
+        ))
     }
 
     /// Upstream's `peek`: no factory, no counter change.
@@ -131,19 +170,24 @@ impl JsDefaultMap {
     /// because upstream's caller cannot tell those apart either.
     #[napi]
     pub fn peek(&self, key: JsKey) -> Loaned {
-        Loaned::of(self.inner.peek(&key))
+        Loaned::of(self.inner.borrow().peek(&key))
     }
 
     /// Upstream's `set`, which returns `this` for chaining.
     #[napi]
     pub fn set<'a>(
-        &mut self,
+        &self,
         this: This<'a>,
         env: Env,
         key: JsKey,
         value: Received,
     ) -> Result<This<'a>> {
-        if let Some(mut displaced) = self.inner.set(key, value.into_slot()) {
+        // The borrow ends with this statement: releasing the displaced value
+        // touches napi, and nothing that can re-enter should run while the
+        // map is locked.
+        let displaced = self.inner.borrow_mut().set(key, value.into_slot());
+
+        if let Some(mut displaced) = displaced {
             displaced.release(&env)?;
         }
 
@@ -156,12 +200,16 @@ impl JsDefaultMap {
     /// that key will run the factory again.
     #[napi]
     pub fn has(&self, key: JsKey) -> bool {
-        self.inner.has(&key)
+        self.inner.borrow().has(&key)
     }
 
     #[napi(js_name = "delete")]
-    pub fn delete(&mut self, env: Env, key: JsKey) -> Result<bool> {
-        match self.inner.delete(&key) {
+    pub fn delete(&self, env: Env, key: JsKey) -> Result<bool> {
+        // As in `set`: the removal is one statement, and the release that
+        // follows happens with the map unlocked.
+        let removed = self.inner.borrow_mut().delete(&key);
+
+        match removed {
             None => Ok(false),
             Some(mut slot) => {
                 release_slot(&mut slot, &env)?;
@@ -186,10 +234,22 @@ impl JsDefaultMap {
         callback: Function<FnArgs<(Loaned, JsKey, Object)>, Unknown>,
         scope: Option<Unknown>,
     ) -> Result<()> {
-        let mut cursor = self.inner.cursor();
+        let mut cursor = self.inner.borrow().cursor();
 
-        while let Some((key, value)) = cursor.step(self.inner.items()) {
-            let args = FnArgs::from((Loaned::of(value.as_ref()), key.clone(), this.object));
+        // The borrow is taken per step, inside `step`, and dropped before the
+        // callback runs: a callback that `set`s or `delete`s through the same
+        // object never meets an outstanding borrow — and, more to the point,
+        // the walk sees what it did rather than a hoisted snapshot (B-31).
+        let mut step = || {
+            let inner = self.inner.borrow();
+
+            cursor
+                .step(items(&inner))
+                .map(|(key, value)| (Loaned::of(value.as_ref()), key.clone()))
+        };
+
+        while let Some((value, key)) = step() {
+            let args = FnArgs::from((value, key, this.object));
 
             match &scope {
                 Some(scope) => callback.apply(*scope, args)?,
@@ -209,21 +269,21 @@ impl JsDefaultMap {
     #[napi]
     pub fn entries(&self, env: Env, this: Reference<JsDefaultMap>) -> Result<JsDefaultMapEntries> {
         Ok(JsDefaultMapEntries {
-            cursor: MapBridgeCursor::open(this.share_with(env, |map| Ok(map.inner.items()))?),
+            cursor: CellMapCursor::open(this.share_with(env, |map| Ok(&map.inner))?, items),
         })
     }
 
     #[napi]
     pub fn keys(&self, env: Env, this: Reference<JsDefaultMap>) -> Result<JsDefaultMapKeys> {
         Ok(JsDefaultMapKeys {
-            cursor: MapBridgeCursor::open(this.share_with(env, |map| Ok(map.inner.items()))?),
+            cursor: CellMapCursor::open(this.share_with(env, |map| Ok(&map.inner))?, items),
         })
     }
 
     #[napi]
     pub fn values(&self, env: Env, this: Reference<JsDefaultMap>) -> Result<JsDefaultMapValues> {
         Ok(JsDefaultMapValues {
-            cursor: MapBridgeCursor::open(this.share_with(env, |map| Ok(map.inner.items()))?),
+            cursor: CellMapCursor::open(this.share_with(env, |map| Ok(&map.inner))?, items),
         })
     }
 
@@ -261,8 +321,8 @@ impl ObjectFinalize for JsDefaultMap {
     /// The last release. Everything still in the map when the map itself is
     /// collected is unreferenced here, which is the one removal path that
     /// cannot be reached from a method call.
-    fn finalize(mut self, env: Env) -> Result<()> {
-        for slot in self.inner.values_mut() {
+    fn finalize(self, env: Env) -> Result<()> {
+        for slot in self.inner.borrow_mut().values_mut() {
             release_slot(slot, &env)?;
         }
 
@@ -316,9 +376,8 @@ impl Generator for JsDefaultMapEntries {
     type Return = ();
 
     fn next(&mut self, _value: Option<()>) -> Option<Pair> {
-        let (key, value) = self.cursor.step()?;
-
-        Some(Pair(key.clone(), Loaned::of(value.as_ref())))
+        self.cursor
+            .step(|key, value| Pair(key.clone(), Loaned::of(value.as_ref())))
     }
 
     /// `Generator.return()`, which a `break` out of a `for…of` calls.
@@ -343,9 +402,7 @@ impl Generator for JsDefaultMapKeys {
     type Return = ();
 
     fn next(&mut self, _value: Option<()>) -> Option<JsKey> {
-        let (key, _) = self.cursor.step()?;
-
-        Some(key.clone())
+        self.cursor.step(|key, _| key.clone())
     }
 
     fn complete(&mut self, _value: Option<()>) -> Option<JsKey> {
@@ -364,9 +421,7 @@ impl Generator for JsDefaultMapValues {
     type Return = ();
 
     fn next(&mut self, _value: Option<()>) -> Option<Loaned> {
-        let (_, value) = self.cursor.step()?;
-
-        Some(Loaned::of(value.as_ref()))
+        self.cursor.step(|_, value| Loaned::of(value.as_ref()))
     }
 
     fn complete(&mut self, _value: Option<()>) -> Option<Loaned> {

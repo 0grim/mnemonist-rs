@@ -45,10 +45,22 @@
 //! `mnemonist_napi::js_key`, and the side-by-side probes recorded in
 //! `docs/modules/default-map.md`. Stated rather than glossed.
 //!
-//! **`forEach`.** It takes a callback, and the oracle protocol has no way to
-//! send one. Its walk is the same cursor the iterators use, so what is
-//! specific to it — the callback arguments and `scope` binding — is covered by
-//! the original test file and by the probes instead.
+//! **`scope`.** `forEach`'s second argument binds the callback's `this`, and
+//! the oracle has no way to send a callback that would notice. Covered by the
+//! original test file and by the probes instead.
+//!
+//! # `$forEach`, added after B-31
+//!
+//! The line above used to read "**`forEach`.** It takes a callback, and the
+//! oracle protocol has no way to send one." That was true and it was also the
+//! hole: this module's 2.94M-operation clean campaign could not express a
+//! single program in which a callback mutates the map it is walking, so it
+//! read as coverage it did not have. `$forEach` is that op, and this module's
+//! walk is the interesting one — a `Map` iteration is **live**, so an entry
+//! the callback adds *is* visited and one it deletes ahead of the cursor is
+//! *not*, which is the opposite of every frozen-bound module in the port.
+//! See [`crate::spec::ForEach`] for the op, and for what it still does not
+//! reach.
 
 use std::collections::BTreeMap;
 
@@ -57,7 +69,7 @@ use mnemonist_core::structures::default_map::DefaultMap;
 use proptest::prelude::*;
 use serde_json::{json, Map as JsonMap, Value};
 
-use crate::spec::{ModuleSpec, Op};
+use crate::spec::{for_each, for_each_args, for_each_strategy, ModuleSpec, Op, FOR_EACH_MANY};
 
 /// Path proptest writes a minimised failing seed to.
 pub const REGRESSIONS: &str = concat!(
@@ -258,6 +270,7 @@ impl ModuleSpec for DefaultMapSpec {
             ],
             4 => Just(Op::new("$next", vec![])),
             1 => Just(Op::new("$spread", vec![])),
+            2 => for_each_strategy(MUTATIONS),
         ]
         .boxed()
     }
@@ -356,6 +369,53 @@ impl ModuleSpec for DefaultMapSpec {
             // other module in the port does. A fresh cursor every time, which
             // is what makes the factory half of D-07 observable next to
             // `$next`, which must not restart.
+            // `this.items.forEach(callback, scope)` — the backing `Map`'s own
+            // walk, which is live in both directions. Driven by the same
+            // cursor `$next` uses, so the two cannot drift apart: a second
+            // hand-written walk here would be free to be right about one of
+            // them and wrong about the other.
+            //
+            // The callback is `(value, key)`, so the `set` mutation's rule is
+            // `arg1,arg0`.
+            "$forEach" => {
+                let spec = for_each(op);
+                let mut cursor = instance.map.cursor();
+                let mut seen = Vec::new();
+                let mut fired = 0usize;
+
+                // Re-stepped against the map as it is NOW, every time round:
+                // an entry added by the previous callback is reachable from
+                // here, which is what makes the walk live.
+                while let Some(received) = cursor
+                    .step(instance.map.items())
+                    .map(|(key, value)| vec![slot_json(value.as_ref()), key.to_json()])
+                {
+                    seen.push(Value::Array(received.clone()));
+
+                    if fired < spec.limit {
+                        if let Some(args) = for_each_args(&spec, &received) {
+                            fired += 1;
+
+                            match spec.method.expect("for_each_args returned Some") {
+                                "set" => {
+                                    instance
+                                        .map
+                                        .set(FuzzKey::from_json(args[0]), value_slot(args[1]));
+                                }
+                                "delete" => {
+                                    instance.map.delete(&FuzzKey::from_json(args[0]));
+                                }
+                                "clear" => instance.map.clear(),
+                                other => {
+                                    panic!("`{other}` is not a $forEach mutation for this module")
+                                }
+                            }
+                        }
+                    }
+                }
+
+                json!({ "seen": seen })
+            }
             "$spread" => {
                 let mut cursor = instance.map.cursor();
                 let mut out = Vec::new();
@@ -393,6 +453,18 @@ impl ModuleSpec for DefaultMapSpec {
         )
     }
 }
+
+/// What the callback may do to the map, and how often.
+///
+/// `set` writes back the pair it was just handed, so it overwrites an existing
+/// key rather than adding one — which matters here and nowhere else, because
+/// this is the one module whose walk would visit an added entry and could
+/// therefore be driven forever.
+const MUTATIONS: &[(&str, &str, u64)] = &[
+    ("delete", "arg1", FOR_EACH_MANY),
+    ("set", "arg1,arg0", FOR_EACH_MANY),
+    ("clear", "none", FOR_EACH_MANY),
+];
 
 /// One iterator step, in the shape the projection yields it.
 fn project(projection: &str, key: &FuzzKey, value: Option<&Value>) -> Value {

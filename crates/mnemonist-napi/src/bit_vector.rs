@@ -14,6 +14,33 @@
 //! 2. **`grow`, `push` and `set` can throw**, so they return `Result`. Every
 //!    message is the core's [`fmt::Display`](std::fmt::Display), which is
 //!    upstream's verbatim.
+//!
+//! The core structure is held in a [`RefCell`] for the same reason as in
+//! [`crate::queue`] and [`crate::stack`]: `&self` on a `Freeze` type is
+//! `noalias readonly`, so a `forEach` callback's mutation would be invisible.
+//! Note that the pre-existing `thrown: Rc<RefCell<…>>` field did **not** buy
+//! that — an `Rc` reaches its `UnsafeCell` through a pointer, so `Rc<RefCell<T>>`
+//! is itself `Freeze`. The cell has to be inline. See
+//! [`crate::cursor::CellCursor`] and B-31.
+//!
+//! # This is the one module where the borrow cannot be kept off the JS call
+//!
+//! Everywhere else in the bridge, a `RefCell` borrow ends before any JavaScript
+//! runs — `forEach` re-borrows per step, `DefaultMap::get` runs its factory
+//! between the read and the write. Here it cannot: the **growth policy is a JS
+//! function that `mnemonist-core` calls from inside `grow`**, so `push`, `set`,
+//! `grow`, `resize`, `reallocate` and `apply_policy` all hold the vector while
+//! a JS function runs, and a policy that re-enters meets an outstanding borrow.
+//!
+//! A `RefCell` panic inside a `#[napi]` method **aborts the process** — napi
+//! 3.12 does not `catch_unwind` a sync call, and a panic unwinding out of an
+//! `extern "C"` frame is an abort. Measured, not assumed. So every borrow here
+//! is fallible and raises [`REENTRANT_POLICY`] instead.
+//!
+//! That is a stated divergence: upstream's policy may read and even mutate the
+//! vector mid-growth, and gets whatever half-grown state it finds. This port
+//! refuses instead, catchably. Refusing is a narrower behaviour than aborting,
+//! and it is narrower than upstream's — recorded rather than hidden.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -27,10 +54,16 @@ use napi_derive::napi;
 use crate::bit_set::clears;
 use crate::cursor::BridgeBitCursor;
 
+/// Raised when a growth policy calls back into the vector that is growing.
+const REENTRANT_POLICY: &str = "mnemonist-rs/BitVector: the growth policy called back into the \
+     vector while it was growing. Upstream serves such a call from a half-grown \
+     vector; this port refuses it, because the vector is mid-operation and cannot \
+     answer honestly. See the module docs and B-31.";
+
 /// A growable bit vector over a `Uint32Array`.
 #[napi(js_name = "BitVector")]
 pub struct JsBitVector {
-    inner: CoreVector,
+    inner: RefCell<CoreVector>,
     /// Where [`JsPolicy`] leaves an exception thrown by the JS policy.
     thrown: Rc<RefCell<Option<Error>>>,
 }
@@ -90,137 +123,138 @@ impl JsBitVector {
             }
         };
 
-        Ok(Self { inner, thrown })
+        Ok(Self {
+            inner: RefCell::new(inner),
+            thrown,
+        })
     }
 
     #[napi(getter)]
-    pub fn length(&self) -> u32 {
-        self.inner.length() as u32
+    pub fn length(&self) -> Result<u32> {
+        Ok(self.read()?.length() as u32)
     }
 
     /// Upstream's `size` counter. Signed; see B-13 and the `push`/`pop` defects.
     #[napi(getter)]
-    pub fn size(&self) -> i64 {
-        self.inner.size()
+    pub fn size(&self) -> Result<i64> {
+        Ok(self.read()?.size())
     }
 
     #[napi(getter)]
-    pub fn capacity(&self) -> u32 {
-        self.inner.capacity() as u32
+    pub fn capacity(&self) -> Result<u32> {
+        Ok(self.read()?.capacity() as u32)
     }
 
     /// The backing `Uint32Array`. A **copy**; the original test reads
     /// `vector.array.length`, so it has to exist.
     #[napi(getter)]
-    pub fn array(&self) -> Uint32Array {
-        Uint32Array::new(self.inner.words().to_vec())
+    pub fn array(&self) -> Result<Uint32Array> {
+        Ok(Uint32Array::new(self.read()?.words().to_vec()))
     }
 
     #[napi]
-    pub fn set<'a>(
-        &mut self,
-        this: This<'a>,
-        index: i64,
-        value: Option<Unknown>,
-    ) -> Result<This<'a>> {
-        self.inner
-            .set(index, !clears(value)?)
-            .map_err(|error| self.raise(error))?;
+    pub fn set<'a>(&self, this: This<'a>, index: i64, value: Option<Unknown>) -> Result<This<'a>> {
+        let outcome = self.write()?.set(index, !clears(value)?);
+
+        outcome.map_err(|error| self.raise(error))?;
 
         Ok(this)
     }
 
     #[napi]
-    pub fn reset<'a>(&mut self, this: This<'a>, index: i64) -> This<'a> {
-        self.inner.reset(index);
+    pub fn reset<'a>(&self, this: This<'a>, index: i64) -> Result<This<'a>> {
+        self.write()?.reset(index);
 
-        this
+        Ok(this)
     }
 
     #[napi]
-    pub fn flip<'a>(&mut self, this: This<'a>, index: i64) -> This<'a> {
-        self.inner.flip(index);
+    pub fn flip<'a>(&self, this: This<'a>, index: i64) -> Result<This<'a>> {
+        self.write()?.flip(index);
 
-        this
+        Ok(this)
     }
 
     /// `undefined` strictly past `length`; `index == length` reads the capacity
     /// region. `Either<_, Undefined>` rather than `Option` — D-39.
     #[napi]
-    pub fn get(&self, index: i64) -> Either<u32, Undefined> {
-        match self.inner.get(index) {
+    pub fn get(&self, index: i64) -> Result<Either<u32, Undefined>> {
+        Ok(match self.read()?.get(index) {
             Some(bit) => Either::A(bit),
             None => Either::B(()),
-        }
+        })
     }
 
     #[napi]
-    pub fn test(&self, index: i64) -> bool {
-        self.inner.test(index)
+    pub fn test(&self, index: i64) -> Result<bool> {
+        Ok(self.read()?.test(index))
     }
 
     #[napi]
-    pub fn rank(&self, i: i64) -> i64 {
-        self.inner.rank(i)
+    pub fn rank(&self, i: i64) -> Result<i64> {
+        Ok(self.read()?.rank(i))
     }
 
     #[napi]
-    pub fn select(&self, r: i64) -> Either<i64, Undefined> {
-        match self.inner.select(r) {
+    pub fn select(&self, r: i64) -> Result<Either<i64, Undefined>> {
+        Ok(match self.read()?.select(r) {
             Some(position) => Either::A(position),
             None => Either::B(()),
-        }
+        })
     }
 
     #[napi]
     pub fn apply_policy(&self, override_capacity: Option<f64>) -> Result<u32> {
-        self.inner
-            .apply_policy(override_capacity.map(count))
+        // The borrow ends before `raise`, which borrows `thrown` and — for a
+        // policy that re-enters — must not find the vector locked either.
+        let outcome = self.read()?.apply_policy(override_capacity.map(count));
+
+        outcome
             .map(|capacity| capacity as u32)
             .map_err(|error| self.raise(error))
     }
 
     #[napi]
-    pub fn reallocate<'a>(&mut self, this: This<'a>, capacity: f64) -> This<'a> {
-        self.inner.reallocate(count(capacity));
-
-        this
-    }
-
-    #[napi]
-    pub fn grow<'a>(&mut self, this: This<'a>, capacity: Option<f64>) -> Result<This<'a>> {
-        self.inner
-            .grow(capacity.map(count))
-            .map_err(|error| self.raise(error))?;
+    pub fn reallocate<'a>(&self, this: This<'a>, capacity: f64) -> Result<This<'a>> {
+        self.write()?.reallocate(count(capacity));
 
         Ok(this)
     }
 
     #[napi]
-    pub fn resize<'a>(&mut self, this: This<'a>, length: f64) -> This<'a> {
-        self.inner.resize(count(length));
+    pub fn grow<'a>(&self, this: This<'a>, capacity: Option<f64>) -> Result<This<'a>> {
+        let outcome = self.write()?.grow(capacity.map(count));
 
-        this
+        outcome.map_err(|error| self.raise(error))?;
+
+        Ok(this)
+    }
+
+    #[napi]
+    pub fn resize<'a>(&self, this: This<'a>, length: f64) -> Result<This<'a>> {
+        self.write()?.resize(count(length));
+
+        Ok(this)
     }
 
     /// Returns the new length. Does **not** clear the slot for a falsy value;
     /// see the core docs.
     #[napi]
-    pub fn push(&mut self, value: Option<Unknown>) -> Result<u32> {
+    pub fn push(&self, value: Option<Unknown>) -> Result<u32> {
         let value = !clears(value)?;
+        let outcome = self.write()?.push(value);
 
-        self.inner
-            .push(value)
+        outcome
             .map(|length| length as u32)
             .map_err(|error| self.raise(error))
     }
 
     #[napi]
-    pub fn pop(&mut self) -> Either<u32, Undefined> {
-        match self.inner.pop() {
+    pub fn pop(&self) -> Result<Either<u32, Undefined>> {
+        Ok(match self.write()?.pop() {
             Some(bit) => Either::A(bit),
             None => Either::B(()),
-        }
+        })
     }
 
     /// `forEach(callback, scope)`; same `scope` caveat as the other bridges.
@@ -231,11 +265,18 @@ impl JsBitVector {
         callback: Function<FnArgs<(u32, u32)>, Unknown>,
         scope: Option<Unknown>,
     ) -> Result<()> {
-        let word_count = self.inner.words().word_count();
-        let length = self.inner.length();
+        let (word_count, length) = {
+            let inner = self.read()?;
+
+            (inner.words().word_count(), inner.length())
+        };
 
         for index in 0..word_count {
-            let word = self.inner.words().word(index).unwrap_or(0);
+            // Re-borrowed and dropped per word, before any callback runs:
+            // upstream's `byte = this.array[i]` is a fresh read of the live
+            // array each time round the outer loop, and a callback that
+            // `set`s or `push`es must not meet an outstanding borrow.
+            let word = self.read()?.words().word(index).unwrap_or(0);
             let bits = mnemonist_core::structures::bits::bits_in_word(index, word_count, length);
 
             for bit in 0..bits {
@@ -253,22 +294,39 @@ impl JsBitVector {
     }
 
     #[napi]
-    pub fn values(&self) -> JsBitVectorValues {
-        JsBitVectorValues {
-            cursor: BridgeBitCursor::new(self.inner.values()),
-        }
+    pub fn values(&self) -> Result<JsBitVectorValues> {
+        Ok(JsBitVectorValues {
+            cursor: BridgeBitCursor::new(self.read()?.values()),
+        })
     }
 
     #[napi]
-    pub fn entries(&self) -> JsBitVectorEntries {
-        JsBitVectorEntries {
-            cursor: BridgeBitCursor::new(self.inner.values()),
-        }
+    pub fn entries(&self) -> Result<JsBitVectorEntries> {
+        Ok(JsBitVectorEntries {
+            cursor: BridgeBitCursor::new(self.read()?.values()),
+        })
     }
 
     #[napi(js_name = "toJSON")]
-    pub fn to_json(&self) -> Vec<u32> {
-        self.inner.to_json()
+    pub fn to_json(&self) -> Result<Vec<u32>> {
+        Ok(self.read()?.to_json())
+    }
+
+    /// A shared borrow, or the re-entrancy error.
+    ///
+    /// Never `borrow()`: see the module docs for why a panic here would take
+    /// the process down rather than reach JavaScript.
+    fn read(&self) -> Result<std::cell::Ref<'_, CoreVector>> {
+        self.inner
+            .try_borrow()
+            .map_err(|_| Error::new(Status::GenericFailure, REENTRANT_POLICY))
+    }
+
+    /// A mutable borrow, or the re-entrancy error.
+    fn write(&self) -> Result<std::cell::RefMut<'_, CoreVector>> {
+        self.inner
+            .try_borrow_mut()
+            .map_err(|_| Error::new(Status::GenericFailure, REENTRANT_POLICY))
     }
 
     /// Prefer an exception thrown *by the JS policy* over the core's
