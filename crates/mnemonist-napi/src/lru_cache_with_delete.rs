@@ -29,9 +29,9 @@ use crate::cursor::CellCursor;
 use crate::js_key::JsKey;
 use crate::js_slot::JsSlot;
 use crate::lru_cache::{
-    cache_to_index, coerce, map_new_error, populate_from, property_key_of, resolve_construction,
-    resolve_from_construction, step_entry, step_key, step_value, CacheCore, Cursor, Pair,
-    PropertyKey, SetPopOutcome,
+    cache_to_index, coerce, is_js_truthy, map_new_error, populate_from, property_key_of,
+    resolve_construction, resolve_from_construction, step_entry, step_key, step_value, CacheCore,
+    Cursor, Pair, PropertyKey, SetPopOutcome,
 };
 
 /// Verbatim from `lru-cache.js` — see the module docs.
@@ -164,11 +164,13 @@ impl JsLruCacheWithDelete {
                 key,
                 value,
             }),
-            SetPop::Evicted { key, value } => Some(SetPopOutcome {
+            // B-140: see `crate::lru_cache::is_js_truthy`'s doc comment.
+            SetPop::Evicted { key, value } if is_js_truthy(&key) => Some(SetPopOutcome {
                 evicted: true,
                 key,
                 value,
             }),
+            SetPop::Evicted { .. } => None,
         })
     }
 

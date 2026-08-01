@@ -19,7 +19,7 @@ use crate::array_class::ArrayClass;
 use crate::cursor::CellCursor;
 use crate::js_key::JsKey;
 use crate::js_slot::JsSlot;
-use crate::lru_cache::{coerce, map_new_error, populate_from, resolve_construction};
+use crate::lru_cache::{coerce, is_js_truthy, map_new_error, populate_from, resolve_construction};
 use crate::lru_cache::{resolve_from_construction, step_entry, step_key, step_value};
 use crate::lru_cache::{Cursor, Pair, SetPopOutcome};
 use crate::lru_map::{map_to_index, MapCore};
@@ -142,11 +142,13 @@ impl JsLruMapWithDelete {
                 key,
                 value,
             }),
-            SetPop::Evicted { key, value } => Some(SetPopOutcome {
+            // B-140: see `crate::lru_cache::is_js_truthy`'s doc comment.
+            SetPop::Evicted { key, value } if is_js_truthy(&key) => Some(SetPopOutcome {
                 evicted: true,
                 key,
                 value,
             }),
+            SetPop::Evicted { .. } => None,
         })
     }
 

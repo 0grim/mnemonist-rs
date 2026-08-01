@@ -638,6 +638,36 @@ pub fn cache_to_index(stored: &JsSlot) -> PropertyKey {
     property_key_of_stored(stored)
 }
 
+/// JS `Boolean(value)` for a stored LRU-cache key -- whether upstream's own
+/// `if (oldKey) { return {evicted: true, ...}; }` in `setpop` would take the
+/// truthy branch. Restricted to the five shapes a stored key can ever be
+/// (see [`property_key_of_stored`]/[`js_key_of_stored`]): a `BigInt` or
+/// `Referenced` key never reaches `setpop` at all, because [`coerce_key`]
+/// (called `coerce` here) only ever produces the [`JsKey`]-classified shapes
+/// this matches on.
+///
+/// Exists for B-140: upstream's `setpop` silently reports `null` — as if
+/// nothing were evicted — whenever the EVICTED key happens to be JS-falsy
+/// (`0`, `""`, `false`, `NaN`, `null`, `undefined`), even though an eviction
+/// genuinely occurred and the caller's new entry really did displace it. Both
+/// `lru-cache.js` and `lru-map.js` have the identical `if (oldKey)` guard
+/// (`lru-cache-with-delete.js`/`lru-map-with-delete.js` inherit it via their
+/// `for (var k in Base.prototype) ...` copy), so this one function serves all
+/// four bridges. See `docs/modules/lru-cache.md`.
+pub fn is_js_truthy(key: &JsSlot) -> bool {
+    match key {
+        JsSlot::Undefined | JsSlot::Null => false,
+        JsSlot::Boolean(value) => *value,
+        JsSlot::Number(value) => *value != 0.0 && !value.is_nan(),
+        JsSlot::String(units) => !units.is_empty(),
+        JsSlot::BigInt(_) | JsSlot::Referenced(_) => unreachable!(
+            "a stored lru-cache key is always JsKey-shaped -- see coerce_key and \
+             JsKey::from_unknown, which reject everything else before a key ever \
+             reaches storage"
+        ),
+    }
+}
+
 /// `{evicted, key, value}` — upstream's `setpop` result object. `null` is
 /// `Option::None`, mapped by napi the way it should be here (unlike a missing
 /// map value, upstream's `setpop` really does `return null`).
@@ -798,11 +828,15 @@ impl JsLruCache {
                 key,
                 value,
             }),
-            SetPop::Evicted { key, value } => Some(SetPopOutcome {
+            // B-140: upstream's `if (oldKey) { return {evicted: true, ...}; }
+            // else { return null; }` -- a falsy evicted key silently
+            // suppresses the report. See `is_js_truthy`.
+            SetPop::Evicted { key, value } if is_js_truthy(&key) => Some(SetPopOutcome {
                 evicted: true,
                 key,
                 value,
             }),
+            SetPop::Evicted { .. } => None,
         })
     }
 

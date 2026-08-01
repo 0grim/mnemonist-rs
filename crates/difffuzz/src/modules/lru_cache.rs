@@ -149,6 +149,18 @@ impl FuzzKey {
             Self::Str(text) => json!(text),
         }
     }
+
+    /// JS `Boolean(value)`. Mirrors
+    /// `mnemonist_napi::lru_cache::is_js_truthy` exactly, for B-140 — see
+    /// the `"setpop"` arm of [`apply_generic`].
+    fn is_js_truthy(&self) -> bool {
+        match self {
+            Self::Undefined | Self::Null => false,
+            Self::Bool(value) => *value,
+            Self::Int(value) => *value != 0,
+            Self::Str(text) => !text.is_empty(),
+        }
+    }
 }
 
 /// `ToPropertyKey`, restricted to what [`FuzzKey`] can express — the
@@ -314,9 +326,14 @@ fn apply_generic<IK: Hash + Eq + Clone>(instance: &mut Instance<IK>, op: &Op) ->
                 SetPop::Overwritten { key, value } => {
                     json!({"evicted": false, "key": key.to_json(), "value": value})
                 }
-                SetPop::Evicted { key, value } => {
+                // B-140: upstream's `if (oldKey) {...} else { return null; }`
+                // -- a JS-falsy evicted key silently suppresses the eviction
+                // report. Mirrors `mnemonist_napi::lru_cache::is_js_truthy`;
+                // see docs/modules/lru-cache.md.
+                SetPop::Evicted { key, value } if key.is_js_truthy() => {
                     json!({"evicted": true, "key": key.to_json(), "value": value})
                 }
+                SetPop::Evicted { .. } => Value::Null,
             }
         }
         "clear" => {
@@ -438,6 +455,12 @@ fn apply_generic<IK: Hash + Eq + Clone>(instance: &mut Instance<IK>, op: &Op) ->
                         }
                     }
                 }
+
+                // Read `forward` NOW, live, after whatever the mutation above
+                // just did -- exactly where upstream's own
+                // `pointer = forward[pointer]` sits, one statement below the
+                // callback call. See `ForEachWalk`'s docs.
+                walk.advance(&instance.cache);
             }
 
             json!({ "seen": seen })
