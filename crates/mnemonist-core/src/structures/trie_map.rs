@@ -128,6 +128,18 @@ impl<T, V> Node<T, V> {
     fn iter(&self) -> impl Iterator<Item = &Slot<T, V>> {
         self.entries.iter()
     }
+
+    /// Every stored value reachable from this node, mutably, appended to
+    /// `out` in the same order [`iter`](Node::iter) would visit them at each
+    /// level (depth-first, a node's own value before its children's).
+    fn collect_values_mut<'a>(&'a mut self, out: &mut Vec<&'a mut V>) {
+        for entry in &mut self.entries {
+            match entry {
+                Slot::Word(value) => out.push(value),
+                Slot::Child(_token, child) => child.collect_values_mut(out),
+            }
+        }
+    }
 }
 
 impl<T: PartialEq, V> Node<T, V> {
@@ -376,6 +388,17 @@ impl<T, V> TrieMap<T, V> {
     pub fn clear(&mut self) {
         self.root = Node::new();
         self.size = 0;
+    }
+
+    /// Every stored value, mutably, depth-first. Exists for the bridge: a
+    /// value that holds a JS reference must have it released — on `clear`
+    /// and at finalization — before it is dropped, which needs `&mut V`
+    /// reachable without walking the tree by hand at every call site.
+    pub fn values_mut(&mut self) -> impl Iterator<Item = &mut V> {
+        let mut out = Vec::new();
+        self.root.collect_values_mut(&mut out);
+
+        out.into_iter()
     }
 }
 
@@ -794,6 +817,23 @@ mod tests {
         assert_eq!(walk.step(&trie), Some((Vec::from(['a']), &1u32)));
         assert_eq!(walk.step(&trie), Some((Vec::from(['a', 'c']), &3u32)));
         assert_eq!(walk.step(&trie), None);
+    }
+
+    /// Exercised for the bridge's benefit: every stored value must be
+    /// reachable mutably, in one pass, so a JS reference each one holds can
+    /// be released before the map itself is dropped.
+    #[test]
+    fn values_mut_reaches_every_stored_value() {
+        let mut trie: TrieMap<char, u32> = TrieMap::new();
+
+        trie.set(tokens("rat"), 1);
+        trie.set(tokens("rate"), 2);
+        trie.set(tokens("tar"), 3);
+
+        let mut seen: Vec<u32> = trie.values_mut().map(|value| *value).collect();
+        seen.sort_unstable();
+
+        assert_eq!(seen, vec![1, 2, 3]);
     }
 
     #[test]
