@@ -76,6 +76,21 @@ impl<T> Step<T> {
         }
     }
 
+    /// Transform the element, leaving [`Gap`](Step::Gap) and
+    /// [`Done`](Step::Done) alone.
+    ///
+    /// Exists for the projected walks: a `SparseMap` cursor yields a
+    /// `Projected` and the bridge needs whichever half of it that walk is
+    /// about, without collapsing the three-state answer into an [`Option`] on
+    /// the way — which is the one thing the shrink window cannot survive.
+    pub fn map<U>(self, transform: impl FnOnce(T) -> U) -> Step<U> {
+        match self {
+            Self::Item(value) => Step::Item(transform(value)),
+            Self::Gap => Step::Gap,
+            Self::Done => Step::Done,
+        }
+    }
+
     pub fn is_done(&self) -> bool {
         matches!(self, Self::Done)
     }
@@ -652,5 +667,10 @@ mod tests {
         assert!(!Step::<u32>::Gap.is_done());
         assert!(Step::<u32>::Done.is_done());
         assert!(!Step::Item(1).is_gap());
+
+        // `map` must not turn a gap into an end, which is the whole of D-09.
+        assert_eq!(Step::Item(7).map(|value| value * 2), Step::Item(14));
+        assert_eq!(Step::<u32>::Gap.map(|value| value * 2), Step::Gap);
+        assert_eq!(Step::<u32>::Done.map(|value| value * 2), Step::Done);
     }
 }

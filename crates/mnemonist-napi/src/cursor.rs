@@ -70,6 +70,17 @@ impl<Owner: 'static, S: Sequence + 'static> BridgeCursor<Owner, S> {
         Self { source, state }
     }
 
+    /// As [`open`](BridgeCursor::open), for a source offering several walks.
+    ///
+    /// `SparseMap` hands out three cursors over one frozen `size`; which one is
+    /// a [`Sequence::Frozen`] payload rather than a separate type. See
+    /// `mnemonist_core::cursor::CursorState::open_projected`.
+    pub fn open_projected(source: SharedReference<Owner, &'static S>, frozen: S::Frozen) -> Self {
+        let state = CursorState::open_projected(*source, frozen);
+
+        Self { source, state }
+    }
+
     /// One step, against the parent as it is *now*.
     pub fn step(&mut self) -> Step<S::Item> {
         self.state.step(*self.source)
@@ -105,7 +116,13 @@ pub fn yielded<T>(step: Step<T>) -> Option<Either<T, Undefined>> {
 /// One row per upstream `X.prototype[Symbol.iterator] = X.prototype.values`.
 /// Kept as data rather than as code per module so the count of modules and the
 /// count of places to get this wrong stay unrelated.
-const ITERATOR_FACTORIES: &[(&str, &str)] = &[("SparseSet", "values")];
+const ITERATOR_FACTORIES: &[(&str, &str)] = &[
+    ("SparseSet", "values"),
+    // Note the method: upstream aliases `SparseMap.prototype[Symbol.iterator]`
+    // to `entries`, not to `values`. Getting that wrong would leave `[...map]`
+    // yielding bare values and every `deepStrictEqual` against pairs failing.
+    ("SparseMap", "entries"),
+];
 
 /// Wire every collection's `Symbol.iterator` to its cursor factory.
 ///
