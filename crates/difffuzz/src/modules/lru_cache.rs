@@ -740,3 +740,109 @@ impl ModuleSpec for LruMapWithDeleteSpec {
         observe_map_backed(instance)
     }
 }
+
+/// A self-check on the GRAMMAR, not a differential test — no oracle, no
+/// `node`, nothing compared against upstream. DESIGN.md's own warning about
+/// this family is that a campaign whose capacity is large relative to its op
+/// count proves only that a map stores things, and "the weights look right by
+/// inspection" is exactly the kind of confident-but-unverified claim
+/// CLAUDE.md's NOTES.md keeps a table of. So this runs a representative batch
+/// of generated programs purely against `mnemonist-core` and asserts a floor
+/// on how often `set`/`setpop` actually evict and how often `delete` actually
+/// removes something, printing the real counts under `--nocapture` for the
+/// numbers a report can cite.
+#[cfg(test)]
+mod grammar_self_check {
+    use proptest::strategy::ValueTree;
+    use proptest::test_runner::{Config, TestRunner};
+
+    use super::*;
+
+    /// `samples` generated `(ctor, ops)` pairs, run start to finish. Returns
+    /// `(total ops applied, evictions, successful deletes)`.
+    ///
+    /// An eviction is detected the same way the algorithm decides one: before
+    /// a `set`/`setpop` call, the key is not already present AND the cache is
+    /// already at capacity. Both are necessary and sufficient for
+    /// `LruCache::insert_new`'s "cache is full" branch to run.
+    fn sample(with_delete: bool, samples: usize) -> (u64, u64, u64) {
+        let mut runner = TestRunner::new(Config::default());
+        let mut total_ops = 0u64;
+        let mut evictions = 0u64;
+        let mut successful_deletes = 0u64;
+
+        for _ in 0..samples {
+            let ctor = ctor_strategy()
+                .new_tree(&mut runner)
+                .expect("ctor_strategy never rejects")
+                .current();
+            let ops = proptest::collection::vec(op_strategy(with_delete), 1..300)
+                .new_tree(&mut runner)
+                .expect("op_strategy never rejects")
+                .current();
+            let mut instance = construct_generic(&ctor, property_key_of);
+
+            for op in &ops {
+                total_ops += 1;
+
+                if op.name == "set" || op.name == "setpop" {
+                    let index_key = key_index(&instance, &op.args[0]);
+                    let will_evict = instance.cache.len() == instance.cache.capacity()
+                        && !instance.cache.has(&index_key);
+
+                    if will_evict {
+                        evictions += 1;
+                    }
+                }
+
+                let result = apply_generic(&mut instance, op);
+
+                if op.name == "delete" && result == Value::Bool(true) {
+                    successful_deletes += 1;
+                }
+            }
+        }
+
+        (total_ops, evictions, successful_deletes)
+    }
+
+    #[test]
+    fn the_grammar_evicts_constantly_rather_than_only_storing() {
+        let (ops, evictions, _) = sample(false, 400);
+
+        eprintln!(
+            "lru-cache grammar (no delete): {ops} ops, {evictions} evictions \
+             ({:.1}% of ops)",
+            100.0 * evictions as f64 / ops as f64
+        );
+
+        assert!(
+            evictions * 20 > ops,
+            "eviction should fire on a healthy fraction of ops, not a token \
+             few: {evictions} evictions over {ops} ops"
+        );
+    }
+
+    #[test]
+    fn the_with_delete_grammar_deletes_and_evicts_constantly() {
+        let (ops, evictions, deletes) = sample(true, 400);
+
+        eprintln!(
+            "lru-cache-with-delete grammar: {ops} ops, {evictions} evictions \
+             ({:.1}%), {deletes} successful deletes ({:.1}%)",
+            100.0 * evictions as f64 / ops as f64,
+            100.0 * deletes as f64 / ops as f64
+        );
+
+        assert!(
+            evictions * 20 > ops,
+            "eviction should fire on a healthy fraction of ops: {evictions} \
+             over {ops}"
+        );
+        assert!(
+            deletes * 100 > ops,
+            "delete should succeed on a healthy fraction of ops, which is what \
+             actually exercises the freelist: {deletes} over {ops}"
+        );
+    }
+}
