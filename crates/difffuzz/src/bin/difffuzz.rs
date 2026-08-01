@@ -43,6 +43,11 @@ use difffuzz::modules::suffix_array::{GeneralizedSuffixArraySpec, SuffixArraySpe
 use difffuzz::modules::fixed_reverse_heap::FixedReverseHeapSpec;
 use difffuzz::modules::heap::HeapSpec;
 use difffuzz::{Campaign, Report};
+// Appended at the end, never inserted: this file is edited by several agents
+// at once and a new line at the end can never land inside another one's hunk.
+use difffuzz::modules::lru_cache::{
+    LruCacheSpec, LruCacheWithDeleteSpec, LruMapSpec, LruMapWithDeleteSpec,
+};
 
 const USAGE: &str = "\
 usage: difffuzz --module <name> [--seed N] [--duration SECONDS] [--cases N] [--batch N]
@@ -232,6 +237,35 @@ fn main() -> ExitCode {
             &FixedReverseHeapSpec,
             &Campaign {
                 regressions: difffuzz::modules::fixed_reverse_heap::REGRESSIONS,
+                ..campaign
+            },
+        ),
+        // Appended at the END of the match, never between two existing arms.
+        "lru-cache" => difffuzz::run(
+            &LruCacheSpec,
+            &Campaign {
+                regressions: difffuzz::modules::lru_cache::REGRESSIONS,
+                ..campaign
+            },
+        ),
+        "lru-cache-with-delete" => difffuzz::run(
+            &LruCacheWithDeleteSpec,
+            &Campaign {
+                regressions: difffuzz::modules::lru_cache::WITH_DELETE_REGRESSIONS,
+                ..campaign
+            },
+        ),
+        "lru-map" => difffuzz::run(
+            &LruMapSpec,
+            &Campaign {
+                regressions: difffuzz::modules::lru_cache::MAP_REGRESSIONS,
+                ..campaign
+            },
+        ),
+        "lru-map-with-delete" => difffuzz::run(
+            &LruMapWithDeleteSpec,
+            &Campaign {
+                regressions: difffuzz::modules::lru_cache::MAP_WITH_DELETE_REGRESSIONS,
                 ..campaign
             },
         ),

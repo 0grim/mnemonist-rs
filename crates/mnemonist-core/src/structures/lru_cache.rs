@@ -50,16 +50,28 @@
 //! upstream's own behaviour, bug-for-bug — see `to_index` below and
 //! `docs/modules/lru-cache.md`.
 //!
-//! # `Sequence`, one impl for `keys`/`values`/`entries`/`forEach`
+//! # `Sequence`, one impl for `keys`/`values`/`entries` — but not `forEach`
 //!
-//! All four of upstream's walks share one shape: `l = this.size` and
+//! `keys`/`values`/`entries` share one shape: `l = this.size` and
 //! `pointer = this.head` are frozen at creation, then every step reads
 //! `keys[pointer]`/`values[pointer]` live and advances via `forward[pointer]`
-//! — also read live. That is exactly [`crate::cursor::Sequence`]'s hybrid
-//! capture, with the frozen pointer riding in `Frozen` as a `Cell<usize>`
-//! (mutated *inside* `slot`, which only ever receives `&Self::Frozen`) next to
-//! a [`Projection`] tag that says which of the three walks this is — the same
+//! — also read live, and *before* control ever returns to whatever called
+//! `.next()`. That is exactly [`crate::cursor::Sequence`]'s hybrid capture,
+//! with the frozen pointer riding in `Frozen` as a `Cell<usize>` (mutated
+//! *inside* `slot`, which only ever receives `&Self::Frozen`) next to a
+//! [`Projection`] tag that says which of the three walks this is — the same
 //! trick `SparseMap` uses for its three cursors over one frozen `size`.
+//!
+//! `forEach` looks identical at first read — `l`/`pointer` frozen the same
+//! way, `forward` read live the same way — but its callback runs **before**
+//! upstream's own `pointer = forward[pointer]`, not after, because the
+//! callback executes from inside upstream's loop body while `Sequence::slot`
+//! advances eagerly, before the caller (whether that is a JS callback or this
+//! crate's own difffuzz harness) ever gets control. Reusing `Sequence` for
+//! `forEach` reproduced the eager-advance timing everywhere, which is right
+//! for the three lazy iterators and wrong for `forEach` — see
+//! [`ForEachWalk`], and `docs/modules/lru-cache.md`'s "Bugs this found" for
+//! how the differential fuzzer caught it on its first campaign.
 //!
 //! Because `forward`/`backward`/`keys`/`values` never shrink below `capacity`
 //! for the life of the structure, a slot at any pointer in `0..capacity` is
@@ -329,10 +341,23 @@ impl<IK: Hash + Eq, K, V> LruCache<IK, K, V> {
 
     /// The linked-list splice shared by `delete` and `remove` once the index
     /// entry is already gone.
+    ///
+    /// Deliberately does **not** clear `self.keys[pointer]`/`self.values[pointer]`.
+    /// Neither `delete` nor `remove` touches `this.K`/`this.V` upstream — see
+    /// `~/upstream-mnemonist/lru-cache-with-delete.js`, where both simply
+    /// splice the linked list and record the hole. A pointer's slot is only
+    /// ever overwritten by [`LruCache::insert_new`], on reuse. So a stale
+    /// `Some` is left behind on purpose: it is what upstream's own `this.K`/
+    /// `this.V` arrays hold too, and it is what fixed a real port bug (see the
+    /// module docs above and `docs/modules/lru-cache.md`, "Bugs this
+    /// found") — an in-flight `keys()`/`values()`/`entries()`/`forEach` walk
+    /// whose frozen bound had not yet reached this pointer used to panic on
+    /// the `.expect` in [`LruCache::slot`] the moment `delete`/`remove` ran
+    /// underneath it, because the slot the walk was about to visit had just
+    /// been nulled. Upstream never nulls it, so it just returns the stale
+    /// (soon-to-be-overwritten-or-not) key/value instead of throwing anything
+    /// at all — reproduced bug-for-bug here rather than "fixed" a second time.
     fn unlink(&mut self, pointer: usize) {
-        self.keys[pointer] = None;
-        self.values[pointer] = None;
-
         if self.size == 1 {
             self.size = 0;
             self.head = 0;
@@ -441,13 +466,111 @@ impl<IK: Hash + Eq, K, V> LruCache<IK, K, V> {
     /// and passes a *present* `undefined`-valued entry through unchanged,
     /// since the two are told apart by whether this returns at all, not by
     /// what it returns.
-    pub fn remove(&mut self, index_key: &IK) -> Option<V> {
+    ///
+    /// `V: Clone` here (and only here, not on the surrounding `impl` block):
+    /// upstream's `var dead = this.V[pointer];` reads the value without
+    /// disturbing the array, so `this.V[pointer]` is still the just-removed
+    /// value afterwards — stale, exactly like [`LruCache::unlink`] leaves
+    /// `this.K[pointer]`, and reachable the same way, by a walk whose frozen
+    /// bound has not yet reached this pointer. Taking ownership outright
+    /// (`.take()`) would zero it instead, reintroducing on this one field
+    /// exactly the crash [`LruCache::unlink`]'s doc comment describes; a
+    /// clone is what lets both the return value AND the stale slot exist at
+    /// once, matching upstream's read without a write.
+    pub fn remove(&mut self, index_key: &IK) -> Option<V>
+    where
+        V: Clone,
+    {
         let pointer = self.index.remove(index_key)?;
-        let value = self.values[pointer].take();
+        let value = self.values[pointer].clone();
 
         self.unlink(pointer);
 
         value
+    }
+}
+
+/// Upstream's `forEach` walk — deliberately **not** built on [`Sequence`]/
+/// [`crate::cursor::CursorState`], because `forEach`'s timing is different
+/// from `keys`/`values`/`entries`' and reusing the wrong one was a real port
+/// bug, found by the differential fuzzer on its very first campaign against
+/// this grammar (see `docs/modules/lru-cache.md`, "Bugs this found").
+///
+/// Upstream's loop body is:
+///
+/// ```js
+/// while (i < l) {
+///   callback.call(scope, values[pointer], keys[pointer], this);
+///   pointer = forward[pointer];   // <-- AFTER the callback, not before
+///   i++;
+/// }
+/// ```
+///
+/// The lazy iterators' closures advance `pointer` themselves, before ever
+/// returning control to whatever called `.next()` — so from a caller's
+/// point of view, a mutation it makes between two `.next()` calls can never
+/// observe anything about the step that already happened, which is exactly
+/// what [`Sequence::slot`]'s eager advance reproduces (see that impl's own
+/// docs). `forEach` is different: the callback that might mutate the cache
+/// runs **while control is still inside upstream's own loop**, textually
+/// before the advance. A `forEach` built on `Sequence` (as an early version
+/// of this port's `$forEach` handling and the napi bridge's `for_each_entries`
+/// both were) captures `forward[pointer]` before the caller's callback runs
+/// — the wrong side of a mutation that relinks the very pointer this walk is
+/// about to follow next.
+///
+/// So this type gives the caller the two halves separately: read
+/// [`ForEachWalk::current`], run whatever callback/mutation the caller has,
+/// **then** call [`ForEachWalk::advance`] — which reads `forward` live, after
+/// that mutation, exactly where upstream's assignment sits in its own loop.
+pub struct ForEachWalk {
+    pointer: usize,
+    remaining: usize,
+}
+
+impl<IK: Hash + Eq, K: Clone, V: Clone> LruCache<IK, K, V> {
+    /// Open a `forEach`-shaped walk over the cache as it stands right now —
+    /// `head`/`size`, frozen, exactly like every other walk here.
+    pub fn for_each_walk(&self) -> ForEachWalk {
+        ForEachWalk {
+            pointer: self.head,
+            remaining: self.size,
+        }
+    }
+}
+
+impl ForEachWalk {
+    /// The current `(key, value)`, or `None` once exhausted. Does **not**
+    /// advance — call [`ForEachWalk::advance`] once the caller's own
+    /// callback for this position has run.
+    pub fn current<IK: Hash + Eq, K: Clone, V: Clone>(
+        &self,
+        cache: &LruCache<IK, K, V>,
+    ) -> Option<(K, V)> {
+        if self.remaining == 0 {
+            return None;
+        }
+
+        let key = cache.keys[self.pointer]
+            .clone()
+            .expect("a pointer reachable from `head` within `size` steps is always live");
+        let value = cache.values[self.pointer]
+            .clone()
+            .expect("a pointer reachable from `head` within `size` steps is always live");
+
+        Some((key, value))
+    }
+
+    /// Advance past the current position — reading `forward` **now**, live,
+    /// after whatever the caller's callback for this position just did. A
+    /// no-op once exhausted.
+    pub fn advance<IK: Hash + Eq, K, V>(&mut self, cache: &LruCache<IK, K, V>) {
+        if self.remaining == 0 {
+            return;
+        }
+
+        self.pointer = cache.forward.get(self.pointer) as usize;
+        self.remaining -= 1;
     }
 }
 
@@ -741,5 +864,111 @@ mod tests {
             values.push(item.value().expect("a Values walk yields Value"));
         }
         assert_eq!(values, vec![2, 1]);
+    }
+
+    /// A port-only defect, found by reading (not fuzzing) before the fuzz
+    /// grammar existed at all, and fixed before it could ever have run: an
+    /// in-flight `entries()`/`keys()`/`values()` walk whose frozen `size`
+    /// bound has not yet reached a pointer, when `delete` unlinks exactly that
+    /// pointer, used to panic — `unlink` nulled `self.keys[pointer]`, and the
+    /// walk's `.expect("a pointer reachable ... is always live")` then found
+    /// `None`. Upstream's `delete` never touches `this.K`/`this.V` (confirmed
+    /// against `~/upstream-mnemonist/lru-cache-with-delete.js`), so it just
+    /// returns the *stale* key/value at that position instead of throwing
+    /// anything — this test is the same three-op program that panicked before
+    /// the fix, now pinned to upstream's actual (unglamorous) answer.
+    #[test]
+    fn a_delete_of_the_walks_next_unvisited_pointer_yields_stale_data_not_a_panic() {
+        let mut cache = cache(4);
+
+        cache.set("a", "a", 1, identity);
+        cache.set("b", "b", 2, identity);
+        cache.set("c", "c", 3, identity);
+        cache.set("d", "d", 4, identity);
+        // head -> tail: d, c, b, a
+        let mut walk = cache.walk(Projection::Entries);
+
+        assert_eq!(
+            walk.step(&cache).item().and_then(Projected::entry),
+            Some(("d", 4)),
+            "first step reads the head and advances the walk's own pointer to c"
+        );
+
+        // Delete "c" -- the key the walk's internal pointer now sits on, one
+        // step ahead of what it has actually yielded, and has therefore not
+        // yet visited.
+        assert!(cache.delete(&"c"));
+
+        assert_eq!(
+            walk.step(&cache).item().and_then(Projected::entry),
+            Some(("c", 3)),
+            "stale, not None: upstream's this.K[pointer]/this.V[pointer] were \
+             never cleared by delete, so the frozen walk reads exactly what \
+             was there a moment ago rather than anything decided by the \
+             deletion"
+        );
+    }
+
+    /// [`LruCache::remove`]'s half of the same defect: it independently reads
+    /// the value before unlinking, so simply not-nulling `unlink` was not
+    /// enough on its own -- `remove` had to stop taking ownership of the slot
+    /// too. Same shape, the other method.
+    #[test]
+    fn a_remove_of_the_walks_next_unvisited_pointer_yields_stale_data_not_a_panic() {
+        let mut cache = cache(4);
+
+        cache.set("a", "a", 1, identity);
+        cache.set("b", "b", 2, identity);
+        cache.set("c", "c", 3, identity);
+        cache.set("d", "d", 4, identity);
+        let mut walk = cache.walk(Projection::Entries);
+
+        assert_eq!(
+            walk.step(&cache).item().and_then(Projected::entry),
+            Some(("d", 4))
+        );
+        assert_eq!(cache.remove(&"c"), Some(3));
+        assert_eq!(
+            walk.step(&cache).item().and_then(Projected::entry),
+            Some(("c", 3)),
+            "remove reads the value by cloning it, not by taking it, so the \
+             slot stays populated for a walk already in flight"
+        );
+    }
+
+    /// The sharper version of the same hazard: the pointer `delete` frees is
+    /// reused by a LATER `set` before the walk that predates the delete ever
+    /// reaches it. The walk then reads the NEW occupant of that slot, and
+    /// follows ITS `forward` link rather than the old one -- exactly what
+    /// upstream's own array-of-pointers algorithm would do, character for
+    /// character, since nothing in either language distinguishes "stale" from
+    /// "reused" at the array level. Not a bug: a faithful reproduction of an
+    /// algorithm that was never defended against concurrent mutation on
+    /// either side.
+    #[test]
+    fn a_freed_pointer_reused_before_a_stale_walk_reaches_it_surfaces_the_new_occupant() {
+        let mut cache = cache(4);
+
+        cache.set("a", "a", 1, identity);
+        cache.set("b", "b", 2, identity);
+        cache.set("c", "c", 3, identity);
+        cache.set("d", "d", 4, identity);
+        // head -> tail: d, c, b, a
+        let mut walk = cache.walk(Projection::Entries);
+
+        assert_eq!(
+            walk.step(&cache).item().and_then(Projected::entry),
+            Some(("d", 4))
+        );
+        assert!(cache.delete(&"c")); // frees c's pointer; head -> tail: d, b, a
+        cache.set("e", "e", 5, identity); // reuses c's freed pointer, becomes head
+
+        // The walk's own cursor is still sitting on the pointer that was "c"
+        // and is now "e" -- the SAME pointer, reused. It reads "e", not the
+        // stale "c", because the slot really was overwritten this time.
+        assert_eq!(
+            walk.step(&cache).item().and_then(Projected::entry),
+            Some(("e", 5))
+        );
     }
 }

@@ -67,7 +67,6 @@ use std::cell::RefCell;
 use std::hash::Hash;
 use std::rc::Rc;
 
-use mnemonist_core::cursor::CursorState;
 use mnemonist_core::structures::lru_cache::{
     LruCache as CoreLru, NewError, Projected, Projection, SetPop,
 };
@@ -564,30 +563,39 @@ pub fn step_entry<Owner: 'static, IK: Hash + Eq + 'static>(
         .map(|(key, value)| Pair(key, value))
 }
 
-/// `forEach`'s shared body: freeze an `Entries` walk over `inner` now, then
-/// re-borrow once per step so a re-entrant `set`/`delete` from inside the
-/// callback is never fighting an outstanding borrow -- the same discipline
-/// `default_map`'s `forEach` uses, and for the same reason (B-31).
+/// `forEach`'s shared body: open a [`ForEachWalk`] over `inner` now, then
+/// re-borrow once for the read and once more for the advance, so a re-entrant
+/// `set`/`delete` from inside the callback is never fighting an outstanding
+/// borrow -- the same discipline `default_map`'s `forEach` uses, and for the
+/// same reason (B-31).
+///
+/// `ForEachWalk`, not `CursorState`: advancing the walk's pointer has to
+/// happen *after* `callback.apply` returns, reading `forward` as it stands
+/// once the callback's own mutation (if any) has already run -- exactly
+/// where upstream's own `pointer = forward[pointer]` sits in its loop body,
+/// one statement below the callback call. `CursorState`'s `Sequence` impl
+/// advances eagerly, which is right for `keys`/`values`/`entries` (upstream's
+/// own lazy-iterator closures do the same) and was wrong here: this bridge
+/// used to open an `Entries` walk the same way those three do, and it
+/// reproduced their timing instead of `forEach`'s own. See
+/// `mnemonist_core::structures::lru_cache`'s module docs and
+/// `docs/modules/lru-cache.md`'s "Bugs this found".
 pub fn for_each_entries<IK: Hash + Eq>(
     inner: &RefCell<CoreLru<IK, JsSlot, JsSlot>>,
     this: This,
     callback: Function<FnArgs<(JsSlot, JsSlot, Object)>, Unknown>,
     scope: Option<Unknown>,
 ) -> Result<()> {
-    let mut state: CursorState<CoreLru<IK, JsSlot, JsSlot>> = {
-        let borrowed = inner.borrow();
-
-        CursorState::open_projected(&borrowed, borrowed.frozen(Projection::Entries))
-    };
+    let mut walk = inner.borrow().for_each_walk();
 
     loop {
-        let stepped = {
+        let current = {
             let borrowed = inner.borrow();
 
-            state.step(&borrowed)
+            walk.current(&borrowed)
         };
 
-        let Some((key, value)) = stepped.item().and_then(Projected::entry) else {
+        let Some((key, value)) = current else {
             break;
         };
 
@@ -597,6 +605,10 @@ pub fn for_each_entries<IK: Hash + Eq>(
             Some(scope) => callback.apply(*scope, arguments)?,
             None => callback.apply(this, arguments)?,
         };
+
+        let borrowed = inner.borrow();
+
+        walk.advance(&borrowed);
     }
 
     Ok(())
