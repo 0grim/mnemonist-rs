@@ -49,6 +49,60 @@ pub fn get_pointer_array(size: f64) -> Result<PointerWidth, &'static str> {
     Err(POINTER_ARRAY_TOO_LARGE)
 }
 
+/// A value that can be stored into a JS typed array, and read back out.
+///
+/// Upstream `SparseMap` is constructed with a *value array constructor* —
+/// `Array` by default, but the test file also uses `Uint8Array` — and the two
+/// behave differently on a store. A plain `Array` keeps whatever it is given;
+/// a typed array runs the operand through `ToUint32` and then narrows it to the
+/// element width. This trait is the first half of that, the part that depends
+/// on the value's own type; [`PointerVec::set`] is the second.
+///
+/// Implemented for `u32` (identity — the fuzzer's value type) and `f64` (the
+/// real conversion — every JS number is one, which is what the bridge sees).
+pub trait TypedValue: Copy + PartialEq {
+    /// JS `ToUint32`: truncate towards zero, then take the result modulo 2³².
+    ///
+    /// `NaN` and the infinities are `0`, and negatives wrap rather than
+    /// saturating — `-1` is `4294967295`, which then narrows to `255` in a
+    /// `Uint8Array`. Rust's `as` cast saturates instead, so it cannot be used
+    /// directly here.
+    fn to_uint32(self) -> u32;
+
+    /// Read back: a typed array always yields a non-negative integer.
+    fn from_uint32(raw: u32) -> Self;
+}
+
+impl TypedValue for u32 {
+    fn to_uint32(self) -> u32 {
+        self
+    }
+
+    fn from_uint32(raw: u32) -> Self {
+        raw
+    }
+}
+
+/// Two-to-the-thirty-two, as the modulus `ToUint32` is defined against.
+const TWO_POW_32: f64 = 4_294_967_296.0;
+
+impl TypedValue for f64 {
+    fn to_uint32(self) -> u32 {
+        if !self.is_finite() {
+            // ToUint32(NaN) = ToUint32(±Infinity) = +0.
+            return 0;
+        }
+
+        // `rem_euclid` lands in `[0, 2^32)` for negatives too, which is
+        // precisely the wrap `as u32` would have turned into a saturation.
+        self.trunc().rem_euclid(TWO_POW_32) as u32
+    }
+
+    fn from_uint32(raw: u32) -> Self {
+        f64::from(raw)
+    }
+}
+
 /// A fixed-width unsigned integer vector, standing in for the JS typed arrays
 /// upstream allocates (`Uint8Array` / `Uint16Array` / `Uint32Array`).
 ///
@@ -233,6 +287,51 @@ mod tests {
     #[test]
     fn nan_falls_through_to_error_like_upstream() {
         assert_eq!(get_pointer_array(f64::NAN), Err(POINTER_ARRAY_TOO_LARGE));
+    }
+
+    /// `ToUint32`, pinned against Node 24.18.1 — `a = new Uint32Array(1);
+    /// a[0] = v` for each `v` below. The negatives are the ones a plain `as`
+    /// cast gets wrong: Rust saturates them to `0`, JS wraps them.
+    #[test]
+    fn to_uint32_wraps_where_an_as_cast_would_saturate() {
+        for (input, expected) in [
+            (0.0f64, 0u32),
+            (13.0, 13),
+            (13.9, 13),
+            (-1.0, 4_294_967_295),
+            (-1.5, 4_294_967_295),
+            (-0.5, 0),
+            (255.0, 255),
+            (256.0, 256),
+            (300.7, 300),
+            (4_294_967_295.0, 4_294_967_295),
+            (4_294_967_296.0, 0),
+            (4_294_967_297.0, 1),
+            (-4_294_967_296.0, 0),
+            (1e21, 3_735_027_712),
+            (f64::NAN, 0),
+            (f64::INFINITY, 0),
+            (f64::NEG_INFINITY, 0),
+        ] {
+            assert_eq!(input.to_uint32(), expected, "ToUint32({input})");
+        }
+
+        // The identity impl, so the fuzzer's value type costs nothing.
+        assert_eq!(7u32.to_uint32(), 7);
+        assert_eq!(u32::from_uint32(7), 7);
+        assert_eq!(f64::from_uint32(7), 7.0);
+    }
+
+    /// `ToUint32` and the narrowing store compose to the JS element store:
+    /// `b = new Uint8Array(1); b[0] = -1.5` is `255`.
+    #[test]
+    fn to_uint32_then_a_narrowing_store_is_the_js_element_store() {
+        for (input, expected) in [(-1.5f64, 255u32), (300.7, 44), (256.0, 0), (1e21, 0)] {
+            let mut values = PointerVec::zeroed(PointerWidth::U8, 1);
+            values.set(0, input.to_uint32());
+
+            assert_eq!(values.get(0), expected, "Uint8Array store of {input}");
+        }
     }
 
     #[test]

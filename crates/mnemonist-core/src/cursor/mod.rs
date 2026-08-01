@@ -170,6 +170,30 @@ where
         }
     }
 
+    /// Freeze `source` now, but walk it under a caller-chosen projection.
+    ///
+    /// Some upstream structures hand out **several** iterators over the same
+    /// slots. `SparseMap` has three — `keys()`, `values()` and `entries()` —
+    /// and all three are the identical closure over the identical frozen
+    /// `size`, differing only in what they read out of slot `i`. Rust cannot
+    /// give one type three [`Sequence`] impls, so the projection travels in
+    /// [`Sequence::Frozen`] and this constructor is how a caller says which
+    /// one it wants.
+    ///
+    /// The length still comes from [`Sequence::freeze`], so the "no window
+    /// between the two reads" guarantee of [`open`](CursorState::open) is
+    /// unchanged; only the payload is replaced. A source with a single walk
+    /// keeps using `open` and never sees this.
+    pub fn open_projected(source: &S, frozen: S::Frozen) -> Self {
+        let (_, len) = source.freeze();
+
+        Self {
+            frozen,
+            len,
+            ordinal: 0,
+        }
+    }
+
     /// Advance one position against the live source — including the gap.
     ///
     /// This is the primitive the napi bridge drives, because it is the only
@@ -234,6 +258,17 @@ where
         Self {
             source,
             state: CursorState::open(source),
+        }
+    }
+
+    /// Open a cursor over one of several walks the source offers.
+    ///
+    /// See [`CursorState::open_projected`] for why the projection is a
+    /// [`Sequence::Frozen`] payload rather than a second impl.
+    pub fn projected(source: &'a S, frozen: S::Frozen) -> Self {
+        Self {
+            source,
+            state: CursorState::open_projected(source, frozen),
         }
     }
 
@@ -562,6 +597,50 @@ mod tests {
         fn slot(&self, _frozen: &(), ordinal: usize) -> Option<u32> {
             self.0.get(ordinal).copied()
         }
+    }
+
+    /// A source offering two different walks over the same slots — the shape
+    /// `SparseMap` has three of. The projection rides in `Frozen`, so one impl
+    /// serves both and `open_projected` chooses.
+    struct Pairs(Vec<(u32, u32)>);
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum Half {
+        Left,
+        Right,
+    }
+
+    impl Sequence for Pairs {
+        type Item = u32;
+        type Frozen = Half;
+
+        fn freeze(&self) -> (Half, usize) {
+            (Half::Left, self.0.len())
+        }
+
+        fn slot(&self, frozen: &Half, ordinal: usize) -> Option<u32> {
+            self.0.get(ordinal).map(|(left, right)| match frozen {
+                Half::Left => *left,
+                Half::Right => *right,
+            })
+        }
+    }
+
+    #[test]
+    fn a_projection_selects_which_walk_without_a_second_impl() {
+        let source = Pairs(vec![(1, 10), (2, 20), (3, 30)]);
+
+        // `freeze` still supplies the default walk and, in both cases, the
+        // length — which is what keeps the two reads from drifting apart.
+        assert_eq!(Cursor::new(&source).collect::<Vec<_>>(), vec![1, 2, 3]);
+        assert_eq!(
+            Cursor::projected(&source, Half::Right).collect::<Vec<_>>(),
+            vec![10, 20, 30]
+        );
+
+        let mut projected = Cursor::projected(&source, Half::Right);
+        assert_eq!(projected.frozen_len(), 3);
+        assert_eq!(projected.step(), Step::Item(10));
     }
 
     #[test]
