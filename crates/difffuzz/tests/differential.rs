@@ -22,6 +22,12 @@ use difffuzz::modules::sparse_queue_set::{
 use difffuzz::modules::sparse_set::{SparseSetSpec, REGRESSIONS as SPARSE_REGRESSIONS};
 use difffuzz::modules::static_disjoint_set::{StaticDisjointSetSpec, REGRESSIONS};
 use difffuzz::Campaign;
+// Appended at the end of the import run, never inserted.
+use difffuzz::modules::circular_buffer::{
+    CircularBufferSpec, REGRESSIONS as CIRCULAR_BUFFER_REGRESSIONS,
+};
+use difffuzz::modules::fixed_deque::{FixedDequeSpec, REGRESSIONS as FIXED_DEQUE_REGRESSIONS};
+use difffuzz::modules::fixed_stack::{FixedStackSpec, REGRESSIONS as FIXED_STACK_REGRESSIONS};
 
 #[test]
 fn bit_set_matches_upstream() {
@@ -280,5 +286,97 @@ fn every_regression_corpus_explains_where_its_seeds_came_from() {
             "{corpus} holds {seeds} seed(s) with no provenance block, so a reader \
              cannot tell a sabotage from a real defect"
         );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Appended at the end of the file, never inserted: several agents edit this
+// file at once and a test added after the last one cannot land inside another
+// agent's hunk.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn fixed_stack_matches_upstream() {
+    let campaign = Campaign::cases(0xF15A, 96, FIXED_STACK_REGRESSIONS);
+
+    let report = difffuzz::run(&FixedStackSpec, &campaign)
+        .expect("oracle must be reachable; `node` is required for differential tests");
+
+    assert!(
+        report.ops > 0,
+        "campaign ran no operations, so it proved nothing: {}",
+        report.log_line()
+    );
+
+    if let Some(divergence) = report.divergence {
+        panic!("{divergence}");
+    }
+}
+
+/// The corpora added by this wave carry provenance too.
+///
+/// `every_regression_corpus_explains_where_its_seeds_came_from` above pins the
+/// four corpora that existed when it was written; extending its list in place
+/// would be a merge conflict, so the same assertion is made here for the ones
+/// added since. Every seed in them came from a deliberate sabotage, and an
+/// unlabelled `cc` line would read as "a real defect was found and fixed here".
+#[test]
+fn wave_one_regression_corpora_explain_where_their_seeds_came_from() {
+    // A slice rather than an array literal: the list grows as this wave lands
+    // its remaining modules, and a one-element array is a clippy lint.
+    const CORPORA: &[&str] = &[
+        FIXED_STACK_REGRESSIONS,
+        FIXED_DEQUE_REGRESSIONS,
+        CIRCULAR_BUFFER_REGRESSIONS,
+    ];
+
+    for corpus in CORPORA {
+        let text = std::fs::read_to_string(corpus)
+            .unwrap_or_else(|_| panic!("{corpus} must be checked in"));
+
+        let seeds = text.lines().filter(|line| line.starts_with("cc ")).count();
+
+        assert!(seeds > 0, "{corpus} has no seeds");
+        assert!(
+            text.contains("PROVENANCE"),
+            "{corpus} holds {seeds} seed(s) with no provenance block, so a reader \
+             cannot tell a sabotage from a real defect"
+        );
+    }
+}
+
+#[test]
+fn fixed_deque_matches_upstream() {
+    let campaign = Campaign::cases(0xF1DE, 96, FIXED_DEQUE_REGRESSIONS);
+
+    let report = difffuzz::run(&FixedDequeSpec, &campaign)
+        .expect("oracle must be reachable; `node` is required for differential tests");
+
+    assert!(
+        report.ops > 0,
+        "campaign ran no operations, so it proved nothing: {}",
+        report.log_line()
+    );
+
+    if let Some(divergence) = report.divergence {
+        panic!("{divergence}");
+    }
+}
+
+#[test]
+fn circular_buffer_matches_upstream() {
+    let campaign = Campaign::cases(0xC18F, 96, CIRCULAR_BUFFER_REGRESSIONS);
+
+    let report = difffuzz::run(&CircularBufferSpec, &campaign)
+        .expect("oracle must be reachable; `node` is required for differential tests");
+
+    assert!(
+        report.ops > 0,
+        "campaign ran no operations, so it proved nothing: {}",
+        report.log_line()
+    );
+
+    if let Some(divergence) = report.divergence {
+        panic!("{divergence}");
     }
 }

@@ -191,7 +191,6 @@ function cursorOp(request) {
 
     case '$forEach':
       return forEachOp(request);
-
     default:
       throw new Error('unknown cursor op: ' + request.name);
   }

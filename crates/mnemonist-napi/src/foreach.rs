@@ -377,7 +377,7 @@ fn is_strictly_true(env: &Env, value: &Unknown) -> Result<bool> {
     Ok(result)
 }
 
-fn is_array(env: &Env, value: &Unknown) -> Result<bool> {
+pub(crate) fn is_array(env: &Env, value: &Unknown) -> Result<bool> {
     let mut result = false;
 
     // SAFETY: a live handle from `env`.
@@ -391,7 +391,7 @@ fn is_array(env: &Env, value: &Unknown) -> Result<bool> {
 
 /// `ArrayBuffer.isView`, which is true for every typed array **and** for a
 /// `DataView`. N-API splits the two, so both are asked.
-fn is_array_buffer_view(env: &Env, value: &Unknown) -> Result<bool> {
+pub(crate) fn is_array_buffer_view(env: &Env, value: &Unknown) -> Result<bool> {
     let mut typed_array = false;
     let mut data_view = false;
 
@@ -469,7 +469,7 @@ fn is_enumerable(env: &Env, target: &Object, key: &Unknown) -> Result<bool> {
 }
 
 /// `ToObject`, i.e. the boxing JS performs implicitly for `x.y` on a primitive.
-fn coerce_to_object<'env>(env: &'env Env, value: &Unknown) -> Result<Object<'env>> {
+pub(crate) fn coerce_to_object<'env>(env: &'env Env, value: &Unknown) -> Result<Object<'env>> {
     let mut object = ptr::null_mut();
 
     // SAFETY: a live handle from `env`.
@@ -483,7 +483,7 @@ fn coerce_to_object<'env>(env: &'env Env, value: &Unknown) -> Result<Object<'env
 }
 
 /// `ToNumber`, which is what `i < l` applies to a non-numeric `length`.
-fn to_number(env: &Env, value: &Unknown) -> Result<f64> {
+pub(crate) fn to_number(env: &Env, value: &Unknown) -> Result<f64> {
     let mut number = ptr::null_mut();
     let mut result = 0.0;
 
@@ -525,14 +525,14 @@ pub(crate) fn join(env: &Env, slots: &[JsSlot]) -> Result<String> {
 
 /// `String(value)`, used to build the `in`-operator `TypeError`'s text and to
 /// render elements for [`join`].
-fn display(env: &Env, value: &Unknown) -> Result<String> {
+pub(crate) fn display(env: &Env, value: &Unknown) -> Result<String> {
     let global = env.get_global()?;
     let string_ctor: Function<'_, Unknown, String> = global.get_named_property("String")?;
 
     string_ctor.call(*value)
 }
 
-fn undefined<'env>(env: &'env Env) -> Result<Unknown<'env>> {
+pub(crate) fn undefined<'env>(env: &'env Env) -> Result<Unknown<'env>> {
     // SAFETY: `()` is napi's `Undefined`; the produced handle belongs to `env`.
     let raw = unsafe { ToNapiValue::to_napi_value(env.raw(), ())? };
 
@@ -546,7 +546,7 @@ fn undefined<'env>(env: &'env Env) -> Result<Unknown<'env>> {
 /// first and returning `PendingException` leaves the already-thrown value
 /// alone: napi's error path re-uses a pending exception rather than replacing
 /// it.
-fn type_error(env: &Env, message: &str) -> Error {
+pub(crate) fn type_error(env: &Env, message: &str) -> Error {
     if env.throw_type_error(message, None).is_err() {
         return Error::new(Status::GenericFailure, message.to_owned());
     }
@@ -554,7 +554,21 @@ fn type_error(env: &Env, message: &str) -> Error {
     Error::new(Status::PendingException, message.to_owned())
 }
 
-fn check(status: sys::napi_status, call: &str) -> Result<()> {
+/// As [`type_error`], for the `RangeError` a bad array length produces.
+///
+/// `new Array(-1)` and `new Array(2.5)` both throw `RangeError: Invalid array
+/// length`, and the fixed-capacity structures reach it through their
+/// `new this.ArrayClass(this.capacity)`. A napi `Error` would arrive in JS as a
+/// plain `Error`, which `assert.throws(fn, RangeError)` would not accept.
+pub(crate) fn range_error(env: &Env, message: &str) -> Error {
+    if env.throw_range_error(message, None).is_err() {
+        return Error::new(Status::GenericFailure, message.to_owned());
+    }
+
+    Error::new(Status::PendingException, message.to_owned())
+}
+
+pub(crate) fn check(status: sys::napi_status, call: &str) -> Result<()> {
     if status == sys::Status::napi_ok {
         return Ok(());
     }

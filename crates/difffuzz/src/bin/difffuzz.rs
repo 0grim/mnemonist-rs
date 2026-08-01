@@ -27,6 +27,10 @@ use difffuzz::modules::sparse_queue_set::SparseQueueSetSpec;
 use difffuzz::modules::sparse_set::SparseSetSpec;
 use difffuzz::modules::stack::StackSpec;
 use difffuzz::modules::static_disjoint_set::StaticDisjointSetSpec;
+// Appended at the end of the import run, never inserted.
+use difffuzz::modules::circular_buffer::CircularBufferSpec;
+use difffuzz::modules::fixed_deque::FixedDequeSpec;
+use difffuzz::modules::fixed_stack::FixedStackSpec;
 use difffuzz::{Campaign, Report};
 
 const USAGE: &str = "\
@@ -34,7 +38,8 @@ usage: difffuzz --module <name> [--seed N] [--duration SECONDS] [--cases N] [--b
 
   --module    module to fuzz; currently: static-disjoint-set, sparse-set,
               sparse-map, sparse-queue-set, hashed-array-tree, bit-set,
-              bit-vector, stack, queue, default-map
+              bit-vector, stack, queue, default-map, fixed-stack,
+              fixed-deque, circular-buffer
   --seed      campaign seed (default 42); with --cases, reproduces exactly
   --duration  wall-clock budget in seconds (default 60)
   --cases     stop after N cases instead of after --duration
@@ -134,6 +139,30 @@ fn main() -> ExitCode {
             &DefaultMapSpec,
             &Campaign {
                 regressions: difffuzz::modules::default_map::REGRESSIONS,
+                ..campaign
+            },
+        ),
+        // Appended immediately before the fallback arm, never inserted into
+        // the run above: a new arm at the end of the list cannot land inside
+        // another agent's hunk.
+        "fixed-stack" => difffuzz::run(
+            &FixedStackSpec,
+            &Campaign {
+                regressions: difffuzz::modules::fixed_stack::REGRESSIONS,
+                ..campaign
+            },
+        ),
+        "fixed-deque" => difffuzz::run(
+            &FixedDequeSpec,
+            &Campaign {
+                regressions: difffuzz::modules::fixed_deque::REGRESSIONS,
+                ..campaign
+            },
+        ),
+        "circular-buffer" => difffuzz::run(
+            &CircularBufferSpec,
+            &Campaign {
+                regressions: difffuzz::modules::circular_buffer::REGRESSIONS,
                 ..campaign
             },
         ),

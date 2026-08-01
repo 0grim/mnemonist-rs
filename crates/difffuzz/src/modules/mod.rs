@@ -14,3 +14,8 @@ pub mod sparse_queue_set;
 pub mod sparse_set;
 pub mod stack;
 pub mod static_disjoint_set;
+// Appended at the end, never inserted -- this file is edited by several agents
+// at once.
+pub mod circular_buffer;
+pub mod fixed_deque;
+pub mod fixed_stack;

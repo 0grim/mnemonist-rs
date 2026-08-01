@@ -727,3 +727,107 @@ only in core.
 would then see an empty vector instead of an error: a silently wrong answer in place of a loud one.
 **Revisit if:** core grows a `grow_to(capacity)` that does not consult the policy. Then the bridge
 can call the policy unlocked and the divergence disappears.
+
+---
+
+## Behavioural — Wave 1 fixed-capacity modules
+
+Appended at the end rather than into the sections above, for the same merge reason as everything
+else in this wave. IDs D-60..D-69 were taken to mirror the B-60..B-69 bug range allocated to this
+agent; no D range was allocated explicitly.
+
+### D-60 — `toArray`'s sparse arrays are reproduced, not repaired (resolves D-17)
+**Status:** CONFIRMED · **Category:** behavioural · **Divergence:** no
+**Upstream:** `toArray` preallocates `new Array(guessLength(target))` and fills with
+`array[i++] = value`, with nothing checking the guess against the yield count or against what a
+valid array length even is.
+**Port:** the array is allocated by calling the running realm's `Array` constructor, not by
+`napi_create_array_with_length`. The two differ exactly where this is interesting: an overstated
+guess leaves **real holes** (`2 in array === false`, `map` skips them) and an invalid one throws
+V8's own `RangeError: Invalid array length`. `napi_create_array_with_length(-1)` would not have.
+**Verify:** `tests/boundary/iterables.js`, seven specs.
+
+### D-61 — An omitted argument and an explicit `undefined` are indistinguishable
+**Status:** CONFIRMED · **Category:** structural · **Divergence:** YES, narrow
+**Upstream:** `if (arguments.length < 2) throw` in every fixed-capacity constructor, and
+`if (arguments.length < 3)` in every `from`.
+**Port:** napi-derive generates `CallbackInfo::new(env, cb, None, false)` — `required_argc` is
+always `None` — so it does not enforce arity and a missing argument arrives as `undefined`.
+`new FixedStack(Array, undefined)` therefore raises upstream's *arity* error where upstream raises
+its *capacity* error.
+**What is NOT lost:** `null` is distinguished correctly. The parameters are `Unknown`, not
+`Option<Unknown>`, because napi maps a JS `null` to `None` and the original suite asserts that
+`new FixedStack(Array, null)` throws about the number, not about the Array class.
+**Verify:** `test/fixed-stack.js` first block; differential probes.
+
+### D-62 — A non-integral capacity always raises `RangeError: Invalid array length`
+**Status:** CONFIRMED · **Category:** behavioural · **Divergence:** YES, for typed classes only
+**Upstream:** passes the raw number to `new this.ArrayClass(capacity)` and lets the class decide.
+`new FixedStack(Array, 2.5)` throws; `new FixedStack(Uint8Array, 2.5)` **succeeds**, with
+`capacity === 2.5` against an `items.length` of 2 — after which the deque's wrap arithmetic
+compares indices against 2.5. Same for `NaN`: `new FixedStack(Uint8Array, NaN)` gives an
+`items.length` of 0 and a `capacity` of `NaN`.
+**Port:** requires an integral, finite, positive capacity below 2^32 and raises the `Array` form of
+the error for every class. The `Array` case is exact; the typed case is the divergence.
+**Rationale:** a `capacity` that is not an integer cannot be a `usize`, and the alternative —
+carrying an `f64` capacity through the wrap arithmetic to reproduce a state no test reaches — buys
+nothing and costs the type.
+
+### D-63 — The `ArrayClass` is probed, not whitelisted by name
+**Status:** CONFIRMED · **Category:** structural · **Divergence:** no
+**Upstream:** `ArrayClass` is any constructor. The test files use `Array`, `Uint8Array` and
+`Float64Array`.
+**Port:** `crate::array_class`. Element coercion is `scratch[0] = v; scratch[0]` through a real
+one-element instance of the caller's class — definitionally what `this.items[i] = item` would have
+done — and the backing kind is decided by `0 in new ArrayClass(1)`: absent for a `new Array(1)`
+hole, present for every zero-filled typed array.
+**Rejected alternative:** the name whitelist the `hashed-array-tree` bridge uses. It diverges for
+nine of the twelve built-in typed arrays and for everything user-defined. Measured: the probe
+reproduces `new FixedStack(Object, 3)` — where upstream builds a `Number` object and hangs a `'0'`
+property off it — exactly.
+**Cost, stated:** two extra one-element constructions of the caller's class per structure, which
+upstream does not perform. Invisible for `Array` and the typed arrays; observable for a constructor
+with side effects.
+
+### D-64 — B-60 is reproduced: `from` on a non-array-like iterable throws
+**Status:** CONFIRMED · **Category:** behavioural · **Divergence:** no
+**Upstream:** `iterables.forEach` does not exist, so `FixedStack.from(new Set([1,2,3]), Array, 3)`
+is `TypeError: iterables.forEach is not a function`.
+**Port:** the same `TypeError`, with V8's exact wording, from the same point in the sequence —
+after `guessLength`, after the capacity guards, after `isArrayLike` says no.
+**Rationale:** the core porting rule. A port that quietly made the branch work would pass every
+upstream test and be a different library.
+**Verify:** differential probes for `Set` and for a string, all three classes.
+
+### D-65 — `#.get` with a non-numeric index returns `undefined`
+**Status:** CONFIRMED · **Category:** behavioural · **Divergence:** YES, narrow
+**Upstream:** `FixedDeque.prototype.get` (and, pasted, `CircularBuffer.prototype.get`) does
+`index = this.start + index` with no type check. For a string that is **concatenation**:
+`2 + "1"` is `"21"`, which the following `>=` coerces back to a number, and `this.items["21"]` is a
+real element on any deque with capacity > 21.
+**Port:** the type check refuses at the boundary and returns `undefined`.
+**What is NOT lost:** everything *numeric* is reproduced exactly, including the two forms of B-62
+that matter — a negative index (`get(-1)` returning a shifted-out element) and an index between the
+size and the capacity (returning debris) — as well as fractional, `NaN` and infinite indices.
+**Rationale:** reproducing string concatenation inside an index computation would mean carrying a
+JS value through arithmetic that has a well-defined numeric meaning everywhere else. The case is
+unreachable from any upstream test and from any sane caller; the divergence is stated instead.
+**Verify:** four differential probes per class in `docs/modules/fixed-deque.md`.
+
+### D-66 — `X.from` on a `DataView` gives `size === 0`, not `size === undefined`
+**Status:** CONFIRMED · **Category:** behavioural · **Divergence:** YES — the only one in this wave
+where the port is not bug-for-bug
+**Upstream:** B-63. `isArrayLike` accepts a `DataView` (via `ArrayBuffer.isView`), the copy loop
+reads its absent `.length`, and `size` is assigned `undefined`. Every later method is then
+arithmetic on `NaN`, and `toArray()` is `[undefined]`.
+**Port:** `size === 0`, an ordinary empty structure.
+**Rationale:** a `usize` cannot hold `undefined`, so D-37's rule — reproduce where reproducible,
+raise where not — leaves a choice between two inexact answers. `0` was chosen over a throw because
+"nothing was copied" is *true*, and because upstream does not throw either: raising a `RangeError`
+would break a caller upstream leaves running, which is a larger divergence than under-reporting a
+size. Recorded loudly rather than quietly: this is the one place in the wave where a fuzz
+divergence would mean the port is *more correct*, which the porting rules name as a bug in the
+port, and it is accepted only because the alternative is not expressible.
+**Reachable only through** `X.from(dataView, ArrayClass, capacity)` — with no capacity,
+`guessLength` returns `undefined` and the `could not guess iterable length` throw fires first.
+**Verify:** the `from(DataView)` differential probe in `docs/modules/fixed-stack.md`.

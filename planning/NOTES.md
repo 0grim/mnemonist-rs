@@ -935,3 +935,160 @@ the argument for fixing the **type** rather than rearranging the loop.
 
 *Seven instances now, and the through-line has sharpened: it is never "the check was wrong", it is
 always "the check was answering a different question than the one I thought I asked".*
+## Wave 1 — fixed-capacity modules (B-60..B-69 range)
+
+Appended at the end of the file rather than into the bug-candidate section above: several agents
+edit this file at once and only an addition at the very end can never land inside another one's
+hunk.
+
+### B-60 — `X.from(iterable, ...)` calls `iterables.forEach`, which `utils/iterables.js` never exported
+
+`status: verified against Node 24.18.1` · `mnemonist fixed-stack.js`, `fixed-deque.js`,
+`circular-buffer.js`
+
+`utils/iterables.js` exports exactly four functions — `isArrayLike`, `guessLength`, `toArray`,
+`toArrayWithIndices`. All three fixed-capacity modules end their `from` static with
+
+```js
+iterables.forEach(iterable, function (value) { structure.push(value); });
+```
+
+so the branch that would accept a `Set`, a `Map`, a generator or a string is not a slow path, it is
+a `TypeError`:
+
+```
+FixedStack.from(new Set([1,2,3]), Array, 3)
+TypeError: iterables.forEach is not a function
+```
+
+Confirmed for all three classes. Every `from` call in all three upstream test files passes an array
+or a typed array, which takes the array-like fast path and returns before the last line — so the
+branch has, as far as the suite is concerned, never run. The fix is one identifier: these files'
+siblings already `require('obliterator/foreach')`.
+
+**Strong candidate.** Concrete, reproducible in three lines, obviously unintended, and it makes a
+documented API (`X.from(anyIterable)`) not work at all.
+
+### B-61 — `FixedStack.prototype.forEach` walks `items.length`, not `this.size`
+
+`status: verified against Node 24.18.1` · `mnemonist fixed-stack.js`
+
+Every other method in the file is written against `this.size`. `forEach` alone:
+
+```js
+for (var i = 0, l = this.items.length; i < l; i++)
+  callback.call(scope, this.items[l - i - 1], i, this);
+```
+
+`this.items.length` is the **capacity**, so an under-full stack invokes the callback `capacity`
+times, handing it the unused slots first — `undefined` from an `Array`, `0` from a `Uint8Array`:
+
+```js
+var s = new FixedStack(Array, 5); s.push(1); s.push(2);
+s.forEach(function (v, i) { … });
+// (undefined, 0) (undefined, 1) (undefined, 2) (2, 3) (1, 4)
+```
+
+`FixedDeque.prototype.forEach`, three files away, does it correctly (`l = this.size`), which makes
+this a slip rather than a choice.
+
+**The suite is structurally unable to see it.** Its one `forEach` block builds a capacity-3 stack
+and pushes three items — the single shape in which `items.length === size`.
+
+**A seventh entry for the empty-green-signal table.** The most plausible mis-port of this module is
+to "correct" it to `self.size`. Measured: with that sabotage in place, `test/fixed-stack.js` stays
+**fully green, 12 passing**. It is caught in 57 fuzz cases once the grammar has a mutating
+`forEach` op, and by two native tests written from the source rather than from the tests. This is
+the cleanest available demonstration of why gate 6 insists the sabotage be chosen by naming the
+assertion it must break: the sabotage that matters most here is precisely the one no assertion
+covers.
+
+### B-62 — `FixedDeque.prototype.get` is bounded by the CAPACITY, and has no lower bound
+
+`status: verified against Node 24.18.1` · `mnemonist fixed-deque.js`, and therefore
+`circular-buffer.js`
+
+```js
+FixedDeque.prototype.get = function (index) {
+  if (this.size === 0 || index >= this.capacity) return;
+  index = this.start + index;
+  if (index >= this.capacity) index -= this.capacity;
+  return this.items[index];
+};
+```
+
+Every other reader in the file guards on `this.size`. `get` guards on the capacity, and on nothing
+at the bottom end. Two consequences, both measured:
+
+```js
+var d = new FixedDeque(Array, 3); d.push(1); d.push(2); d.pop();
+d.size;    // 1
+d.get(1);  // 2      <- popped, still returned
+d.get(3);  // undefined -- 3 >= capacity, the one guard that fires
+
+var e = new FixedDeque(Array, 4);
+[1,2,3,4].forEach(function (v) { e.push(v); });
+e.shift(); e.shift();     // start === 2, holding [3, 4]
+e.get(-1);  // 2          <- shifted out, still returned
+e.get(-2);  // 1
+```
+
+`CircularBuffer` gets it **literally**: `circular-buffer.js` builds its prototype with
+`Object.keys(FixedDeque.prototype).forEach(paste)`, so the two classes share the same function
+object. One bug, two classes.
+
+**Why the suite cannot see it.** All four `get` calls in `test/fixed-deque.js` — and all four in
+`test/circular-buffer.js` — are on a *full* capacity-3 deque with `start === 0`, which is the single
+shape in which "bounded by the capacity" and "bounded by the size" are the same statement.
+
+There is a third form that the port deliberately does **not** reproduce (D-65): a non-numeric index
+reaches string concatenation, so `this.start + "1"` is `"21"` and the next comparison coerces it
+back to a number. On a deque with capacity > 21, `get("1")` can therefore return the element at
+physical slot 21.
+
+**Also worth filing alongside B-60: `CircularBuffer.from` bypasses the overwriting this class exists
+for.** The `from` static is the same fourteen lines in all three modules, so its array-like branch
+copies by index and assigns `size` rather than pushing — leaving `size > capacity` on the one class
+whose entire purpose is to prevent that. `CircularBuffer.from([1,2,3], Array, 2)` gives `size 3`,
+`items [1,2,3]` and `toArray() [1, 2, 1]`. Verified on Node 24.18.1. Kept under B-60's umbrella
+rather than given its own ID: the shared `from` is one piece of code with two problems.
+
+### B-63 — `X.from` assigns `size` from `iterable.length` without checking it is a number
+
+`status: verified against Node 24.18.1` · `mnemonist fixed-stack.js`, `fixed-deque.js`,
+`circular-buffer.js`
+
+The array-like branch of the shared `from` static ends with
+
+```js
+for (i = 0, l = iterable.length; i < l; i++) stack.items[i] = iterable[i];
+stack.size = l;
+```
+
+and the predicate that selects it is `isArrayLike(t) = Array.isArray(t) || typed.isTypedArray(t)`,
+where `isTypedArray` is **`ArrayBuffer.isView`**. `ArrayBuffer.isView` is true for a `DataView`, and
+a `DataView` has no `.length` — it has `byteLength`. So `l` is `undefined`, the loop runs zero
+times, and `size` is assigned `undefined`:
+
+```js
+var s = FixedStack.from(new DataView(new ArrayBuffer(4)), Array, 3);
+s.size;       // undefined
+s.toArray();  // [ undefined ]
+```
+
+`toArray()` is a **one**-element array rather than empty because `new this.ArrayClass(this.size)` is
+`new Array(undefined)`, the single-argument form holding one `undefined`, and the `while (i--)`
+loop then never runs because `undefined--` is `NaN`.
+
+A `DataView` is the only reachable input — every value `Array.isArray` accepts has a numeric
+`length`, and so does every typed array — and it needs an explicit capacity, because with none
+`guessLength` returns `undefined` and the `could not guess iterable length` throw fires first.
+
+**Found by probing the port against upstream rather than by reading the file**, which makes it the
+one bug in this wave that the differential method found rather than confirmed. It is also the one
+behaviour in the wave the port does **not** reproduce (D-66): a `usize` cannot hold `undefined`, and
+a structure whose `size` is `undefined` is arithmetic on `NaN` from then on.
+
+**Moderate candidate.** Narrower than B-60 and B-61 — a `DataView` is an odd thing to hand a stack
+— but it is a genuine type confusion inside a predicate whose name says "array like", and the fix
+is one `typeof` check.

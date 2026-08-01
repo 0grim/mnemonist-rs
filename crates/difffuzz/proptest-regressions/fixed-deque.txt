@@ -1,0 +1,25 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+#
+# PROVENANCE
+# ----------
+# The seed below came from a DELIBERATE SABOTAGE, run to falsify this module's
+# grammar before trusting it. It is not a defect the fuzzer found in real code;
+# the port has never diverged here.
+#
+#   `FixedDeque::get`'s guard changed from `index >= self.capacity` to
+#   `index >= self.size` -- the "obvious correction" of B-62, and the change
+#   any reader who has not checked upstream would make. Caught in 823 cases
+#   (1.2s), shrunk to five lines:
+#
+#       var s = new FixedDeque(Array, 2);
+#       s.push(0); s.push(0);
+#       s.forEach(function (v, i) { if (i === 0) s.pop(); });
+#       s.get(1);          // port undefined, upstream 0
+#
+# Reverted; the campaign is clean on the reverted tree.
+cc 7a858f3d123dea9ec91336c40d18496e397481188747abee121a0ca96d189b63 # shrinks to Program { ctor: [Object {"$global": String("Array")}, Number(2)], ops: [Op { name: "push", args: [Number(0)] }, Op { name: "push", args: [Number(0)] }, Op { name: "$forEach", args: [String("pop"), Number(0)] }, Op { name: "get", args: [Number(1)] }] }
