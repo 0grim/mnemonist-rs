@@ -226,23 +226,49 @@ function host() {
 
 // --- main -------------------------------------------------------------------
 
-// Two workloads, and the second one exists because of what the first one hid.
+// Workloads, per module. Each entry is one row of the published table.
 //
-// `mixed-1e6` is the headline: the port wins every metric on it. That is a
-// suspiciously clean result for a library that is already typed-array-backed
-// and well optimised, and DESIGN.md 5.1 says so in as many words -- "expect to
-// lose somewhere and report it".
-//
-// `mixed-4e6` is the same op mix at four times the size, chosen after probing
-// for the boundary. It is where the port's uniform u32 backing store stops
-// fitting in L3 while upstream's Uint8Array ranks array still does, and the
-// port's p99 goes from winning to losing by ~2.5x. Keeping only the size that
-// flatters the port would have been the easiest possible way to publish a
+// `static-disjoint-set` has two, and the second exists because of what the
+// first one hid: `mixed-1e6` is the headline and the port wins every metric on
+// it, which is a suspiciously clean result for a library that is already
+// typed-array-backed. `mixed-4e6` is the same op mix at four times the size,
+// found by probing for the boundary, and it is where a representation choice
+// in the port once turned a p50 win into a p99 loss. Keeping only the size
+// that flatters the port would have been the easiest possible way to publish a
 // dishonest table.
-const WORKLOADS = [
-  {name: 'mixed-1e6', size: 1000000, ops: 1000000},
-  {name: 'mixed-4e6', size: 4000000, ops: 1000000}
-];
+//
+// `sparse-set` adds `drain`, and that one is not symmetry for its own sake:
+// iteration is the whole reason this module was ported now, and the drain
+// workload is the only benchmark in the repo that puts the cursor machinery of
+// DESIGN.md 3.4 against the JS closure it was ported from. Its batch is a
+// whole walk rather than 1000 elements, because a cursor costs something per
+// walk (it freezes state at creation) as well as per element.
+const WORKLOADS = {
+  'static-disjoint-set': [
+    {
+      name: 'mixed-1e6', kind: 'mixed', size: 1000000, ops: 1000000,
+      label: 'mixed union/find/connected (50/25/25)'
+    },
+    {
+      name: 'mixed-4e6', kind: 'mixed', size: 4000000, ops: 1000000,
+      label: 'mixed union/find/connected (50/25/25)'
+    }
+  ],
+  'sparse-set': [
+    {
+      name: 'mixed-1e6', kind: 'mixed', size: 1000000, ops: 1000000,
+      label: 'mixed add/has/delete (50/25/25)'
+    },
+    {
+      name: 'mixed-4e6', kind: 'mixed', size: 4000000, ops: 1000000,
+      label: 'mixed add/has/delete (50/25/25)'
+    },
+    {
+      name: 'drain-1e5', kind: 'drain', size: 100000, passes: 100,
+      label: 'full iteration of a prefilled set, one timed sample per walk'
+    }
+  ]
+};
 
 function measure(workload, baselines, startups) {
   const collected = {port: [], original: []};
@@ -256,11 +282,13 @@ function measure(workload, baselines, startups) {
     for (const side of ['port', 'original']) {
       const args = [
         '--module', module_,
+        '--kind', workload.kind,
         '--size', String(workload.size),
-        '--ops', String(workload.ops),
         '--warmup', String(WARMUP),
         '--measured', '1'
-      ];
+      ].concat(workload.kind === 'drain'
+        ? ['--passes', String(workload.passes)]
+        : ['--ops', String(workload.ops)]);
 
       const raw = side === 'port'
         ? run(RUST, args)
@@ -294,11 +322,17 @@ function measure(workload, baselines, startups) {
   };
 
   const entry = {
-    workload: si(meta.ops) + ' mixed union/find/connected (50/25/25) over size ' +
-      si(meta.size) + ', xorshift32 seed ' + meta.seed +
-      ', ops materialised before the timed region',
+    workload: workload.kind === 'drain'
+      ? si(meta.ops) + ' elements yielded: ' + workload.label + '. Set of length ' +
+        si(meta.size) + ' prefilled by ' + si(meta.size) +
+        ' random adds (xorshift32 seed ' + meta.seed + '), leaving ' +
+        meta.batch_k + ' distinct members; ' + workload.passes +
+        ' walks per measured pass, one timed sample each'
+      : si(meta.ops) + ' ' + workload.label + ' over size ' + si(meta.size) +
+        ', xorshift32 seed ' + meta.seed +
+        ', ops materialised before the timed region',
     checksum: meta.checksum,
-    checksum_note: 'identical on both sides: same ops, same answers, rank bug included',
+    checksum_note: 'identical on both sides: same ops, same answers, upstream bugs included',
     structure_note: 'structure_rss_delta_mb constructs size ' + si(meta.size) +
       ' and nothing else, isolating the structure from the op arrays both sides materialise'
   };
@@ -326,9 +360,15 @@ function main() {
   console.log('rss baselines (kb): port=' + baselines.port + ' original=' + baselines.original);
 
   const startups = startup();
+  const planned = WORKLOADS[module_];
+
+  if (!planned) {
+    throw new Error('no workloads defined for module `' + module_ + '`');
+  }
+
   const workloads = {};
 
-  for (const workload of WORKLOADS) {
+  for (const workload of planned) {
     workloads[workload.name] = measure(workload, baselines, startups);
   }
 

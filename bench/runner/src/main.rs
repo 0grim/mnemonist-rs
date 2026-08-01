@@ -16,12 +16,20 @@
 //!
 //! ```text
 //! bench-runner --module static-disjoint-set --warmup 3 --measured 1
+//! bench-runner --module sparse-set --kind drain --passes 100
 //! bench-runner --baseline        # no-op run, reports peak RSS only
 //! bench-runner --noop            # startup floor, for hyperfine
 //! bench-runner --dump-prng 1000  # matched-PRNG proof
 //! ```
+//!
+//! `--kind` selects the loop within a module. `mixed` is the op-stream
+//! workload every module has; `sparse-set` adds `drain`, which measures
+//! iteration and is the only benchmark that puts the cursor machinery of
+//! DESIGN.md 3.4 on the clock.
 
 mod rss;
+mod sparse_set;
+mod static_disjoint_set;
 mod workload;
 mod xorshift;
 
@@ -37,9 +45,23 @@ const DEFAULT_OPS: usize = 1_000_000;
 const DEFAULT_SEED: u32 = 42;
 
 const USAGE: &str = "\
-usage: bench-runner [--module NAME] [--warmup N] [--measured N] [--size N] [--ops N] [--seed N]
+usage: bench-runner [--module NAME] [--kind mixed|drain] [--warmup N] [--measured N]
+                    [--size N] [--ops N] [--passes N] [--seed N]
        bench-runner --baseline | --noop | --dump-prng N
+
+modules: static-disjoint-set (mixed), sparse-set (mixed, drain)
 ";
+
+/// Modules this binary can benchmark, and which loops each offers.
+const MODULES: &[(&str, &[&str])] = &[
+    ("static-disjoint-set", &["mixed"]),
+    ("sparse-set", &["mixed", "drain"]),
+];
+
+/// Drain passes, when `--passes` is not given. See `sparse_set::run_drain`:
+/// one timed sample per pass, so this is also the sample count per measured
+/// run, and 100 is the floor for a meaningful p99.
+const DEFAULT_PASSES: usize = 100;
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -79,9 +101,14 @@ fn main() -> ExitCode {
     }
 
     let module = value(&flags, "--module").unwrap_or("static-disjoint-set");
+    let kind = value(&flags, "--kind").unwrap_or("mixed");
 
-    if module != "static-disjoint-set" {
-        return fail(&format!("unknown module `{module}`"));
+    match MODULES.iter().find(|(name, _)| *name == module) {
+        None => return fail(&format!("unknown module `{module}`")),
+        Some((_, kinds)) if !kinds.contains(&kind) => {
+            return fail(&format!("module `{module}` has no `{kind}` workload"))
+        }
+        Some(_) => {}
     }
 
     if flags.contains(&"--structure") {
@@ -95,11 +122,24 @@ fn main() -> ExitCode {
             Ok(size) => size,
             Err(message) => return fail(&message),
         };
-        let set =
-            mnemonist_core::structures::static_disjoint_set::StaticDisjointSet::new(size as usize)
+        // Touch the structure so nothing can be deferred or elided, mirroring
+        // the Node twin's `set.parents[size - 1]` / `set.dense[size - 1]`.
+        match module {
+            "sparse-set" => {
+                let set = mnemonist_core::structures::sparse_set::SparseSet::new(size as usize)
+                    .expect("benchmark sizes are well inside the pointer limit");
+
+                std::hint::black_box(&set);
+            }
+            _ => {
+                let set = mnemonist_core::structures::static_disjoint_set::StaticDisjointSet::new(
+                    size as usize,
+                )
                 .expect("benchmark sizes are well inside the pointer limit");
 
-        std::hint::black_box(&set);
+                std::hint::black_box(&set);
+            }
+        }
 
         println!(
             "{}",
@@ -118,6 +158,12 @@ fn main() -> ExitCode {
         (Err(message), _) | (_, Err(message)) => return fail(&message),
     };
 
+    let passes = number(&flags, "--passes", DEFAULT_PASSES);
+
+    if kind == "drain" {
+        return drain(module, size, seed, passes, warmup, measured);
+    }
+
     let generated = workload::generate(size, ops, seed);
 
     // Warmup is mandatory for the Node side (V8 JIT) and kept here purely for
@@ -126,15 +172,20 @@ fn main() -> ExitCode {
     // protocol tuned per runtime.
     let mut checksum = 0;
 
+    let run = |workload: &workload::Workload| match module {
+        "sparse-set" => sparse_set::run_mixed(workload, BATCH_K),
+        _ => static_disjoint_set::run_once(workload, BATCH_K),
+    };
+
     for _ in 0..warmup {
-        let (_, sum) = workload::run_once(&generated, BATCH_K);
+        let (_, sum) = run(&generated);
         checksum = sum;
     }
 
     let mut batches = Vec::new();
 
     for _ in 0..measured {
-        let (times, sum) = workload::run_once(&generated, BATCH_K);
+        let (times, sum) = run(&generated);
 
         if sum != checksum && warmup > 0 {
             return fail("checksum changed between passes; the workload is not deterministic");
@@ -149,10 +200,77 @@ fn main() -> ExitCode {
         json!({
             "side": "port",
             "module": module,
+            "kind": kind,
             "size": size,
             "ops": ops,
             "seed": seed,
             "batch_k": BATCH_K,
+            "warmup": warmup,
+            "measured": measured,
+            "checksum": checksum,
+            "batch_ns": batches,
+            "rss_kb": rss::peak_kb(),
+        })
+    );
+
+    ExitCode::SUCCESS
+}
+
+/// The iteration workload. Reported through the same envelope as the mixed
+/// one, with `batch_k` carrying members-per-pass instead of a fixed 1000, so
+/// the driver's `ns / batch_k` still means nanoseconds per element.
+fn drain(
+    module: &str,
+    size: u32,
+    seed: u32,
+    passes: usize,
+    warmup: usize,
+    measured: usize,
+) -> ExitCode {
+    if passes == 0 {
+        return fail("`--passes` must be at least 1");
+    }
+
+    let mut checksum = 0;
+    let mut per_pass = 0;
+
+    for _ in 0..warmup {
+        let (_, sum, size) = sparse_set::run_drain(size, seed, passes);
+        checksum = sum;
+        per_pass = size;
+    }
+
+    let mut batches = Vec::new();
+
+    for _ in 0..measured {
+        let (times, sum, members) = sparse_set::run_drain(size, seed, passes);
+
+        if sum != checksum && warmup > 0 {
+            return fail("checksum changed between passes; the workload is not deterministic");
+        }
+
+        checksum = sum;
+        per_pass = members;
+        batches.extend(times);
+    }
+
+    if per_pass == 0 {
+        // A drain over an empty set would divide by zero in the driver and
+        // report an infinite rate. There is no honest measurement here.
+        return fail("the prefilled set is empty, so there is nothing to drain");
+    }
+
+    println!(
+        "{}",
+        json!({
+            "side": "port",
+            "module": module,
+            "kind": "drain",
+            "size": size,
+            "ops": per_pass * passes * measured,
+            "seed": seed,
+            "batch_k": per_pass,
+            "passes": passes,
             "warmup": warmup,
             "measured": measured,
             "checksum": checksum,

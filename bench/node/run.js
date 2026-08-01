@@ -17,21 +17,50 @@
 //
 // Modes:
 //   node run.js --module static-disjoint-set --warmup 3 --measured 1
+//   node run.js --module sparse-set --kind drain --passes 100
 //   node run.js --baseline        # no-op run, reports peak RSS only
 //   node run.js --noop            # startup floor, for hyperfine
 //   node run.js --dump-prng 1000  # matched-PRNG proof
 'use strict';
 
+const Module = require('module');
+const fs = require('fs');
 const path = require('path');
+
+// From sparse-set.js onwards the vendored upstream files require obliterator at
+// load time, and bench/upstream/ is vendored source with no node_modules of its
+// own. Same fix, and same reasoning, as fuzz/oracle.js.
+const HARNESS_MODULES = path.resolve(__dirname, '..', '..', 'tests', '.work', 'node_modules');
+
+if (fs.existsSync(HARNESS_MODULES)) {
+  process.env.NODE_PATH = process.env.NODE_PATH
+    ? HARNESS_MODULES + path.delimiter + process.env.NODE_PATH
+    : HARNESS_MODULES;
+  Module._initPaths();
+}
 
 const BATCH_K = 1000;
 const DEFAULT_SIZE = 1000000;
 const DEFAULT_OPS = 1000000;
 const DEFAULT_SEED = 42;
 
+// One `kind % 4` stream serves every module; each names the four values for
+// its own alphabet. Twin of bench/runner/src/workload.rs.
 const UNION_A = 0;
 const UNION_B = 1;
 const FIND = 2;
+
+const ADD_A = 0;
+const ADD_B = 1;
+const HAS = 2;
+
+// Twin of DEFAULT_PASSES in bench/runner/src/main.rs.
+const DEFAULT_PASSES = 100;
+
+const MODULES = {
+  'static-disjoint-set': ['mixed'],
+  'sparse-set': ['mixed', 'drain']
+};
 
 const argv = process.argv.slice(2);
 
@@ -117,6 +146,75 @@ function runOnce(StaticDisjointSet, workload, k) {
   return {batches: batches, checksum: checksum, set: set};
 }
 
+// Twin of bench/runner/src/sparse_set.rs `run_mixed`: 50% add, 25% has,
+// 25% delete, members drawn in range.
+function runMixedSparse(SparseSet, workload, k) {
+  const set = new SparseSet(workload.size);
+  const ops = workload.kind.length;
+  const batches = [];
+  let checksum = 0;
+
+  for (let start = 0; start < ops; start += k) {
+    const end = Math.min(start + k, ops);
+    const clock = process.hrtime.bigint();
+
+    for (let i = start; i < end; i++) {
+      const member = workload.a[i];
+      const op = workload.kind[i];
+
+      if (op === ADD_A || op === ADD_B) {
+        set.add(member);
+      } else if (op === HAS) {
+        checksum += set.has(member) ? 1 : 0;
+      } else {
+        checksum += set.delete(member) ? 1 : 0;
+      }
+    }
+
+    batches.push(Number(process.hrtime.bigint() - clock));
+  }
+
+  return {batches: batches, checksum: checksum, set: set};
+}
+
+// Twin of bench/runner/src/sparse_set.rs `prefilled`.
+function prefilled(SparseSet, size, seed) {
+  const set = new SparseSet(size);
+  const rng = new XorShift32(seed);
+
+  for (let i = 0; i < size; i++) set.add(rng.below(size));
+
+  return set;
+}
+
+// Twin of `run_drain`. One timed sample per full walk, because a cursor costs
+// something per walk as well as per element and splitting a walk across
+// samples would hide the creation cost in whichever sample contained it.
+function runDrain(SparseSet, size, seed, passes) {
+  const set = prefilled(SparseSet, size, seed);
+  const perPass = set.size;
+  const batches = [];
+  let checksum = 0;
+
+  for (let pass = 0; pass < passes; pass++) {
+    const clock = process.hrtime.bigint();
+
+    // A fresh iterator per pass: the collection's Symbol.iterator is a factory
+    // (D-07), and reusing one would measure an exhausted cursor from pass 2 on.
+    const iterator = set.values();
+    let step = iterator.next();
+
+    while (!step.done) {
+      checksum += step.value;
+      step = iterator.next();
+    }
+
+    batches.push(Number(process.hrtime.bigint() - clock));
+  }
+
+  return {batches: batches, checksum: checksum, perPass: perPass, set: set};
+}
+
 // --- CLI --------------------------------------------------------------------
 
 function value(name, fallback) {
@@ -178,14 +276,21 @@ function main() {
   }
 
   const module = value('--module', 'static-disjoint-set');
+  const kind = value('--kind', 'mixed');
 
-  if (module !== 'static-disjoint-set') {
+  if (!MODULES[module]) {
     process.stderr.write('run.js: unknown module `' + module + '`\n');
     process.exitCode = 2;
     return;
   }
 
-  const StaticDisjointSet = require(path.join(__dirname, '..', 'upstream', module + '.js'));
+  if (MODULES[module].indexOf(kind) === -1) {
+    process.stderr.write('run.js: module `' + module + '` has no `' + kind + '` workload\n');
+    process.exitCode = 2;
+    return;
+  }
+
+  const Structure = require(path.join(__dirname, '..', 'upstream', module + '.js'));
 
   if (argv.includes('--structure')) {
     // Twin of bench-runner --structure: build the structure, touch nothing
@@ -195,10 +300,10 @@ function main() {
 
     if (size === null) return;
 
-    const set = new StaticDisjointSet(size);
+    const set = new Structure(size);
 
     // Read one element so nothing can be deferred or elided.
-    global.__keepAlive = set.parents[size - 1];
+    global.__keepAlive = module === 'sparse-set' ? set.dense[size - 1] : set.parents[size - 1];
 
     process.stdout.write(JSON.stringify({
       side: 'original', mode: 'structure', size: size, rss_kb: peakRssKb()
@@ -214,21 +319,31 @@ function main() {
 
   const ops = number('--ops', DEFAULT_OPS);
   const seed = number('--seed', DEFAULT_SEED);
+  const passes = number('--passes', DEFAULT_PASSES);
+
+  if (kind === 'drain') {
+    drain(Structure, module, size, seed, passes, warmup, measured);
+    return;
+  }
 
   const workload = generate(size, ops, seed);
 
   // Mandatory, and stated in methodology.md: measuring cold JS against
   // optimised Rust is a dishonest win.
+  const run = module === 'sparse-set'
+    ? function (w) { return runMixedSparse(Structure, w, BATCH_K); }
+    : function (w) { return runOnce(Structure, w, BATCH_K); };
+
   let checksum = 0;
 
   for (let i = 0; i < warmup; i++) {
-    checksum = runOnce(StaticDisjointSet, workload, BATCH_K).checksum;
+    checksum = run(workload).checksum;
   }
 
   let batches = [];
 
   for (let i = 0; i < measured; i++) {
-    const pass = runOnce(StaticDisjointSet, workload, BATCH_K);
+    const pass = run(workload);
 
     if (warmup > 0 && pass.checksum !== checksum) {
       process.stderr.write('run.js: checksum changed between passes\n');
@@ -243,10 +358,69 @@ function main() {
   process.stdout.write(JSON.stringify({
     side: 'original',
     module: module,
+    kind: kind,
     size: size,
     ops: ops,
     seed: seed,
     batch_k: BATCH_K,
+    warmup: warmup,
+    measured: measured,
+    checksum: checksum,
+    batch_ns: batches,
+    rss_kb: peakRssKb()
+  }) + '\n');
+}
+
+// Twin of `drain()` in bench/runner/src/main.rs. `batch_k` carries
+// members-per-pass rather than a fixed 1000, so the driver's `ns / batch_k`
+// still means nanoseconds per element.
+function drain(SparseSet, module, size, seed, passes, warmup, measured) {
+  if (!Number.isInteger(passes) || passes < 1) {
+    process.stderr.write('run.js: `--passes` must be at least 1\n');
+    process.exitCode = 2;
+    return;
+  }
+
+  let checksum = 0;
+  let perPass = 0;
+
+  for (let i = 0; i < warmup; i++) {
+    const pass = runDrain(SparseSet, size, seed, passes);
+    checksum = pass.checksum;
+    perPass = pass.perPass;
+  }
+
+  let batches = [];
+
+  for (let i = 0; i < measured; i++) {
+    const pass = runDrain(SparseSet, size, seed, passes);
+
+    if (warmup > 0 && pass.checksum !== checksum) {
+      process.stderr.write('run.js: checksum changed between passes\n');
+      process.exitCode = 2;
+      return;
+    }
+
+    checksum = pass.checksum;
+    perPass = pass.perPass;
+    batches = batches.concat(pass.batches);
+  }
+
+  if (perPass === 0) {
+    process.stderr.write('run.js: the prefilled set is empty, so there is nothing to drain\n');
+    process.exitCode = 2;
+    return;
+  }
+
+  process.stdout.write(JSON.stringify({
+    side: 'original',
+    module: module,
+    kind: 'drain',
+    size: size,
+    ops: perPass * passes * measured,
+    seed: seed,
+    batch_k: perPass,
+    passes: passes,
     warmup: warmup,
     measured: measured,
     checksum: checksum,

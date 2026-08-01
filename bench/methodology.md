@@ -8,6 +8,7 @@ Reproduce with:
 
 ```bash
 bench/run.sh static-disjoint-set        # → bench/results.json
+bench/run.sh sparse-set
 ```
 
 ---
@@ -61,7 +62,7 @@ Modulo bias is accepted deliberately: rejection sampling would consume a
 data-dependent number of draws, which is far harder to keep in step than a bias
 that favours neither side.
 
-### 2. Batched timing at K = 1000
+### 2. Batched timing at K = 1000, except where a batch is a walk
 
 `Instant::now()` / `process.hrtime.bigint()` cost ~20–30 ns; a `find` on a
 compressed forest is single-digit ns. Per-op timing would measure the clock.
@@ -79,6 +80,16 @@ Percentiles are nearest-rank and are computed **once, in the driver, over
 samples from both sides**. §5.2 asks for "same percentile maths"; implementing
 it twice and hoping the implementations agree is weaker than implementing it
 once.
+
+**The `drain` workload batches differently, on purpose.** Its unit is one full
+walk of the set rather than 1000 elements, and `batch_k` carries the number of
+members yielded per walk instead of a constant 1000 — so `ns / batch_k` still
+means nanoseconds per element. The reason is that a cursor costs something *per
+walk* as well as per element: it freezes state at creation (DESIGN.md §3.4).
+Splitting a walk across samples would bury that fixed cost in whichever sample
+happened to contain the creation, and hide exactly the thing this workload
+exists to measure. Both sides compute `batch_k` from their own set and the
+driver's checksum gate would fail if they disagreed.
 
 ### 3. RSS in-process, reported as total *and* delta
 
@@ -126,9 +137,10 @@ boundary instead, which is one flag and cannot be forgotten by a script.
 ## A fifth check, not in the spec
 
 Both runners accumulate a **checksum** over the results of every non-mutating
-op (`find` returns, `connected` booleans). The driver requires all 20 runs
-across both sides to produce the identical value and refuses to write anything
-if they differ.
+op (`find` returns and `connected` booleans; `has`/`delete` booleans for
+`sparse-set`; the sum of yielded members for `drain`). The driver requires all
+20 runs across both sides to produce the identical value and refuses to write
+anything if they differ.
 
 This makes "same workload" a verified claim rather than an assertion: it proves
 the two implementations executed the same ops *and computed the same answers*,

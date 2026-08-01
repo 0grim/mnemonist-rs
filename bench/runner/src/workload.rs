@@ -4,21 +4,29 @@
 //!
 //! * **The op array is materialised before the timed region.** Generation is
 //!   never measured.
-//! * **Timing is batched at K = 1000 ops.** `Instant::now()` costs ~20–30 ns
+//! * **Timing is batched at K = 1000 ops** for the op-stream workloads. `Instant::now()` costs ~20–30 ns
 //!   and a `find` on a compressed forest is single-digit ns, so per-op timing
 //!   would measure the clock. Batching drops timer cost to ~0.03% of a sample
 //!   *and* — the reason it is the right call rather than merely a cheaper one —
 //!   puts each V8 GC pause inside exactly one batch, which is what makes
 //!   batch-level p99 the metric that shows tail behaviour.
 
-use mnemonist_core::structures::static_disjoint_set::StaticDisjointSet;
-
 use crate::xorshift::XorShift32;
 
 /// Op kinds, as drawn from the PRNG. Mirrored in `bench/node/run.js`.
-const UNION_A: u8 = 0;
-const UNION_B: u8 = 1;
-const FIND: u8 = 2;
+///
+/// One `kind % 4` stream serves every module; each names the four values for
+/// its own alphabet so the 50/25/25 shape is identical and the two modules'
+/// mixed workloads remain comparable to each other as well as to upstream.
+pub const UNION_A: u8 = 0;
+pub const UNION_B: u8 = 1;
+pub const FIND: u8 = 2;
+
+/// `sparse-set`'s names for the same four values: 50% `add`, 25% `has`, and
+/// the remaining quarter `delete`.
+pub const ADD_A: u8 = 0;
+pub const ADD_B: u8 = 1;
+pub const HAS: u8 = 2;
 
 /// A materialised op sequence: parallel arrays rather than a `Vec<enum>`, so
 /// the layout matches the typed arrays the JS side uses and neither runtime is
@@ -55,49 +63,4 @@ pub fn generate(size: u32, ops: usize, seed: u32) -> Workload {
     }
 
     Workload { size, kind, a, b }
-}
-
-/// One measured pass: a fresh set, then the whole workload in batches of `k`.
-///
-/// Returns per-batch nanoseconds and a checksum. The checksum is not
-/// bookkeeping — `bench/run.sh` refuses to record a result unless the Rust and
-/// Node checksums are identical, which proves both sides executed the same
-/// sequence and got the same answers, not merely the same op *count*.
-pub fn run_once(workload: &Workload, k: usize) -> (Vec<u64>, u64) {
-    // Construction is outside the timed region but inside the run, so each
-    // pass starts from the same fully disjoint forest. Reusing one set across
-    // passes would make pass 2 onwards measure an already-merged structure.
-    let mut set = StaticDisjointSet::new(workload.size as usize)
-        .expect("benchmark sizes are well inside the pointer limit");
-
-    let ops = workload.len();
-    let mut batches = Vec::with_capacity(ops.div_ceil(k));
-    let mut checksum: u64 = 0;
-
-    for start in (0..ops).step_by(k) {
-        let end = (start + k).min(ops);
-        let clock = std::time::Instant::now();
-
-        for i in start..end {
-            let (x, y) = (workload.a[i] as usize, workload.b[i] as usize);
-
-            match workload.kind[i] {
-                // union mutates, so it cannot be optimised away and needs no
-                // contribution to the checksum. The JS side adds nothing here
-                // either.
-                UNION_A | UNION_B => {
-                    set.union(x, y);
-                }
-                FIND => checksum += set.find(x) as u64,
-                _ => checksum += u64::from(set.connected(x, y)),
-            }
-        }
-
-        batches.push(clock.elapsed().as_nanos() as u64);
-    }
-
-    // Keep the set alive past the loop so nothing above can be reordered out.
-    std::hint::black_box(&set);
-
-    (batches, checksum)
 }
