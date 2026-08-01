@@ -1,0 +1,303 @@
+# sort
+
+Upstream: `sort/quick.js` (116 LOC) + `sort/insertion.js` (50 LOC) +
+`utils/typed-arrays.js` (187 LOC, only `indices` and `getPointerArray` reachable) ·
+`test/sort.js` — **170 lines, 13 `it` blocks, 23 assertion statements**.
+
+Port: `crates/mnemonist-core/src/sort/{mod,insertion,quick}.rs`,
+`crates/mnemonist-core/src/utils/typed_arrays.rs`.
+Bridge: `crates/mnemonist-napi/src/sort.rs`.
+Shims: `tests/bridge/sort.js`, `tests/bridge/sort/{insertion,quick}.js`,
+`tests/bridge/utils/typed-arrays.js`.
+
+**This is the first unit in the port with no instance.** Every module before it is a constructor
+with methods; these are four free functions that mutate a caller-supplied array. That changes the
+shape of almost everything downstream — there is no `#[napi]` class, no `RefCell<Core…>`, nothing
+for `crate::cursor` to attach a `Symbol.iterator` to, no export shape a one-line shim can forward,
+and no observable state for the differential fuzzer to compare. Each of those is dealt with below.
+
+It is also the first unit whose upstream surface spans **three files with two different export
+shapes**, which is what DESIGN.md §2.3's Problem 2 was written about.
+
+---
+
+## What upstream tests
+
+Thirteen `it` blocks, six of them structurally identical between the two algorithms, over one
+fixture:
+
+```js
+var DATA = [2, 7, 1, 5, 8, 9, 1, -3, 3, 18, 6];
+
+insertion.inplaceInsertionSort(DATA.slice(), 0, DATA.length);      // deepStrictEqual
+insertion.inplaceInsertionSort(DATA.slice(), 3, 7);                // three slices
+insertion.inplaceInsertionSortIndices(DATA.slice(), typed.indices(DATA.length), 0, DATA.length);
+// …and the same six for `quick`, minus the [1] / [2,1] edge cases
+```
+
+Characterising the shape of that coverage:
+
+* **One array, eleven elements, four windows.** `0..11`, `0..3`, `3..7`, `5..11`, plus `[1]` and
+  `[2, 1]` for insertion only. Every element is a small integer.
+* **The index permutations are asserted exactly**, and they *differ* between the two algorithms —
+  `[7, 2, 6, …]` for insertion, `[7, 6, 2, …]` for quick — because `DATA` holds `1` twice and
+  insertion sort is stable while quicksort is not. This is the single most valuable thing the
+  original suite does, and it is the reason both algorithms had to be transcribed statement by
+  statement rather than delegated to `slice::sort_unstable_by`.
+* **Two "sanity tests"** sort 1,000 `Math.random()` values and assert the result is *strictly*
+  increasing. With random doubles a duplicate is essentially impossible, so the strictness never
+  bites.
+* **`utils/typed-arrays.js` is called exactly once, with 11**, inside `typed.indices(DATA.length)`.
+
+## What upstream does NOT test
+
+This is the section that carries the weight. Everything below is reachable through the public API
+and never exercised by the original suite.
+
+**The window**
+
+1. **An empty window is never passed.** `lo === hi` is legal and is a no-op.
+2. **A window that is not the whole array *and* not one of the four fixed ones** is never used.
+   `test/sort.js` uses four windows out of the 78 a length-11 array admits.
+3. **`lo > hi` is never passed.** Upstream treats it as empty; this port refuses it (below).
+
+**The values**
+
+4. **`NaN` is never sorted.** It loses every relational comparison in both languages, so it neither
+   sinks nor lets anything sink past it — it pins its neighbours in place. A port written against
+   an `Ord`-style total order would get this wrong and pass all 23 assertions.
+5. **No two elements are ever `Infinity`, `-0` or a non-number.** Upstream compares through
+   `valueOf`/`toString`, so strings and objects sort by JavaScript's relational comparison.
+6. **Nothing outside the window is ever checked for being left alone.** Upstream reads and writes
+   only `array[lo..hi)`, so `inplaceQuickSort(['x', 3, 1, 2, {}], 1, 4)` is legal and leaves both
+   non-numbers untouched. A port that read the whole array would break it.
+
+**The indices flavours**
+
+7. **Every index is always in range.** `typed.indices(n)` produces exactly `0..n`, so
+   `array[indices[j]]` never reads past the end of `array`. Upstream gets `undefined` there, and
+   **every comparison against `undefined` is false**, which changes the permutation. This is the
+   entire justification for `mnemonist_core::sort`'s `Option<&T>` comparisons and it is invisible
+   to the original suite.
+8. **The indices array is always the same length as the value array.** A shorter or longer one is
+   legal.
+9. **The array is never returned by identity.** Both flavours return the object they were given;
+   `test/sort.js` only ever inspects the return value, so a port that sorted a **copy** and handed
+   the copy back passes all thirteen blocks while breaking every in-tree caller — and mnemonist
+   itself calls these from `passjoin-index.js` and `suffix-array.js` for their side effect.
+
+**`utils/typed-arrays.js#indices`**
+
+10. **Only `Uint8Array` is ever constructed.** `indices(11)` selects the 8-bit width; the 16- and
+    32-bit branches, and the `> 2³²` throw, are unreachable from this test file.
+11. **`length` is always a small non-negative integer.** The fractional, negative and `NaN` cases
+    are all reachable and all behave differently — see the divergence-free finding below.
+
+**The two algorithms' own machinery**
+
+12. **The partition stack is never driven deep.** Eleven elements need at most four stack entries
+    out of 64. Sorted, reverse-sorted and all-equal inputs — quicksort's three classic degenerate
+    partitions — never occur.
+13. **`inplaceQuickSort`'s duplicate handling is only checked through one array with one repeated
+    value.**
+
+## What we test in addition
+
+Mapped 1:1 to the gaps above.
+
+| Gap | Where | What |
+|---|---|---|
+| 1, 2, 3 | `sort/{insertion,quick}.rs` `degenerate_windows_do_nothing`, `check_window` tests | Empty window, empty slice, inverted window |
+| 2 | `tests/boundary/sort.js` "every window of a fixed array" | **All 78 windows**, differentially against vendored upstream, for all four functions |
+| 4 | `insertion.rs::nan_pins_the_elements_to_its_right`, `sort/mod.rs::nan_compares_false_in_every_direction` | `NaN` pins rather than sinks |
+| 5 | `tests/boundary/sort.js` "refuse a non-numeric element" | The stated divergence, asserted as a refusal so silently accepting would be noticed |
+| 6 | `tests/boundary/sort.js` "leave elements outside the window untouched" | A string and an object either side of the window, differentially |
+| 7 | `insertion.rs::indices_past_the_end_of_the_array_never_move`, `quick.rs::indices_past_the_end_of_the_array_do_not_panic`, and the fuzz grammar | Index values drawn from a range **wider than the value array** |
+| 8 | fuzz grammar | Index array length independent of the value array's |
+| 9 | `tests/boundary/sort.js` "return the very array it was given" | `strictEqual(returned, argument)` for all four, plus mutation read back through the *caller's* handle |
+| 10 | `quick.rs::every_pointer_width_sorts_the_same_way`, `tests/boundary/sort.js` "Uint16Array of indices" | 300 members, forcing the 16-bit width |
+| 11 | `typed_arrays.rs::indices_truncates_its_length_but_not_its_width`, `indices_refuses_the_lengths_upstream_refuses`, `tests/boundary/sort.js` | Every boundary length, both signs, both integralities, `NaN`, `Infinity`, `> 2³²` |
+| 12 | `quick.rs::already_sorted_input_does_not_overflow_the_stack` | 4,096 elements sorted, reversed and all-equal |
+| 13 | `insertion.rs::is_stable_where_quick_sort_is_not`, `quick.rs::disagrees_with_insertion_sort_on_equal_keys` | The two permutations asserted against each other, and both checked non-decreasing |
+
+Plus the differential fuzzer: 9,974 programs and 400,469 operations across two 60-second campaigns,
+zero divergences.
+
+## Bugs this found
+
+Two, both in upstream, both verified against Node 24.18.1, and both **found by reading rather than
+by fuzzing** — for the reason given under "Deliberate divergences": the port cannot reach them,
+because reaching them requires an element that runs JavaScript during a comparison.
+
+### B-80 — `sort/insertion.js` declares its loop counter as a global
+
+Both exported functions open with
+
+```js
+function inplaceInsertionSort(array, lo, hi) {
+  i = lo + 1;          // no `var`, no `let`
+  var j, k;
+```
+
+`i` is therefore `globalThis.i`, shared by every call in the realm. After one
+`inplaceInsertionSort([3, 1, 2], 0, 3)`, `global.i` is `3`.
+
+That is not merely untidy. `>` invokes `valueOf`, so an element can re-enter the sorter
+mid-comparison and the inner call leaves the outer call's counter wherever it finished:
+
+```js
+function reentrant(v, payload) {
+  return {valueOf: function () { if (payload) { payload(); payload = null; } return v; }};
+}
+var inner = [3, 1, 2];
+var outer = [reentrant(5),
+             reentrant(1, function () { insertion.inplaceInsertionSort(inner, 0, 3); }),
+             reentrant(3), reentrant(2)];
+
+insertion.inplaceInsertionSort(outer, 0, 4);
+outer.map(Number);   // [1, 5, 3, 2]   — expected [1, 2, 3, 5]
+```
+
+The file would also throw `ReferenceError` outright under `'use strict'`, and mnemonist ships
+`"type": "commonjs"` sloppy-mode files, so today it does not.
+
+### B-81 — `sort/quick.js`'s partition stack is module state, shared by all four sorts
+
+```js
+var LOS = new Float64Array(64),
+    HIS = new Float64Array(64);
+```
+
+allocated once at module scope and used by `inplaceQuickSort` *and*
+`inplaceQuickSortIndices`. `i` is a proper local here, so the failure is subtler than B-80's: the
+outer call's index keeps pointing into a stack the inner call has overwritten. Measured on a
+40-element array whose first compared element re-enters:
+
+```js
+quick.inplaceQuickSort(arr, 0, 40);
+// [0,1,4,7,10,13,…,35,37,38,32,29,26,…,3]   — 38 of 40 elements out of order
+```
+
+Both are the same defect wearing different clothes — shared mutable module state in a function that
+can be re-entered through a comparison — and both are invisible to `test/sort.js`, which sorts
+numbers only.
+
+## Deliberate divergences
+
+Three, all recorded in `planning/DECISIONS-CANDIDATES.md`.
+
+### D-80 — the port takes numbers, upstream takes anything
+
+`crates/mnemonist-napi/src/sort.rs` reads elements as `f64`. Upstream is duck-typed and compares
+whatever it is given through JavaScript's relational operators, which coerce via
+`valueOf`/`toString`. Supporting that means calling back into JavaScript from inside the sort
+loop — DESIGN.md §3.3's **T2 tier** — which this unit deliberately does not reach for, since
+nothing in `test/sort.js` or in mnemonist's own callers passes a non-number.
+
+The refusal is loud: `mnemonist-rs: sort element 3 is not a number… see docs/modules/sort.md.`
+
+**This divergence is why B-80 and B-81 are unreachable in the port, and it is worth being precise
+about the direction.** The port is not *fixing* those bugs; it is refusing the only inputs that can
+observe them. With numeric elements, no user code can run during a comparison, so upstream's shared
+global counter and shared partition stack are never re-entered and a local behaves identically.
+Reproducing the bugs bug-for-bug would require first implementing T2 and then adding shared state
+to reproduce a defect nothing can see — the port would be *less* faithful, not more, and CLAUDE.md's
+"a divergence where our port is more correct is a bug in the port" does not apply to a regime the
+port does not admit.
+
+### D-81 — windows outside `0..=length` are refused
+
+Upstream reads `undefined` past the end of an array and writes into holes, producing a sparse array
+with genuine `undefined` elements. A JS array hole has no Rust representation, and modelling one
+would mean `Vec<Option<f64>>` throughout for a regime the original suite never enters. The window
+is checked instead, in `mnemonist_core::sort::check_window`, and the bridge reports it with a
+message naming the limit. Same position `PointerVec::get` already takes for the same reason.
+
+### D-83 — the export shape is re-assembled by the shim
+
+The addon exports at top level, so there is no `sort/quick` object to hand back and `indices` is far
+too generic a name to claim at the top of an addon that will eventually carry forty modules' worth
+of helpers. It is `typedArraysIndices` in the addon, and `tests/bridge/sort.js` maps the flat names
+back into upstream's two-file shape.
+
+`tests/bridge/sort.js` is the aggregate and the two leaves are cut from it, rather than the reverse.
+`test/sort.js` never requires `../sort.js`, so an aggregate that merely re-required its own leaves
+would be a decorative file that exists only to satisfy `tests/verify.sh` gate 3. This way it is
+load-bearing.
+
+### Not a divergence, but easy to mistake for one: `indices` and its two coercions
+
+`exports.indices` uses its argument twice and coerces it **differently** each time.
+`getPointerArray` compares `length - 1` as a double; the `TypedArray` constructor applies `ToIndex`,
+which truncates. So:
+
+```js
+typed.indices(256.5)    // Uint16Array(256) — a width wider than 256 elements need
+typed.indices(255.5)    // Uint8Array(255)
+typed.indices(-0.5)     // Uint8Array(0)     — ToIndex accepts -0
+typed.indices(-1)       // RangeError: Invalid typed array length: -1
+typed.indices(NaN)      // mnemonist: Pointer Array of size > 4294967295 is not supported.
+```
+
+All confirmed against Node 24.18.1. `mnemonist_core::utils::typed_arrays::indices` therefore takes
+an `f64` rather than a `usize`; the first draft took a `usize`, truncated at the boundary, and
+produced `Uint8Array(256)`. `tests/boundary/sort.js` caught it, and the fuzzer's first
+falsification pins it.
+
+## Fuzz + bench
+
+**Fuzz.** `difffuzz --module sort`. Two campaigns, both clean:
+
+| seed | cases | ops | wall | divergences |
+|---|---|---|---|---|
+| 42 | 4,898 | 196,041 | 60.0s | 0 |
+| 20260801 | 5,076 | 204,428 | 60.0s | 0 |
+
+Ops: `inplaceInsertionSort`, `inplaceQuickSort`, `inplaceInsertionSortIndices`,
+`inplaceQuickSortIndices`, `indices`. Arrays of 0–24 elements drawn from a pool of 11 values
+including `NaN` and fractions; windows generated against the subject's own length; index arrays of
+independent length whose entries are drawn **wider than the value array**, so a good share point
+past its end. Full grammar and exclusions in `fuzz/log.txt`.
+
+This is the first free-function module, so it is also the first campaign that compares **no
+observable state at all** — there is none. What it compares is the return value *and every
+argument after the call*, which is where an in-place sort's whole effect lives. `fuzz/oracle.js`
+does that echo generically for any module declaring `ModuleSpec::functions()`.
+
+Throughput is ~3,270 op/s against ~23,600 for the structure modules. That is the payload — an op
+here ships a whole array in each direction and can allocate a 65,537-element typed array on both
+sides, where `union(x, y)` ships two integers — **not** a regression, and the op counts are not
+comparable across modules.
+
+**Falsification (gate 6).** Two sabotages, each naming the assertion it had to break, each confirmed
+red and then green after revert:
+
+1. **`indices` choosing its width from the truncated length.** Must break
+   `indices_truncates_its_length_but_not_its_width` and the boundary spec's
+   "truncate a fractional length while sizing the width from the raw one". Both went red; the
+   fuzzer found it in 62 cases (0.3s) and shrank it to a **single operation**, `m.indices(256.5)`.
+2. **`a > b` rewritten as `!(a <= b)`** in `inplace_insertion_sort` — identical for every totally
+   ordered type, the exact opposite whenever either side is `NaN`. Must break
+   `nan_pins_the_elements_to_its_right`. It went red; the fuzzer found it in 300 cases (0.4s) and
+   shrank it to `m.inplaceInsertionSort([NaN, 0], 0, 2)`.
+
+Both seeds are committed in `crates/difffuzz/proptest-regressions/sort.txt` with a provenance block
+saying they came from sabotages and not from real port defects.
+
+The gate-4 falsification is separate and cruder, and it is what proves the original test file
+exercises Rust rather than a JS fallback: deleting the `array.swap(j - 1, j)` line from
+`mnemonist_core::sort::insertion::inplace_insertion_sort` must break `test/sort.js`'s
+**"insertion → should properly sort inplace."** — `assert.deepStrictEqual(data, [-3, 1, 1, 2, 3, 5,
+6, 7, 8, 9, 18])`. Confirmed: 13 passing → **9 passing, 4 failing**, the named assertion among
+them, with `AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal`. Back to 13
+passing after revert.
+
+Note which blocks *stayed* green, because it is the useful part: all six `quick` blocks and both
+`insertion` **indices** blocks passed with the sabotage in place. They are a different code path,
+and a falsification that had targeted a shared helper would have gone red everywhere and told us
+less.
+
+**Bench.** Not run. Gate 10 is batched into a quiet serial pass on an idle machine (DESIGN.md §7.3);
+this unit was developed alongside three other agents, and a contended run inflated both sides 2–3×
+here before. `sort` is therefore **not** in `tests/scope.txt`, and `tests/verify.sh` reporting it as
+out of scope is the expected state until that pass runs.

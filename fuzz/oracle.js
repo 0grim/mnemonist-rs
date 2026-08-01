@@ -63,6 +63,24 @@
 // The third callback argument -- the collection itself, where a module passes
 // one -- is deliberately not recorded: it encodes as `{"$self": true}` on
 // every step and can never disagree.
+// Free-function modules (DESIGN.md 1.1's `sort` and `set` units). `init` may
+// name a LIST OF FILES instead of one constructor; their exports are merged
+// and `instance` becomes that object, so `instance[name](...)` still
+// dispatches and nothing else in the protocol changes.
+//
+//   -> {"cmd":"init","module":"sort","observe":[],
+//       "functions":["sort/insertion","sort/quick","utils/typed-arrays"]}
+//   <- {"ok":true,"state":{}}
+//
+// Such a module has NO observable state, so `state` is `{}` forever and the
+// whole comparison would otherwise rest on the return value. That is not
+// enough — `set.js`'s `add`/`subtract`/`intersect`/`disjunct` return
+// `undefined` and mutate their first argument, and `sort/*.js` sorts in place
+// — so an op's result is wrapped and the arguments are echoed back after the
+// call:
+//
+//   -> {"cmd":"op","name":"inplaceQuickSort","args":[[3,1,2],0,3]}
+//   <- {"ok":true,"result":{"$return":[1,2,3],"$args":[[1,2,3],0,3]},"state":{}}
 //
 // Any thrown error is reported as {"ok":false,"error":"..."} rather than
 // killing the process, so a divergence in error behaviour is comparable data
@@ -94,6 +112,9 @@ if (fs.existsSync(HARNESS_MODULES)) {
 let instance = null;
 let observations = [];
 let cursor = null;
+// True when `instance` is a module object of free functions rather than a
+// constructed structure. See the `init` and `op` handlers.
+let functionsModule = false;
 
 // JSON has no typed arrays, no `undefined`, and no NaN, and all three are
 // observably distinct in JS. Encode them so the Rust side can reproduce the
@@ -115,6 +136,13 @@ function encode(value) {
   // compared, so entries go out as a list, not as an object.
   if (value instanceof Map) {
     return {$map: Array.from(value.entries()).map(([k, v]) => [encode(k), encode(v)])};
+  }
+
+  // A `Set` has no own enumerable properties either, and `set.js`'s functions
+  // both take and return them. Insertion order is asserted by the original
+  // test file in eight of its fourteen blocks, so members go out as a list.
+  if (value instanceof Set) {
+    return {$set: Array.from(value).map(encode)};
   }
 
   if (typeof value === 'number') {
@@ -300,6 +328,21 @@ function decode(value) {
   if (value.$nan) return NaN;
   if (value.$negativeZero) return -0;
 
+  // The inverses of `encode`'s `$set` and `$typed`, needed because a
+  // free-function module takes these as ARGUMENTS rather than building them
+  // itself: `set.js` is handed real Sets and `sort/*.js` real typed arrays.
+  if (Array.isArray(value.$set)) return new Set(value.$set.map(decode));
+
+  if (typeof value.$typed === 'string') {
+    const Ctor = globalThis[value.$typed];
+
+    if (typeof Ctor !== 'function') {
+      throw new Error('unknown typed array: ' + value.$typed);
+    }
+
+    return new Ctor(value.values);
+  }
+
   if (typeof value.$factory === 'string') {
     const name = value.$factory;
     if (!Object.prototype.hasOwnProperty.call(FACTORIES, name)) {
@@ -317,6 +360,30 @@ function handle(request) {
       return {ok: true};
 
     case 'init': {
+      observations = request.observe;
+      cursor = null;
+
+      // Free-function modules (DESIGN.md 1.1's `sort` and `set` units). They
+      // have no constructor at all -- `set.js` and `sort/*.js` export bare
+      // functions -- so there is nothing to `new`, and `instance` becomes the
+      // module object itself so that `instance[name](...)` still dispatches.
+      //
+      // A list rather than a name because a unit can span several files:
+      // test/sort.js's require-closure is three of them, and the log key for
+      // the whole unit is `sort`, which is not a file. Merging their exports is
+      // safe because upstream's own names do not collide.
+      if (Array.isArray(request.functions)) {
+        functionsModule = true;
+        instance = Object.assign(
+          {},
+          ...request.functions.map((file) => require(path.join(UPSTREAM, file + '.js')))
+        );
+
+        return {ok: true, state: observe()};
+      }
+
+      functionsModule = false;
+
       const Ctor = require(path.join(UPSTREAM, request.module + '.js'));
       // Two decoders, composed, because they solve different problems and
       // neither subsumes the other: `decodeCtorArg` resolves {"$global": …} to
@@ -344,10 +411,24 @@ function handle(request) {
       // the port did not" is precisely the divergence worth catching. See the
       // "Trap for the next module" note on spec::CheckFailure, written before
       // there was a module that throws; hashed-array-tree is that module.
+      // A free-function module has no observable state at all, so `observe()`
+      // is `{}` for every op and the whole comparison would rest on the return
+      // value. That is not enough: `set.js`'s `add`, `subtract`, `intersect`
+      // and `disjunct` return `undefined` and do all their work by mutating
+      // their FIRST ARGUMENT, and `sort/*.js` sorts in place. So the decoded
+      // arguments are re-encoded after the call and compared too. Generic
+      // rather than per-function: the oracle holds no module knowledge, and a
+      // list of which parameters are out-parameters would be exactly that.
+      const args = request.args.map(decode);
+
       try {
-        result = encode(instance[request.name](...request.args.map(decode)));
+        result = encode(instance[request.name](...args));
       } catch (error) {
         result = {$throw: String(error && error.message ? error.message : error)};
+      }
+
+      if (functionsModule) {
+        result = {$return: result, $args: args.map(encode)};
       }
 
       return {ok: true, result: result, state: observe()};

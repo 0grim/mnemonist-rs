@@ -1,0 +1,42 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+#
+# PROVENANCE OF THE TWO ENTRIES BELOW -- read before assuming either recorded a
+# real port defect. Neither did. Both came from deliberate falsifications of
+# the fuzzer, in the spirit of DoD gate 6: a fuzzer that has never been seen to
+# fail is just a second green light. Both sabotages were reverted; both seeds
+# are replayed before any novel case on every run.
+#
+# Both were chosen so that `test/set.js` STAYS GREEN under them. That is the
+# point: they measure what this campaign adds over the original suite rather
+# than what it duplicates. Confirmed 16 passing under each.
+#
+# --- 1. `intersection` iterating the FIRST set instead of the smallest ---
+#
+# Changes only the ORDER of the result -- the members are identical -- so it is
+# invisible to any comparison that treats a set as unordered, and invisible to
+# test/set.js, whose two-set case uses equal-sized inputs and whose variadic
+# case intersects down to a single member. Found in 109 cases (0.1s) and shrunk
+# to one op on two sets:
+#
+#     m.intersection(new Set([4, 0, "a", 5, "1", 1]), new Set([5, 4]));
+#     port {4,5}   upstream {5,4}
+#
+# --- 2. `add` inserting B's members in reverse order ---
+#
+# Also order-only, and it lands on a function that returns `undefined`: the
+# whole divergence is in the ECHOED FIRST ARGUMENT, which is what the
+# free-function mode of fuzz/oracle.js exists to compare. Without that echo,
+# four of this module's fourteen functions would be compared against nothing at
+# all and this sabotage would have gone unnoticed. Found in 82 cases (0.1s) and
+# shrunk to one op:
+#
+#     m.add(new Set([]), new Set([0, 1]));
+#     port $args[0] = {1,0}   upstream {0,1}   ($return is undefined on both)
+#
+cc 35660b076675e6b24842a44aaba2f27c0e984dcf395e9a1fcbcd3976389036cb # shrinks to Program { ctor: [], ops: [Op { name: "intersection", args: [Object {"$set": Array [Number(4), Number(0), String("a"), Number(5), String("1"), Number(1)]}, Object {"$set": Array [Number(5), Number(4)]}] }] }
+cc 0629f2f2234a1f40ce48abd92014dfe0b04006780e494276c7cea2a90790121f # shrinks to Program { ctor: [], ops: [Op { name: "add", args: [Object {"$set": Array []}, Object {"$set": Array [Number(0), Number(1)]}] }] }

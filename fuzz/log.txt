@@ -542,6 +542,151 @@
 #      already run off the end of an empty queue, and it resumes.
 #
 # ---------------------------------------------------------------------------
+# GRAMMARS ADDED LATER go on the END of this block, never in the middle: a
+# conflict boundary landing inside one has already broken three merges.
+#
+# sort  -- THE FIRST FREE-FUNCTION MODULE, and a different shape of campaign
+#   ops          inplaceInsertionSort(array, lo, hi)          [weight 3]
+#                inplaceQuickSort(array, lo, hi)              [3]
+#                inplaceInsertionSortIndices(a, idx, lo, hi)  [3]
+#                inplaceQuickSortIndices(a, idx, lo, hi)      [3]
+#                indices(length)                              [2]
+#   observed     NOTHING, and that is not an omission. sort/insertion.js,
+#                sort/quick.js and utils/typed-arrays.js export bare functions
+#                and hold no state between calls, so `observe` is {} forever.
+#                What is compared instead is the return value AND THE ARGUMENTS
+#                AFTER THE CALL -- every effect of an in-place sort lives in an
+#                argument, and add/subtract-style out-parameters would otherwise
+#                be invisible. fuzz/oracle.js does that echo generically for any
+#                module declaring ModuleSpec::functions(), so no per-function
+#                list of which parameters are out-parameters exists to go stale.
+#   ctor         none. There is nothing to construct.
+#   arrays       0..=24 elements drawn from a pool of 11 values -- small and
+#                repetitive so duplicates are frequent, because duplicates are
+#                the only thing separating a stable sort from an unstable one
+#                and these two disagree about them. The pool includes NaN and
+#                fractions; test/sort.js sorts integers and Math.random().
+#   windows      lo <= hi <= length, generated against the subject's own length
+#                so empty, single-element and full-width windows all occur --
+#                against test/sort.js's six windows of one fixed array.
+#   indices      an independent 0..=24 element Uint8Array or Uint16Array whose
+#                entries are drawn from 0..29, i.e. WIDER than the value array,
+#                so a good share point past its end. Upstream reads undefined
+#                there and every comparison against it is false; that is the
+#                whole reason mnemonist_core::sort compares Option<&T>, and this
+#                is the only place it is checked against the real thing.
+#   lengths      for indices(): 0, 1, 11, 255, 256, 257, 65535, 65536, 65537,
+#                3.5, 255.5, 256.5, -0.5, -1, -3.5, NaN. Both sides of every
+#                width boundary and every input that throws.
+#   program len  1..80 ops. Shorter than elsewhere because each op carries its
+#                own subject rather than accumulating state in a shared one.
+#   EXCLUDED     (a) non-numeric elements, (b) windows past the end. Both are
+#                stated divergences in docs/modules/sort.md -- upstream compares
+#                through valueOf and reads undefined past the end, the port
+#                refuses both -- so generating them would re-report a recorded
+#                decision rather than find anything.
+#                (c) B-80 and B-81, the two re-entrancy bugs, because reaching
+#                them needs an element whose comparison calls back into JS,
+#                which needs an object element, which (a) excludes. Verified by
+#                hand against Node 24.18.1 instead; see docs/modules/sort.md.
+#
+#   FALSIFIED (gate 6, applied to the fuzzer):
+#
+#   sort. `indices` choosing its width from the TRUNCATED length rather than the
+#      raw one -- the obvious reading of upstream, and wrong, because
+#      getPointerArray compares length-1 as a double while the TypedArray
+#      constructor applies ToIndex. Caught in 62 cases (0.3s), shrunk to ONE op:
+#          m.indices(256.5);
+#          port Uint8Array(256)   upstream Uint16Array(256)
+#
+#   sort. `a > b` written as `!(a <= b)` -- identical for every totally ordered
+#      type, the opposite whenever either side is NaN. Caught in 300 cases
+#      (0.4s), shrunk to one op on a two-element array:
+#          m.inplaceInsertionSort([NaN, 0], 0, 2);
+#          port [0, NaN]   upstream [NaN, 0]
+#
+#   Both seeds are committed in proptest-regressions/sort.txt with provenance.
+#
+# set  -- THE SECOND FREE-FUNCTION MODULE
+#   ops          intersection(...sets)      [weight 3, 1..5 sets]
+#                union(...sets)             [3, 1..5 sets]
+#                add / subtract / intersect / disjunct(A, B)   [3 each]
+#                difference / symmetricDifference(A, B)        [2 each]
+#                isSubset / isSuperset(A, B)                   [2 each]
+#                intersectionSize / unionSize(A, B)            [2 each]
+#                jaccard / overlap(A, B)                       [2 each]
+#                All fourteen exports. set.js has no method the grammar omits.
+#   observed     NOTHING -- same shape as `sort`, and here the argument echo is
+#                not a refinement but the whole comparison for four of the
+#                fourteen: add, subtract, intersect and disjunct all return
+#                undefined and do their entire job to their FIRST ARGUMENT.
+#                Without the echo they would be compared against nothing.
+#   sets         0..=8 members drawn from a pool of 10 -- six small integers,
+#                the STRING "1", "a", "b" and the empty string. Small so that
+#                intersections are frequent rather than almost always empty;
+#                mixed so that 1 and "1" are two members, which they are to a
+#                Set and which a port that stringified its keys would conflate.
+#                Sizes vary freely and independently, which is what makes
+#                intersection's smallest-argument rule -- and its first-wins
+#                tie-break -- reachable. Generated member lists may contain
+#                duplicates, deliberately: `new Set([1, 1])` has one member and
+#                the de-duplication is part of what is compared.
+#   arity        the two variadic ops generate ONE set as well as two to five,
+#                so both "needs at least two arguments" throws are compared as
+#                results rather than being excluded.
+#   program len  1..80 ops.
+#   EXCLUDED     (a) object members. Set compares them by identity, the bridge
+#                refuses them (docs/modules/set.md), and core is generic over
+#                its member type so one is not even expressible here.
+#                (b) NaN and -0 members. They are SameValueZero's two special
+#                cases and they live in the BRIDGE's key type, not in core;
+#                fuzzing them here would test serde_json's round-tripping.
+#                tests/boundary/set.js covers them where they live.
+#                (c) the three `===` shortcuts (intersection's smallestSet skip,
+#                isSubset's A===B, intersectionSize's). The oracle decodes every
+#                {"$set": ...} into a FRESH Set, so the identity never holds on
+#                either side and the shortcuts are equally unreachable -- no
+#                false divergence, and no coverage either. Core's own tests pass
+#                one reference twice; tests/boundary/set.js passes one object
+#                twice.
+#
+#   FALSIFIED (gate 6, applied to the fuzzer). Both sabotages were chosen so
+#   that test/set.js STAYS GREEN under them -- they measure what this campaign
+#   adds over the original suite rather than what it duplicates. Confirmed 16
+#   passing under each.
+#
+#   set. `intersection` iterating the FIRST set instead of the smallest.
+#      Order-only: the members are identical, so it is invisible to anything
+#      treating a set as unordered, and invisible to test/set.js, whose two-set
+#      case uses equal sizes. Caught in 109 cases (0.1s), shrunk to one op:
+#          m.intersection(new Set([4, 0, "a", 5, "1", 1]), new Set([5, 4]));
+#          port {4,5}   upstream {5,4}
+#
+#   set. `add` inserting B's members in reverse order. Also order-only, and on
+#      a function that returns undefined -- so the entire divergence is in the
+#      echoed first argument, which is exactly what the free-function mode
+#      exists to compare. Caught in 82 cases (0.1s), shrunk to one op:
+#          m.add(new Set([]), new Set([0, 1]));
+#          port $args[0] = {1,0}   upstream {0,1}
+#
+#   Both seeds are committed in proptest-regressions/set.txt with provenance.
+#
+#   A THIRD sabotage is worth recording because it stayed green and that is the
+#   finding: reordering only disjunct's WRITES -- deleting the intersection
+#   before adding B\A, while still testing `!A.has` against the original A --
+#   changes nothing observable. A member of B\A lands at the end either way and
+#   a shared member is gone either way. An earlier draft of the port's docs
+#   claimed that write order was load-bearing; it is not, and the claim was
+#   withdrawn. What IS load-bearing is that the has-test runs BEFORE the
+#   deletes, and that sabotage turns test/set.js's #.disjunct block red.
+#
+#   Throughput note: ~3,270 op/s, an order of magnitude below the structure
+#   modules. Not a regression -- an op here ships a whole array in each
+#   direction and allocates a typed array of up to 65,537 elements on both
+#   sides, where a `union(x, y)` ships two integers. The op count is therefore
+#   not comparable across modules and should not be read as one.
+#
+# ---------------------------------------------------------------------------
 # Throughput: ~23,600 op/s including a full mapping()+compile() comparison
 # after every single op. That is the persistent-oracle decision (D-23) paying
 # off: at one `node` spawn per op the 120s campaign would have taken ~33 hours.
@@ -765,3 +910,7 @@
 #     0.4s, shrunk to three lines. Note what that sabotage WOULD have
 #     survived: the entire original suite, which never asserts an overwriting
 #     insert's return value. Seed committed with provenance.
+2026-08-01T09:39:28Z  module=sort seed=42 cases=4898 ops=196041 wall=60.0s divergences=0
+2026-08-01T09:41:24Z  module=sort seed=20260801 cases=5076 ops=204428 wall=60.0s divergences=0
+2026-08-01T10:05:15Z  module=set seed=42 cases=20024 ops=812141 wall=60.0s divergences=0
+2026-08-01T10:06:22Z  module=set seed=20260801 cases=17829 ops=719338 wall=60.0s divergences=0

@@ -21,6 +21,11 @@ use difffuzz::modules::sparse_queue_set::{
 };
 use difffuzz::modules::sparse_set::{SparseSetSpec, REGRESSIONS as SPARSE_REGRESSIONS};
 use difffuzz::modules::static_disjoint_set::{StaticDisjointSetSpec, REGRESSIONS};
+// Appended rather than filed alphabetically: this list is edited from several
+// worktrees at once, and a conflict boundary that lands inside it has already
+// broken three merges. New imports go on the end.
+use difffuzz::modules::set::{SetSpec, REGRESSIONS as SET_REGRESSIONS};
+use difffuzz::modules::sort::{SortSpec, REGRESSIONS as SORT_REGRESSIONS};
 use difffuzz::Campaign;
 // Appended at the end of the import run, never inserted.
 use difffuzz::modules::circular_buffer::{
@@ -363,11 +368,62 @@ fn fixed_deque_matches_upstream() {
     }
 }
 
+// New tests go on the end of this file, never in the middle: a conflict
+// boundary landing inside one has already broken three merges.
+
+/// The first free-function module, and therefore the first exercise of the
+/// `functions` mode in `fuzz/oracle.js`.
+///
+/// Worth its own note: this campaign compares almost nothing that the others
+/// do. `sort` has no observable state, so `observe()` is `{}` for every op and
+/// a bug in the state comparison would be invisible here. What it compares is
+/// the return value *and the arguments after the call*, which is where every
+/// effect of an in-place sort lives.
+#[test]
+fn sort_matches_upstream() {
+    let campaign = Campaign::cases(0x5057, 96, SORT_REGRESSIONS);
+
+    let report = difffuzz::run(&SortSpec, &campaign)
+        .expect("oracle must be reachable; `node` is required for differential tests");
+
+    assert!(
+        report.ops > 0,
+        "campaign ran no operations, so it proved nothing: {}",
+        report.log_line()
+    );
+
+    if let Some(divergence) = report.divergence {
+        panic!("{divergence}");
+    }
+}
+
 #[test]
 fn circular_buffer_matches_upstream() {
     let campaign = Campaign::cases(0xC18F, 96, CIRCULAR_BUFFER_REGRESSIONS);
 
     let report = difffuzz::run(&CircularBufferSpec, &campaign)
+        .expect("oracle must be reachable; `node` is required for differential tests");
+
+    assert!(
+        report.ops > 0,
+        "campaign ran no operations, so it proved nothing: {}",
+        report.log_line()
+    );
+
+    if let Some(divergence) = report.divergence {
+        panic!("{divergence}");
+    }
+}
+
+/// The second free-function module, and the one whose campaign leans hardest
+/// on the argument echo: four of `set.js`'s fourteen functions return
+/// `undefined` and do all their work to their first argument, so without it
+/// they would be compared against nothing at all.
+#[test]
+fn set_matches_upstream() {
+    let campaign = Campaign::cases(0x5E7, 96, SET_REGRESSIONS);
+
+    let report = difffuzz::run(&SetSpec, &campaign)
         .expect("oracle must be reachable; `node` is required for differential tests");
 
     assert!(

@@ -1,0 +1,43 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+#
+# PROVENANCE OF THE TWO ENTRIES BELOW -- read before assuming either recorded a
+# real port defect. Neither did. Both were produced by deliberate
+# falsifications of the fuzzer, in the spirit of DoD gate 6: a fuzzer that has
+# never been seen to fail is just a second green light. Both sabotages were
+# reverted; both seeds are replayed before any novel case on every run.
+#
+# --- 1. `indices` choosing its width from the TRUNCATED length ---
+#
+# Upstream's `exports.indices` uses its argument twice and coerces it
+# differently each time: `getPointerArray` compares `length - 1` as a double,
+# while the TypedArray constructor applies ToIndex and truncates. So
+# `indices(256.5)` is a Uint16Array of 256 elements -- one width wider than 256
+# elements need. The sabotage truncated first and passed the integer to
+# `getPointerArray`, which is the obvious reading of the code and produces a
+# Uint8Array.
+#
+# Invisible to test/sort.js, which calls `indices` exactly once, with 11.
+# Found in 62 cases (0.3s) and shrunk to a single op:
+#
+#     m.indices(256.5);   // port Uint8Array, upstream Uint16Array
+#
+# --- 2. `a > b` written as `!(a <= b)` ---
+#
+# The two agree for every totally ordered type and are the OPPOSITE of each
+# other whenever either side is NaN, because every relational comparison
+# involving NaN is false in both languages. The sabotage makes NaN sink to the
+# front of the window instead of pinning its neighbours.
+#
+# Invisible to test/sort.js, which sorts integers and Math.random() output and
+# never produces a NaN. Found in 300 cases (0.4s) and shrunk to one op on a
+# two-element array:
+#
+#     m.inplaceInsertionSort([NaN, 0], 0, 2);   // port [0, NaN], upstream [NaN, 0]
+#
+cc 75700d4a3ac8cd7ccc2e8a6c4b4f65965e06eca5e69d1c03f8076b46a416b624 # shrinks to Program { ctor: [], ops: [Op { name: "indices", args: [Number(256.5)] }] }
+cc 8fe744fe635d8f9cfb8e772fa3800b4c84202aec32fe1716676d9d0f7f1d3517 # shrinks to Program { ctor: [], ops: [Op { name: "inplaceInsertionSort", args: [Array [Object {"$nan": Bool(true)}, Number(0)], Number(0), Number(2)] }] }

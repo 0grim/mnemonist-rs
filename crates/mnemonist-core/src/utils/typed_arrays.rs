@@ -49,6 +49,74 @@ pub fn get_pointer_array(size: f64) -> Result<PointerWidth, &'static str> {
     Err(POINTER_ARRAY_TOO_LARGE)
 }
 
+/// Upstream's message when a typed array is asked for an impossible length.
+///
+/// `new Uint8Array(-1)` throws a `RangeError` reading
+/// `Invalid typed array length: -1`. Only the fixed prefix is a constant; the
+/// offending value is carried by [`IndicesError::InvalidLength`].
+pub const INVALID_TYPED_ARRAY_LENGTH: &str = "Invalid typed array length";
+
+/// The two throws [`indices`] can reach, which are thrown by different things.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum IndicesError {
+    /// `getPointerArray` refused the length. Message: [`POINTER_ARRAY_TOO_LARGE`].
+    TooLarge,
+    /// The TypedArray constructor refused it. Message:
+    /// [`INVALID_TYPED_ARRAY_LENGTH`], then the offending value.
+    InvalidLength(f64),
+}
+
+/// A pointer array of `length` slots, filled with its own positions.
+///
+/// Upstream's `exports.indices` — `getPointerArray(length)`, then
+/// `new PointerArray(length)`, then `for (i = 0; i < length; i++) array[i] = i`.
+///
+/// # The two lengths, which are not the same length
+///
+/// Takes `f64` because upstream's two uses of the argument coerce it
+/// *differently*, and the difference is observable:
+///
+/// * `getPointerArray` compares `length - 1` as a double, so it sees `256.5`;
+/// * the TypedArray constructor applies `ToIndex`, which **truncates**, so it
+///   allocates 256 slots.
+///
+/// `indices(256.5)` is therefore a `Uint16Array` of 256 elements — a width
+/// wider than 256 elements need. Confirmed against Node 24.18.1. Taking
+/// `usize` here and letting the bridge truncate first would silently produce a
+/// `Uint8Array` instead.
+///
+/// The fill loop runs on the untruncated bound too, so its last store lands
+/// past the end of the array and is dropped, exactly as a JS typed-array store
+/// past the end is. That makes it unobservable, which is why the loop below is
+/// written against the allocated length.
+///
+/// # Errors
+///
+/// [`IndicesError::TooLarge`] for a length past `2³²`, `NaN`, or either
+/// infinity — every comparison in `getPointerArray` is false for `NaN`, so it
+/// falls through to the same throw. [`IndicesError::InvalidLength`] for a
+/// negative one; `-0.5` is *not* negative after truncation and yields an empty
+/// array, as it does upstream.
+pub fn indices(length: f64) -> Result<PointerVec, IndicesError> {
+    let width = get_pointer_array(length).map_err(|_| IndicesError::TooLarge)?;
+
+    // `ToIndex`: truncate towards zero, then reject anything still negative.
+    let truncated = length.trunc();
+
+    if truncated < 0.0 {
+        return Err(IndicesError::InvalidLength(length));
+    }
+
+    let count = truncated as usize;
+    let mut array = PointerVec::zeroed(width, count);
+
+    for slot in 0..count {
+        array.set(slot, slot as u32);
+    }
+
+    Ok(array)
+}
+
 /// A value that can be stored into a JS typed array, and read back out.
 ///
 /// Upstream `SparseMap` is constructed with a *value array constructor* —
@@ -368,6 +436,59 @@ mod tests {
         assert!(!values.is_empty());
         assert!(PointerVec::zeroed(PointerWidth::U8, 0).is_empty());
         assert_eq!(values, PointerVec::U16(vec![0, 0, 0]));
+    }
+
+    /// `indices(n)` picks the width from `n` and then cannot truncate, because
+    /// the largest value it writes is `n - 1`. Checked at both sides of each
+    /// boundary, since that is where a width off by one would show.
+    #[test]
+    fn indices_fills_with_its_own_positions_at_every_width() {
+        for length in [0usize, 1, 255, 256, 257, 65_535, 65_536, 65_537] {
+            let array = indices(length as f64).expect("length fits a pointer array");
+
+            assert_eq!(array.len(), length, "length {length}");
+            assert_eq!(
+                array.width(),
+                get_pointer_array(length as f64).unwrap(),
+                "width for {length}"
+            );
+
+            for slot in 0..length {
+                assert_eq!(array.get(slot), slot as u32, "slot {slot} of {length}");
+            }
+        }
+    }
+
+    /// The width is chosen from the raw length and the allocation from the
+    /// truncated one, so a fractional length can be one width too wide.
+    /// Pinned against Node 24.18.1: `indices(256.5)` is a `Uint16Array` of 256
+    /// elements, and `indices(255.5)` a `Uint8Array` of 255.
+    #[test]
+    fn indices_truncates_its_length_but_not_its_width() {
+        let wide = indices(256.5).unwrap();
+        assert_eq!(wide.width(), PointerWidth::U16);
+        assert_eq!(wide.len(), 256);
+        assert_eq!(wide.get(255), 255);
+
+        let narrow = indices(255.5).unwrap();
+        assert_eq!(narrow.width(), PointerWidth::U8);
+        assert_eq!(narrow.len(), 255);
+
+        assert_eq!(indices(3.5).unwrap(), PointerVec::U8(vec![0, 1, 2]));
+
+        // `-0.5` truncates to `-0`, which `ToIndex` accepts as zero.
+        assert_eq!(indices(-0.5).unwrap(), PointerVec::U8(vec![]));
+    }
+
+    #[test]
+    fn indices_refuses_the_lengths_upstream_refuses() {
+        assert_eq!(indices(4_294_967_297.0), Err(IndicesError::TooLarge));
+        assert_eq!(indices(f64::NAN), Err(IndicesError::TooLarge));
+        assert_eq!(indices(f64::INFINITY), Err(IndicesError::TooLarge));
+        assert_eq!(indices(4_294_967_296.5), Err(IndicesError::TooLarge));
+
+        assert_eq!(indices(-1.0), Err(IndicesError::InvalidLength(-1.0)));
+        assert_eq!(indices(-3.5), Err(IndicesError::InvalidLength(-3.5)));
     }
 
     #[test]

@@ -831,3 +831,141 @@ port, and it is accepted only because the alternative is not expressible.
 **Reachable only through** `X.from(dataView, ArrayClass, capacity)` — with no capacity,
 `guessLength` returns `undefined` and the `could not guess iterable length` throw fires first.
 **Verify:** the `from(DataView)` differential probe in `docs/modules/fixed-stack.md`.
+
+---
+
+## sort (D-80 .. D-83)
+
+**Numbering note.** This unit was built in an isolated worktree alongside three others, and only a
+bug-ID range (B-80..B-89) was allocated. `D-47` onward is the obvious next number and therefore the
+one another agent is most likely to have taken, so these are numbered to match the allocated B
+range instead. Renumber at merge if the orchestrator prefers; nothing references them by number
+except `docs/modules/sort.md`.
+
+### D-80 — The sort helpers take numbers; upstream takes anything
+`sort/quick.js` and `sort/insertion.js` are duck-typed: `array` is anything indexable and elements
+are compared with `>`, `>=`, `<=`, which coerce through `valueOf`/`toString`. Supporting that means
+calling into JavaScript from inside the sort loop — DESIGN.md 3.3's **T2 tier** — which this unit
+does not reach for. Every input in `test/sort.js` is a number, and mnemonist's own callers
+(`passjoin-index.js`, `suffix-array.js`) pass typed arrays of numbers.
+
+Rejected alternative: coerce non-numbers with `ToNumber` on the Rust side. It would accept the
+inputs and answer differently, because JavaScript's relational comparison on two strings is
+lexicographic and not numeric. A loud refusal naming the limit is better than a quiet wrong answer.
+
+**Consequence worth stating in the write-up, because the direction is easy to get backwards:**
+B-80 and B-81 are unreachable in the port, and the port is *not* fixing them. It is refusing the
+only inputs that can observe them. With numeric elements no user code runs during a comparison, so
+upstream's shared global counter and shared partition stack are never re-entered and a local
+behaves identically. Reproducing them bug-for-bug would mean implementing T2 first and then adding
+shared state to reproduce a defect nothing can see — strictly less faithful.
+
+### D-81 — Sort windows outside `0..=length` are refused
+Upstream reads `undefined` past the end and writes into holes, producing a genuinely sparse array.
+A JS array hole has no Rust representation, and modelling one would mean `Vec<Option<f64>>`
+throughout for a regime `test/sort.js` never enters. `mnemonist_core::sort::check_window` asserts
+instead and the bridge reports it with a message naming the limit — the same position
+`PointerVec::get` already takes, for the same reason.
+
+### D-82 — `utils/typed_arrays::indices` takes an `f64`, not a `usize`
+Upstream's `exports.indices` uses its argument twice and coerces it **differently** each time:
+`getPointerArray` compares `length - 1` as a double, while the `TypedArray` constructor applies
+`ToIndex` and truncates. So `indices(256.5)` is a `Uint16Array` of **256** elements — one width
+wider than 256 elements need — and `indices(-0.5)` is an empty `Uint8Array` while `indices(-1)`
+throws. All confirmed against Node 24.18.1.
+
+Rejected alternative: take a `usize` and let the bridge truncate. That was the first draft; it
+produced `Uint8Array(256)` for `256.5`. Caught by `tests/boundary/sort.js`, and now pinned by the
+fuzzer's first falsification seed.
+
+### D-83 — A free-function unit's export shape is re-assembled by the shim, and the aggregate is the source
+The addon exports into one flat namespace, so there is no `sort/quick` object to hand back, and
+`indices` is far too generic a name to claim at the top of an addon that will eventually carry forty
+modules' worth of helpers. It is `typedArraysIndices` in the addon and mapped back in
+`tests/bridge/sort.js` — DESIGN.md 2.3's Problem 2, which was written for exactly this.
+
+The *direction* of the shim tree is the decision. `tests/bridge/sort.js` holds the assembly and
+`sort/insertion.js`, `sort/quick.js` and `utils/typed-arrays.js` are cut from it. The reverse — three
+leaf shims plus an aggregate that re-requires them — would leave `sort.js` decorative, existing only
+to satisfy `tests/verify.sh` gate 3, which looks for a shim named after the unit. `test/sort.js`
+never requires `../sort.js` itself.
+
+### D-84 — The differential fuzzer models a free-function module by echoing its arguments
+`ModuleSpec::functions()` names the upstream **files** a unit spans (three, for `sort`); the oracle
+merges their exports and `instance` becomes that object. Such a module has no observable state, so
+`observe()` is `{}` forever and the comparison would rest entirely on return values — useless for
+functions whose whole job is mutating an argument. `fuzz/oracle.js` therefore re-encodes every
+argument after the call and compares those too.
+
+Rejected alternative: a per-function declaration of which parameters are out-parameters. It would
+compare slightly less and would go stale silently the first time someone added a function; echoing
+everything is generic, and the oracle's whole design principle is that it holds no module knowledge.
+
+---
+
+## set (D-85 .. D-88)
+
+Same numbering caveat as D-80..D-84 above: allocated a bug-ID range only, so these are numbered to
+match it rather than continuing from D-46, which is the number a parallel worktree is most likely
+to have taken.
+
+### D-85 — The four mutating set functions replay `add`/`delete`; they do not rebuild
+`add`, `subtract`, `intersect` and `disjunct` return `undefined` and do their whole job to their
+first argument. Core returns the `SetOp` trace it applied, in upstream's call order, and the bridge
+makes exactly those calls on the caller's own `Set`.
+
+Rejected alternative: compute the final member list, `A.clear()`, re-add. Simpler, passes all
+sixteen blocks of `test/set.js`, and observably wrong -- a JS `Set` iterator is live, `clear()` does
+not detach it, and every re-inserted member is therefore visited a second time. Measured:
+
+    var A = new Set([1,2]); var it = A.values(); it.next();
+    functions.add(A, new Set([2,3]));
+    Array.from(it);     // upstream [2,3];  clear-and-rebuild [1,2,3]
+
+Residual divergence, stated rather than hidden: the `add`/`delete` handles are fetched **once**
+before the first call, so a member's side effects cannot divert the rest of the trace. Upstream
+re-resolves `A.add` per call. Nothing in the original suite goes either way.
+
+### D-86 — Object members are refused (inherited from `JsKey`, restated because `set` is where it bites hardest)
+`Set` compares objects by identity and no identity hash for a JS object is reachable from Rust. The
+argument is unchanged from `crates/mnemonist-napi/src/js_key.rs` and the audit there holds: every
+member in `test/set.js` is a number or a single character. This unit is the first where the limit is
+visible in the *public API of the module itself* rather than only in a structure's keys, which is
+why `tests/boundary/set.js` asserts the refusal explicitly.
+
+### D-87 — Variadicity goes through an array, and the arity check stays in core
+napi has no variadic parameter, so `intersection` and `union` take a `Vec` and `tests/bridge/set.js`
+does the spread. The "needs at least two arguments" check is in `mnemonist-core`, so upstream's
+threshold and its exact message live in one place; the shim forwards whatever it was handed,
+including nothing, and lets the port refuse it.
+
+Rejected alternative: `env.run_script` an `arguments`-based wrapper, as `crate::statics` does for
+`X.of`. That exists because `of` is *defined* in terms of `arguments` and putting a real one through
+the real dispatch is the point. Nothing here inspects `arguments` beyond its length, so the script
+would buy nothing and cost a `run_script` per call.
+
+### D-88 — Upstream's three `===` shortcuts are implemented in core and unreachable from JavaScript
+`intersection` skips `set.has(item)` when `set === smallestSet`; `isSubset` and `intersectionSize`
+each short-circuit on `A === B`. Core reproduces all three with `std::ptr::eq`, so a Rust caller
+passing one reference twice takes upstream's own path. The bridge cannot: two arguments that are the
+same JS `Set` become two separate `OrderedSet`s when read.
+
+**Unobservable, and demonstrated rather than asserted.** Where the identity holds, the skipped check
+is `smallest.has(member)` for a member drawn from `smallest` -- true by construction -- or a count
+of A's members that are in A, which is `A.size`. `tests/boundary/set.js` passes one object twice to
+all six affected functions and compares against vendored upstream.
+
+Rejected alternative: detect duplicate arguments in the bridge with `napi_strict_equals` and hand
+core the same reference twice. Ten lines, exact, and buying nothing measurable; the honest version
+is to implement the shortcut where it can be reached and say so where it cannot.
+
+### Withdrawn claim — `disjunct`'s WRITE order is not load-bearing
+Recorded because the correction is the interesting part. An earlier draft asserted that `disjunct`
+adding `B \ A` before deleting `A ∩ B` is what makes `{1,2}` disjunct `{2,3}` come out `[1, 3]`
+rather than `[3, 1]`. Sabotaging exactly that -- deleting first, while still testing `!A.has`
+against the original A -- left `test/set.js` at 16 passing and `tests/boundary/set.js` fully green.
+A member of `B \ A` is appended at the end either way; a shared member is gone either way.
+
+What is load-bearing is that the `!A.has` test runs *before* any deletion: delete first and every
+shared member passes it, is re-added, and the result becomes `A ∪ B`. That sabotage does turn
+`#.disjunct` red, and it is now pinned by its own core test and by the corrected boundary spec.

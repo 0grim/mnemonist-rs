@@ -1092,3 +1092,125 @@ a structure whose `size` is `undefined` is arithmetic on `NaN` from then on.
 **Moderate candidate.** Narrower than B-60 and B-61 — a `DataView` is an odd thing to hand a stack
 — but it is a genuine type confusion inside a predicate whose name says "array like", and the fix
 is one `typeof` check.
+## sort — upstream bug candidates (B-80, B-81)
+
+Both are the same defect wearing different clothes: **shared mutable module state inside a function
+that can be re-entered through a comparison.** Both were found by reading, not by fuzzing, and the
+reason is worth recording — see the note at the end.
+
+### B-80 — `sort/insertion.js` declares its loop counter as a GLOBAL, and re-entry corrupts the sort
+`status: VERIFIED against Node 24.18.1` · `mnemonist sort/insertion.js`
+
+Both exported functions open with an undeclared assignment:
+
+```js
+function inplaceInsertionSort(array, lo, hi) {
+  i = lo + 1;          // no var, no let
+  var j, k;
+```
+
+The file is sloppy-mode CommonJS, so `i` is `globalThis.i` and every call in the realm shares one.
+After a single `inplaceInsertionSort([3, 1, 2], 0, 3)`, `global.i` is `3`.
+
+That alone is only untidy. The bug is that `>` invokes `valueOf`, so an element can re-enter the
+sorter mid-comparison and the inner call leaves the outer call's counter wherever it finished:
+
+```js
+function reentrant(v, payload) {
+  return {valueOf: function () { if (payload) { payload(); payload = null; } return v; }};
+}
+var inner = [3, 1, 2];
+var outer = [reentrant(5),
+             reentrant(1, function () { insertion.inplaceInsertionSort(inner, 0, 3); }),
+             reentrant(3), reentrant(2)];
+
+insertion.inplaceInsertionSort(outer, 0, 4);
+outer.map(Number);   // [1, 5, 3, 2]   -- expected [1, 2, 3, 5]
+```
+
+`inplaceInsertionSortIndices` has the identical line and shares the same `i`, so the two corrupt
+each other as readily as each corrupts itself. Under `'use strict'` the file would throw
+`ReferenceError` outright.
+
+**Strong candidate** — a one-word fix (`var i = lo + 1`) for a wrong-answer bug, plus a global leak.
+
+### B-81 — `sort/quick.js`'s partition stack is module state, shared by all four sorts
+`status: VERIFIED against Node 24.18.1` · `mnemonist sort/quick.js`
+
+```js
+var LOS = new Float64Array(64),
+    HIS = new Float64Array(64);
+```
+
+Allocated once at module scope and used by `inplaceQuickSort` *and* `inplaceQuickSortIndices`. Here
+`i` **is** a proper local, which makes the failure subtler than B-80's: the outer call's index keeps
+pointing into a stack the inner call has overwritten, so the outer call resumes partitioning ranges
+that no longer describe its own array. Measured on a 40-element array whose first compared element
+re-enters:
+
+```js
+quick.inplaceQuickSort(arr, 0, 40);
+// [0,1,4,7,10,13,16,...,35,37,38,32,29,26,...,6,3]   -- 38 of 40 elements out of order
+```
+
+The allocation is presumably deliberate — avoiding two `Float64Array(64)` per call — so the fix is
+not "make them locals" but "make them locals, or reference-count re-entry". Worth reporting as a
+correctness note rather than a style one.
+
+**Strong candidate**, with the same caveat as B-80: both need an element that runs JavaScript during
+a comparison, which is legal and which mnemonist's own callers never do.
+
+#### Why the fuzzer could not have found either
+
+`crates/mnemonist-napi/src/sort.rs` accepts numbers and nothing else (D-80), so no user code can run
+during a comparison and the port cannot enter the regime at all. The port has locals where upstream
+has module state, and with numeric elements the two are indistinguishable.
+
+*This is the mirror image of the B-31 lesson.* There, a grammar that omitted a method omitted every
+bug reachable only through it. Here the **bridge's accepted input domain** omits them, one layer
+earlier, and no grammar over that domain could have expressed the program. Both come out the same
+way: a clean campaign is coverage of what the harness can express, and saying which is part of
+reporting the result.
+
+---
+
+## set — no upstream bugs, and that is the finding
+
+`set.js` was read statement by statement, as `sort/` was, and produced **nothing to file**. Worth
+recording rather than omitting: 356 lines with no shared mutable state, no typed arrays, no index
+arithmetic and no re-entrancy. It is the cleanest upstream file this port has touched.
+
+Three things that read like bugs and are not, all checked against Node 24.18.1:
+
+* `jaccard(new Set(), new Set())` is `0`, not `NaN` — the `if (I === 0) return 0` guard fires
+  before the division. Same for `overlap`. A convention.
+* `intersection`'s result ORDER depends on which argument happened to be smallest, because it
+  iterates the smallest one. Surprising, and correct: it falls out of the optimisation.
+  `intersection(new Set([3,2,1]), new Set([1,2]))` is `[1, 2]`.
+* `difference(A, new Set())` returns `new Set(A)` — a copy, not `A`. Deliberate.
+
+**A near-miss in OUR port, caught by a boundary spec rather than by the original suite.** The first
+bridge sketch for the four mutating functions was read-A, compute, `A.clear()`, re-add. It passes
+all sixteen upstream blocks and is observably wrong, because a JS `Set` iterator is live and
+`clear()` does not detach it:
+
+```js
+var A = new Set([1, 2]); var it = A.values(); it.next();
+functions.add(A, new Set([2, 3]));
+Array.from(it);   // upstream [2, 3];  clear-and-rebuild [1, 2, 3]
+```
+
+*The lesson is the one B-31 taught from the other side: the original suite's assertions define what
+it can catch, and a bridge decision that is invisible to all of them still needs its own test. Here
+the fix was to have core return the trace of `add`/`delete` calls and replay it, so the caller's
+`Set` experiences what upstream's experiences, call for call.*
+
+**A second, smaller correction, recorded because it is a documentation bug this project's own
+process caught.** An early draft of `disjunct`'s doc claimed its add-before-delete write order was
+what fixes the result's ordering. Sabotaging exactly that changed nothing — neither `test/set.js`
+nor the boundary specs went red. The write order is unobservable; what is load-bearing is that the
+`!A.has` test runs before any deletion. The claim was withdrawn in the code and the real property
+pinned by its own test.
+
+*Gate 6's discipline applied to prose: a sabotage that stays green does not vindicate the code, it
+falsifies the sentence explaining it.*
