@@ -12,9 +12,9 @@
 //! properties have to be designed for rather than discovered:
 //!
 //! * **it can fail.** `compare` therefore returns `Result`, with the error type
-//!   supplied by the caller ([`Throw`]) rather than fixed here, so
-//!   `mnemonist-core` never mentions `napi::Error` and a native caller never
-//!   meets a `Result` it cannot construct;
+//!   supplied by the caller rather than fixed here, so `mnemonist-core` never
+//!   mentions `napi::Error` and a native caller never meets a `Result` it
+//!   cannot construct;
 //! * **it can mutate the very heap it is comparing.** Nothing in this file
 //!   arranges that — [`crate::structures::heap`]'s [`Store`](crate::structures::heap::Store)
 //!   does — but every signature here takes `&self` so that it *can*;
@@ -32,26 +32,20 @@
 //! throw. The bridge implements [`Relational`] for a JavaScript value; core
 //! implements it for the Rust types it actually stores.
 
-/// Constructing the exception a ported algorithm needs to raise.
+/// What a Rust caller gets when a ported algorithm throws.
 ///
 /// `mnemonist-core` has no exceptions and no `napi::Error`, but upstream does
 /// `throw new Error('mnemonist/heap.replace: …')` from the middle of an
-/// algorithm. This trait is the seam: core raises by *message*, and the caller
-/// decides what a raised message is. The bridge makes it a JS exception; a Rust
-/// caller gets [`Thrown`].
-pub trait Throw {
-    fn raise(message: &'static str) -> Self;
-}
-
-/// What a Rust caller gets when a ported algorithm throws.
+/// algorithm. Core raises by *message*, through
+/// [`Store::raise`](crate::structures::heap::Store::raise), and the caller
+/// decides what a raised message is: the bridge makes it a JS exception, a Rust
+/// caller gets this.
+///
+/// It is a method on the store rather than a trait on the error type because
+/// the error type belongs to the bridge — `napi::Error` — and neither the trait
+/// nor the type would be local to it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Thrown(pub &'static str);
-
-impl Throw for Thrown {
-    fn raise(message: &'static str) -> Self {
-        Thrown(message)
-    }
-}
 
 impl std::fmt::Display for Thrown {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

@@ -124,6 +124,16 @@ pub fn install_variadic_factories(exports: &Object, env: &Env) -> Result<()> {
         patch.call((constructor, (*method).to_owned()).into())?;
     }
 
+    // Appended at the very end of this function, deliberately: it is the last
+    // statement before the `Ok`, so a merge conflict cannot land inside an
+    // existing loop or match arm. `heap.js` ends with its own load-time
+    // assignments -- `MaxHeap.prototype = Heap.prototype`, `Heap.MinHeap`,
+    // `Heap.MaxHeap` -- and they belong in the addon for the same reason `of`
+    // does: a shim that added them would mean `require('@port/addon').Heap` was
+    // incomplete without the test harness.
+    crate::comparators::install_comparator_factories(exports, env)?;
+    crate::heap::install_heap_statics(exports, env)?;
+
     Ok(())
 }
 

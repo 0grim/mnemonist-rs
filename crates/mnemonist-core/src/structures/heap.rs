@@ -57,7 +57,7 @@
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
-use crate::utils::comparators::{Comparator, MaybeUndefined, Reversed, Sentinel, Throw, Thrown};
+use crate::utils::comparators::{Comparator, MaybeUndefined, Reversed, Sentinel, Thrown};
 
 /// Upstream's message, verbatim. `test/heap.js` asserts against `/replace/`.
 pub const REPLACE_EMPTY: &str = "mnemonist/heap.replace: cannot pop an empty heap.";
@@ -89,7 +89,15 @@ pub trait Store: Clone + Sized {
     type Item: Clone;
 
     /// What a failed access, or a thrown comparator, is reported as.
-    type Error: Throw;
+    type Error;
+
+    /// `throw new Error(message)`.
+    ///
+    /// The one algorithm that throws is `Heap.replace` on an empty heap, and
+    /// the message is asserted by the original suite. Raising through the store
+    /// keeps `mnemonist-core` free of any notion of an exception while still
+    /// letting the bridge produce a real JavaScript `Error`.
+    fn raise(&self, message: &'static str) -> Self::Error;
 
     /// `array.length`.
     fn length(&self) -> Result<usize, Self::Error>;
@@ -175,6 +183,10 @@ impl<T> VecStore<T> {
 impl<T: Clone> Store for VecStore<T> {
     type Item = Option<T>;
     type Error = Thrown;
+
+    fn raise(&self, message: &'static str) -> Thrown {
+        Thrown(message)
+    }
 
     fn length(&self) -> Result<usize, Thrown> {
         Ok(self.cells.borrow().len())
@@ -374,7 +386,7 @@ where
     C: Comparator<S::Item, S::Error>,
 {
     if heap.length()? == 0 {
-        return Err(S::Error::raise(REPLACE_EMPTY));
+        return Err(heap.raise(REPLACE_EMPTY));
     }
 
     let popped = heap.get(0)?;
