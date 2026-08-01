@@ -11,10 +11,48 @@
 
 use std::time::Duration;
 
+use difffuzz::modules::bit_set::{BitSetSpec, REGRESSIONS as BIT_SET_REGRESSIONS};
+use difffuzz::modules::bit_vector::{BitVectorSpec, REGRESSIONS as BIT_VECTOR_REGRESSIONS};
 use difffuzz::modules::hashed_array_tree::{HashedArrayTreeSpec, REGRESSIONS as HAT_REGRESSIONS};
 use difffuzz::modules::sparse_set::{SparseSetSpec, REGRESSIONS as SPARSE_REGRESSIONS};
 use difffuzz::modules::static_disjoint_set::{StaticDisjointSetSpec, REGRESSIONS};
 use difffuzz::Campaign;
+
+#[test]
+fn bit_set_matches_upstream() {
+    let campaign = Campaign::cases(0xB175, 96, BIT_SET_REGRESSIONS);
+
+    let report = difffuzz::run(&BitSetSpec, &campaign)
+        .expect("oracle must be reachable; `node` is required for differential tests");
+
+    assert!(
+        report.ops > 0,
+        "campaign ran no operations, so it proved nothing: {}",
+        report.log_line()
+    );
+
+    if let Some(divergence) = report.divergence {
+        panic!("{divergence}");
+    }
+}
+
+#[test]
+fn bit_vector_matches_upstream() {
+    let campaign = Campaign::cases(0xB1EC, 96, BIT_VECTOR_REGRESSIONS);
+
+    let report = difffuzz::run(&BitVectorSpec, &campaign)
+        .expect("oracle must be reachable; `node` is required for differential tests");
+
+    assert!(
+        report.ops > 0,
+        "campaign ran no operations, so it proved nothing: {}",
+        report.log_line()
+    );
+
+    if let Some(divergence) = report.divergence {
+        panic!("{divergence}");
+    }
+}
 
 #[test]
 fn hashed_array_tree_matches_upstream() {

@@ -17,6 +17,8 @@
 use std::process::ExitCode;
 use std::time::Duration;
 
+use difffuzz::modules::bit_set::BitSetSpec;
+use difffuzz::modules::bit_vector::BitVectorSpec;
 use difffuzz::modules::hashed_array_tree::HashedArrayTreeSpec;
 use difffuzz::modules::sparse_set::SparseSetSpec;
 use difffuzz::modules::static_disjoint_set::StaticDisjointSetSpec;
@@ -26,7 +28,7 @@ const USAGE: &str = "\
 usage: difffuzz --module <name> [--seed N] [--duration SECONDS] [--cases N] [--batch N]
 
   --module    module to fuzz; currently: static-disjoint-set, sparse-set,
-              hashed-array-tree
+              hashed-array-tree, bit-set, bit-vector
   --seed      campaign seed (default 42); with --cases, reproduces exactly
   --duration  wall-clock budget in seconds (default 60)
   --cases     stop after N cases instead of after --duration
@@ -77,6 +79,20 @@ fn main() -> ExitCode {
             &HashedArrayTreeSpec,
             &Campaign {
                 regressions: difffuzz::modules::hashed_array_tree::REGRESSIONS,
+                ..campaign
+            },
+        ),
+        "bit-set" => difffuzz::run(
+            &BitSetSpec,
+            &Campaign {
+                regressions: difffuzz::modules::bit_set::REGRESSIONS,
+                ..campaign
+            },
+        ),
+        "bit-vector" => difffuzz::run(
+            &BitVectorSpec,
+            &Campaign {
+                regressions: difffuzz::modules::bit_vector::REGRESSIONS,
                 ..campaign
             },
         ),

@@ -1,0 +1,33 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+#
+# PROVENANCE OF THE ENTRY BELOW -- it did NOT record a port defect. It was
+# produced by a deliberate falsification of the fuzzer (D-32): a fuzzer that
+# has never been seen to fail is just a second green light. The sabotage was
+# reverted; the seed is replayed before any novel case on every run.
+#
+# The sabotage: `reset` given the `>>> 0` that upstream forgot, i.e. comparing
+# an unsigned new word against the unsigned old one instead of a signed new
+# word against an unsigned old one. That is B-13 FIXED, and fixing it is the
+# single most plausible thing a future cleanup does to this file -- the missing
+# `>>> 0` is three lines away from two that have it.
+#
+# Caught in 1,325 cases (2.0s) and shrunk from 200 ops to TWO:
+#
+#     var s = new BitSet(1);
+#     s.set(31);      // inside word 0, past length 1 -- accepted (B-19)
+#     s.reset(0);     // clears nothing, and upstream decrements anyway
+#     // port size 1, upstream size 0
+#
+# Worth noting what this two-op program demonstrates: B-19 and B-13 compound.
+# The set(31) is only possible because an index past `length` but inside the
+# last allocated word is accepted, and it is what puts bit 31 into the word,
+# which is the precondition for reset's signed comparison to misfire. Neither
+# defect alone reaches this state, and no upstream test passes an index past
+# `length` at all.
+#
+cc 7aec3a0f860bfa8d40509536c76cfd5f3a871408b4e08ad94f49140656aeed0a # shrinks to Program { ctor: [Number(1)], ops: [Op { name: "set", args: [Number(31)] }, Op { name: "reset", args: [Number(0)] }] }
