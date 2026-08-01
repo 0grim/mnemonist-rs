@@ -176,25 +176,29 @@ impl JsHeap {
             )?),
         })
     }
+}
 
-    // ---------------------------------------------------------------- statics
-    //
-    // Upstream exports its eight raw-array helpers on the constructor, and
-    // `fixed-reverse-heap.js` calls two of them. They operate on a bare array
-    // and a bare comparator, so each one below is that pair wrapped and handed
-    // straight to core.
-    //
-    // Each is declared under a `__s_` name and renamed at load time by
-    // [`install_heap_statics`]. napi-rs registers a class's statics and its
-    // prototype methods through one name table, so `Heap.push` and
-    // `Heap.prototype.push` -- which upstream has BOTH of, with different
-    // signatures -- collide and the prototype half silently vanishes. Measured:
-    // nine of `test/heap.js`'s fourteen cases failed with
-    // `heap.push is not a function`. JavaScript has no such conflict, since the
-    // two live on different objects, so the rename restores upstream's shape
-    // exactly.
+/// The ten raw-array helpers upstream exports on the `Heap` constructor.
+///
+/// # Why they are not `#[napi]` statics on `JsHeap`
+///
+/// Measured, after nine of `test/heap.js`'s fourteen cases failed with
+/// `heap.push is not a function`: **napi-rs registers a class's statics and its
+/// prototype methods through one name table.** Upstream has *both* `Heap.push`
+/// and `Heap.prototype.push`, with different signatures, and five such pairs in
+/// all -- `push`, `pop`, `replace`, `pushpop`, `consume`. Declaring both halves
+/// makes the prototype half silently vanish.
+///
+/// JavaScript has no such conflict, because a constructor and its prototype are
+/// different objects. So the statics live on a class of their own, which
+/// [`install_heap_statics`] copies onto `Heap` and then deletes from the
+/// addon's exports -- leaving exactly upstream's surface.
+#[napi(js_name = "HeapStatics")]
+pub struct JsHeapStatics;
 
-    #[napi(js_name = "__s_siftDown")]
+#[napi]
+impl JsHeapStatics {
+    #[napi(js_name = "siftDown")]
     pub fn static_sift_down(
         env: Env,
         comparator: Unknown,
@@ -207,28 +211,28 @@ impl JsHeap {
         core_heap::sift_down(&comparator, &heap, start_index as usize, index as usize)
     }
 
-    #[napi(js_name = "__s_siftUp")]
+    #[napi(js_name = "siftUp")]
     pub fn static_sift_up(env: Env, comparator: Unknown, heap: Unknown, index: u32) -> Result<()> {
         let (comparator, heap) = raw_pair(&env, comparator, heap)?;
 
         core_heap::sift_up(&comparator, &heap, index as usize)
     }
 
-    #[napi(js_name = "__s_push")]
+    #[napi(js_name = "push")]
     pub fn static_push(env: Env, comparator: Unknown, heap: Unknown, item: Unknown) -> Result<()> {
         let (comparator, heap) = raw_pair(&env, comparator, heap)?;
 
         core_heap::push(&comparator, &heap, JsSlot::new(&env, &item)?)
     }
 
-    #[napi(js_name = "__s_pop")]
+    #[napi(js_name = "pop")]
     pub fn static_pop(env: Env, comparator: Unknown, heap: Unknown) -> Result<JsSlot> {
         let (comparator, heap) = raw_pair(&env, comparator, heap)?;
 
         core_heap::pop(&comparator, &heap)
     }
 
-    #[napi(js_name = "__s_replace")]
+    #[napi(js_name = "replace")]
     pub fn static_replace(
         env: Env,
         comparator: Unknown,
@@ -240,7 +244,7 @@ impl JsHeap {
         core_heap::replace(&comparator, &heap, JsSlot::new(&env, &item)?)
     }
 
-    #[napi(js_name = "__s_pushpop")]
+    #[napi(js_name = "pushpop")]
     pub fn static_pushpop(
         env: Env,
         comparator: Unknown,
@@ -253,7 +257,7 @@ impl JsHeap {
     }
 
     /// `Heap.heapify(compare, array)` — in place, on the caller's array.
-    #[napi(js_name = "__s_heapify")]
+    #[napi(js_name = "heapify")]
     pub fn static_heapify(env: Env, comparator: Unknown, array: Unknown) -> Result<()> {
         let (comparator, array) = raw_pair(&env, comparator, array)?;
 
@@ -261,7 +265,7 @@ impl JsHeap {
     }
 
     /// `Heap.consume(compare, heap)` — drains the caller's array.
-    #[napi(js_name = "__s_consume")]
+    #[napi(js_name = "consume")]
     pub fn static_consume(env: Env, comparator: Unknown, heap: Unknown) -> Result<JsSlot> {
         let (comparator, heap) = raw_pair(&env, comparator, heap)?;
 
@@ -269,7 +273,7 @@ impl JsHeap {
     }
 
     /// `Heap.nsmallest([compare], n, iterable)`.
-    #[napi(js_name = "__s_nsmallest")]
+    #[napi(js_name = "nsmallest")]
     pub fn static_nsmallest(
         env: Env,
         first: Unknown,
@@ -283,7 +287,7 @@ impl JsHeap {
     }
 
     /// `Heap.nlargest([compare], n, iterable)`.
-    #[napi(js_name = "__s_nlargest")]
+    #[napi(js_name = "nlargest")]
     pub fn static_nlargest(
         env: Env,
         first: Unknown,
@@ -423,18 +427,13 @@ fn materialise(env: &Env, iterable: Unknown) -> Result<JsArray> {
 /// would have silently corrected it. The two factories are captured into the
 /// closure and then deleted from the constructor, so the addon's public surface
 /// is exactly upstream's.
-const INSTALLER: &str = "(function (Heap) { \
-     var statics = ['siftUp', 'siftDown', 'push', 'pop', 'replace', 'pushpop', \
-                    'heapify', 'consume', 'nsmallest', 'nlargest']; \
-     statics.forEach(function (name) { \
-       var fn = Heap['__s_' + name].bind(Heap); \
-       delete Heap['__s_' + name]; \
-       Heap[name] = fn; \
+const INSTALLER: &str = "(function (Heap, statics) { \
+     ['siftUp', 'siftDown', 'push', 'pop', 'replace', 'pushpop', 'heapify', \
+      'consume', 'nsmallest', 'nlargest'].forEach(function (name) { \
+       Heap[name] = statics[name].bind(statics); \
      }); \
      var makeMax = Heap.__max.bind(Heap), \
          makeMaxFrom = Heap.__maxFrom.bind(Heap); \
-     delete Heap.__max; \
-     delete Heap.__maxFrom; \
      function MaxHeap(comparator) { return makeMax(comparator); } \
      MaxHeap.prototype = Heap.prototype; \
      MaxHeap.from = function (iterable, comparator) { return makeMaxFrom(iterable, comparator); }; \
@@ -442,23 +441,45 @@ const INSTALLER: &str = "(function (Heap) { \
      Heap.MaxHeap = MaxHeap; \
    })";
 
-/// Install `MaxHeap`, `Heap.MinHeap` and `Heap.MaxHeap`.
+/// Install the raw-array statics, `MaxHeap`, `Heap.MinHeap` and `Heap.MaxHeap`.
 ///
 /// Called from the addon's single `#[napi(module_exports)]` hook. `REPLACE_EMPTY`
 /// is referenced here so that the constant the original suite matches against
 /// (`assert.throws(…, /replace/)`) is visibly the one core raises.
-pub fn install_heap_statics(exports: &Object, env: &Env) -> Result<()> {
+///
+/// # The two properties this cannot remove
+///
+/// `Heap.__max` and `Heap.__maxFrom` stay on the constructor. They are
+/// `#[napi(factory)]`s, and napi defines a class's own properties with
+/// `writable: false, enumerable: false, configurable: false`, so `delete` is a
+/// no-op on them -- measured. They are non-enumerable, so no `Object.keys`,
+/// `for...in` or `deepStrictEqual` can see them, and they are the bridge's only
+/// addition to upstream's surface. Recorded in `docs/modules/heap.md` rather
+/// than papered over.
+pub fn install_heap_statics(exports: &mut Object, env: &Env) -> Result<()> {
     debug_assert!(REPLACE_EMPTY.contains("replace"));
 
-    let constructor: Unknown = exports.get("Heap")?.ok_or_else(|| {
-        Error::new(
-            Status::GenericFailure,
-            "cannot install `Heap.MaxHeap`: exports.Heap does not exist.".to_owned(),
-        )
-    })?;
-    let installer: Function<'_, Unknown, Unknown> = env.run_script(INSTALLER)?;
+    let constructor: Unknown = exports.get("Heap")?.ok_or_else(|| missing("Heap"))?;
+    let statics: Unknown = exports
+        .get("HeapStatics")?
+        .ok_or_else(|| missing("HeapStatics"))?;
+    let installer: Function<'_, FnArgs<(Unknown, Unknown)>, Unknown> = env.run_script(INSTALLER)?;
 
-    installer.call(constructor)?;
+    installer.call((constructor, statics).into())?;
+
+    // `HeapStatics` is scaffolding, not a module. `exports` is an ordinary
+    // object, so unlike a napi class's own properties this delete works.
+    exports.delete_named_property("HeapStatics")?;
 
     Ok(())
+}
+
+fn missing(what: &str) -> Error {
+    Error::new(
+        Status::GenericFailure,
+        format!(
+            "cannot install the heap statics: `exports.{what}` does not exist. The \
+             installer and the addon's exports have drifted apart."
+        ),
+    )
 }

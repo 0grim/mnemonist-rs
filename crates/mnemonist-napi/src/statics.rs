@@ -109,7 +109,7 @@ const CURSOR_PATCH: &str = "(function (Ctor, method) { \
 ///
 /// Called from the module-export hook in [`crate::cursor`], which is the one
 /// `#[napi(module_exports)]` the addon has.
-pub fn install_variadic_factories(exports: &Object, env: &Env) -> Result<()> {
+pub fn install_variadic_factories(exports: &mut Object, env: &Env) -> Result<()> {
     let installer: Function<'_, Unknown, Unknown> = env.run_script(INSTALLER)?;
 
     for class in VARIADIC_FACTORIES {

@@ -226,7 +226,7 @@ const ITERATOR_FACTORIES: &[(&str, &str)] = &[
 /// class here means the table and the exports have drifted apart, and the
 /// symptom otherwise would be a spread that silently yields nothing.
 #[napi(module_exports)]
-pub fn install_iterator_factories(exports: Object, env: Env) -> Result<()> {
+pub fn install_iterator_factories(mut exports: Object, env: Env) -> Result<()> {
     // `Object::get` rather than `get_named_property`: the latter *validates*
     // the target type, and both `Symbol` and a class constructor are JS
     // functions, not plain objects. `get` skips validation and reports a
@@ -247,7 +247,7 @@ pub fn install_iterator_factories(exports: Object, env: Env) -> Result<()> {
     // `X.prototype.values` is at the time, so patching afterwards would leave
     // `Symbol.iterator` pointing at the unpatched factory and the two ways of
     // getting a cursor would behave differently.
-    crate::statics::install_variadic_factories(&exports, &env)?;
+    crate::statics::install_variadic_factories(&mut exports, &env)?;
 
     for (class, factory) in ITERATOR_FACTORIES {
         let constructor: Object = exports
