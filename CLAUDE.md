@@ -70,6 +70,10 @@ If other agents are working, do not benchmark; gate 10 is batched into a quiet s
 - Edits to shared files — `crates/*/src/lib.rs`, `structures/mod.rs`, `utils/mod.rs`, the difffuzz
   registry, `fuzz/log.txt` — must be **additive only**. Never reorder or reformat them: every extra
   change becomes another agent's merge conflict.
+- **Bug-candidate IDs (`B-nn` in `planning/NOTES.md`) are allocated by the orchestrator.** Use the
+  range you were given and no other. Agents working in isolated worktrees cannot see each other's
+  allocations — two once claimed `B-11`–`B-14` for entirely different bugs, which had to be
+  untangled by hand at merge. If you need more than your range, say so rather than spilling past it.
 
 ## Orientation
 
