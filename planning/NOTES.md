@@ -2137,3 +2137,87 @@ more arrays tie. Fixing it requires porting `fibonacci-heap`. The grammar was ch
 globally distinct k-way values, so the campaign is green *over a region that excludes the known
 disagreement*. Documented rather than hidden — but it must be re-examined before `_utils` is
 scoped, on the same reasoning that descoped `sparse-set`.
+### B-200 — a token equal to `SENTINEL` corrupts the trie: `size` overcounts and the word is lost
+
+`status: VERIFIED against Node 24.18.1` · `trie-map.js` and `trie.js` (inherited, same engine) ·
+found by reading, before any fuzz campaign for this unit ran
+
+`SENTINEL` (`String.fromCharCode(0)`) is not a reserved namespace, just an ordinary property key on
+the same plain object every token is stored under. `set`'s walk is
+
+```js
+node = node[token] || (node[token] = {});
+```
+
+so if a real token equals `SENTINEL` at a node that is *already* a stored word, `node[token]` reads
+the **value** stored there (a JS primitive, since `SENTINEL` is what `set` uses for the value slot
+too), not a sub-object. `node` becomes that primitive. Every later iteration's
+`node[token] = {}` is then a property write on a primitive, which is a **silent no-op** in sloppy
+mode — the assignment *expression* still evaluates to the fresh `{}` on its right-hand side, so the
+loop's local `node` variable keeps reassigning to a chain of brand-new, entirely unlinked objects,
+but nothing is ever stored anywhere reachable from `root`. Confirmed by direct execution:
+
+```js
+var t = new TrieMap();
+t.set('a', 'word-a');
+t.set('a' + TrieMap.SENTINEL + 'b', 'word-a0b');
+t.size;                              // 2 -- incremented for the ORPHAN, not for anything stored
+t.get('a' + TrieMap.SENTINEL + 'b'); // undefined -- unreachable through any public method
+t.root;                              // { a: { '\x00': 'word-a' } } -- no trace of the second set
+```
+
+`size` increments because the *final* orphan object genuinely has no `SENTINEL` property of its
+own (`!(SENTINEL in node)` is true for a fresh `{}`), so upstream's own bookkeeping cannot tell "a
+value was stored" from "a value was silently discarded into the void." Neither `test/trie.js` nor
+`test/trie-map.js` ever embeds the sentinel character in a real token — every key in both suites is
+an ordinary word — so gate 4 cannot reach this. The port's own `Node` (stores value and children in
+separate fields rather than a shared keyspace, per D-200 in DECISIONS-CANDIDATES.md) does not
+reproduce the corruption; both operations in the sequence above succeed and are independently
+retrievable, pinned by
+`crates/mnemonist-core/src/structures/trie_map.rs`'s
+`a_token_equal_to_the_sentinel_character_is_an_ordinary_token`.
+
+### B-201 — a `delete` that prunes from an ancestor leaves an open walk still able to yield the
+### deleted word
+
+`status: VERIFIED against Node 24.18.1` · `trie-map.js` (and `trie.js`, same engine) · found by
+reading, then confirmed by direct execution before any fuzz campaign for this unit ran
+
+`values`/`prefixes`/`keys`/`entries` return a closure over two live JS arrays, `nodeStack` and
+`prefixStack`, holding **actual node object references** it has already discovered but not yet
+visited. `delete`'s own pruning is `delete toPrune[tokenToPrune]` — it removes the *parent's*
+reference to a node, not necessarily any property on the node object itself. So a `delete` whose
+pruning point is an **ancestor** of a node the walk has already queued removes that node from the
+trie's reachable structure while leaving the node object itself, and its own `SENTINEL` property,
+completely untouched — and the walk, holding the object directly, keeps reporting it:
+
+```js
+var t = new TrieMap();
+t.set('a', 1); t.set('ab', 2); t.set('abc', 3);
+var it = t.prefixes();
+it.next();          // {value: 'a'}
+t.delete('abc');     // prunes 'c' off the 'ab' node
+t.delete('ab');       // prunes the WHOLE 'ab' node off 'a' -- but 'ab' node's own SENTINEL is
+                      // never itself deleted, only the parent's reference to the node is
+it.next();           // {value: 'ab'} -- the just-deleted word, still yielded
+it.next();           // {done: true}
+```
+
+Neither original test file interleaves a `delete` with an open `values`/`prefixes`/`keys`/`entries`
+walk over the region being deleted, so gate 4 cannot reach this either. The port's walk
+(`mnemonist_core::structures::trie_map::Walk`) re-navigates from the root by token path on every
+step rather than holding a live reference, so it disagrees with upstream in exactly this scenario —
+recorded as D-201 in DECISIONS-CANDIDATES.md rather than reproduced, since doing so would mean
+storing live aliased references inside a structure this port also needs to hand across the FFI
+boundary as a detached, resumable cursor.
+
+**Independently confirmed by the differential fuzzer, twice, before this narrowing existed.** The
+first ungated campaign for each unit diverged inside a few hundred operations: `trie-map`'s over
+`delete` unlinking a queued `entries()` frame (the scenario above, exactly), `trie`'s over `clear`
+replacing the whole root out from under an open `keys()` cursor (upstream's stale root, having
+nothing on it yet, correctly answers `{done: true}`; the port's live re-navigation sees the
+addition that happened after `clear` and wrongly keeps going). Both are the same underlying gap,
+not two bugs — `clear` is `delete` of everything at once, from the cursor's point of view. Both
+campaigns were fixed by excluding `delete`/`clear` from ever sharing a generated program with a
+persistent `$iter`/`$next` cursor; see `crates/difffuzz/src/modules/trie_map.rs`'s module docs for
+the exact repros and the regime-flag mechanism.

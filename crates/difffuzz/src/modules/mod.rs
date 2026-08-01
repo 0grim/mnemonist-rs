@@ -57,3 +57,9 @@ pub mod lru_cache;
 // by several agents at once (CLAUDE.md, Git).
 #[path = "_utils.rs"]
 pub mod utils_unit;
+// Appended at the end, never inserted: this file is a shared registry
+// (CLAUDE.md, Git) and a new line anywhere else is a merge conflict.
+// `trie` shares `trie_map`'s prefix pool and tokenisation -- see that
+// module's docs -- so `trie_map` is listed first.
+pub mod trie;
+pub mod trie_map;

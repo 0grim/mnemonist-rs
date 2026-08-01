@@ -954,3 +954,14 @@
 2026-08-01T13:19:37Z  module=lru-map-with-delete seed=20260801 cases=5988 ops=896591 wall=60.0s divergences=0
 2026-08-01T14:35:48Z  module=_utils seed=42 cases=12592 ops=508729 wall=60.0s divergences=0
 2026-08-01T14:36:54Z  module=_utils seed=20260801 cases=12515 ops=503372 wall=60.0s divergences=0
+# trie / trie-map: both units' FIRST campaigns (unlogged, pre-regime-split) diverged inside a few
+# hundred ops -- trie-map over `delete` unlinking an already-queued `entries()` frame, trie over
+# `clear` replacing the root out from under an open `keys()` cursor. Both are D-201 (NOTES.md
+# B-201): upstream's lazy iterator holds a live object reference; this port's `Walk` re-navigates
+# by token path, which is required for it to be resumable at the FFI boundary. Fixed by a grammar
+# regime split, not a core change -- delete/clear never share a generated program with a persistent
+# $iter/$next cursor. The four lines below are the post-fix campaigns.
+2026-08-01T15:05:11Z  module=trie-map seed=42 cases=6315 ops=635470 wall=60.0s divergences=0
+2026-08-01T15:06:20Z  module=trie-map seed=20260801 cases=6351 ops=628731 wall=60.0s divergences=0
+2026-08-01T15:07:29Z  module=trie seed=42 cases=6498 ops=652034 wall=60.0s divergences=0
+2026-08-01T15:08:38Z  module=trie seed=20260801 cases=6141 ops=612873 wall=60.0s divergences=0

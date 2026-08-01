@@ -1385,3 +1385,71 @@ swap-side-invariant by two falsification attempts that stayed green (NOTES.md, "
 **Verify:** `crates/difffuzz/src/modules/_utils.rs`'s `k_way_arrays_op`, which works around the gap
 by generating globally-distinct values for every three-or-more-array case rather than hiding it;
 NOTES.md B-180's write-up, "Two port defects... found by differential fuzzing".
+### D-200 — the trie node keeps its value and its children in separate fields, not one shared keyspace
+**Status:** CONFIRMED · **Category:** behavioural · **Divergence:** yes
+**Upstream:** every trie node is a plain object; `node[SENTINEL]` (the stored value) and
+`node[token]` (each child) are properties of the *same* object. A real token equal to `SENTINEL`
+therefore collides with the value slot, and — verified against Node 24.18.1 — corrupts the trie:
+`size` overcounts and the colliding entry is unrecoverably lost into an unlinked orphan object. See
+B-200 in NOTES.md for the mechanism and the exact repro.
+**Port:** `mnemonist_core::structures::trie_map::Node` stores its value (`Slot::Word`) and its
+children (`Slot::Child`) in one insertion-ordered list — needed regardless, to keep enumeration
+order faithful (see below) — but as two distinct variants that never collide. A token equal to
+whatever the bridge treats as a reserved marker is, here, an entirely ordinary token: stored,
+retrieved and iterated like any other.
+**Rationale:** reproducing B-200 exactly would mean modelling JavaScript's primitive/object
+duality — that `node[token] = {}` on a primitive silently discards the write while the assignment
+*expression* still evaluates to the discarded value — purely to recreate one corruption bug that
+nothing else in this port has any use for. Neither `test/trie.js` nor `test/trie-map.js` ever
+embeds the sentinel character in a token; every key in both suites is an ordinary word. Building
+machinery to reproduce a corruption path no test reaches is worse than disclosing the gap.
+**Verify:** `crates/mnemonist-core/src/structures/trie_map.rs`'s module docs and
+`a_token_equal_to_the_sentinel_character_is_an_ordinary_token`; NOTES.md B-200.
+
+### D-201 — the lazy walk re-navigates by token path rather than holding a live reference
+**Status:** CONFIRMED · **Category:** behavioural · **Divergence:** yes
+**Upstream:** `values`/`prefixes`/`keys`/`entries` close over two live JS arrays holding actual
+node object references it has discovered but not yet visited. `delete`'s pruning
+(`delete toPrune[tokenToPrune]`) removes a *parent's* reference to a node, which can leave the node
+object itself — and any `SENTINEL` property still on it — completely untouched. An open walk
+already holding that object keeps reporting its stale content. See B-201 in NOTES.md for the
+confirmed repro.
+**Port:** `mnemonist_core::structures::trie_map::Walk` stores the **token path** to each pending
+node, not a reference, and re-navigates from the root on every step. This is required regardless of
+B-201: the walk must be resumable from a fresh `&TrieMap` handed in per call, which is the contract
+the FFI boundary needs (a JS cursor outlives the call that produced it, and the map stays mutable
+underneath it) and which a live Rust borrow cannot express across calls. A path that no longer
+resolves (the node it named, or an ancestor of it, was pruned since the frame was queued) is simply
+skipped.
+**Rationale:** the two designs agree on every sequence either original test file performs — neither
+interleaves a `delete` with an open walk over the deleted region — and agree on every `delete` or
+`clear` that does not happen to prune something an open cursor has already queued. Reproducing
+upstream's live-reference behaviour instead would mean the walk holds an aliased pointer into the
+trie, which is precisely what the path-based, detached design exists to avoid.
+**Corrected after measuring, not assumed:** an earlier draft of this entry claimed the fuzz grammar
+could not reach this shape "by construction." That was wrong, and finding out was the point of
+running the campaign — the first ungated run for *each* unit diverged inside a few hundred
+operations (`trie-map` over `delete`, `trie` over `clear`; NOTES.md B-201). The grammar now carries
+an explicit, disclosed regime split — `delete`/`clear` never share a generated program with a
+persistent `$iter`/`$next` cursor — rather than relying on the interaction being rare; see
+`crates/difffuzz/src/modules/trie_map.rs`'s module docs for the mechanism and both repros.
+**Verify:** `crates/mnemonist-core/src/structures/trie_map.rs`'s module docs (D-201) and
+`an_addition_inside_an_already_queued_branch_is_visible_to_an_open_walk`, which pins the half of
+this design's behaviour that DOES match upstream (a live addition to an already-queued node is
+seen); NOTES.md B-201.
+
+### D-202 — the port does not reproduce `Object.keys`' integer-like-key-sorts-first rule
+**Status:** CONFIRMED · **Category:** scope · **Divergence:** yes
+**Upstream:** enumerating a plain object's own keys (`for...in`, `Object.keys`) lists any key that
+is a canonical non-negative integer string (`"0"`, `"1"`, `"23"`, …) ascending, **before** every
+other key, regardless of insertion order. A trie whose tokens happen to be digit characters would
+have this rule apply at every node.
+**Port:** `mnemonist_core::structures::trie_map::Node` enumerates its own entries in plain
+insertion order, full stop — no special-casing for a token that looks like an integer.
+**Rationale:** no token in either `test/trie.js` or `test/trie-map.js` is ever a digit; every word in
+both suites is built from letters. Implementing the two-tier enumeration rule for a distinction
+nothing in gate 4 exercises would be unverifiable scope, and this unit's differential fuzz grammar
+is deliberately built over a small **letter** alphabet (never digits) for exactly this reason, so
+a divergence here is never silently manufactured into a false positive.
+**Verify:** `crates/mnemonist-core/src/structures/trie_map.rs`'s module docs; the fuzz spec's own
+alphabet, documented in `crates/difffuzz/src/modules/trie_map.rs`.

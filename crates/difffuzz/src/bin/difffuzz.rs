@@ -60,6 +60,10 @@ use difffuzz::modules::lru_cache::{
 // Appended at the end, never inserted: this file is a shared registry edited
 // by several agents at once (CLAUDE.md, Git).
 use difffuzz::modules::utils_unit::UtilsSpec;
+// Appended at the end, never inserted: this file is a shared registry
+// (CLAUDE.md, Git) and a new line anywhere else is a merge conflict.
+use difffuzz::modules::trie::TrieSpec;
+use difffuzz::modules::trie_map::TrieMapSpec;
 
 const USAGE: &str = "\
 usage: difffuzz --module <name> [--seed N] [--duration SECONDS] [--cases N] [--batch N]
@@ -71,7 +75,7 @@ usage: difffuzz --module <name> [--seed N] [--duration SECONDS] [--cases N] [--b
               generalized-suffix-array, bloom-filter, vector,
               static-interval-tree, heap, fixed-reverse-heap
               generalized-suffix-array, bloom-filter, bi-map, fuzzy-map,
-              bk-tree, heap, fixed-reverse-heap
+              bk-tree, heap, fixed-reverse-heap, trie-map, trie
   --seed      campaign seed (default 42); with --cases, reproduces exactly
   --duration  wall-clock budget in seconds (default 60)
   --cases     stop after N cases instead of after --duration
@@ -329,6 +333,22 @@ fn main() -> ExitCode {
             &UtilsSpec,
             &Campaign {
                 regressions: difffuzz::modules::utils_unit::REGRESSIONS,
+                ..campaign
+            },
+        ),
+        // Appended at the END of the module arms, never between them: a merge
+        // conflict boundary inside a match arm has broken this tree before.
+        "trie-map" => difffuzz::run(
+            &TrieMapSpec,
+            &Campaign {
+                regressions: difffuzz::modules::trie_map::REGRESSIONS,
+                ..campaign
+            },
+        ),
+        "trie" => difffuzz::run(
+            &TrieSpec,
+            &Campaign {
+                regressions: difffuzz::modules::trie::REGRESSIONS,
                 ..campaign
             },
         ),
