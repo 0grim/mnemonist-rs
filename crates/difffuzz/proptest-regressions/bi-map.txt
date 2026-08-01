@@ -4,4 +4,32 @@
 #
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
+#
+# PROVENANCE
+# ----------
+# Both entries are REAL divergences B-120 found — the port was, at the time
+# each was caught, more correct than upstream, which this project treats as a
+# defect. Both were fixed; the campaign is clean on the fixed tree (5,000
+# cases / 38.3s, seed 42, zero divergences). See docs/modules/bi-map.md.
+#
+#   1  `new BiMap(); s.set("a","a"); s.clear();` -- upstream's shared `clear`
+#      body (`this.size = 0; this.items.clear(); this.inverse.items.clear();`)
+#      resets only ONE counter, leaving `inverse.size` at its pre-clear value
+#      (1) while the underlying maps are genuinely empty. The first port of
+#      `BiMap::clear` derived both `size()`/`inverse_size()` from
+#      `OrderedMap::len()`, so it "healed" the desync immediately and reported
+#      `inverse_size() == 0` — more correct than upstream. Caught in 18 cases
+#      (0.3s). Fixed by giving `BiMap` two real stored counters and having
+#      `clear`/`clear_reverse` reset only the matching one.
+#
+#   2  The same program plus `s.delete("a")`. Fixing (1) by unconditionally
+#      resyncing both counters from the live maps on every `set`/`delete` call
+#      reintroduced the same bug one op later: `delete` on an absent key is a
+#      no-op upstream (`del` returns `false` without touching either counter),
+#      but recomputing from `.len()` regardless of whether anything was
+#      deleted "healed" the still-stale `inverse_size` early. Caught in 177
+#      cases (0.3s) on the very next campaign run. Fixed by resyncing only on
+#      `Some(_)` (a real deletion).
+#
 cc 70b0df5065314c3bffe40687fe27d07184199cdf317c0a4fc17b89b1b0a1fb64 # shrinks to Program { ctor: [], ops: [Op { name: "set", args: [String("a"), String("a")] }, Op { name: "clear", args: [] }] }
+cc 0f738d0b11c95f2425327107ea518a954485b55be9b45aeb5750bbc150e492c3 # shrinks to Program { ctor: [], ops: [Op { name: "set", args: [String("a"), String("a")] }, Op { name: "clear", args: [] }, Op { name: "delete", args: [String("a")] }] }

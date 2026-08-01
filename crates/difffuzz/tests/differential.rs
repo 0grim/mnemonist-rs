@@ -44,6 +44,12 @@ use difffuzz::modules::circular_buffer::{
 };
 use difffuzz::modules::fixed_deque::{FixedDequeSpec, REGRESSIONS as FIXED_DEQUE_REGRESSIONS};
 use difffuzz::modules::fixed_stack::{FixedStackSpec, REGRESSIONS as FIXED_STACK_REGRESSIONS};
+// Appended at the end of the import run, never inserted: this file is edited
+// by several agents at once and a conflict boundary landing mid-list has
+// already broken merges here.
+use difffuzz::modules::bi_map::{BiMapSpec, REGRESSIONS as BI_MAP_REGRESSIONS};
+use difffuzz::modules::bk_tree::{BkTreeSpec, REGRESSIONS as BK_TREE_REGRESSIONS};
+use difffuzz::modules::fuzzy_map::{FuzzyMapSpec, REGRESSIONS as FUZZY_MAP_REGRESSIONS};
 
 #[test]
 fn bit_set_matches_upstream() {
@@ -552,6 +558,73 @@ fn fixed_reverse_heap_matches_upstream() {
     let campaign = Campaign::cases(0xF12ED, 96, FIXED_REVERSE_HEAP_REGRESSIONS);
 
     let report = difffuzz::run(&FixedReverseHeapSpec, &campaign)
+        .expect("oracle must be reachable; `node` is required for differential tests");
+
+    assert!(
+        report.ops > 0,
+        "campaign ran no operations, so it proved nothing: {}",
+        report.log_line()
+    );
+
+    if let Some(divergence) = report.divergence {
+        panic!("{divergence}");
+    }
+}
+
+// Appended at the end of the file, never inserted: several agents edit this
+// file at once and a test added after the last one cannot land inside another
+// agent's hunk.
+
+/// `bi-map` — this campaign's own regression corpus carries two REAL
+/// divergences (B-120), not sabotages; see the corpus file's provenance block
+/// and `docs/modules/bi-map.md`.
+#[test]
+fn bi_map_matches_upstream() {
+    let campaign = Campaign::cases(0xB1AA, 96, BI_MAP_REGRESSIONS);
+
+    let report = difffuzz::run(&BiMapSpec, &campaign)
+        .expect("oracle must be reachable; `node` is required for differential tests");
+
+    assert!(
+        report.ops > 0,
+        "campaign ran no operations, so it proved nothing: {}",
+        report.log_line()
+    );
+
+    if let Some(divergence) = report.divergence {
+        panic!("{divergence}");
+    }
+}
+
+/// `fuzzy-map` — the hash function travels as a named factory
+/// (`fuzzyIdentity`/`fuzzyLower`); see the module doc for why those names are
+/// prefixed.
+#[test]
+fn fuzzy_map_matches_upstream() {
+    let campaign = Campaign::cases(0xF522, 96, FUZZY_MAP_REGRESSIONS);
+
+    let report = difffuzz::run(&FuzzyMapSpec, &campaign)
+        .expect("oracle must be reachable; `node` is required for differential tests");
+
+    assert!(
+        report.ops > 0,
+        "campaign ran no operations, so it proved nothing: {}",
+        report.log_line()
+    );
+
+    if let Some(divergence) = report.divergence {
+        panic!("{divergence}");
+    }
+}
+
+/// `bk-tree` — the first campaign over a genuine tree shape rather than an
+/// `OrderedMap`. `search`'s return value stands in for the "root" observation
+/// this module does not have; see the spec's module doc.
+#[test]
+fn bk_tree_matches_upstream() {
+    let campaign = Campaign::cases(0xB711, 96, BK_TREE_REGRESSIONS);
+
+    let report = difffuzz::run(&BkTreeSpec, &campaign)
         .expect("oracle must be reachable; `node` is required for differential tests");
 
     assert!(
