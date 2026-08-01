@@ -920,3 +920,20 @@
 2026-08-01T09:57:09Z  module=generalized-suffix-array seed=20260801 cases=161214 ops=327320 wall=60.0s divergences=0
 2026-08-01T10:14:45Z  module=bloom-filter seed=42 cases=6788 ops=675049 wall=60.0s divergences=0
 2026-08-01T10:15:52Z  module=bloom-filter seed=20260801 cases=7087 ops=710548 wall=60.0s divergences=0
+2026-08-01T09:59:46Z  module=heap seed=42 cases=25677 ops=2619243 wall=120.0s divergences=0
+2026-08-01T10:00:57Z  module=heap seed=20260801 cases=12248 ops=1256277 wall=60.0s divergences=0
+2026-08-01T10:03:56Z  module=fixed-reverse-heap seed=42 cases=25906 ops=2551774 wall=120.0s divergences=0
+2026-08-01T10:06:24Z  module=fixed-reverse-heap seed=20260801 cases=11913 ops=1158167 wall=60.0s divergences=0
+2026-08-01T10:15:45Z  module=heap seed=31337 cases=11060 ops=1147769 wall=60.0s divergences=0
+2026-08-01T10:24:58Z  module=fixed-reverse-heap seed=31337 cases=13442 ops=1320693 wall=60.0s divergences=0
+
+# CORRECTION -- the six heap / fixed-reverse-heap campaigns above ran against a
+# build carrying three defects an independent review later found (NOTES.md, "the
+# T2 review"). They are NOT withdrawn: none of the three was reachable by the
+# fuzz grammar by construction -- the core-side store never calls JavaScript
+# from `allocate`, has a single array class, and `nsmallest`/`nlargest` are
+# outside the alphabet -- so the campaigns measured exactly what they claimed
+# to. They are left uncommented for that reason, and the two lines below re-run
+# seed 42 on the fixed build so the claim does not rest on that argument alone.
+2026-08-01T10:41:06Z  module=heap seed=42 cases=12589 ops=1283659 wall=60.0s divergences=0
+2026-08-01T10:42:18Z  module=fixed-reverse-heap seed=42 cases=12879 ops=1273022 wall=60.0s divergences=0
