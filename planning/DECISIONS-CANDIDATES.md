@@ -1792,3 +1792,45 @@ in the opposite direction: there, object keys are out of scope because nothing t
 object keys are the entire point, and function/symbol keys are what nothing tests.
 **Verify:** `crates/mnemonist-napi/src/default_weak_map.rs`'s `as_object`/`UNSUPPORTED`;
 `docs/modules/default-weak-map.md`.
+
+## critbit-tree-map, fixed-critbit-tree-map
+
+### D-245 — keys are truncated to bytes at the bridge; upstream's critical-bit arithmetic runs on untruncated UTF-16 code units
+**Status:** CONFIRMED · **Category:** scope · **Divergence:** yes (for code points ≥ 256 only)
+**Upstream:** `charCodeAt(i)` returns a full UTF-16 code unit (0..=65535), fed directly into
+`utils/bitwise.js`'s `msb8`/`criticalBit8Mask`, both of which mask with `0xff` internally. For any
+code unit above 255, that masking discards the high bits mid-computation rather than at the input,
+so the "critical bit" upstream computes for such a key is not the true first differing bit at all —
+a latent bug in both `critbit-tree-map.js` and `fixed-critbit-tree-map.js`, reachable only with
+non-Latin-1 keys.
+**Port:** `mnemonist_napi::critbit_tree_map::decode_key` (and the fixed variant's copy) truncates
+each UTF-16 code unit to its low 8 bits *before* handing it to `mnemonist-core`, which is generic
+over `Vec<u8>` and never sees a code unit at all.
+**Rationale:** for every code point upstream's own masking already treats correctly (< 256, i.e.
+every key either original test file ever supplies), truncating at the boundary is a no-op — the
+byte IS the code unit. Reproducing the wide-character case exactly would mean re-deriving which of
+several masked, interacting bitwise operations wins for a given pair of 16-bit values, purely to
+match a bug no test exercises. The same judgement call as D-200 (trie's sentinel-collision
+divergence): observable only through inputs neither original suite constructs.
+**Verify:** `crates/mnemonist-napi/src/critbit_tree_map.rs`'s and `fixed_critbit_tree_map.rs`'s
+`decode_key` doc comments; `docs/modules/critbit-tree-map.md`.
+
+### D-246 — the fixed variant's capacity-overflow crash is a Rust `Result::Err`, not a panic, though the message text is upstream's own verbatim
+**Status:** CONFIRMED · **Category:** implementation technique · **Divergence:** no (observationally identical text; the *mechanism* differs)
+**Upstream:** once more than `capacity` distinct keys are inserted, a later `set` walks through the
+corrupted node and throws `TypeError: Cannot read properties of undefined (reading 'length')` —
+JavaScript's own `undefined`-as-array-index cascade (see NOTES.md's B-260/B-261 discussion in the
+core module's docs).
+**Port:** `FixedCritBitTreeMap::set` detects exactly the same corrupted-read condition (a
+`lefts`/`rights`/`critbits` read past its fixed bound) and returns `Err(Error::Corrupted)`, whose
+`Display` renders the identical message text, rather than modelling JavaScript's `NaN`-as-index
+arithmetic to produce a genuine out-of-bounds access.
+**Rationale:** `mnemonist-core` forbids `unsafe_code`, and Rust has no analogue of a typed-array
+read past its end silently returning `undefined` — modelling the cascade faithfully would need a
+sentinel threaded through ordinary integer arithmetic for no additional observable fidelity, since
+the *text* a caller two layers up sees is already upstream's own. A `panic!` was rejected outright:
+it would abort the whole Node process at the FFI boundary, where upstream merely throws a
+catchable exception — the same reasoning `static_disjoint_set`'s bridge already applies to a
+different out-of-range read (see that module's docs, adaptation 3).
+**Verify:** `crates/mnemonist-core/src/structures/fixed_critbit_tree_map.rs`'s module docs, part 1,
+and `Error::Corrupted`; `docs/modules/fixed-critbit-tree-map.md`.

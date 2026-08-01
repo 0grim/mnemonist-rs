@@ -283,10 +283,24 @@ impl<V> CritBitTreeMap<V> {
         let key = key.into();
 
         if self.size == 0 {
+            // The freshly pushed index, NOT a hardcoded `0`: after a
+            // `delete` has emptied the tree, `keys`/`values` already hold
+            // stale, orphaned entries (see `delete`'s doc comment; this
+            // port's arena is append-only, unlike upstream's own
+            // garbage-collected object references), so the next insert
+            // lands at `keys.len()`, wherever that is. A hardcoded `0`
+            // here -- an earlier draft of this port had exactly that --
+            // pointed `root` at a stale, already-taken slot the moment a
+            // second insert followed a delete-to-empty, and
+            // `CritBitTreeMap::root`'s own "always holds a value" panic
+            // caught it within the first few generated operations of this
+            // module's differential-fuzz campaign.
+            let index = self.keys.len();
+
             self.keys.push(key);
             self.values.push(Some(value));
             self.size = 1;
-            self.root = external_ptr(0);
+            self.root = external_ptr(index);
 
             return None;
         }
@@ -747,6 +761,36 @@ mod tests {
         let mut seen = Vec::new();
         tree.for_each(|_, _| seen.push(()));
         assert!(seen.is_empty());
+    }
+
+    /// A port bug (not upstream's), caught by this module's own
+    /// differential fuzzer within its first few generated operations,
+    /// minimised to exactly this sequence: `set("a"); delete("a");
+    /// set("a")`. `set`'s "tree is empty" fast path used to hardcode
+    /// `root = external_ptr(0)`, which is only correct the very first time
+    /// it runs -- upstream's own equivalent branch builds a brand new
+    /// object and has no index at all to get wrong, but this port's
+    /// append-only arena (see the module docs) had already pushed the
+    /// first key at index 0 and left it there, orphaned, after the
+    /// `delete`. The second `set` pushed its key at index 1 while `root`
+    /// kept pointing at the stale, already-`take`n index 0, and
+    /// `CritBitTreeMap::root`'s own "always holds a value" panic caught
+    /// the mismatch immediately.
+    #[test]
+    fn setting_again_after_deleting_back_to_empty_does_not_point_root_at_a_stale_slot() {
+        let mut tree: CritBitTreeMap<i32> = CritBitTreeMap::new();
+
+        tree.set(key("a"), 1);
+        assert_eq!(tree.delete(b"a"), Some(1));
+        assert_eq!(tree.size(), 0);
+
+        assert_eq!(tree.set(key("a"), 2), None);
+        assert_eq!(tree.size(), 1);
+        assert_eq!(tree.get(b"a"), Some(&2));
+
+        let mut seen = Vec::new();
+        tree.for_each(|value, key| seen.push((key.to_vec(), *value)));
+        assert_eq!(seen, vec![(b"a".to_vec(), 2)]);
     }
 
     #[test]

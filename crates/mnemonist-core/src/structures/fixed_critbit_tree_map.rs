@@ -266,6 +266,21 @@ pub struct FixedCritBitTreeMap<V> {
     /// rather than appending past whatever was already there.
     size: usize,
     root: Ptr,
+    /// B-260: upstream's constructor sets `this.root = 0` (a number), but
+    /// `clear` sets `this.root = null` — a real `typeof`-visible
+    /// inconsistency, verified against Node 24.18.1, confirmed in the
+    /// source at `fixed-critbit-tree-map.js:99` vs `:120`. Both mean "empty
+    /// tree" to every method that reads `root` internally (`pointer === 0`
+    /// and `pointer > 0` are both false for `null`, and the walk falls
+    /// through to the external branch, computing `-null - 1 === -1` and
+    /// reading `keys[-1]` — `undefined` either way, so `get`/`has`/`forEach`
+    /// behave identically), so this flag exists purely for the `root`
+    /// *property read* itself, which is the one place the two differ
+    /// observably. Set on construction (`false`) and by `clear` (`true`);
+    /// cleared by the next `set`, which is always reachable through the
+    /// "tree is empty" fast path once `clear` has run (`clear` resets
+    /// `size` to `0` too, so nothing else can run first).
+    root_is_null: bool,
 }
 
 impl<V> FixedCritBitTreeMap<V> {
@@ -285,6 +300,7 @@ impl<V> FixedCritBitTreeMap<V> {
             next_internal: 0,
             size: 0,
             root: EMPTY,
+            root_is_null: false,
         })
     }
 
@@ -324,13 +340,21 @@ impl<V> FixedCritBitTreeMap<V> {
     /// Upstream's `root` property — a raw pointer, not a nested object the
     /// way `critbit_tree_map::CritBitTreeMap::root` is: `fixed-critbit-
     /// tree-map.js` never builds `InternalNode`/`ExternalNode` objects at
-    /// all, so `this.root` really is just the plain number it looks like.
+    /// all, so `this.root` really is just the plain number it looks like --
+    /// except right after a `clear`, where it is upstream's own `null`
+    /// instead (B-260, see `root_is_null`'s doc comment). `None` here is
+    /// that `null`; `Some(pointer)` is the ordinary number, `0` included.
     /// Exposed for the differential fuzz spec's `root` observation, which
     /// therefore doubles as an exact check that this port's internal node
     /// indices are allocated in the same order upstream's `this.offset++`/
-    /// `this.size++` counters would.
-    pub fn root(&self) -> i64 {
-        self.root
+    /// `this.size++` counters would, AND that this specific inconsistency
+    /// is reproduced rather than smoothed over.
+    pub fn root(&self) -> Option<i64> {
+        if self.root_is_null {
+            None
+        } else {
+            Some(self.root)
+        }
     }
 
     /// Upstream's `clear`. The TODO in the real source
@@ -340,6 +364,7 @@ impl<V> FixedCritBitTreeMap<V> {
     /// were, unreachable from the fresh empty `root` but not wiped.
     pub fn clear(&mut self) {
         self.root = EMPTY;
+        self.root_is_null = true;
         self.size = 0;
         // `keys`/`values`/`lefts`/`rights`/`critbits`/`next_internal` are
         // all left exactly as they were -- upstream's `clear` touches only
@@ -384,6 +409,7 @@ impl<V> FixedCritBitTreeMap<V> {
             self.store_external(0, key, value);
             self.size = 1;
             self.root = external_ptr(0);
+            self.root_is_null = false;
 
             return Ok(None);
         }
@@ -508,6 +534,12 @@ impl<V> FixedCritBitTreeMap<V> {
                 match best {
                     None => {
                         self.root = internal_ptr(internal_index);
+                        // Unreachable with `root_is_null` still set (this
+                        // branch requires `size > 0`, which `clear` always
+                        // pairs with resetting it) -- set anyway, so the
+                        // invariant is enforced here rather than only
+                        // relied upon.
+                        self.root_is_null = false;
 
                         if let Some(&parent) = ancestors.first() {
                             let slots = if new_goes_left {
@@ -774,6 +806,35 @@ mod tests {
         assert_eq!(tree.size(), 2);
         assert_eq!(tree.get(b"a"), None);
         assert_eq!(tree.get(b"b"), None);
+    }
+
+    /// B-260: `root` is a number (`0`) fresh off the constructor but `null`
+    /// right after a `clear` — a real, `typeof`-visible inconsistency,
+    /// verified against Node 24.18.1 and confirmed in the source
+    /// (`fixed-critbit-tree-map.js:99` vs `:120`). No method's *behaviour*
+    /// depends on which (see `root_is_null`'s doc comment), so this is
+    /// observable only by reading `root` directly, which this module's own
+    /// differential-fuzz campaign does (see the fuzz spec's `root`
+    /// observation) — and found within the first few generated operations,
+    /// before this was reproduced.
+    #[test]
+    fn root_is_a_number_fresh_but_null_right_after_a_clear() {
+        let tree: FixedCritBitTreeMap<i32> = FixedCritBitTreeMap::new(3).unwrap();
+        assert_eq!(tree.root(), Some(0));
+
+        let mut tree = tree;
+        tree.set(key("a"), 1).unwrap();
+        assert_eq!(tree.root(), Some(-1));
+
+        tree.clear();
+        assert_eq!(tree.root(), None);
+
+        // A `set` right after the `clear` always takes the "tree is empty"
+        // fast path (`clear` resets `size` to `0` too), which reassigns
+        // `root` to a real number again -- the `null` window is exactly
+        // one `clear` wide.
+        tree.set(key("b"), 2).unwrap();
+        assert_eq!(tree.root(), Some(-1));
     }
 
     #[test]

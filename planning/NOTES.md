@@ -2619,3 +2619,168 @@ absence.
 
 Observable through the oracle: every return value of `get`/`peek`/`has`/`delete`/`set` — which is
 the entire public surface, since a real `WeakMap` has no `size` and no iteration to compare.
+
+## critbit-tree-map, fixed-critbit-tree-map (B-260..B-279 range)
+
+Two IDs used this batch (B-260, B-261); B-262..B-279 are unused and available to a later agent
+working in this file, should one need them — do not assume they are claimed.
+
+### B-260 — `FixedCritBitTreeMap`'s `root` property is a number fresh off the constructor, but
+### `null` right after a `clear`
+
+`status: verified against Node 24.18.1` · `fixed-critbit-tree-map.js:99` (constructor) vs `:120`
+(`clear`).
+
+```js
+function FixedCritBitTreeMap(capacity) {
+  ...
+  this.root = 0;
+  ...
+}
+FixedCritBitTreeMap.prototype.clear = function() {
+  // TODO...
+  this.root = null;
+  this.size = 0;
+};
+```
+
+Two different JavaScript values, both meaning "empty tree", assigned by two different places that
+never agree with each other. Measured directly:
+
+```text
+new FixedCritBitTreeMap(3).root                    // 0        (number)
+t.set('a', 1); t.clear(); t.root                    // null     (object, per typeof)
+t.set('b', 2); t.root                               // -1       (number, again)
+```
+
+No method's *behaviour* depends on which: every internal read of `this.root` is either
+`pointer === 0` or `pointer > 0`, both `false` for `null`, so the walk falls through to the external
+branch, computes `-null - 1 === -1` (negating `null` coerces to `-0`), and reads `keys[-1]` —
+`undefined`, the exact same answer `pointer === 0`'s short circuit would have given. `get`, `has`
+and `forEach` are therefore observationally identical whichever value `root` holds; the `null`
+window is exactly one `clear()` wide, since the very next `set` always takes the "tree is empty"
+fast path (`clear` resets `size` to `0` in the same call) and reassigns `root` to a real number.
+
+The only way to observe the difference at all is reading `root` **directly** — which is exactly
+what this unit's own differential-fuzz spec does (its `root` observation is upstream's own
+property, the one structural check available through the oracle's generic protocol; see
+`docs/modules/fixed-critbit-tree-map.md`). No test in `test/fixed-critbit-tree-map.js` reads `root`
+at all (the file's own commented-out `printTree` debug helper is the only reference), so gate 4
+cannot reach this either way. Reproduced in the port via a `root_is_null` flag — see
+`crates/mnemonist-core/src/structures/fixed_critbit_tree_map.rs`'s doc comment on that field and its
+`root_is_a_number_fresh_but_null_right_after_a_clear` test.
+
+### B-261 — `FixedCritBitTreeMap` has no capacity guard at all: exceeding it silently corrupts one
+### node's children, then crashes a later `set` that walks through it
+
+`status: verified against Node 24.18.1` · `fixed-critbit-tree-map.js`'s constructor and `set`.
+
+The constructor's own comment says so directly:
+
+```js
+function FixedCritBitTreeMap(capacity) {
+  ...
+  // TODO: yell if capacity is already full!
+  ...
+  this.lefts = new PointerArray(capacity - 1);
+  this.rights = new PointerArray(capacity - 1);
+  this.critbits = new Uint32Array(capacity);
+}
+```
+
+`this.size`/`this.capacity` exist, but `set` never compares them. `lefts`/`rights` are real,
+fixed-size typed arrays sized `capacity - 1` (the maximum number of internal nodes a tree of
+`capacity` leaves can ever need); `critbits` is sized `capacity` — one slot *larger*. `keys`/
+`values` are plain, unbounded `Array`s. Inserting past `capacity` distinct keys therefore does not
+fail cleanly — it corrupts in two stages, measured directly on a capacity-4 tree:
+
+```text
+new FixedCritBitTreeMap(4); insert 'a','ab','abc','abcd' (fills lefts/rights exactly)
+insert 'abcde' (the 5th distinct key)        -- succeeds, size becomes 5, NO error
+  -- the new internal node's OWN this.lefts/this.rights write lands at index 3, past the
+     3-slot typed array; JavaScript silently drops an out-of-range typed-array write rather
+     than growing it or throwing. That node's children are now permanently unreadable.
+get('abcd') / get('abcde')                    -- undefined, silently -- indistinguishable
+                                                  from "never inserted"
+get('a') / get('ab') / get('abc')             -- unaffected, still correct
+insert 'abcdef' (the 6th distinct key)        -- THROWS:
+TypeError: Cannot read properties of undefined (reading 'length')
+    at findCriticalBit (fixed-critbit-tree-map.js:55:20)
+    at FixedCritBitTreeMap.set (fixed-critbit-tree-map.js:199:17)
+```
+
+The crash's mechanism: `this.lefts`/`this.rights` reads past their end are JavaScript's own
+`undefined` (not the class zero an in-bounds-but-unwritten slot would read as), so a later walk
+into the corrupted node computes `pointer = undefined`, then `pointer = -pointer` (`NaN`), then
+`this.keys[NaN]` (`undefined`), and `findCriticalBit(key, undefined)` throws reading `.length` off
+it. `get`/`has` never call `findCriticalBit`, so they degrade silently instead — the same
+`undefined`-index cascade just lands on a bare equality check (`undefined !== key`) rather than a
+property access, and returns "not found" instead of crashing.
+
+A capacity as low as `1` corrupts on the very *second* distinct key (`lefts`/`rights` then have
+zero slots), the narrowest case this reaches.
+
+`test/fixed-critbit-tree-map.js` never inserts more than `capacity` distinct keys (its "should
+throw if given bad arguments" block tests only the constructor's own numeric-capacity guard, a
+different check entirely), so gate 4 cannot reach either stage. This unit's own differential-fuzz
+campaign reaches it in essentially every generated program with a capacity in `2..=5` against an
+8-key pool — see `crates/difffuzz/src/modules/fixed_critbit_tree_map.rs`'s
+`pool_self_check_capacity_is_actually_exceeded_and_hits_the_crash`, which measures both "capacity
+was exceeded" and "`Error::Corrupted` was actually reached" directly over 500 sampled programs
+(consistently ~60%/100% respectively across three separate runs) rather than assuming the grammar's
+shape guarantees it.
+
+Reproduced in the port as `Error::Corrupted`, surfaced with upstream's own message text rather than
+a Rust panic (D-246, DECISIONS-CANDIDATES.md) — see
+`crates/mnemonist-core/src/structures/fixed_critbit_tree_map.rs`'s module docs, part 1.
+
+A second, narrower defect lives in the same neighbourhood: `set`'s "attach to an existing internal
+node" branch writes to `lefts[0]`/`rights[0]` — literal slot `0` — rather than to the internal node
+actually being visited (`leftOrRight[newPointer]` should read `leftOrRight[<the saved internal
+index>]`; `newPointer` is the value the branch's own condition just tested, always `0`). Measured,
+not merely read off the source: every internal node's *own* creation writes both of its children
+unconditionally, so this branch's guard (`newPointer === 0`, "no child written yet") is never true
+in practice — 20,000 fuzzed operations over the same shared-prefix pool hit it zero times, the
+identical measurement already made for `critbit-tree-map.js`'s own analogous (and equally
+unreachable) `!node.left`/`!node.right` checks. The port still contains the branch, with its exact
+wrong write target, in case a future, wider campaign ever does reach it — see
+`crates/mnemonist-core/src/structures/fixed_critbit_tree_map.rs`'s module docs, part 2.
+
+### Two port defects found by fuzzing, both fixed before any campaign was logged (not upstream
+### bugs, no B-id)
+
+Same precedent as the `linked-list`/`inverted-index` entry above: recorded here because a defect no
+gate caught but the fuzzer did belongs in this file's capture log even without a `B-nn` (that range
+is upstream bugs only).
+
+**`fixed-critbit-tree-map`'s very first smoke run (`--seed 1 --duration 5`) crashed the whole
+process**, not merely reported a divergence: `set`'s "tree is empty" check tested
+`self.keys.is_empty()`, but `clear()` resets `size` to `0` while leaving `keys`/`values` at whatever
+length they had already reached (matching upstream, whose own `clear` does the identical thing —
+this was never in question; the bug was purely in what this port checked). A `clear()`-then-`set()`
+therefore fell through to the general walk with `pointer == EMPTY (0)`, which nothing there guarded
+against, and computed `external_index = (-0 - 1) as usize`, i.e. `usize::MAX` — an immediate,
+unrecoverable index-out-of-bounds panic. Fixed by adding a real `size` field (not derived from
+`keys.len()`) and a `store_external` helper that overwrites low indices after a `clear` instead of
+always pushing, matching upstream's own `this.keys[this.size++] = key` exactly. See
+`fixed_critbit_tree_map.rs`'s `a_set_right_after_a_clear_reuses_index_zero_instead_of_panicking`.
+
+**`critbit-tree-map`'s first real campaign (once the fixed-variant crash above was out of the way)
+found a second, different bug in the unbounded variant**, minimised by proptest to exactly:
+`set("a", undefined); delete("a"); set("a", undefined)`. The "tree is empty" fast path hardcoded
+`self.root = external_ptr(0)` — correct only the very first time it runs. This port's arena is
+append-only (see `critbit_tree_map.rs`'s own module docs on why: upstream links real, garbage-
+collected object references, which this port cannot do without `unsafe`), so after a `delete` back
+to an empty tree, `keys`/`values` already hold a stale, orphaned entry at index `0`; the next insert
+correctly `push`ed its key at index `1`, but `root` kept pointing at the stale, already-`take`n
+index `0`. `CritBitTreeMap::root`'s own "a reachable external node always holds a value" panic
+caught the mismatch in the third operation of the minimised repro. Fixed by capturing the real
+pushed index (`self.keys.len()` before the push) instead of hardcoding `0`. See
+`setting_again_after_deleting_back_to_empty_does_not_point_root_at_a_stale_slot`.
+
+Both are properties of this port's own arena representation, not of upstream (which has no
+equivalent "index" to get wrong at all), and both were caught and fixed before any campaign was
+logged in `fuzz/log.txt` — the logged campaigns for both units are clean.
+
+Observable through the oracle: every return value of `get`/`peek`/`has`/`delete`/`set` — which is
+the entire public surface, since a real `WeakMap` has no `size` and no iteration to compare.
