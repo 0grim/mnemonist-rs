@@ -16,6 +16,33 @@
 # ops=20760 on every run, seed 8 gives ops=22096.
 #
 # ---------------------------------------------------------------------------
+# CORRECTION, 2026-08-01 — the two 2026-07-31 lines OVERSTATE their coverage.
+#
+# `cases` is honest about how many programs were executed, but until the fix
+# committed today, almost all of them were the SAME programs.
+#
+# proptest's TestRunner counts successes for its whole lifetime and loops
+# `while successes < config.cases`. The driver reused one runner across
+# batches, so every batch after the first executed no new cases at all: it ran
+# only the persisted regression corpus, which proptest replays before the (now
+# empty) main loop, and then spun. So `cases=16666` was 32 genuinely new
+# programs plus two saved seeds re-run ~8,300 times each.
+#
+# Measured, before the fix: with the corpus file removed, a 120-second campaign
+# dropped from 16,666 cases to 32.
+#
+# The 2026-08-01 lines below are the same two campaigns re-run with a fresh
+# runner per batch. The op counts are LOWER (2.84M -> 1.40M) because the
+# replayed corpus programs were short and cheap; the coverage is far higher,
+# because 4,683 distinct programs replaced 32. Pinned by
+# `every_batch_generates_new_cases` in crates/difffuzz/tests/differential.rs.
+#
+# Note on counting: `cases` still includes the persisted corpus, which proptest
+# replays once per batch. That is a few percent of the total and is kept
+# deliberately — it guarantees each falsification seed is re-checked
+# continuously rather than only when someone remembers to.
+#
+# ---------------------------------------------------------------------------
 # GRAMMAR, PER MODULE — including what is deliberately excluded.
 #
 # DESIGN.md 3.7 asks for narrowed grammars to be disclosed, because "we fuzzed
@@ -60,3 +87,5 @@
 
 2026-07-31T20:58:46Z  module=static-disjoint-set seed=42 cases=16666 ops=2837506 wall=120.0s divergences=0
 2026-07-31T21:00:12Z  module=static-disjoint-set seed=20260731 cases=8179 ops=1394965 wall=60.0s divergences=0
+2026-08-01T00:19:00Z  module=static-disjoint-set seed=42 cases=4683 ops=1403272 wall=120.1s divergences=0
+2026-08-01T00:20:00Z  module=static-disjoint-set seed=20260731 cases=2301 ops=700097 wall=60.0s divergences=0

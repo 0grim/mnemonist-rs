@@ -148,8 +148,6 @@ pub fn run_with<S: ModuleSpec>(
         ..Config::default()
     };
 
-    let mut runner = TestRunner::new_with_rng(config, seeded_rng(campaign.seed));
-
     let started = Instant::now();
     let deadline = campaign.duration.map(|budget| started + budget);
 
@@ -159,8 +157,33 @@ pub fn run_with<S: ModuleSpec>(
     let ops = Cell::new(0u64);
 
     let mut divergence = None;
+    let mut batch = 0u64;
 
     loop {
+        // A FRESH runner per batch, and this is not tidiness.
+        //
+        // `TestRunner` counts successes for its whole lifetime and its run
+        // loop is `while self.successes < self.config.cases`. So a *second*
+        // `run` on the same runner executes **no new cases at all** — it
+        // returns `Ok` immediately, and the loop below spins at 100% CPU until
+        // the deadline.
+        //
+        // That is exactly what happened, and it is worse than a wasted run,
+        // because the campaign still reports a case count: the only thing a
+        // later batch still executes is the *persisted regression corpus*,
+        // which proptest replays before the (empty) main loop. So a 120-second
+        // campaign booked tens of thousands of "cases" that were two saved
+        // seeds re-run tens of thousands of times, and reported it as coverage.
+        // Measured: with the corpus file removed, a 120-second run drops to 32
+        // cases — the first batch and nothing else.
+        //
+        // Seeding is `(campaign.seed, batch)` rather than `campaign.seed`
+        // alone so a replay of `--seed N --cases M` is still exact while
+        // successive batches explore genuinely new programs.
+        let mut runner = TestRunner::new_with_rng(config.clone(), seeded_rng(campaign.seed, batch));
+
+        batch += 1;
+
         let outcome = runner.run(&strategy, |program: Program| {
             // Past the budget: drain the rest of the batch without work, so
             // the deadline is honoured to within one case rather than one
@@ -264,17 +287,21 @@ fn over_budget(executed: &Cell<u64>, campaign: &Campaign, deadline: Option<Insta
     false
 }
 
-/// Expand a `u64` into the 32 bytes ChaCha wants, without pulling in a hasher.
+/// Expand `(seed, batch)` into the 32 bytes ChaCha wants, without pulling in a
+/// hasher.
 ///
 /// Only needs to be injective and stable across runs; it is a seed, not a
-/// random number.
-fn seeded_rng(seed: u64) -> TestRng {
+/// random number. `batch` is stirred in rather than added to `seed` so that
+/// `--seed 42`'s second batch is not `--seed 43`'s first — overlapping streams
+/// between campaigns would quietly re-test the same programs.
+fn seeded_rng(seed: u64, batch: u64) -> TestRng {
     let mut bytes = [0u8; 32];
 
     for (chunk, block) in bytes.chunks_mut(8).enumerate() {
         // Splitmix-style stir so `--seed 1` and `--seed 2` do not produce
         // 31 identical bytes.
         let mixed = seed
+            .wrapping_add(batch.wrapping_mul(0xD6E8_FEB8_6659_FD93))
             .wrapping_add((chunk as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15))
             .wrapping_mul(0xBF58_476D_1CE4_E5B9);
 
