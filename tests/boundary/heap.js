@@ -363,6 +363,72 @@ describe('Heap (boundary) — nsmallest / nlargest', function() {
   });
 });
 
+describe('Heap (boundary) — the default comparator on non-numbers', function() {
+
+  it('should order mixed types the way `<` and `>` do.', function() {
+    // The port answers number-vs-number and string-vs-string natively and
+    // defers everything else to the engine (D-72). This is the assertion that
+    // the deferral is exact: `<` on these pairs runs ToPrimitive, and the
+    // resulting order is not one anybody would reproduce by hand.
+    var heap = new Heap();
+
+    [3, 'apple', true, null, undefined, {}, [2]].forEach(function(value) {
+      heap.push(value);
+    });
+
+    assert.deepStrictEqual(heap.toArray(), [true, [2], {}, 3, undefined, 'apple', null]);
+  });
+
+  it('should call valueOf and toString on object elements.', function() {
+    var byValueOf = new Heap();
+
+    byValueOf.push({valueOf: function() { return 5; }});
+    byValueOf.push({valueOf: function() { return 1; }});
+    assert.deepStrictEqual(byValueOf.toArray().map(Number), [1, 5]);
+
+    // Both operands ToPrimitive to strings, so `<` compares them AS strings —
+    // the case a Rust ToNumber fast path would have got wrong.
+    var byToString = new Heap();
+
+    byToString.push({toString: function() { return 'b'; }});
+    byToString.push({toString: function() { return 'a'; }});
+    assert.deepStrictEqual(byToString.toArray().map(String), ['a', 'b']);
+  });
+
+  it('should order strings by UTF-16 code unit, and BigInts numerically.', function() {
+    var strings = new Heap();
+
+    ['pear', 'apple', 'fig'].forEach(function(value) { strings.push(value); });
+    assert.deepStrictEqual(strings.toArray(), ['apple', 'fig', 'pear']);
+
+    var bigints = new Heap();
+
+    [3n, 1n, 2n].forEach(function(value) { bigints.push(value); });
+    assert.deepStrictEqual(bigints.toArray().map(String), ['1', '2', '3']);
+  });
+
+  it('should throw when a comparator returns a Symbol, as `< 0` would.', function() {
+    var heap = new Heap(function() { return Symbol('x'); });
+
+    heap.push(1);
+    assert.throws(function() { heap.push(2); }, TypeError);
+  });
+
+  it('should build from a plain object, and fail on a typed array.', function() {
+    // `Heap.from` uses `iterables.isArrayLike`, which accepts a typed array —
+    // and then `toArray()` calls `heap.pop()` on it, which does not exist.
+    // Upstream is broken here too; both throw.
+    var fromObject = Heap.from({a: 1, b: 2});
+
+    assert.strictEqual(fromObject.size, 2);
+    assert.deepStrictEqual(fromObject.toArray(), [1, 2]);
+
+    assert.throws(function() {
+      Heap.from(new Uint8Array([5, 3, 9])).toArray();
+    }, /pop is not a function/);
+  });
+});
+
 describe('FixedReverseHeap (boundary)', function() {
 
   it('should accept a capacity of 0 and then discard everything.', function() {

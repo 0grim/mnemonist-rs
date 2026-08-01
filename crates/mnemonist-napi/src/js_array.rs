@@ -136,6 +136,29 @@ impl JsArray {
     fn call_method(&self, name: &str, args: &[sys::napi_value]) -> Result<sys::napi_value> {
         let object = self.raw()?;
         let method = named_property(self.env, object, name)?;
+        let mut value_type = 0;
+
+        // SAFETY: `method` is a live handle.
+        check(
+            unsafe { sys::napi_typeof(self.env, method, &mut value_type) },
+            "napi_typeof",
+        )?;
+
+        // `typeof heap.pop !== 'function'`, which is reachable: `Heap.from` on
+        // a typed array reaches `consume`, and a typed array has no `pop`.
+        // Upstream dies there too, with V8's own
+        // `TypeError: heap.pop is not a function`. Ours is an `Error` and names
+        // only the method, because the receiver in V8's message comes from the
+        // *source text* of the call site. Divergence recorded in
+        // `docs/modules/heap.md`; letting an N-API status number reach a user
+        // instead would be strictly worse.
+        if value_type != sys::ValueType::napi_function {
+            return Err(Error::new(
+                Status::GenericFailure,
+                format!("{name} is not a function"),
+            ));
+        }
+
         let mut result = ptr::null_mut();
 
         // SAFETY: `object` and `method` are live handles; `args` is a slice of
