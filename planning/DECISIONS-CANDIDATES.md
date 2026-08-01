@@ -768,3 +768,72 @@ argument after the call and compares those too.
 Rejected alternative: a per-function declaration of which parameters are out-parameters. It would
 compare slightly less and would go stale silently the first time someone added a function; echoing
 everything is generic, and the oracle's whole design principle is that it holds no module knowledge.
+
+---
+
+## set (D-85 .. D-88)
+
+Same numbering caveat as D-80..D-84 above: allocated a bug-ID range only, so these are numbered to
+match it rather than continuing from D-46, which is the number a parallel worktree is most likely
+to have taken.
+
+### D-85 — The four mutating set functions replay `add`/`delete`; they do not rebuild
+`add`, `subtract`, `intersect` and `disjunct` return `undefined` and do their whole job to their
+first argument. Core returns the `SetOp` trace it applied, in upstream's call order, and the bridge
+makes exactly those calls on the caller's own `Set`.
+
+Rejected alternative: compute the final member list, `A.clear()`, re-add. Simpler, passes all
+sixteen blocks of `test/set.js`, and observably wrong -- a JS `Set` iterator is live, `clear()` does
+not detach it, and every re-inserted member is therefore visited a second time. Measured:
+
+    var A = new Set([1,2]); var it = A.values(); it.next();
+    functions.add(A, new Set([2,3]));
+    Array.from(it);     // upstream [2,3];  clear-and-rebuild [1,2,3]
+
+Residual divergence, stated rather than hidden: the `add`/`delete` handles are fetched **once**
+before the first call, so a member's side effects cannot divert the rest of the trace. Upstream
+re-resolves `A.add` per call. Nothing in the original suite goes either way.
+
+### D-86 — Object members are refused (inherited from `JsKey`, restated because `set` is where it bites hardest)
+`Set` compares objects by identity and no identity hash for a JS object is reachable from Rust. The
+argument is unchanged from `crates/mnemonist-napi/src/js_key.rs` and the audit there holds: every
+member in `test/set.js` is a number or a single character. This unit is the first where the limit is
+visible in the *public API of the module itself* rather than only in a structure's keys, which is
+why `tests/boundary/set.js` asserts the refusal explicitly.
+
+### D-87 — Variadicity goes through an array, and the arity check stays in core
+napi has no variadic parameter, so `intersection` and `union` take a `Vec` and `tests/bridge/set.js`
+does the spread. The "needs at least two arguments" check is in `mnemonist-core`, so upstream's
+threshold and its exact message live in one place; the shim forwards whatever it was handed,
+including nothing, and lets the port refuse it.
+
+Rejected alternative: `env.run_script` an `arguments`-based wrapper, as `crate::statics` does for
+`X.of`. That exists because `of` is *defined* in terms of `arguments` and putting a real one through
+the real dispatch is the point. Nothing here inspects `arguments` beyond its length, so the script
+would buy nothing and cost a `run_script` per call.
+
+### D-88 — Upstream's three `===` shortcuts are implemented in core and unreachable from JavaScript
+`intersection` skips `set.has(item)` when `set === smallestSet`; `isSubset` and `intersectionSize`
+each short-circuit on `A === B`. Core reproduces all three with `std::ptr::eq`, so a Rust caller
+passing one reference twice takes upstream's own path. The bridge cannot: two arguments that are the
+same JS `Set` become two separate `OrderedSet`s when read.
+
+**Unobservable, and demonstrated rather than asserted.** Where the identity holds, the skipped check
+is `smallest.has(member)` for a member drawn from `smallest` -- true by construction -- or a count
+of A's members that are in A, which is `A.size`. `tests/boundary/set.js` passes one object twice to
+all six affected functions and compares against vendored upstream.
+
+Rejected alternative: detect duplicate arguments in the bridge with `napi_strict_equals` and hand
+core the same reference twice. Ten lines, exact, and buying nothing measurable; the honest version
+is to implement the shortcut where it can be reached and say so where it cannot.
+
+### Withdrawn claim — `disjunct`'s WRITE order is not load-bearing
+Recorded because the correction is the interesting part. An earlier draft asserted that `disjunct`
+adding `B \ A` before deleting `A ∩ B` is what makes `{1,2}` disjunct `{2,3}` come out `[1, 3]`
+rather than `[3, 1]`. Sabotaging exactly that -- deleting first, while still testing `!A.has`
+against the original A -- left `test/set.js` at 16 passing and `tests/boundary/set.js` fully green.
+A member of `B \ A` is appended at the end either way; a shared member is gone either way.
+
+What is load-bearing is that the `!A.has` test runs *before* any deletion: delete first and every
+shared member passes it, is re-added, and the result becomes `A ∪ B`. That sabotage does turn
+`#.disjunct` red, and it is now pinned by its own core test and by the corrected boundary spec.

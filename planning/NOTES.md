@@ -892,3 +892,46 @@ bug reachable only through it. Here the **bridge's accepted input domain** omits
 earlier, and no grammar over that domain could have expressed the program. Both come out the same
 way: a clean campaign is coverage of what the harness can express, and saying which is part of
 reporting the result.
+
+---
+
+## set — no upstream bugs, and that is the finding
+
+`set.js` was read statement by statement, as `sort/` was, and produced **nothing to file**. Worth
+recording rather than omitting: 356 lines with no shared mutable state, no typed arrays, no index
+arithmetic and no re-entrancy. It is the cleanest upstream file this port has touched.
+
+Three things that read like bugs and are not, all checked against Node 24.18.1:
+
+* `jaccard(new Set(), new Set())` is `0`, not `NaN` — the `if (I === 0) return 0` guard fires
+  before the division. Same for `overlap`. A convention.
+* `intersection`'s result ORDER depends on which argument happened to be smallest, because it
+  iterates the smallest one. Surprising, and correct: it falls out of the optimisation.
+  `intersection(new Set([3,2,1]), new Set([1,2]))` is `[1, 2]`.
+* `difference(A, new Set())` returns `new Set(A)` — a copy, not `A`. Deliberate.
+
+**A near-miss in OUR port, caught by a boundary spec rather than by the original suite.** The first
+bridge sketch for the four mutating functions was read-A, compute, `A.clear()`, re-add. It passes
+all sixteen upstream blocks and is observably wrong, because a JS `Set` iterator is live and
+`clear()` does not detach it:
+
+```js
+var A = new Set([1, 2]); var it = A.values(); it.next();
+functions.add(A, new Set([2, 3]));
+Array.from(it);   // upstream [2, 3];  clear-and-rebuild [1, 2, 3]
+```
+
+*The lesson is the one B-31 taught from the other side: the original suite's assertions define what
+it can catch, and a bridge decision that is invisible to all of them still needs its own test. Here
+the fix was to have core return the trace of `add`/`delete` calls and replay it, so the caller's
+`Set` experiences what upstream's experiences, call for call.*
+
+**A second, smaller correction, recorded because it is a documentation bug this project's own
+process caught.** An early draft of `disjunct`'s doc claimed its add-before-delete write order was
+what fixes the result's ordering. Sabotaging exactly that changed nothing — neither `test/set.js`
+nor the boundary specs went red. The write order is unobservable; what is load-bearing is that the
+`!A.has` test runs before any deletion. The claim was withdrawn in the code and the real property
+pinned by its own test.
+
+*Gate 6's discipline applied to prose: a sabotage that stays green does not vindicate the code, it
+falsifies the sentence explaining it.*
