@@ -1365,26 +1365,73 @@ refusal).
 `merge_k_reproduces_b_180_when_filtering_drops_the_length` and
 `union_unique_k_reproduces_b_180_when_filtering_drops_the_length`; NOTES.md B-180.
 
-### D-105 — the k-way merge/union's tie-break is a linear scan's, not `FibonacciHeap`'s
-**Status:** CONFIRMED · **Category:** architecture · **Divergence:** yes
+### D-105 — CLOSED — the k-way merge/union's tie-break was a linear scan's, not `FibonacciHeap`'s
+**Status:** CLOSED (was CONFIRMED, open) · **Category:** architecture · **Divergence:** no (was yes)
 **Upstream:** `kWayMergeArrays`/`kWayUnionUniqueArrays` pick the next value via a real
 `FibonacciHeap`, whose tie-break (which of several equal-valued array heads is extracted first) is
 an artifact of `push`'s `<=`-favours-latest rule and, after the first `pop`, of `consolidate`'s
 degree-bucket merging — genuinely dependent on the heap's internal tree shape, not on insertion
 order alone.
-**Port:** `mnemonist_core::utils::merge::k_way_scan` picks the minimum head by a plain linear scan,
-keeping the earliest array on a tie.
-**Rationale:** `fibonacci-heap.js` (~115 LOC, T2 tier per `planning/ROADMAP.md`) is not part of this
-unit's require-closure and is not ported. Found observable, not merely theoretical, by this unit's
-first fuzz campaign: `merge([3], [2, -5], [2])` disagrees in element ORDER (upstream
-`[2, 2, -5, 3]`, port `[2, -5, 2, 3]`) and `unionUnique([3], [2, -5], [2])` disagrees in which values
-survive deduplication (upstream `[2, -5, 3]`, port `[2, -5, 2, 3]`) — both from the identical root
-cause. The two-array functions (`merge_two`/`union_unique_two`) have no such gap: they are a direct
-two-pointer walk with no "pick among several" step at all, confirmed tie-order-invariant and
-swap-side-invariant by two falsification attempts that stayed green (NOTES.md, "_utils", gate 6).
-**Verify:** `crates/difffuzz/src/modules/_utils.rs`'s `k_way_arrays_op`, which works around the gap
-by generating globally-distinct values for every three-or-more-array case rather than hiding it;
-NOTES.md B-180's write-up, "Two port defects... found by differential fuzzing".
+**Port, before closing:** `mnemonist_core::utils::merge::k_way_scan` picked the minimum head by a
+plain linear scan, keeping the earliest array on a tie.
+**How it closed:** `fibonacci-heap` is now a ported unit (`crates/mnemonist-core/src/structures/
+fibonacci_heap.rs`, `docs/modules/fibonacci-heap.md`). `k_way_scan` now drives a real
+`FibonacciHeap<usize, KWayKeyComparator, Thrown>` — the heap holds array *indices*, and
+`KWayKeyComparator` is upstream's own inline closure (`arrays[a][pointers[a]] < arrays[b]
+[pointers[b]]`) translated directly, reading `pointers` fresh on every comparison exactly as the JS
+closure over a shared mutable array does. This is upstream's algorithm, not a second substitute for
+it.
+**Verification:** the exact case that found this (`merge([3], [2, -5], [2])`) is now pinned as a
+Rust unit test, `merge_k_matches_upstreams_real_heap_on_the_case_that_found_d_105`, asserting the
+real heap's output (`[2, 2, -5, 3]`) rather than the old linear scan's (`[2, -5, 2, 3]`).
+`crates/difffuzz/src/modules/_utils.rs`'s `k_way_arrays_op` grammar, previously narrowed to
+globally-distinct values specifically to avoid this gap, is widened back to the same small,
+repetitive, tie-producing pool `two_arrays_op` always used, for `merge`/`unionUnique` — see that
+function's own doc comment for the full before/after. Two fresh 60-second campaigns (seeds 42 and
+20260801, ~1.35M ops combined) ran clean against the widened grammar; `fuzz/log.txt`'s earlier,
+narrower-grammar entries are kept rather than deleted, per CLAUDE.md, as the honest record of what
+was covered before.
+**Not part of this closure, and NOT quietly re-narrowed to hide it:** `intersectionUnique`'s k-way
+path (`kWayIntersectionUniqueArrays`/`intersection_unique_k`) never used a heap at all — it folds
+bounds seeded from JS's `-Infinity`/`Infinity` sentinels, which this port seeds from `Option<T>`
+instead, a *different*, pre-existing, already-documented divergence (see
+`intersection_unique_k`'s own module docs) this task never claimed to close. Reinstating `NaN`
+broadly (rather than only for the two functions D-105 is about) reached it immediately on the
+first verification run of the widened grammar: `intersectionUnique([-1], [NaN], [-5])` — port
+`[-5]`, upstream `[]`. `k_way_arrays_op` therefore takes an `allow_nan` flag and stays `false` for
+`intersectionUnique` specifically, so the widening is exactly what D-105 needed and nothing was
+swept back under a narrower grammar to report green.
+**Verify:** `crates/mnemonist-core/src/utils/merge.rs`'s `KWayKeyComparator` and `k_way_scan`, and
+its `merge_k_matches_upstreams_real_heap_on_the_case_that_found_d_105` test;
+`crates/difffuzz/src/modules/_utils.rs`'s `arrays_op`/`k_way_arrays_op`; `docs/modules/
+fibonacci-heap.md`; `docs/modules/_utils.md`'s updated D-105 entry; `fuzz/log.txt`'s four
+`module=_utils` lines (two pre-closure, two post-).
+
+### D-106 — `intersectionUnique`'s k-way `NaN` handling is a separate, still-open gap D-105 never touched
+**Status:** CONFIRMED · **Category:** behavioural · **Divergence:** yes
+**Upstream:** `kWayIntersectionUniqueArrays` seeds `maxStart`/`minEnd` from the JS sentinels
+`-Infinity`/`Infinity`; `first > maxStart` (and symmetrically for `minEnd`) is `false` whenever
+`first` is `NaN`, so a `NaN`-headed array leaves the sentinel in place until a later, non-`NaN`
+array supplies a real bound.
+**Port:** `intersection_unique_k` seeds `max_start`/`min_end` from `Option<T>`, so the *first* array
+scanned always sets the accumulator, `NaN` included — there is no generic `T`-shaped `-Infinity` to
+seed from without a `Sentinel`-style trait (`crate::utils::comparators`'s own, built for
+`heap.rs`'s `nsmallest`/`nlargest`, is over the wrong shape here: a per-slot sentinel value, not a
+running-fold accumulator).
+**Rationale:** `kWayIntersectionUniqueArrays` never touches a `FibonacciHeap` at all — it folds
+`intersection_unique_two`'s binary-search walk left to right, seeded from `arrays[0]`. D-105's
+closure (porting `fibonacci-heap` and wiring it into `merge_k`/`union_unique_k`) has nothing to say
+about this function, and this gap predates D-105's closure — it was simply unreachable while `NaN`
+was excluded from every k-way group, `intersectionUnique` included alongside `merge`/`unionUnique`.
+Reinstating `NaN` for the two D-105 actually covers reached this immediately
+(`intersectionUnique([-1], [NaN], [-5])`: port `[-5]`, upstream `[]`), and `NaN` is kept excluded
+from `intersectionUnique`'s own k-way fuzz pool specifically rather than fixed under the same
+commit, since fixing it needs a different mechanism (a fold-accumulator sentinel) than the one
+D-105's closure built.
+**Verify:** `crates/mnemonist-core/src/utils/merge.rs`'s `intersection_unique_k` module docs;
+`crates/difffuzz/src/modules/_utils.rs`'s `k_way_arrays_op`'s `allow_nan` parameter;
+`docs/modules/_utils.md`'s D-106 entry.
+
 ### D-200 — the trie node keeps its value and its children in separate fields, not one shared keyspace
 **Status:** CONFIRMED · **Category:** behavioural · **Divergence:** yes
 **Upstream:** every trie node is a plain object; `node[SENTINEL]` (the stored value) and
@@ -1579,3 +1626,78 @@ double-freeing.
 a `clear()` observes the now-released, inert value if read afterwards. Untested by
 `test/fuzzy-multi-map.js`.
 **Verify:** `crates/mnemonist-napi/src/fuzzy_multi_map.rs`'s own module docs.
+
+### D-170 — `MaxFibonacciHeap` is installed as evaluated JavaScript, not a second native class
+**Status:** CONFIRMED · **Category:** architecture · **Divergence:** no (reproduces upstream, does
+not repair it)
+**Upstream:** `MaxFibonacciHeap.prototype = FibonacciHeap.prototype;` at load time — the same
+anti-pattern `heap.js`'s D-74/B-75 already documents for `Heap`/`MaxHeap`, one file over. It makes
+`new FibonacciHeap() instanceof MaxFibonacciHeap` true and blurs the two constructors together
+(NOTES.md B-221).
+**Port:** `crates/mnemonist-napi/src/fibonacci_heap.rs`'s `install_fibonacci_heap_statics` evaluates
+a small JS installer at module load that closes over `FibonacciHeap.__max`/`__maxFrom` factories and
+performs the identical prototype assignment — the same mechanism `crate::heap`'s
+`install_heap_statics` already established for `MaxHeap`.
+**Rationale:** a second `#[napi]` class for `MaxFibonacciHeap` would have its own prototype object
+and would silently *repair* the `instanceof` blur instead of reproducing it — exactly the kind of
+"more correct than upstream" outcome CLAUDE.md's bug-for-bug mandate forbids.
+**Verify:** `crates/mnemonist-napi/src/fibonacci_heap.rs`'s `INSTALLER`/`install_fibonacci_heap_statics`;
+NOTES.md B-221.
+
+### D-171 — `FibonacciHeap::size` is `i64`, not `usize`
+**Status:** CONFIRMED · **Category:** behavioural · **Divergence:** no (matches upstream's own
+untyped-number arithmetic)
+**Upstream:** `pop`'s `this.size--` runs *after* `consolidate`, so a re-entrant comparator that calls
+`clear()` (`this.size = 0`) from inside that `consolidate` leaves the pending decrement to compute
+`0 - 1`. JavaScript has no unsigned integers: that is a real `-1`, held without complaint (NOTES.md
+B-220).
+**Port:** `size: Cell<i64>` throughout `mnemonist_core::structures::fibonacci_heap::FibonacciHeap`,
+matching `multi-set`'s D-163 precedent for the identical class of problem — a tracked counter whose
+upstream arithmetic can reach a state a "cleaner" derived or clamped value never would.
+**Rationale:** `usize` cannot represent `-1` at all; clamping to `0` (saturating) or panicking on
+underflow would each be a different, more "defensive" behaviour than upstream's own silent
+corruption, and CLAUDE.md is explicit that a port which quietly repairs upstream's arithmetic is a
+defect, not an improvement.
+**Verify:** `mnemonist_core::structures::fibonacci_heap`'s `size` field docs;
+`a_comparator_that_clears_the_heap_mid_pop_does_not_panic`, which pins the exact `-1`; NOTES.md
+B-220.
+
+### D-172 — B-220/B-222's crashes are reproduced as Rust panics whose message IS the exact upstream `TypeError` text
+**Status:** CONFIRMED · **Category:** architecture · **Divergence:** yes, in mechanism only
+**Upstream:** once `size`/`root`/`min` are left inconsistent by a re-entrant `clear()` (B-220,
+B-222), the *next* `pop` throws a real `TypeError` — `"Cannot read properties of null (reading
+'child')"` or `"...(reading 'right')"`, depending on which inconsistency it is.
+**Port:** `mnemonist-core` has no exceptions, so both sites are `Option::expect(msg)` panics — and
+`msg` is upstream's literal wording, not a description of the invariant, so a caller that catches
+the panic (the differential fuzz harness, `crates/difffuzz/src/modules/fibonacci_heap.rs`'s `pop`)
+can use the payload directly as the thrown text with no hand-maintained translation table to drift
+out of sync with what Node actually says.
+**Rationale — noted inconsistency with `_utils`'s D-104:** `merge.rs`'s B-180 chose the opposite
+shape, `Result<_, KWayError>`, because that call site already returns a `Result` its callers handle
+routinely. `FibonacciHeap::pop`/`consolidate` reaching this state is reachable only through one
+adversarial re-entrant `clear()` sequence, not through any input a normal caller supplies, and
+building a dedicated raised-message channel for it — a new error variant threaded through every
+`pop`/`consolidate` caller — was judged disproportionate to what it protects. The panic's message
+text is what closes that gap for the one caller (the fuzz harness) that needs to keep running past
+it.
+**Verify:** `FibonacciHeap::pop`/`consolidate`'s doc comments (NOTES.md B-220, B-222);
+`crates/difffuzz/src/modules/fibonacci_heap.rs`'s `pop`/`install_panic_capture`/`bare_message`.
+
+### D-173 — node storage is an arena of `NodeId`s, never `Rc<RefCell<Node>>`, and popped slots are never recycled
+**Status:** CONFIRMED · **Category:** architecture · **Divergence:** no (invisible to any public API)
+**Problem:** upstream's node graph is a circular doubly-linked list plus a parent/child tree, kept
+alive by JavaScript's tracing GC — an object stays valid for as long as anything references it,
+including a suspended re-entrant call frame. A literal `Rc<RefCell<Node<T>>>` translation is a
+strong-reference cycle that never reaches zero (measured: the singleton-heap case alone leaks), and
+an arena that DOES recycle a popped node's slot for the next allocation panics (or silently aliases
+two logically distinct nodes) the moment a re-entrant `pop` from inside another `pop`'s
+`consolidate` frees a node the outer call's own snapshot still references — found by the
+differential fuzzer inside its first fifty generated cases against the `fibPopper` factory.
+**Port:** `Arena<T>` addresses nodes by a plain `usize` (`NodeId`); slots are appended, never removed
+or reused, so no id a caller holds can ever be silently reassigned to an unrelated node.
+**Rationale:** this is the direct Rust analogue of the GC guarantee upstream depends on, not a new
+behaviour — nothing about the public API exposes node identity, memory address, or arena occupancy,
+so the choice is unobservable either way. The cost is that the arena grows with the heap's total
+lifetime creation count rather than its live size, which is bounded differently than V8's periodic
+GC but is the same shape of promise.
+**Verify:** `mnemonist_core::structures::fibonacci_heap`'s `Arena` and module-level doc comments.

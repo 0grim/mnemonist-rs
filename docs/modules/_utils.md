@@ -70,10 +70,15 @@ member at all. Nothing here supplies a malformed, unsorted, or partially-empty i
    (and, for the unique variants, deduplicated) arrays. What actually happens on a malformed input
    is exactly where this port and upstream first disagreed — twice (see "Bugs this found").
 3. **Three-or-more-array ties.** No k-array test case has any array head tie with another, so the
-   `FibonacciHeap`'s tie-break behaviour — and this port's disagreement with it — is completely
-   untested upstream, not merely lightly tested.
+   `FibonacciHeap`'s tie-break behaviour is completely untested upstream, not merely lightly tested.
+   **Update: this port now reproduces it rather than disagreeing with it** — D-105 is closed (see
+   "Deliberate divergences" and `docs/modules/fibonacci-heap.md`); `k_way_scan` drives a real
+   `FibonacciHeap`, the same one upstream's own `kWayMergeArrays`/`kWayUnionUniqueArrays` build.
 4. **`NaN` anywhere in `merge`/`unionUnique`/`intersectionUnique`.** Every value in every test case
-   is a plain finite integer.
+   is a plain finite integer. The differential fuzz grammar now covers `NaN` in three-or-more-array
+   groups for `merge`/`unionUnique` (widened alongside D-105's closure); `intersectionUnique`'s own
+   k-way `NaN` handling is a *separate*, still-open, pre-existing gap — D-105 never touched it, since
+   `kWayIntersectionUniqueArrays` has no heap at all. See "Deliberate divergences".
 
 **Elsewhere:**
 
@@ -141,16 +146,20 @@ overclaim causation" cuts the other way too):
 1. `union_unique_two`'s prefix loop deduplicated an internally non-unique input where upstream's own
    prefix loop pushes unconditionally (only its overlap and filling loops dedup). Found by
    differential fuzzing inside the first 300 generated cases; fixed. See NOTES.md, "_utils".
-2. The k-way linear scan's tie-break disagrees with `FibonacciHeap`'s own, observably, on both
-   `merge`'s element order and `unionUnique`'s deduplication. Not fixed — see "Deliberate
-   divergences", D-105.
+2. The k-way linear scan's tie-break disagreed with `FibonacciHeap`'s own, observably, on both
+   `merge`'s element order and `unionUnique`'s deduplication. **Fixed — D-105 is now closed**: see
+   "Deliberate divergences" and `docs/modules/fibonacci-heap.md`. The exact case that found this
+   (`merge([3], [2, -5], [2])`) is pinned as a Rust test,
+   `merge_k_matches_upstreams_real_heap_on_the_case_that_found_d_105`
+   (`crates/mnemonist-core/src/utils/merge.rs`), against the real heap's actual output.
 
 ## Deliberate divergences
 
 | # | Divergence | Why |
 |---|---|---|
 | D-104 | **B-180 is reproduced as `Err(KWayError::StaleLengthMismatch)`, not a panic.** | `mnemonist-core` has no exceptions and forbids `unsafe`, so the actual out-of-bounds mechanism cannot be reproduced; the outcome (the k-way call fails, with upstream's message available at the boundary) is. Same convention as D-44 (`hash_tables::TABLE_IS_FULL`). |
-| D-105 | **The k-way merge/union's tie-break is a linear scan's, not a real `FibonacciHeap`'s.** | `fibonacci-heap.js` (~115 LOC, T2 tier) is a separate, unported unit — not part of this file's require-closure. Observable on `merge`/`unionUnique` with three-or-more arrays and a tied value; the two-array functions have no such gap (no "pick among several" step exists in a two-pointer walk), confirmed by two falsification attempts that stayed green (see "Fuzz + bench"). |
+| D-105 | **CLOSED.** Was: the k-way merge/union's tie-break was a linear scan's, not a real `FibonacciHeap`'s. | `fibonacci-heap` is now a ported unit. `k_way_scan` drives a real `FibonacciHeap<usize, KWayKeyComparator, Thrown>` — upstream's own inline comparator closure, translated directly, over array indices with `pointers` read fresh per comparison. The fuzz grammar (`crates/difffuzz/src/modules/_utils.rs`) is widened back to a tie-producing, `NaN`-including pool for `merge`/`unionUnique`; see `planning/DECISIONS-CANDIDATES.md`'s D-105 entry for the full before/after and the two post-closure 60s campaigns. |
+| D-106 | **`intersectionUnique`'s k-way `NaN` handling is a separate, still-open gap.** | `kWayIntersectionUniqueArrays`/`intersection_unique_k` never used a heap — D-105 never applied to it. Upstream seeds its running bounds from JS's `-Infinity`/`Infinity` sentinels; this port seeds from `Option<T>`, so the *first* array scanned always sets the accumulator, `NaN` included, where upstream's sentinel can survive past a `NaN`-headed array. Reachable only once `NaN` participates in a three-or-more-array group; the fuzz grammar's `k_way_arrays_op` takes an `allow_nan` flag that stays `false` for `intersectionUnique` specifically so D-105's widening does not silently paper over this different gap. See `crates/mnemonist-core/src/utils/merge.rs`'s `intersection_unique_k` module docs for the mechanism. |
 | — | **`concat` supports `Uint8Array` only.** | `test/_utils.js`'s own case never constructs anything else; upstream is generic over any typed-array class via `arguments[0].constructor`. Same "helpers land as callers reach them" policy as `indices`. |
 | — | **`getMinimalRepresentation`'s optional `getter` argument is not ported.** | Never supplied by any test in scope; same policy. |
 | — | **A custom `linearProbing` hash function is supported at the bridge (a real JS callback), but never fuzzed.** | `test/_utils.js` only ever passes `jenkinsInt32`; fuzzing an arbitrary hash would need the same re-entrant-callback machinery as the comparator exclusion below, for a capability nothing in scope exercises. |

@@ -57,3 +57,7 @@ pub mod multi_set;
 
 // Appended at the end, never inserted (CLAUDE.md, Git).
 pub mod fuzzy_multi_map;
+
+// Appended at the end, never inserted: this file is a shared registry
+// (CLAUDE.md, Git) and a new line anywhere else is a merge conflict.
+pub mod fibonacci_heap;

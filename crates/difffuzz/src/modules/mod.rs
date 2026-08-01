@@ -68,3 +68,7 @@ pub mod trie_map;
 pub mod fuzzy_multi_map;
 pub mod multi_map;
 pub mod multi_set;
+
+// Appended at the end, never inserted (CLAUDE.md, Git): a new line anywhere
+// else is a merge conflict.
+pub mod fibonacci_heap;

@@ -408,6 +408,44 @@ const FACTORIES = {
   // -- this factory is what lets `difffuzz::modules::trie` reach that state
   // on both sides.
   trieToggle: () => (old) => !old,
+  // Appended at the end, never inserted (CLAUDE.md, Git): a new key anywhere
+  // else is a merge conflict inside an object literal.
+  //
+  // `fibonacci-heap` reuses `ascending`/`descending`/`boom` above verbatim --
+  // all three are already generic over any instance, since none of them
+  // touch `.items`. It needs its OWN mutating factories because
+  // `FibonacciHeap` has no public backing array at all: `push`, `peek`,
+  // `pop` and `clear` are its entire surface, so the re-entrant comparators
+  // reach through those instead of `instance.items.push`/`.pop()`.
+  //
+  // Grows the tree count under a sift that has already chosen which nodes to
+  // compare.
+  fibPushy: () => {
+    let budget = 3;
+    return (a, b) => {
+      if (budget-- > 0) instance.push(99);
+      return heapAscending(a, b);
+    };
+  },
+  // A NESTED pop from inside another pop's `consolidate` -- legitimate
+  // re-entrancy `FibonacciHeap` (unlike `Heap`) has no backing array to
+  // shrink instead, so this is the shape that exercises it here.
+  fibPopper: () => {
+    let budget = 2;
+    return (a, b) => {
+      if (budget-- > 0) instance.pop();
+      return heapAscending(a, b);
+    };
+  },
+  // Resets `root`/`min`/`size` out from under the `consolidate` call
+  // currently comparing against them -- NOTES.md B-220's trigger.
+  fibClearer: () => {
+    let budget = 1;
+    return (a, b) => {
+      if (budget-- > 0) instance.clear();
+      return heapAscending(a, b);
+    };
+  },
 };
 
 // Upstream's DEFAULT_COMPARATOR, written out so the factories above can wrap it.

@@ -971,3 +971,7 @@
 2026-08-01T14:56:52Z  module=multi-set seed=20260801 cases=6787 ops=674368 wall=60.0s divergences=0
 2026-08-01T14:58:29Z  module=fuzzy-multi-map seed=42 cases=9562 ops=964655 wall=90.0s divergences=0
 2026-08-01T14:59:39Z  module=fuzzy-multi-map seed=20260801 cases=6276 ops=629178 wall=60.0s divergences=0
+2026-08-01T16:33:21Z  module=fibonacci-heap seed=42 cases=4713 ops=943340 wall=60.0s divergences=0
+2026-08-01T16:34:28Z  module=fibonacci-heap seed=20260801 cases=4702 ops=945478 wall=60.0s divergences=0
+2026-08-01T16:44:18Z  module=_utils seed=42 cases=16966 ops=678098 wall=60.0s divergences=0
+2026-08-01T16:45:23Z  module=_utils seed=20260801 cases=16969 ops=675304 wall=60.0s divergences=0
