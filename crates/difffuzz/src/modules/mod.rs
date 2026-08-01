@@ -31,6 +31,12 @@ pub mod sort;
 // file; see that module's docs.
 pub mod bloom_filter;
 pub mod suffix_array;
+// Appended at the end, never inserted: this file is edited by several agents
+// at once and a new line anywhere but the end can land inside another one's
+// hunk (CLAUDE.md, Git).
+pub mod static_interval_tree;
+pub mod vector;
+
 // Appended at the end of the list rather than in alphabetical position: this
 // file is shared, and a conflict boundary landing mid-list has broken three
 // merges already.

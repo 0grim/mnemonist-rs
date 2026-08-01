@@ -237,6 +237,8 @@ const ITERATOR_FACTORIES: &[(&str, &str)] = &[
     ("FixedStack", "values"),
     ("FixedDeque", "values"),
     ("CircularBuffer", "values"),
+    // Appended at the end, never inserted (CLAUDE.md, Git).
+    ("Vector", "values"),
 ];
 
 /// Wire every collection's `Symbol.iterator` to its cursor factory.
@@ -268,6 +270,14 @@ pub fn install_iterator_factories(mut exports: Object, env: Env) -> Result<()> {
     // `Symbol.iterator` pointing at the unpatched factory and the two ways of
     // getting a cursor would behave differently.
     crate::statics::install_variadic_factories(&mut exports, &env)?;
+
+    // `Vector`'s width-named subclasses and `Vector.PointerVector` have no
+    // JS-representable `ArrayClass` of their own to construct with (D-07's
+    // reasoning again: this belongs in the addon, not in test scaffolding).
+    // Before the `Symbol.iterator` aliasing loop below is fine either way --
+    // every subclass instance is a real `Vector` under the hood, so it picks
+    // up the same prototype-level `Symbol.iterator` regardless of order.
+    crate::vector::install_vector_subclasses(&exports, &env)?;
 
     for (class, factory) in ITERATOR_FACTORIES {
         let constructor: Object = exports

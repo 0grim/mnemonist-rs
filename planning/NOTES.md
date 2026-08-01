@@ -607,6 +607,90 @@ option upstream believes it validates. Reproduced, including the split.
 > Differential fuzzing has not run yet. Expect the best candidates to come from there, not from
 > reading. Add them here with the minimised repro attached.
 
+### B-100 — `StaticIntervalTree` crashes on zero intervals with an unrelated `TypeError`
+`status: VERIFIED against Node 24.18.1` · `mnemonist static-interval-tree.js`
+`buildBST` is called unconditionally from the constructor, even when `length === 0`. With
+`high = length - 1 = -1`, `mid = (0 + (-1 - 0) / 2) | 0` truncates to `0`, so
+`current = sortedIndices[0]` reads one past the end of a **zero-length** typed array
+(`undefined`). The very next line, `intervals[current][1]`, indexes `intervals` with the
+property name `"undefined"` and throws reading `1` off of `undefined`:
+
+```js
+> new StaticIntervalTree([])
+TypeError: Cannot read properties of undefined (reading '1')
+```
+
+There is no guard anywhere upstream that catches a zero-length `intervals` before this point —
+the crash comes from three levels down inside `buildBST`, with a message that says nothing about
+empty input. Reproduced by [`Error::EmptyIntervals`] in
+`crates/mnemonist-core/src/structures/static_interval_tree.rs`, which raises the *outcome*
+(construction fails) without attempting the *mechanism* (a Rust panic unwinding across the napi
+boundary would be worse than the JS exception it stands in for — napi does not `catch_unwind` a
+sync call). See `docs/modules/static-interval-tree.md`.
+
+### B-101 — `Vector.get`/`set` admit `index === length`, one past the last element
+`status: VERIFIED against Node 24.18.1` · `mnemonist vector.js`
+Both bounds guards are `<`, not `<=`:
+
+```js
+Vector.prototype.set = function(index, value) {
+  if (this.length < index) throw new Error('...index out of bounds.');
+  this.array[index] = value;
+  return this;
+};
+Vector.prototype.get = function(index) {
+  if (this.length < index) return undefined;
+  return this.array[index];
+};
+```
+
+So `get(length)`/`set(length, v)` are **admitted** rather than refused — one index past the last
+element `push` has ever placed, landing in the capacity region instead of the array's logical
+extent:
+
+```js
+var v = new Vector(Uint8Array, 5);   // length 0, capacity 5
+v.set(0, 42);                        // 0 < 0 is false: WRITES. length stays 0.
+v.get(0) === 42
+```
+
+`set(length, v)` does **not** advance `length`, so it writes into the vector without growing it,
+silently. `test/vector.js` never exercises this: every `set`/`get` in the file is either well
+inside the current length or far enough outside to hit the ordinary "out of bounds" throw — the
+exact boundary is never probed. Reproduced by [`Vector::get`]/[`Vector::set`] in
+`crates/mnemonist-core/src/structures/vector.rs`, which compare against `length` with the same
+`<` upstream uses; see `docs/modules/vector.md`.
+
+### B-102 — a `Vector`'s growth carries a popped slot's stale data forward, and B-101 keeps it reachable
+`status: VERIFIED against Node 24.18.1` · `mnemonist vector.js`
+`pop()` never clears the slot it releases — `return this.array[--this.length];` is a read, not a
+write — so the region `length..capacity` can hold stale data from an earlier, larger `length`.
+Growth (`reallocate`, when growing) copies the **whole old array**, not just up to `length`:
+
+```js
+if (typed.isTypedArray(this.array))
+  this.array.set(oldArray, 0);   // the WHOLE old array, capacity included
+```
+
+So a value a caller has already popped survives a subsequent grow at the same position, and B-101's
+`index === length` admission keeps it reachable afterwards:
+
+```js
+var v = new Vector(Uint8Array, 2);
+v.push(9); v.push(8);   // array [9, 8], length 2
+v.pop();                // length 1, array UNCHANGED: [9, 8]
+v.reallocate(4);        // array [9, 8, 0, 0] -- the 8 survived the copy
+v.get(1) === 8          // length(1) < index(1) is false: reads the stale 8
+```
+
+Neither defect alone reaches this state: without B-101's admission the stale slot would be
+unreadable, and without the whole-capacity copy a grow would zero it. `test/vector.js`'s own
+`pop`/`push`/`reallocate` tests never probe the boundary slot after a pop-then-grow, so the
+compounding is untested upstream. Reproduced by `Storage::grown` in
+`crates/mnemonist-core/src/structures/vector.rs`, which bulk-copies the old capacity rather than
+reaching for the "tidier" copy-up-to-length a hand-written port would pick; see
+`docs/modules/vector.md`.
+
 ### T2 — comparator callbacks (`heap`, `fixed-reverse-heap`, `utils/comparators`)
 
 All ten below were found by reading the two files statement by statement and confirming each

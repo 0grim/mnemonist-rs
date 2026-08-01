@@ -43,6 +43,10 @@ use difffuzz::modules::suffix_array::{GeneralizedSuffixArraySpec, SuffixArraySpe
 use difffuzz::modules::fixed_reverse_heap::FixedReverseHeapSpec;
 use difffuzz::modules::heap::HeapSpec;
 use difffuzz::{Campaign, Report};
+// Appended at the END of the import run, never inserted: this file is edited
+// from several worktrees at once (CLAUDE.md, Git).
+use difffuzz::modules::static_interval_tree::StaticIntervalTreeSpec;
+use difffuzz::modules::vector::VectorSpec;
 
 const USAGE: &str = "\
 usage: difffuzz --module <name> [--seed N] [--duration SECONDS] [--cases N] [--batch N]
@@ -51,9 +55,8 @@ usage: difffuzz --module <name> [--seed N] [--duration SECONDS] [--cases N] [--b
               sparse-map, sparse-queue-set, hashed-array-tree, bit-set,
               bit-vector, stack, queue, default-map, fixed-stack,
               fixed-deque, circular-buffer, sort, set, suffix-array,
-              generalized-suffix-array, bloom-filter
-              bit-vector, stack, queue, default-map, heap,
-              fixed-reverse-heap
+              generalized-suffix-array, bloom-filter, vector,
+              static-interval-tree, heap, fixed-reverse-heap
   --seed      campaign seed (default 42); with --cases, reproduces exactly
   --duration  wall-clock budget in seconds (default 60)
   --cases     stop after N cases instead of after --duration
@@ -217,6 +220,23 @@ fn main() -> ExitCode {
             &BloomFilterSpec,
             &Campaign {
                 regressions: difffuzz::modules::bloom_filter::REGRESSIONS,
+                ..campaign
+            },
+        ),
+        // Appended at the END of the match, never between arms: a conflict
+        // boundary landing inside one has already broken three merges
+        // (CLAUDE.md, Git).
+        "vector" => difffuzz::run(
+            &VectorSpec,
+            &Campaign {
+                regressions: difffuzz::modules::vector::REGRESSIONS,
+                ..campaign
+            },
+        ),
+        "static-interval-tree" => difffuzz::run(
+            &StaticIntervalTreeSpec,
+            &Campaign {
+                regressions: difffuzz::modules::static_interval_tree::REGRESSIONS,
                 ..campaign
             },
         ),
