@@ -1980,3 +1980,124 @@ predicted; the original suite dropped from 88 passing to 72 passing / 16 failing
 differential fuzzer found a divergence in 74 operations and 0.4 seconds, minimised to nine ops,
 disagreeing on `head`/`tail` immediately after a `get`. Reverted; confirmed green at all three again.
 Nothing here was found to be blind.
+
+## _utils (typed-arrays, binary-search, hash-tables, iterables, merge)
+
+Allocated range B-180..B-199. `typed-arrays`, `binary-search`, `hash-tables` and `iterables` were
+already ported by earlier work (as members of this eventual unit — see each one's own module docs);
+this pass ported the missing sibling, `utils/merge.js` (563 LOC), wired the whole require-closure
+through the napi bridge, and ran the unit's first differential-fuzz campaigns. Full write-up in
+`docs/modules/_utils.md`.
+
+### B-180 — the k-way `merge`/`unionUnique` throw a `TypeError` whenever filtering an empty array
+### out leaves three-or-more arrays live
+
+`status: VERIFIED against Node 24.18.1` · `utils/merge.js`, `kWayMergeArrays` and
+`kWayUnionUniqueArrays` · found by reading, while porting, then confirmed against a real
+`pm-recon/mnemonist` v0.40.4 checkout before any Rust code depended on the finding
+
+```js
+function kWayMergeArrays(arrays) {
+  var length = 0, max = -Infinity, al, i, l;
+  var filtered = [];
+
+  for (i = 0, l = arrays.length; i < l; i++) {   // `l` captured HERE, before filtering
+    al = arrays[i].length;
+    if (al === 0) continue;
+    filtered.push(arrays[i]);
+    length += al;
+    if (al > max) max = al;
+  }
+
+  if (filtered.length === 0) return new arrays[0].constructor(0);
+  if (filtered.length === 1) return filtered[0].slice();
+  if (filtered.length === 2) return mergeArrays(filtered[0], filtered[1]);
+
+  arrays = filtered;                              // reassigned; `l` is now stale
+  // ...
+  for (i = 0; i < l; i++)                         // `l` is the ORIGINAL length, not `filtered.length`
+    heap.push(i);
+  // ...
+}
+```
+
+Whenever at least one input array was empty (so `filtered.length < l`) *and* three-or-more arrays
+remain after filtering (so the code reaches the heap section at all), the heap is seeded with
+indices past the end of the now-shorter `arrays`. The first `heap.pop()` that touches one of them
+reads `arrays[p]` (`undefined`) and then indexes it, throwing
+`TypeError: Cannot read properties of undefined (reading 'undefined')`. Confirmed directly:
+
+```js
+require('mnemonist/utils/merge').merge([], [1, 2, 3], [4, 5, 6], [4, 7])       // throws
+require('mnemonist/utils/merge').unionUnique([1, 2], [], [3, 4], [5, 6])       // throws
+require('mnemonist/utils/merge').merge([1, 2], [], [3, 4])                     // OK -- filtered.length is 2
+require('mnemonist/utils/merge').intersectionUnique([], [1, 2, 3], [4, 5, 6]) // OK -- returns [] before any heap exists
+```
+
+`kWayIntersectionUniqueArrays` has no `FibonacciHeap` at all (a sequential binary-search fold) and
+returns `[]` on the very first empty array it scans, before the stale-`l` code path would ever be
+reached — it is structurally immune, not merely untested.
+
+Not one case in `test/_utils.js`'s own `'should properly merge k arrays.'` /
+`'should properly perform the union of k unique arrays.'` blocks mixes an empty array in with
+two-or-more non-empty ones, so gate 4 cannot reach this. Reproduced in the port as
+`KWayError::StaleLengthMismatch` (`mnemonist_core::utils::merge`), surfaced at the napi boundary as
+the identical thrown message text, rather than as a panic — `mnemonist-core` has no exceptions, so
+this follows the same convention as `hash_tables::TABLE_IS_FULL` (D-44).
+
+### Two port defects, not upstream's, both found by differential fuzzing and fixed before logging
+
+Recorded here per CLAUDE.md ("do not overclaim causation" cuts the other way too — these are not
+upstream bugs and get no B-number).
+
+**1 — `union_unique_two`'s prefix loop deduplicated where upstream's does not.** Upstream's
+`unionUniqueArrays` has a dedup check (`array.length === 0 || array[array.length - 1] !== v`) in its
+overlap loop and both its filling loops, but its *prefix* loop (the one before any overlap is
+detected) pushes unconditionally — relying on the caller's arrays already being internally unique.
+A first draft of this port called the same `push_unique` helper in the prefix loop too, which is
+*more correct* than upstream on an internally non-unique input and therefore a defect. Found inside
+the first 300 cases of this unit's very first fuzz campaign:
+`unionUnique([-5, -5, 0], [-0.5])` — port `[-5, -0.5, 0]` (deduped), upstream `[-5, -5, -0.5, 0]`
+(kept both). Fixed by making the prefix loop push unconditionally, matching the source exactly.
+Pinned: `mnemonist_core::utils::merge`'s
+`the_prefix_loop_does_not_deduplicate_an_already_non_unique_input`.
+
+**2 — not a defect, but worth recording precisely: the k-way linear scan's tie-break disagrees with
+`FibonacciHeap`'s.** `fibonacci-heap.js` is not ported (T2 tier); the k-way merge/union here picks
+the minimum head via a linear scan that keeps the earliest array on a tie. Upstream's
+`FibonacciHeap.push` updates its `min` pointer with `<=` (favouring the *most recently pushed* node),
+and after the first `pop`'s consolidation pass, which node ends up favoured on a later tie depends on
+the heap's internal degree-bucket merging — not on insertion order alone. Found by the same
+campaign: `merge([3], [2, -5], [2])` disagreed in element ORDER alone (upstream `[2, 2, -5, 3]`,
+port `[2, -5, 2, 3]`), and `unionUnique([3], [2, -5], [2])` disagreed in which values survive
+deduplication (upstream `[2, -5, 3]`, port `[2, -5, 2, 3]`). Both are the SAME root cause. This is a
+genuine algorithmic-substitution gap, not a bug to fix here — closing it means porting
+`fibonacci-heap.js` itself, a separate T2-tier unit. Recorded as D-18x (see
+`planning/DECISIONS-CANDIDATES.md`) and worked around in the fuzz grammar by generating
+globally-distinct values for every three-or-more-array case, which sidesteps the gap structurally
+(with no ties, every correct implementation's extraction order is identical) rather than hiding it.
+
+### Falsification (gate 6) — two attempts that stayed green, reported honestly, then one that didn't
+
+First attempt: relaxed `k_way_scan`'s tie-break comparison from `<` to `<=` (favouring the latest
+array on a tie instead of the earliest). Named target: `'should properly merge k arrays.'`. Stayed
+**green** — the test's own tie (two arrays both starting at `1`, two both starting at `4`) resolves
+to the same VALUES regardless of which array supplies them, so the sabotage was unobservable there,
+consistent with the tie-break analysis above.
+
+Second attempt: reversed `merge_two`'s swap condition, `a[0] > b[0]` to `a[0] < b[0]`. Named target:
+`'should properly merge two arrays.'`, case `[[4, 5, 6], [1, 2, 3], ...]`. Stayed **green** — the
+swap is an optimisation for the fast-concatenation-path check, not a correctness requirement of the
+two-pointer walk itself, which is symmetric in which side is called `a`.
+
+Third attempt, the one that worked: reversed the overlap loop's comparison, `a_head <= b_head` to
+`a_head >= b_head`. Named target: `'should properly merge two arrays.'`, case
+`[[1, 2, 2, 3], [2, 3, 3, 4], [1, 2, 2, 2, 3, 3, 3, 4]]`. **Confirmed red**: 25 passing / 1 failing,
+exactly that assertion, with the actual output `[1, 2, 2, 3, 2, 3, 3, 4]` (unsorted) against the
+expected `[1, 2, 2, 2, 3, 3, 3, 4]`. Reverted; **confirmed green again**, 26/26.
+
+The two failed attempts are reported rather than discarded because they are themselves a finding:
+the two-array merge is tie-order-invariant and swap-side-invariant by construction (no third array
+can interleave), which is exactly why the k-way case (§ above) is the one place that invariant
+breaks down — a third array's advancing pointer can land between what looked, in the two-array
+case, like an unobservable choice.

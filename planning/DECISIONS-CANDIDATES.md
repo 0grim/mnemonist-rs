@@ -1345,3 +1345,43 @@ bridge already made for the identical reason (its own `items` getter returns `{s
 `Map` proxy).
 **Verify:** `crates/difffuzz/src/modules/lru_cache.rs`'s module docs, "`items`, and the one
 observation deliberately left out".
+
+### D-104 — B-180's crash is reproduced as `Err(KWayError::StaleLengthMismatch)`, not a panic
+**Status:** CONFIRMED · **Category:** behavioural · **Divergence:** no
+**Upstream:** `merge`/`unionUnique`'s k-way path throws `TypeError: Cannot read properties of
+undefined (reading 'undefined')` whenever filtering empty inputs out of `arrays` leaves the stale
+`l` (captured before filtering) larger than `filtered.length` — B-180.
+**Port:** `mnemonist_core::utils::merge::merge_k`/`union_unique_k` detect the exact same condition
+(`original_len != filtered.len()` with `filtered.len() >= 3`) and return
+`Err(KWayError::StaleLengthMismatch)` rather than indexing out of bounds. The napi bridge
+(`crates/mnemonist-napi/src/merge.rs`) surfaces this as a thrown `Error` carrying
+`STALE_LENGTH_TYPE_ERROR` — upstream's message text, verbatim.
+**Rationale:** `mnemonist-core` has no exceptions and `#![forbid(unsafe_code)]` forbids reproducing
+the mechanism (an actual out-of-bounds read); reproducing the *outcome* — construction of the
+result fails, with upstream's own message available at the boundary — is the faithful port. Same
+judgement call as D-44 (`hash_tables::TABLE_IS_FULL`) and D-100 (`StaticIntervalTree`'s empty-input
+refusal).
+**Verify:** `crates/mnemonist-core/src/utils/merge.rs`'s
+`merge_k_reproduces_b_180_when_filtering_drops_the_length` and
+`union_unique_k_reproduces_b_180_when_filtering_drops_the_length`; NOTES.md B-180.
+
+### D-105 — the k-way merge/union's tie-break is a linear scan's, not `FibonacciHeap`'s
+**Status:** CONFIRMED · **Category:** architecture · **Divergence:** yes
+**Upstream:** `kWayMergeArrays`/`kWayUnionUniqueArrays` pick the next value via a real
+`FibonacciHeap`, whose tie-break (which of several equal-valued array heads is extracted first) is
+an artifact of `push`'s `<=`-favours-latest rule and, after the first `pop`, of `consolidate`'s
+degree-bucket merging — genuinely dependent on the heap's internal tree shape, not on insertion
+order alone.
+**Port:** `mnemonist_core::utils::merge::k_way_scan` picks the minimum head by a plain linear scan,
+keeping the earliest array on a tie.
+**Rationale:** `fibonacci-heap.js` (~115 LOC, T2 tier per `planning/ROADMAP.md`) is not part of this
+unit's require-closure and is not ported. Found observable, not merely theoretical, by this unit's
+first fuzz campaign: `merge([3], [2, -5], [2])` disagrees in element ORDER (upstream
+`[2, 2, -5, 3]`, port `[2, -5, 2, 3]`) and `unionUnique([3], [2, -5], [2])` disagrees in which values
+survive deduplication (upstream `[2, -5, 3]`, port `[2, -5, 2, 3]`) — both from the identical root
+cause. The two-array functions (`merge_two`/`union_unique_two`) have no such gap: they are a direct
+two-pointer walk with no "pick among several" step at all, confirmed tie-order-invariant and
+swap-side-invariant by two falsification attempts that stayed green (NOTES.md, "_utils", gate 6).
+**Verify:** `crates/difffuzz/src/modules/_utils.rs`'s `k_way_arrays_op`, which works around the gap
+by generating globally-distinct values for every three-or-more-array case rather than hiding it;
+NOTES.md B-180's write-up, "Two port defects... found by differential fuzzing".
