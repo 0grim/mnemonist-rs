@@ -2578,3 +2578,44 @@ advances onto precisely that node — now itself the tail — chasing its own ta
 divergence (a real Node `forEach` in the identical shape loops identically); a program the grammar
 must not generate. Capped at 8; see `fuzz/log.txt` for the throughput before/after (~2s/case to
 ~5ms/case).
+
+## The layer gap, stated exactly — and a fuzzer correctly staying green
+
+Appended at the end of the file: only an addition at the very end can never land inside another
+agent's hunk.
+
+`default-weak-map` produced the cleanest statement of the layer gap this project has found, because
+for once the gate was designed to expose it rather than stumbling into it.
+
+**B-242** is a bridge-composition bug: the default factory re-runs on `get` of a key whose stored
+value is `undefined`. It was found by **reading**, not by fuzzing, and the agent then proved *why*
+fuzzing could never have found it. Gate 6 sabotaged the bridge's `get` and checked three
+instruments:
+
+- a direct script through the bridge — **red**, as predicted;
+- the upstream mocha suite — **green**, because upstream never exercises that composition;
+- the differential fuzzer — **green, and correctly so**.
+
+The fuzzer stayed green because `difffuzz` drives `mnemonist-core` directly. **The bridge is not in
+its loop at all.** This is not a gap in the grammar, reachable by generating better programs; it is
+a gap in *what the instrument is pointed at*. No amount of fuzzing effort closes it.
+
+That is the third independent arrival at the same lesson — after B-31 (a `&self` optimisation
+across a re-entrant JS callback) and the `heap` review (three defects every gate had passed). The
+sharpened form:
+
+> A differential fuzzer that compares core against upstream proves things about **core**. Every
+> defect that lives in the bridge — retention, borrow discipline, argument marshalling, factory
+> composition — is invisible to it *by construction*, and needs reading, boundary tests, or review.
+
+### What is deliberately not fuzzed, and why
+
+`default-weak-map`'s key pool is eight real objects created once and held for the oracle process's
+lifetime, so **no key is ever collectible mid-campaign**. GC timing is therefore untested, by
+design: a `WeakMap`'s entries vanish at the collector's discretion, and a differential test that
+depended on when would flake. A flaky red is worse than a narrow green, because it trains you to
+ignore the instrument. Stated in the module doc rather than left for a reader to infer from an
+absence.
+
+Observable through the oracle: every return value of `get`/`peek`/`has`/`delete`/`set` — which is
+the entire public surface, since a real `WeakMap` has no `size` and no iteration to compare.
