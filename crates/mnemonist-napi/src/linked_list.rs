@@ -152,18 +152,21 @@ impl JsLinkedList {
         let mut cursor = self.inner.borrow().values();
         let mut index = 0u32;
 
-        // The borrow is taken per step, inside the closure, and dropped
-        // before the callback runs -- a callback that pushes/unshifts/shifts
-        // through this same list never meets an outstanding borrow, and the
-        // walk sees exactly what it did, live, per the core module's own
-        // liveness rules.
-        let mut step = || {
-            let inner = self.inner.borrow();
+        // `current` then `advance`, as two separate borrows -- NOT `step`,
+        // which advances eagerly and is correct for the lazy iterators but
+        // wrong here. See `mnemonist_core::structures::linked_list`'s module
+        // docs for the port defect this shape fixes: the callback must be
+        // able to mutate the list (push/unshift/shift) BETWEEN reading the
+        // current item and advancing past it, exactly as upstream's own
+        // `callback.call(...); n = n.next;` does.
+        loop {
+            let item = {
+                let inner = self.inner.borrow();
 
-            cursor.step(&inner).cloned()
-        };
+                cursor.current(&inner).cloned()
+            };
+            let Some(item) = item else { break };
 
-        while let Some(item) = step() {
             let arguments = FnArgs::from((item, index, list_object));
 
             match &scope {
@@ -171,6 +174,7 @@ impl JsLinkedList {
                 None => callback.apply(this, arguments)?,
             };
 
+            cursor.advance(&self.inner.borrow());
             index += 1;
         }
 

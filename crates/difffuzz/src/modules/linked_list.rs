@@ -190,7 +190,14 @@ impl ModuleSpec for LinkedListSpec {
                 let mut fired = 0usize;
                 let mut index = 0u64;
 
-                while let Some(item) = cursor.step(&instance.list).cloned() {
+                // `current` then `advance`, NOT `step`: upstream's own
+                // `callback.call(...); n = n.next;` runs the callback BEFORE
+                // advancing, which is exactly what let this op catch the
+                // port defect documented in
+                // `mnemonist_core::structures::linked_list`'s module docs.
+                // `step`'s eager advance is right for `values`/`entries` and
+                // wrong here.
+                while let Some(item) = cursor.current(&instance.list).cloned() {
                     let received = vec![item, json!(index)];
 
                     seen.push(Value::Array(received.clone()));
@@ -217,6 +224,8 @@ impl ModuleSpec for LinkedListSpec {
                             }
                         }
                     }
+
+                    cursor.advance(&instance.list);
                 }
 
                 json!({ "seen": seen })

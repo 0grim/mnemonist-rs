@@ -45,17 +45,63 @@
 //!   current tail.** `push` sets `this.tail.next = node` **on the tail object
 //!   itself** — an in-place mutation of a node a cursor may already be
 //!   holding. A cursor that has not yet advanced past the (old) tail sees the
-//!   append; upstream's own `forEach` (`callback` runs, *then* `n = n.next`
-//!   reads the now-possibly-updated `.next`) and the lazy iterators (`n =
-//!   n.next` runs synchronously in the same step that produced the previous
-//!   value) agree on this, because JavaScript's single-threaded execution
-//!   makes "the callback ran" and "the next `.next()` call runs" the same
-//!   kind of pause: nothing can slip in between reading a node's item and
-//!   reading its `next` field within either shape, and nothing can slip in
-//!   before it either. So `forEach` and `values`/`entries` are **one
-//!   walk primitive here**, not two — unlike `lru-cache`'s D-90, where the
-//!   sift's `forward[pointer]` is a *separate* bookkeeping array read at a
-//!   different cadence than a stored cursor's own advance.
+//!   append.
+//!
+//! # A port defect the fuzzer caught on its own first campaign: `forEach` is NOT the same primitive as the lazy iterators
+//!
+//! An earlier cut of this module claimed `forEach` and `values`/`entries`
+//! could share one stepping primitive, on the theory that JavaScript's
+//! single-threaded execution makes "the callback ran" and "the next
+//! `.next()` call runs" equivalent pauses. That is wrong, and reading
+//! upstream's own two shapes side by side shows why:
+//!
+//! ```js
+//! // forEach:
+//! while (n) {
+//!   callback.call(scope, n.item, i, this);
+//!   n = n.next;   // AFTER the callback -- two separate statements
+//!   i++;
+//! }
+//!
+//! // values() (and entries()):
+//! return new Iterator(function () {
+//!   if (!n) return {done: true};
+//!   var value = n.item;
+//!   n = n.next;   // BEFORE control ever returns to the caller
+//!   return {value, done: false};
+//! });
+//! ```
+//!
+//! `forEach`'s callback runs, and can mutate the list, **between** the read
+//! of `n.item` and the read of `n.next` — so a `push` that happens to land
+//! on the *current* tail while its own callback invocation is still running
+//! relinks that tail's `.next` before the following `n = n.next` reads it,
+//! and the walk continues onto the freshly pushed node. The lazy iterators'
+//! `n = n.next` runs synchronously, inside the same call that produced the
+//! *previous* value, with no opportunity for caller code to run in between —
+//! so by the time a caller's own code could push anything, `n` has already
+//! moved past the (old) tail and the append is invisible to that cursor.
+//!
+//! Concretely: `s.push(0); s.push(0); s.shift();` leaves one node, which is
+//! simultaneously head and tail. `s.forEach(function (a) { if (fired++ < 1)
+//! s.push(a); })` visits it, pushes during that visit, and — because the walk
+//! is still sitting on the node whose `.next` the push just set — visits the
+//! newly pushed node too: two calls, not one. A `step`-based cursor that
+//! advances immediately captures `.next` (`null`, at that point) before the
+//! callback runs, and the push arrives too late to be seen: one call. Found
+//! by `crates/difffuzz/src/modules/linked_list.rs`'s very first campaign
+//! (`--seed 42 --cases 63`), which disagreed after exactly this program's
+//! third operation. Not an upstream bug — a defect in this port, fixed here
+//! before any campaign was logged in `fuzz/log.txt`.
+//!
+//! [`ListCursor::current`]/[`ListCursor::advance`] are the fix: `forEach`
+//! reads the current item, lets the callback run, and only then advances,
+//! reading `next` live at that later point — matching `lru-cache`'s own
+//! `ForEachWalk` split (D-90) for the identical reason: the sift there reads
+//! a *separate* bookkeeping array at a different cadence than a stored
+//! cursor's own advance; here it is the same node object read at two
+//! different times instead. [`ListCursor::step`] keeps the lazy iterators'
+//! original eager-advance shape, because that one *is* correct for them.
 //!
 //! An owning `Box` chain cannot reproduce any of this: dropping a `Box`
 //! deallocates the node, so a captured "reference" to a shifted-off node
@@ -217,19 +263,47 @@ impl<T> LinkedList<T> {
 
     /// Upstream's `push`. Returns the new size —
     /// `this.size++; return this.size;`, the post-increment value.
+    ///
+    /// # A second port defect the fuzzer found: this must branch on `head`, not `tail`
+    ///
+    /// Upstream's own guard is `if (!this.head) { this.head = node; this.tail
+    /// = node; } else { this.tail.next = node; this.tail = node; }` —
+    /// checking **`head`**. An earlier cut of this method checked `self.tail`
+    /// instead, which is indistinguishable in every ordinary state (`head`
+    /// and `tail` are always both `None` or both `Some` outside of B-241) but
+    /// diverges in exactly the state B-241 produces: `shift()` on a
+    /// one-element list sets `head = None` while leaving `tail` at the
+    /// removed node. A push in that state must see `!this.head` and start a
+    /// **fresh** one-element list — abandoning the stale `tail` entirely,
+    /// not linking onto it — because that is what upstream's guard reads.
+    /// Branching on `tail` instead took the *linking* branch, appended onto
+    /// the stale node, and never touched `head` — leaving `head` permanently
+    /// `None` while `tail` and the arena both held a real, unreachable node.
+    /// Found by the same first fuzz campaign as the `forEach` timing defect,
+    /// one generated case later (`push(0); forEach(cb: shift once); push(0);`
+    /// — the second `push`, right after B-241 fires, is where the two
+    /// branches disagree): port `toArray() == []`, upstream `toArray() ==
+    /// [0]`. Not an upstream bug — a defect in this port, fixed here before
+    /// any campaign was logged in `fuzz/log.txt`.
     pub fn push(&mut self, item: T) -> usize {
         let index = self.arena.len();
         self.arena.push(Node { item, next: None });
 
-        match self.tail {
+        match self.head {
             None => {
                 self.head = Some(index);
                 self.tail = Some(index);
             }
-            Some(tail) => {
-                // The in-place mutation the module docs describe: this is
-                // what makes an append visible to a cursor already sitting on
-                // the (old) tail.
+            Some(_) => {
+                // `tail` may be stale (B-241) but `head` being `Some` means
+                // this really is a non-empty list, so `tail` still names a
+                // live node to link onto -- the in-place mutation the module
+                // docs describe, which is what makes an append visible to a
+                // cursor already sitting on the (old) tail.
+                let tail = self
+                    .tail
+                    .expect("head is Some, so tail names a node too, per push/unshift/shift");
+
                 self.arena[tail].next = Some(index);
                 self.tail = Some(index);
             }
@@ -352,12 +426,14 @@ impl ListCursor {
         Self { current: start }
     }
 
-    /// Advance one step against `list`'s arena.
-    ///
-    /// Faithful to upstream's `var value = n.item; n = n.next;` in one
-    /// non-interruptible unit — see the module docs on why that is exactly
-    /// what upstream's own single-threaded closures amount to as well, for
-    /// both `forEach` and the lazy iterators.
+    /// Advance one step against `list`'s arena — upstream's lazy-iterator
+    /// shape: `var value = n.item; n = n.next; return {value, ...};`, both
+    /// statements inside the SAME call, with no opportunity for caller code
+    /// to run between them. `values`/`entries`/`$next`/`$spread` all use
+    /// this. **`forEach` must not** — see [`ListCursor::current`] and
+    /// [`ListCursor::advance`], and the module docs' section on the port
+    /// defect the fuzzer found for why the two are genuinely different
+    /// primitives here.
     pub fn step<'a, T>(&mut self, list: &'a LinkedList<T>) -> Option<&'a T> {
         let index = self.current?;
         let node = &list.arena[index];
@@ -376,6 +452,26 @@ impl ListCursor {
         match self.step(list) {
             Some(item) => Step::Item(item),
             None => Step::Done,
+        }
+    }
+
+    /// The item at the current position, WITHOUT advancing — the first half
+    /// of upstream's `forEach` loop body. See [`ListCursor::advance`] and the
+    /// module docs' section on the port defect the fuzzer found: the whole
+    /// reason this exists separately from [`ListCursor::step`] is that
+    /// `forEach`'s callback must be able to run, and possibly mutate the
+    /// list, **between** this read and the advance that follows it.
+    pub fn current<'a, T>(&self, list: &'a LinkedList<T>) -> Option<&'a T> {
+        self.current.map(|index| &list.arena[index].item)
+    }
+
+    /// Move past the current position, reading `next` **live** — upstream's
+    /// `n = n.next`, run as its own statement, after whatever the caller did
+    /// between [`ListCursor::current`] and this call. A no-op once the
+    /// cursor is already done.
+    pub fn advance<T>(&mut self, list: &LinkedList<T>) {
+        if let Some(index) = self.current {
+            self.current = list.arena[index].next;
         }
     }
 }
@@ -472,6 +568,50 @@ mod tests {
 
         list.push("b");
         assert_eq!(list.last(), Some(&"b"), "push resynchronises tail");
+        // `last()` alone does not close this gap: a port that appends onto
+        // the stale tail instead of starting fresh also reports `last() ==
+        // "b"`, correctly, while leaving `head` permanently `None` -- see
+        // `push`'s own doc comment on the second fuzzer-found port defect.
+        // `first()`/`to_array()` are what actually distinguish the two.
+        assert_eq!(list.first(), Some(&"b"), "push also resynchronises head");
+        assert_eq!(list.to_array(), vec!["b"]);
+        assert_eq!(list.size(), 1);
+    }
+
+    /// The exact program the differential fuzzer minimised to
+    /// (`--module linked-list --seed 42`, one op after the `forEach` timing
+    /// defect's own repro): `push` branching on `self.tail` instead of
+    /// `self.head` (an earlier cut of this method) takes the "list is
+    /// non-empty" branch in the B-241 state and links onto the stale tail
+    /// instead of starting fresh, leaving `head` stuck at `None` forever.
+    /// The test above already covered "push after a plain shift-to-empty";
+    /// this one covers reaching that same state via a mutating `forEach`,
+    /// which is a different code path to the same state.
+    #[test]
+    fn push_after_for_each_shifts_the_list_to_empty_starts_a_fresh_one_element_list() {
+        let mut list = LinkedList::new();
+        list.push(0);
+
+        let mut cursor = list.values();
+        let mut fired = false;
+
+        while let Some(_item) = cursor.current(&list) {
+            if !fired {
+                fired = true;
+                list.shift();
+            }
+
+            cursor.advance(&list);
+        }
+
+        assert_eq!(list.size(), 0, "shifted to empty inside the walk");
+
+        list.push(9);
+
+        assert_eq!(list.first(), Some(&9));
+        assert_eq!(list.last(), Some(&9));
+        assert_eq!(list.to_array(), vec![9]);
+        assert_eq!(list.size(), 1);
     }
 
     #[test]
@@ -509,6 +649,63 @@ mod tests {
         assert_eq!(cursor.step(&list), Some(&2));
         assert_eq!(cursor.step(&list), Some(&3), "the append was visible");
         assert_eq!(cursor.step(&list), None);
+    }
+
+    /// The exact shape the differential fuzzer found on its first campaign
+    /// (`--module linked-list --seed 42`, minimised to `push; push; shift;
+    /// forEach(cb push-once)`): after `shift()` leaves one node that is both
+    /// head and tail, a `forEach`-shaped walk (`current` then `advance`,
+    /// mutating in between) that pushes while visiting that lone node MUST
+    /// go on to visit the pushed node too, in the SAME walk -- because the
+    /// push happens before `advance` reads `next`. See the module docs.
+    #[test]
+    fn a_for_each_shaped_walk_sees_a_push_made_from_its_own_callback_on_the_lone_tail_node() {
+        let mut list = LinkedList::new();
+        list.push(0);
+        list.push(0);
+        list.shift();
+        assert_eq!(list.to_array(), vec![0], "one node, both head and tail");
+
+        let mut cursor = list.values();
+        let mut visits = Vec::new();
+        let mut fired = false;
+
+        while let Some(item) = cursor.current(&list).copied() {
+            visits.push(item);
+
+            if !fired {
+                fired = true;
+                list.push(item);
+            }
+
+            cursor.advance(&list);
+        }
+
+        assert_eq!(
+            visits,
+            vec![0, 0],
+            "the walk must see the node pushed while it was sitting on the tail"
+        );
+    }
+
+    /// The same scenario, but through `step` (the lazy-iterator shape) —
+    /// which must NOT see the push, because its advance already ran before
+    /// the caller gets a chance to mutate anything.
+    #[test]
+    fn a_step_shaped_walk_does_not_see_a_push_made_between_two_of_its_own_steps() {
+        let mut list = LinkedList::new();
+        list.push(0);
+        list.push(0);
+        list.shift();
+
+        let mut cursor = list.values();
+        assert_eq!(cursor.step(&list), Some(&0));
+        list.push(0); // caller code, AFTER the step already advanced past it
+        assert_eq!(
+            cursor.step(&list),
+            None,
+            "the lazy iterator already moved past the (old) tail before this push ran"
+        );
     }
 
     #[test]
