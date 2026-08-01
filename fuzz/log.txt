@@ -952,3 +952,9 @@
 2026-08-01T13:17:24Z  module=lru-map seed=20260801 cases=5649 ops=844111 wall=60.0s divergences=0
 2026-08-01T13:18:32Z  module=lru-map-with-delete seed=42 cases=5559 ops=834690 wall=60.0s divergences=0
 2026-08-01T13:19:37Z  module=lru-map-with-delete seed=20260801 cases=5988 ops=896591 wall=60.0s divergences=0
+2026-08-01T14:52:59Z  module=multi-map seed=42 cases=8404 ops=838808 wall=90.0s divergences=0
+2026-08-01T14:54:05Z  module=multi-map seed=20260801 cases=6221 ops=618991 wall=60.0s divergences=0
+2026-08-01T14:55:45Z  module=multi-set seed=42 cases=10229 ops=1016185 wall=90.0s divergences=0
+2026-08-01T14:56:52Z  module=multi-set seed=20260801 cases=6787 ops=674368 wall=60.0s divergences=0
+2026-08-01T14:58:29Z  module=fuzzy-multi-map seed=42 cases=9562 ops=964655 wall=90.0s divergences=0
+2026-08-01T14:59:39Z  module=fuzzy-multi-map seed=20260801 cases=6276 ops=629178 wall=60.0s divergences=0

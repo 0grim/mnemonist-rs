@@ -236,3 +236,77 @@ fn number_json(value: f64) -> Value {
 
     json!(value)
 }
+
+/// Direct evidence that this grammar reaches multiplicity greater than one
+/// and drains an item back out of `items` entirely, per CLAUDE.md's
+/// fuzz-campaign guidance. No oracle involved -- this is about the
+/// grammar's own reach.
+#[cfg(test)]
+mod grammar_self_check {
+    use proptest::strategy::ValueTree;
+    use proptest::test_runner::{Config, TestRunner};
+
+    use super::*;
+
+    #[test]
+    fn the_grammar_builds_multiplicity_above_one_and_drains_items_to_zero() {
+        let spec = MultiSetSpec;
+        let mut runner = TestRunner::new(Config::default());
+        let mut multiplicity_above_one = 0u64;
+        let mut items_drained_to_zero = 0u64;
+
+        for _ in 0..400 {
+            let ctor = spec
+                .ctor_strategy()
+                .new_tree(&mut runner)
+                .expect("ctor_strategy never rejects")
+                .current();
+            let ops = proptest::collection::vec(spec.op_strategy(&ctor), 1..300)
+                .new_tree(&mut runner)
+                .expect("op_strategy never rejects")
+                .current();
+            let mut instance = spec.construct(&ctor);
+
+            for op in &ops {
+                let target = matches!(op.name, "remove" | "set" | "delete")
+                    .then(|| op.args[0].as_str().expect("item is a string").to_owned());
+                let was_present = target
+                    .as_ref()
+                    .map(|item| instance.has(item))
+                    .unwrap_or(false);
+
+                spec.apply(&mut instance, op);
+
+                if instance.items().iter().any(|(_, count)| *count > 1.0) {
+                    multiplicity_above_one += 1;
+                }
+
+                if was_present {
+                    let item = target.expect("was_present implies a target");
+
+                    if !instance.has(&item) {
+                        items_drained_to_zero += 1;
+                    }
+                }
+            }
+        }
+
+        eprintln!(
+            "multi-set grammar: {multiplicity_above_one} steps with a \
+             multiplicity above one, {items_drained_to_zero} items drained \
+             to zero and removed"
+        );
+
+        assert!(
+            multiplicity_above_one > 100,
+            "the grammar should routinely build a multiplicity above one, \
+             not rarely: only {multiplicity_above_one} observations over \
+             400 programs"
+        );
+        assert!(
+            items_drained_to_zero > 50,
+            "the grammar should routinely drain an item to zero, not \
+             rarely: only {items_drained_to_zero} over 400 programs"
+        );
+    }
+}

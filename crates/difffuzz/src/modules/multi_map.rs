@@ -215,3 +215,75 @@ impl ModuleSpec for MultiMapSpec {
         })
     }
 }
+
+/// Direct evidence that this grammar reaches the two states CLAUDE.md's
+/// fuzz-campaign guidance asks for: a key genuinely holding several values,
+/// and a bucket emptying back to zero (and leaving `items`) via `remove`/
+/// `delete`. Runs the strategies directly, with no oracle involved — this is
+/// about the grammar's own reach, not about port-vs-upstream agreement.
+#[cfg(test)]
+mod grammar_self_check {
+    use proptest::strategy::ValueTree;
+    use proptest::test_runner::{Config, TestRunner};
+
+    use super::*;
+
+    #[test]
+    fn the_grammar_builds_multi_value_keys_and_drains_them_to_zero() {
+        let spec = MultiMapSpec;
+        let mut runner = TestRunner::new(Config::default());
+        let mut multi_value_observations = 0u64;
+        let mut keys_emptied_via_remove_or_delete = 0u64;
+
+        for _ in 0..400 {
+            let ctor = spec
+                .ctor_strategy()
+                .new_tree(&mut runner)
+                .expect("ctor_strategy never rejects")
+                .current();
+            let ops = proptest::collection::vec(spec.op_strategy(&ctor), 1..300)
+                .new_tree(&mut runner)
+                .expect("op_strategy never rejects")
+                .current();
+            let mut instance = spec.construct(&ctor);
+
+            for op in &ops {
+                let had_key = matches!(op.name, "remove" | "delete")
+                    .then(|| instance.has(&FuzzKey::from_json(&op.args[0])))
+                    .unwrap_or(false);
+
+                spec.apply(&mut instance, op);
+
+                if instance.items().iter().any(|(_, bucket)| bucket.len() > 1) {
+                    multi_value_observations += 1;
+                }
+
+                if had_key
+                    && matches!(op.name, "remove" | "delete")
+                    && !instance.has(&FuzzKey::from_json(&op.args[0]))
+                {
+                    keys_emptied_via_remove_or_delete += 1;
+                }
+            }
+        }
+
+        eprintln!(
+            "multi-map grammar: {multi_value_observations} steps with a \
+             multi-value bucket, {keys_emptied_via_remove_or_delete} keys \
+             drained to zero and removed from items"
+        );
+
+        assert!(
+            multi_value_observations > 100,
+            "the grammar should routinely build multi-value buckets, not \
+             rarely: only {multi_value_observations} observations over 400 \
+             programs"
+        );
+        assert!(
+            keys_emptied_via_remove_or_delete > 100,
+            "the grammar should routinely drain a bucket to zero, not \
+             rarely: only {keys_emptied_via_remove_or_delete} over 400 \
+             programs"
+        );
+    }
+}

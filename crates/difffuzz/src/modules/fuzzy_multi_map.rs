@@ -184,3 +184,71 @@ impl ModuleSpec for FuzzyMultiMapSpec {
         })
     }
 }
+
+/// Direct evidence that `fuzzyLower` collapsing `'Hello'`/`'HELLO'`/`'World'`
+/// onto two hashed keys routinely gives a bucket more than one value, and
+/// that `.clear()` routinely drains the whole map back to zero -- per
+/// CLAUDE.md's fuzz-campaign guidance. No oracle involved.
+#[cfg(test)]
+mod grammar_self_check {
+    use proptest::strategy::ValueTree;
+    use proptest::test_runner::{Config, TestRunner};
+
+    use super::*;
+
+    #[test]
+    fn the_grammar_builds_multi_value_hashed_keys_and_clear_drains_them() {
+        let spec = FuzzyMultiMapSpec;
+        let mut runner = TestRunner::new(Config::default());
+        let mut multi_value_observations = 0u64;
+        let mut clears_of_a_nonempty_map = 0u64;
+
+        for _ in 0..400 {
+            let ctor = spec
+                .ctor_strategy()
+                .new_tree(&mut runner)
+                .expect("ctor_strategy never rejects")
+                .current();
+            let ops = proptest::collection::vec(spec.op_strategy(&ctor), 1..300)
+                .new_tree(&mut runner)
+                .expect("op_strategy never rejects")
+                .current();
+            let mut instance = spec.construct(&ctor);
+
+            for op in &ops {
+                if op.name == "clear" && instance.dimension() > 0 {
+                    clears_of_a_nonempty_map += 1;
+                }
+
+                spec.apply(&mut instance, op);
+
+                if instance
+                    .items()
+                    .items()
+                    .iter()
+                    .any(|(_, bucket)| bucket.len() > 1)
+                {
+                    multi_value_observations += 1;
+                }
+            }
+        }
+
+        eprintln!(
+            "fuzzy-multi-map grammar: {multi_value_observations} steps with \
+             a multi-value bucket, {clears_of_a_nonempty_map} clears of a \
+             nonempty map"
+        );
+
+        assert!(
+            multi_value_observations > 100,
+            "the grammar should routinely build multi-value buckets via \
+             hash collisions, not rarely: only {multi_value_observations} \
+             over 400 programs"
+        );
+        assert!(
+            clears_of_a_nonempty_map > 20,
+            "the grammar should routinely drain the map to zero via clear, \
+             not rarely: only {clears_of_a_nonempty_map} over 400 programs"
+        );
+    }
+}
