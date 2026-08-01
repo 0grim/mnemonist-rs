@@ -135,8 +135,8 @@ sharpest is gap 11 — `toArray({length: 5})` returning `[5, <4 empty items>]`, 
 compares `mnemonist-core` against upstream; this file has no core half to drive, exactly as
 `crate::foreach` has none. Its coverage is the 19 boundary specs above, which *are* differential —
 against a verbatim copy of the upstream bodies rather than against a generated program — plus the
-five campaigns of the three modules that reach `guessLength` and `isArrayLike` through their `from`
-statics (`fixed-stack`, `fixed-deque`, `circular-buffer`; 8.8 M operations, zero divergences).
+six campaigns of the three modules that reach `guessLength` and `isArrayLike` through their `from`
+statics (`fixed-stack`, `fixed-deque`, `circular-buffer`; 8.79 M operations, zero divergences).
 
 Stating the shape of that gap precisely: a generated program can reach `guessLength` and
 `isArrayLike` only through construction, never as an op, and `toArray`/`toArrayWithIndices` are not
