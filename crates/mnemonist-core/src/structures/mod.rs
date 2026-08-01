@@ -50,3 +50,6 @@ pub mod heap;
 // at once and a new line anywhere else is a merge conflict (CLAUDE.md, Git).
 pub mod multi_map;
 pub mod multi_set;
+
+// Appended at the end, never inserted (CLAUDE.md, Git).
+pub mod fuzzy_multi_map;
