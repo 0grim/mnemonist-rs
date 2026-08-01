@@ -318,6 +318,17 @@ const FACTORIES = {
   },
   key: () => (key) => key,
   size: () => (key, size) => size,
+  // Appended at the end, never inserted: this table is a shared registry
+  // (CLAUDE.md, Git) and a new key anywhere else is a merge conflict inside
+  // an object literal. `fuzzy*` names are prefixed so `fuzzy-map`'s campaign
+  // cannot collide with `default-map`'s factory names above.
+  fuzzyIdentity: () => (x) => x,
+  fuzzyLower: () => (x) => String(x).toLowerCase(),
+  // `bk-tree`'s distance function: a real metric, cheap to mirror exactly on
+  // the Rust side (`(a - b).abs()`), and dense over a narrow item range so
+  // repeated `add`s collide on distance constantly -- see
+  // `difffuzz::modules::bk_tree`'s docs.
+  bkAbsDiff: () => (a, b) => Math.abs(a - b),
 };
 
 function decode(value) {

@@ -54,14 +54,43 @@
 //! reads/writes through the *same* `BiMap`, exactly mirroring how upstream's
 //! `InverseMap` reads/writes through the same two `Map`s its `BiMap` does.
 //!
-//! # `size` needs no drift-prone counter
+//! # `size` is a real counter, and `clear` desyncs it from `inverse.size`
 //!
-//! Unlike `default-map`'s `size` (B-40), nothing here can desynchronise `size`
-//! from the entry count: every successful `set`/`delete` touches both maps in
-//! the same call, and the early-return branches ((a) and (c) above) change
-//! neither. So [`BiMap::size`] and [`BiMap::inverse_size`] simply read
-//! [`OrderedMap::len`] — always equal to each other, because the structure is
-//! a bijection by construction.
+//! `set` and `delete` both refresh **both** counters on every call, from
+//! either direction — `this.size = this.items.size; this.inverse.size =
+//! this.inverse.items.size;` touches the same two properties whether `this`
+//! is the `BiMap` or its `InverseMap`, because `this.items`/`this.inverse`
+//! mean the complementary thing from either side. So neither of those two
+//! methods can ever desynchronise the pair; a first draft of this module
+//! claimed exactly that and was wrong about why.
+//!
+//! `clear` cannot make the same claim:
+//!
+//! ```js
+//! function clear() {
+//!   this.size = 0;
+//!   this.items.clear();
+//!   this.inverse.items.clear();
+//! }
+//! ```
+//!
+//! This empties **both** underlying maps regardless of which side calls it,
+//! but resets only **one** counter — `this.size`, whichever `this` is. Calling
+//! `bimap.clear()` zeroes `bimap.size` and leaves `bimap.inverse.size` at
+//! whatever it was; calling `bimap.inverse.clear()` zeroes `bimap.inverse.size`
+//! and leaves `bimap.size` stale. Verified against Node 24.18.1:
+//!
+//! ```text
+//! var m = new BiMap(); m.set('a', 'a');
+//! m.clear();
+//! m.size            // -> 0
+//! m.inverse.size    // -> 1, STALE — items.size and inverse.items.size are both 0
+//! ```
+//!
+//! Recorded as **B-120**. [`BiMap::size`]/[`BiMap::inverse_size`] are
+//! therefore real stored counters, not derived from [`OrderedMap::len`], and
+//! [`BiMap::clear`]/[`BiMap::clear_reverse`] are the two directions of the one
+//! upstream function, reproducing exactly which single counter each resets.
 
 use std::hash::Hash;
 

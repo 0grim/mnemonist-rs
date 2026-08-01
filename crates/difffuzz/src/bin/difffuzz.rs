@@ -40,6 +40,12 @@ use difffuzz::modules::sort::SortSpec;
 use difffuzz::modules::bloom_filter::BloomFilterSpec;
 use difffuzz::modules::suffix_array::{GeneralizedSuffixArraySpec, SuffixArraySpec};
 use difffuzz::{Campaign, Report};
+// Appended at the END of the import run, never inserted: this file is edited
+// by several agents at once and a conflict boundary landing mid-list has
+// already broken merges here.
+use difffuzz::modules::bi_map::BiMapSpec;
+use difffuzz::modules::bk_tree::BkTreeSpec;
+use difffuzz::modules::fuzzy_map::FuzzyMapSpec;
 
 const USAGE: &str = "\
 usage: difffuzz --module <name> [--seed N] [--duration SECONDS] [--cases N] [--batch N]
@@ -48,7 +54,8 @@ usage: difffuzz --module <name> [--seed N] [--duration SECONDS] [--cases N] [--b
               sparse-map, sparse-queue-set, hashed-array-tree, bit-set,
               bit-vector, stack, queue, default-map, fixed-stack,
               fixed-deque, circular-buffer, sort, set, suffix-array,
-              generalized-suffix-array, bloom-filter
+              generalized-suffix-array, bloom-filter, bi-map, fuzzy-map,
+              bk-tree
   --seed      campaign seed (default 42); with --cases, reproduces exactly
   --duration  wall-clock budget in seconds (default 60)
   --cases     stop after N cases instead of after --duration
@@ -212,6 +219,29 @@ fn main() -> ExitCode {
             &BloomFilterSpec,
             &Campaign {
                 regressions: difffuzz::modules::bloom_filter::REGRESSIONS,
+                ..campaign
+            },
+        ),
+        // Appended at the END of the module arms, never between them: a merge
+        // conflict boundary inside a match arm has broken this tree before.
+        "bi-map" => difffuzz::run(
+            &BiMapSpec,
+            &Campaign {
+                regressions: difffuzz::modules::bi_map::REGRESSIONS,
+                ..campaign
+            },
+        ),
+        "fuzzy-map" => difffuzz::run(
+            &FuzzyMapSpec,
+            &Campaign {
+                regressions: difffuzz::modules::fuzzy_map::REGRESSIONS,
+                ..campaign
+            },
+        ),
+        "bk-tree" => difffuzz::run(
+            &BkTreeSpec,
+            &Campaign {
+                regressions: difffuzz::modules::bk_tree::REGRESSIONS,
                 ..campaign
             },
         ),

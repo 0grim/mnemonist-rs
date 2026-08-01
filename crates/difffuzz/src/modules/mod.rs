@@ -31,3 +31,9 @@ pub mod sort;
 // file; see that module's docs.
 pub mod bloom_filter;
 pub mod suffix_array;
+
+// Appended at the end, never inserted: this file is edited by several agents
+// at once and a new line anywhere else is a merge conflict.
+pub mod bi_map;
+pub mod bk_tree;
+pub mod fuzzy_map;

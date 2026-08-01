@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 70b0df5065314c3bffe40687fe27d07184199cdf317c0a4fc17b89b1b0a1fb64 # shrinks to Program { ctor: [], ops: [Op { name: "set", args: [String("a"), String("a")] }, Op { name: "clear", args: [] }] }
