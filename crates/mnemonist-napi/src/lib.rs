@@ -48,6 +48,11 @@ pub mod suffix_array;
 // hunk (CLAUDE.md, Git).
 pub mod static_interval_tree;
 pub mod vector;
+// at once and a new line at the end can never land inside another one's hunk.
+pub mod lru_cache;
+pub mod lru_cache_with_delete;
+pub mod lru_map;
+pub mod lru_map_with_delete;
 
 // Appended at the end of the list rather than in alphabetical position: this
 // file is shared, and a conflict boundary landing mid-list has broken three

@@ -37,6 +37,8 @@ pub mod vector;
 pub mod bi_map;
 pub mod bk_tree;
 pub mod fuzzy_map;
+// at once and a new line at the end can never land inside another one's hunk.
+pub mod lru_cache;
 
 // Appended at the end of the list rather than in alphabetical position: this
 // file is shared, and three merges have broken on a conflict boundary landing

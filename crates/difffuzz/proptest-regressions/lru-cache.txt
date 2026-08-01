@@ -1,0 +1,41 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+#
+# PROVENANCE OF THE ENTRY BELOW -- this one recorded a real port defect, found
+# by this grammar's very first campaign, before any 60-second run had ever
+# been logged.
+#
+# `LruCache::for_each_walk` (née: a `Sequence`/`CursorState` walk reused for
+# `forEach`) advanced its internal pointer to `forward[pointer]` BEFORE the
+# `$forEach` mutation for that step ran, where upstream's own loop body reads
+# `forward[pointer]` textually AFTER its callback returns:
+#
+#     while (i < l) {
+#       callback.call(scope, values[pointer], keys[pointer], this);
+#       pointer = forward[pointer];   // <-- after, not before
+#       i++;
+#     }
+#
+# So a `forEach` callback that promotes (`set`s an existing key, which splays
+# it to the front) the pointer the walk was about to visit next observed a
+# DIFFERENT successor than upstream did, because the port had already
+# captured the old one. Confirmed at op #5 of the program below:
+# `$forEach("set", "arg1,arg0", 1000000)` re-promotes each visited entry as it
+# is walked, and the third callback invocation disagreed -- port saw
+# `[undefined, 1]`, upstream re-saw `["w", true]`.
+#
+# Fixed by `ForEachWalk` (`crates/mnemonist-core/src/structures/lru_cache.rs`),
+# which gives the caller `current()`/`advance()` as two separate calls instead
+# of one `Sequence::slot()` that does both — see that type's doc comment, and
+# `docs/modules/lru-cache.md`'s "Bugs this found". The bridge's own
+# `for_each_entries` (`crates/mnemonist-napi/src/lru_cache.rs`) had the
+# identical bug, invisible to `test/lru-cache.js`, which never mutates from
+# inside a `forEach` callback; fixed there too, in the same commit.
+#
+# This seed now passes. It stays checked in as a regression guard, and
+# proptest replays it before any novel case.
+cc 888485699d5bbe86152381e7bb74a3eb90f5539613c1d1597d68968917d28579 # shrinks to Program { ctor: [Number(6)], ops: [Op { name: "setpop", args: [Bool(true), String("w")] }, Op { name: "set", args: [Number(-1), String("w")] }, Op { name: "setpop", args: [Number(1), Object {"$undefined": Bool(true)}] }, Op { name: "get", args: [Number(-1)] }, Op { name: "get", args: [Bool(true)] }, Op { name: "$forEach", args: [String("set"), String("arg1,arg0"), Number(1000000)] }, Op { name: "set", args: [Number(1), Number(-3)] }, Op { name: "get", args: [String("a")] }, Op { name: "set", args: [Object {"$undefined": Bool(true)}, Bool(true)] }, Op { name: "$forEach", args: [Null, String("none"), Number(0)] }, Op { name: "peek", args: [Bool(false)] }, Op { name: "get", args: [String("b")] }, Op { name: "$iter", args: [String("values")] }, Op { name: "get", args: [Number(0)] }, Op { name: "get", args: [Null] }, Op { name: "$spread", args: [] }, Op { name: "$iter", args: [String("keys")] }, Op { name: "$next", args: [] }, Op { name: "get", args: [Bool(true)] }, Op { name: "set", args: [String("0"), Object {"$undefined": Bool(true)}] }, Op { name: "get", args: [Number(-1)] }, Op { name: "$spread", args: [] }, Op { name: "has", args: [Null] }, Op { name: "has", args: [String("a")] }, Op { name: "$forEach", args: [String("clear"), String("none"), Number(1)] }, Op { name: "$forEach", args: [String("clear"), String("none"), Number(1000000)] }, Op { name: "clear", args: [] }, Op { name: "$forEach", args: [String("clear"), String("none"), Number(1000000)] }, Op { name: "$forEach", args: [String("clear"), String("none"), Number(1)] }, Op { name: "$spread", args: [] }, Op { name: "setpop", args: [String("a"), Object {"$undefined": Bool(true)}] }, Op { name: "setpop", args: [String("b"), Number(-2)] }, Op { name: "get", args: [Bool(false)] }, Op { name: "get", args: [Null] }, Op { name: "has", args: [Number(0)] }, Op { name: "get", args: [Bool(true)] }, Op { name: "$iter", args: [String("keys")] }, Op { name: "has", args: [Number(-1)] }, Op { name: "get", args: [Number(0)] }, Op { name: "setpop", args: [Null, String("v")] }, Op { name: "$next", args: [] }, Op { name: "$next", args: [] }, Op { name: "set", args: [Number(-1), String("v")] }, Op { name: "set", args: [Number(1), String("v")] }, Op { name: "get", args: [Bool(false)] }, Op { name: "get", args: [Number(1)] }, Op { name: "get", args: [Bool(false)] }, Op { name: "$next", args: [] }, Op { name: "$forEach", args: [Null, String("none"), Number(0)] }, Op { name: "setpop", args: [String("b"), Number(-1)] }, Op { name: "set", args: [Null, String("w")] }, Op { name: "get", args: [String("b")] }, Op { name: "$spread", args: [] }, Op { name: "get", args: [Number(1)] }, Op { name: "set", args: [Null, Object {"$undefined": Bool(true)}] }, Op { name: "set", args: [Number(-1), Object {"$undefined": Bool(true)}] }, Op { name: "get", args: [Null] }, Op { name: "$forEach", args: [Null, String("none"), Number(0)] }, Op { name: "$iter", args: [String("entries")] }, Op { name: "set", args: [String("0"), String("w")] }, Op { name: "$forEach", args: [String("clear"), String("none"), Number(1)] }, Op { name: "$forEach", args: [String("clear"), String("none"), Number(1)] }, Op { name: "get", args: [String("b")] }, Op { name: "$next", args: [] }, Op { name: "has", args: [Number(1)] }, Op { name: "$next", args: [] }, Op { name: "$next", args: [] }, Op { name: "$iter", args: [String("keys")] }] }

@@ -38,6 +38,13 @@ use difffuzz::modules::fixed_reverse_heap::{
 };
 use difffuzz::modules::heap::{HeapSpec, REGRESSIONS as HEAP_REGRESSIONS};
 use difffuzz::Campaign;
+// Appended at the END of the file, never between two existing tests -- see
+// the bottom of this file, where the actual #[test] fns for these live.
+use difffuzz::modules::lru_cache::{
+    LruCacheSpec, LruCacheWithDeleteSpec, LruMapSpec, LruMapWithDeleteSpec, MAP_REGRESSIONS,
+    MAP_WITH_DELETE_REGRESSIONS, REGRESSIONS as LRU_CACHE_REGRESSIONS,
+    WITH_DELETE_REGRESSIONS as LRU_CACHE_WITH_DELETE_REGRESSIONS,
+};
 // Appended at the end of the import run, never inserted.
 use difffuzz::modules::circular_buffer::{
     CircularBufferSpec, REGRESSIONS as CIRCULAR_BUFFER_REGRESSIONS,
@@ -646,6 +653,30 @@ fn bi_map_matches_upstream() {
     }
 }
 
+// Appended at the END of the file, never between two existing tests.
+
+/// `lru-cache` -- the object-backed base class. Small capacities (`1..=6`)
+/// and a 300-op ceiling, so eviction fires constantly rather than the
+/// campaign only proving that a map stores things. See
+/// `crates/difffuzz/src/modules/lru_cache.rs`'s module docs.
+#[test]
+fn lru_cache_matches_upstream() {
+    let campaign = Campaign::cases(0x1_20126, 96, LRU_CACHE_REGRESSIONS);
+
+    let report = difffuzz::run(&LruCacheSpec, &campaign)
+        .expect("oracle must be reachable; `node` is required for differential tests");
+
+    assert!(
+        report.ops > 0,
+        "campaign ran no operations, so it proved nothing: {}",
+        report.log_line()
+    );
+
+    if let Some(divergence) = report.divergence {
+        panic!("{divergence}");
+    }
+}
+
 /// `fuzzy-map` — the hash function travels as a named factory
 /// (`fuzzyIdentity`/`fuzzyLower`); see the module doc for why those names are
 /// prefixed.
@@ -667,6 +698,30 @@ fn fuzzy_map_matches_upstream() {
     }
 }
 
+/// `lru-cache-with-delete` -- the object-backed pair's freelist. `delete`/
+/// `remove` are in the alphabet here and nowhere else in this family, which
+/// is what actually exercises `holes` reuse in
+/// `mnemonist_core::structures::lru_cache::LruCache::insert_new`, and what
+/// found the port defect `docs/modules/lru-cache.md` calls "Bugs this
+/// found" -- deleting a not-yet-visited pointer out from under an open walk.
+#[test]
+fn lru_cache_with_delete_matches_upstream() {
+    let campaign = Campaign::cases(0x1_20127, 96, LRU_CACHE_WITH_DELETE_REGRESSIONS);
+
+    let report = difffuzz::run(&LruCacheWithDeleteSpec, &campaign)
+        .expect("oracle must be reachable; `node` is required for differential tests");
+
+    assert!(
+        report.ops > 0,
+        "campaign ran no operations, so it proved nothing: {}",
+        report.log_line()
+    );
+
+    if let Some(divergence) = report.divergence {
+        panic!("{divergence}");
+    }
+}
+
 /// `bk-tree` — the first campaign over a genuine tree shape rather than an
 /// `OrderedMap`. `search`'s return value stands in for the "root" observation
 /// this module does not have; see the spec's module doc.
@@ -675,6 +730,47 @@ fn bk_tree_matches_upstream() {
     let campaign = Campaign::cases(0xB711, 96, BK_TREE_REGRESSIONS);
 
     let report = difffuzz::run(&BkTreeSpec, &campaign)
+        .expect("oracle must be reachable; `node` is required for differential tests");
+
+    assert!(
+        report.ops > 0,
+        "campaign ran no operations, so it proved nothing: {}",
+        report.log_line()
+    );
+
+    if let Some(divergence) = report.divergence {
+        panic!("{divergence}");
+    }
+}
+
+/// `lru-map` -- the `Map`-backed base class. Same grammar as `lru-cache`,
+/// over the same key pool, so the SameValueZero index (a number and its
+/// string form are different keys here, unlike the object-backed pair) gets
+/// exercised by construction rather than by a second grammar.
+#[test]
+fn lru_map_matches_upstream() {
+    let campaign = Campaign::cases(0x1_20128, 96, MAP_REGRESSIONS);
+
+    let report = difffuzz::run(&LruMapSpec, &campaign)
+        .expect("oracle must be reachable; `node` is required for differential tests");
+
+    assert!(
+        report.ops > 0,
+        "campaign ran no operations, so it proved nothing: {}",
+        report.log_line()
+    );
+
+    if let Some(divergence) = report.divergence {
+        panic!("{divergence}");
+    }
+}
+
+/// `lru-map-with-delete`.
+#[test]
+fn lru_map_with_delete_matches_upstream() {
+    let campaign = Campaign::cases(0x1_20129, 96, MAP_WITH_DELETE_REGRESSIONS);
+
+    let report = difffuzz::run(&LruMapWithDeleteSpec, &campaign)
         .expect("oracle must be reachable; `node` is required for differential tests");
 
     assert!(

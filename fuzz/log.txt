@@ -944,3 +944,11 @@
 2026-08-01T12:17:45Z  module=bi-map seed=42 cases=11778 ops=1178193 wall=90.0s divergences=0
 2026-08-01T12:19:20Z  module=fuzzy-map seed=42 cases=12019 ops=1210496 wall=90.0s divergences=0
 2026-08-01T12:20:55Z  module=bk-tree seed=42 cases=13238 ops=1325206 wall=90.0s divergences=0
+2026-08-01T13:11:37Z  module=lru-cache seed=20260801 cases=4869 ops=731558 wall=60.0s divergences=0
+2026-08-01T13:12:58Z  module=lru-cache seed=42 cases=4665 ops=711010 wall=60.0s divergences=0
+2026-08-01T13:14:05Z  module=lru-cache-with-delete seed=42 cases=5027 ops=755972 wall=60.0s divergences=0
+2026-08-01T13:15:10Z  module=lru-cache-with-delete seed=20260801 cases=5076 ops=759840 wall=60.0s divergences=0
+2026-08-01T13:16:16Z  module=lru-map seed=42 cases=5534 ops=837947 wall=60.0s divergences=0
+2026-08-01T13:17:24Z  module=lru-map seed=20260801 cases=5649 ops=844111 wall=60.0s divergences=0
+2026-08-01T13:18:32Z  module=lru-map-with-delete seed=42 cases=5559 ops=834690 wall=60.0s divergences=0
+2026-08-01T13:19:37Z  module=lru-map-with-delete seed=20260801 cases=5988 ops=896591 wall=60.0s divergences=0
