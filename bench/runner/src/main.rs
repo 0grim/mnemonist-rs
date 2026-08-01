@@ -172,10 +172,28 @@ fn main() -> ExitCode {
     // protocol tuned per runtime.
     let mut checksum = 0;
 
+    // A wildcard arm here silently benchmarked static-disjoint-set's workload
+    // for EVERY unimplemented module and filed the numbers under whatever name
+    // was on the command line. Gate 10 only asserts that an entry exists with
+    // both sides and a regressions array, so a full pass would have produced 42
+    // green units all measuring one structure.
+    //
+    // Unimplemented modules must therefore fail loudly, not fall through. This
+    // is the same rule the fuzz runner already follows for `ops == 0`: refusing
+    // to report is the only honest answer when the measurement did not happen.
     let run = |workload: &workload::Workload| match module {
-        "sparse-set" => sparse_set::run_mixed(workload, BATCH_K),
-        _ => static_disjoint_set::run_once(workload, BATCH_K),
+        "sparse-set" => Some(sparse_set::run_mixed(workload, BATCH_K)),
+        "static-disjoint-set" => Some(static_disjoint_set::run_once(workload, BATCH_K)),
+        _ => None,
     };
+
+    if run(&generated).is_none() {
+        return fail(&format!(
+            "no benchmark workload is implemented for `{module}`; refusing to \
+             report figures measured against a different structure"
+        ));
+    }
+    let run = |workload: &workload::Workload| run(workload).expect("checked above");
 
     for _ in 0..warmup {
         let (_, sum) = run(&generated);
