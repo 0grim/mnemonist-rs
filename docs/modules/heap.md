@@ -225,9 +225,10 @@ below.
 ```
 module=heap seed=42       cases=25677 ops=2619243 wall=120.0s divergences=0
 module=heap seed=20260801 cases=12248 ops=1256277 wall=60.0s  divergences=0
+module=heap seed=31337    cases=11060 ops=1147769 wall=60.0s  divergences=0
 ```
 
-Two campaigns, two seeds, **3.88 M operations, zero divergences**. Reproduce with
+Three campaigns, three seeds, **5.02 M operations, zero divergences**. Reproduce with
 `target/release/difffuzz --module heap --seed 42 --cases 25677`.
 
 * **Op alphabet:** `push(v)` (weight 6) · `pop()` (3) · `peek()` (2) · `replace(v)` (2) ·
