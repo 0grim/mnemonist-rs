@@ -77,7 +77,7 @@ impl<T: Clone + PartialEq> Trie<T> {
 
     /// Upstream's `delete`.
     pub fn delete(&mut self, prefix: impl IntoIterator<Item = T>) -> bool {
-        self.inner.delete(prefix)
+        self.inner.delete(prefix).is_some()
     }
 
     /// Upstream's `update`, inherited unmodified from `TrieMap` — see the

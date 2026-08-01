@@ -423,6 +423,10 @@ impl<T: Clone + PartialEq, V> TrieMap<T, V> {
 
     /// Upstream's `delete`.
     ///
+    /// Returns the removed value, unlike upstream's plain boolean — the
+    /// bridge needs it to release the JS reference a displaced value can
+    /// hold; a caller that only wants the boolean uses `.is_some()`.
+    ///
     /// Implemented as a standard recursive bottom-up prune — remove the
     /// terminal word, then remove any ancestor that has become entirely
     /// empty, stopping at the first one that has not — rather than upstream's
@@ -434,15 +438,15 @@ impl<T: Clone + PartialEq, V> TrieMap<T, V> {
     /// two own keys, and removing the single reference at the top of that
     /// chain leaves exactly the same nodes unreachable as removing each one
     /// bottom-up would.
-    pub fn delete(&mut self, prefix: impl IntoIterator<Item = T>) -> bool {
+    pub fn delete(&mut self, prefix: impl IntoIterator<Item = T>) -> Option<V> {
         let tokens: Vec<T> = prefix.into_iter().collect();
-        let removed = Self::delete_rec(&mut self.root, &tokens).is_some();
+        let removed = Self::delete_rec(&mut self.root, &tokens);
 
-        if removed {
+        removed.map(|(value, _child_now_empty)| {
             self.size -= 1;
-        }
 
-        removed
+            value
+        })
     }
 
     /// One node's worth of upstream's `find`.
@@ -514,24 +518,26 @@ impl<T: Clone + PartialEq, V> TrieMap<T, V> {
         node
     }
 
-    /// Returns `Some(child_is_now_empty)` when a word was actually removed,
-    /// `None` when the prefix does not resolve to a stored word at all.
-    fn delete_rec(node: &mut Node<T, V>, tokens: &[T]) -> Option<bool> {
+    /// Returns `Some((removed_value, child_is_now_empty))` when a word was
+    /// actually removed, `None` when the prefix does not resolve to a stored
+    /// word at all. `removed_value` is threaded up unchanged from the
+    /// terminal frame; `child_is_now_empty` is recomputed at every level.
+    fn delete_rec(node: &mut Node<T, V>, tokens: &[T]) -> Option<(V, bool)> {
         match tokens.split_first() {
             None => {
-                node.remove_word()?;
+                let value = node.remove_word()?;
 
-                Some(node.is_empty())
+                Some((value, node.is_empty()))
             }
             Some((first, rest)) => {
                 let child = node.child_mut(first)?;
-                let child_now_empty = Self::delete_rec(child, rest)?;
+                let (value, child_now_empty) = Self::delete_rec(child, rest)?;
 
                 if child_now_empty {
                     node.remove_child(first);
                 }
 
-                Some(node.is_empty())
+                Some((value, node.is_empty()))
             }
         }
     }
@@ -608,18 +614,18 @@ mod tests {
         trie.set(tokens("rate"), 2);
         trie.set(tokens("tar"), 3);
 
-        assert!(!trie.delete(tokens("")));
-        assert!(!trie.delete(tokens("hello")));
+        assert!(trie.delete(tokens("")).is_none());
+        assert!(trie.delete(tokens("hello")).is_none());
 
-        assert!(trie.delete(tokens("rat")));
+        assert_eq!(trie.delete(tokens("rat")), Some(1));
         assert!(!trie.has(tokens("rat")));
         assert!(trie.has(tokens("rate")));
         assert_eq!(trie.size(), 2);
 
-        assert!(trie.delete(tokens("rate")));
+        assert!(trie.delete(tokens("rate")).is_some());
         assert_eq!(trie.size(), 1);
 
-        assert!(trie.delete(tokens("tar")));
+        assert!(trie.delete(tokens("tar")).is_some());
         assert_eq!(trie.size(), 0);
     }
 
@@ -633,7 +639,7 @@ mod tests {
         trie.set(tokens("rats"), 2);
         trie.set(tokens("rate"), 3);
 
-        assert!(trie.delete(tokens("rats")));
+        assert_eq!(trie.delete(tokens("rats")), Some(2));
         assert!(trie.has(tokens("rat")));
         assert!(trie.has(tokens("rate")));
         assert_eq!(trie.size(), 2);
