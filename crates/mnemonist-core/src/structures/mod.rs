@@ -22,3 +22,7 @@ pub mod fixed_stack;
 // worktrees at once, and a conflict boundary that lands inside it has already
 // broken three merges. New modules go on the end.
 pub mod set;
+
+// Appended, never interleaved: this list is a shared registry (CLAUDE.md, Git).
+pub mod bloom_filter;
+pub mod suffix_array;

@@ -914,3 +914,9 @@
 2026-08-01T09:41:24Z  module=sort seed=20260801 cases=5076 ops=204428 wall=60.0s divergences=0
 2026-08-01T10:05:15Z  module=set seed=42 cases=20024 ops=812141 wall=60.0s divergences=0
 2026-08-01T10:06:22Z  module=set seed=20260801 cases=17829 ops=719338 wall=60.0s divergences=0
+2026-08-01T09:53:49Z  module=suffix-array seed=42 cases=274418 ops=548743 wall=60.0s divergences=0
+2026-08-01T09:54:55Z  module=generalized-suffix-array seed=42 cases=169107 ops=343616 wall=60.0s divergences=0
+2026-08-01T09:56:02Z  module=suffix-array seed=20260801 cases=257468 ops=515381 wall=60.0s divergences=0
+2026-08-01T09:57:09Z  module=generalized-suffix-array seed=20260801 cases=161214 ops=327320 wall=60.0s divergences=0
+2026-08-01T10:14:45Z  module=bloom-filter seed=42 cases=6788 ops=675049 wall=60.0s divergences=0
+2026-08-01T10:15:52Z  module=bloom-filter seed=20260801 cases=7087 ops=710548 wall=60.0s divergences=0

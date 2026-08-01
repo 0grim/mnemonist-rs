@@ -36,6 +36,9 @@ use difffuzz::modules::fixed_stack::FixedStackSpec;
 // broken three merges. New modules go on the end.
 use difffuzz::modules::set::SetSpec;
 use difffuzz::modules::sort::SortSpec;
+// Appended, never interleaved (CLAUDE.md, Git).
+use difffuzz::modules::bloom_filter::BloomFilterSpec;
+use difffuzz::modules::suffix_array::{GeneralizedSuffixArraySpec, SuffixArraySpec};
 use difffuzz::{Campaign, Report};
 
 const USAGE: &str = "\
@@ -44,7 +47,8 @@ usage: difffuzz --module <name> [--seed N] [--duration SECONDS] [--cases N] [--b
   --module    module to fuzz; currently: static-disjoint-set, sparse-set,
               sparse-map, sparse-queue-set, hashed-array-tree, bit-set,
               bit-vector, stack, queue, default-map, fixed-stack,
-              fixed-deque, circular-buffer, sort, set
+              fixed-deque, circular-buffer, sort, set, suffix-array,
+              generalized-suffix-array, bloom-filter
   --seed      campaign seed (default 42); with --cases, reproduces exactly
   --duration  wall-clock budget in seconds (default 60)
   --cases     stop after N cases instead of after --duration
@@ -185,6 +189,29 @@ fn main() -> ExitCode {
             &SetSpec,
             &Campaign {
                 regressions: difffuzz::modules::set::REGRESSIONS,
+                ..campaign
+            },
+        ),
+        // Appended at the END of the module arms, never between them: a merge
+        // conflict boundary inside a match arm has broken this tree before.
+        "suffix-array" => difffuzz::run(
+            &SuffixArraySpec,
+            &Campaign {
+                regressions: difffuzz::modules::suffix_array::REGRESSIONS,
+                ..campaign
+            },
+        ),
+        "generalized-suffix-array" => difffuzz::run(
+            &GeneralizedSuffixArraySpec,
+            &Campaign {
+                regressions: difffuzz::modules::suffix_array::GENERALIZED_REGRESSIONS,
+                ..campaign
+            },
+        ),
+        "bloom-filter" => difffuzz::run(
+            &BloomFilterSpec,
+            &Campaign {
+                regressions: difffuzz::modules::bloom_filter::REGRESSIONS,
                 ..campaign
             },
         ),

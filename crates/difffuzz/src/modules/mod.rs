@@ -24,3 +24,10 @@ pub mod fixed_stack;
 // broken three merges. New modules go on the end.
 pub mod set;
 pub mod sort;
+
+// Appended, never interleaved: this list is a shared registry (CLAUDE.md, Git).
+// `suffix_array` declares two specs, `SuffixArraySpec` and
+// `GeneralizedSuffixArraySpec`, because they are two exports of one upstream
+// file; see that module's docs.
+pub mod bloom_filter;
+pub mod suffix_array;

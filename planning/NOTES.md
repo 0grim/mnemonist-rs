@@ -405,6 +405,205 @@ recur**: `set`/`reset`/`flip` past the *array* are inert no-ops and `get` is `0`
 `BitSet`'s counter is derived from a before/after comparison that an `undefined` read makes false,
 where `SparseSet` increments its counter unconditionally after a dropped store (B-8).
 
+### B-95 — `binary-search.lowerBoundIndices` defaults `hi` from the wrong array
+`status: VERIFIED against Node 24.18.1` · `mnemonist utils/binary-search.js`
+Every other reference in the function is to `indices`; the `hi` fallback is `array.length`. When
+`indices` is shorter than `array` — the normal shape for a partial argsort, which is what an index
+array is for — the walk runs off the end of `indices`, reads `undefined`, indexes `array[undefined]`
+for another `undefined`, fails `value <= undefined`, and moves right.
+
+```js
+> require('mnemonist/utils/binary-search').lowerBoundIndices([0,1,2,3,4,5,6,7], [0,1], 1)
+8            // indices has 2 entries; 8 is a position in neither array
+> require('mnemonist/utils/binary-search').lowerBoundIndices([0,1,2,3,4,5,6,7], [0,1], 1, 0, 2)
+1            // what the caller meant
+```
+
+Latent in the shipped library: `vp-tree.js`, the only caller, always passes an `indices` the same
+length as `array`. Reachable from the public API, since `utils/` is `require`-able. Reproduced;
+see `docs/modules/utils-binary-search.md`.
+
+### B-96 — `binary-search.search` with an out-of-range `hi` reports a match at a hole
+`status: VERIFIED against Node 24.18.1` · `mnemonist utils/binary-search.js`
+`undefined` loses **both** comparisons, so `current > value` and `current < value` are each false
+and the `else` arm — which means "equal" — returns the midpoint.
+
+```js
+> require('mnemonist/utils/binary-search').search([1, 2, 3], 9, 0, 100)
+49
+```
+
+Worth recording alongside it: the two bound functions react to the same `undefined` in *opposite*
+directions, `lowerBound(...)` walking right to `100` and `upperBound(...)` left to `3`. So there is
+no single "undefined sorts high" rule to reason from — each call site has to be checked. The same
+`undefined`-loses-both rule makes `search([NaN, NaN, NaN], 1)` return `1`. Reproduced.
+
+### B-92 — `hash-tables.linearProbing.get`/`has`/`set` loop forever on a zero-length table
+`status: VERIFIED against Node 24.18.1` · `mnemonist utils/hash-tables.js`
+`i %= n` with `n === 0` is `NaN`. `keys[NaN]` is `undefined`, which is neither the key nor `0`, so
+neither exit fires; and the "full turn" guard `i === j` can never be true, because `NaN !== NaN`.
+`while (true)` then never exits.
+
+```console
+$ timeout 5 node -e "require('mnemonist/utils/hash-tables').linearProbing.get(
+    require('mnemonist/utils/hash-tables').hashes.jenkinsInt32,
+    new Uint32Array(0), new Uint32Array(0), 1)"
+$ echo $?
+124
+```
+
+NOT reproduced — hanging a `cargo test` or a fuzz campaign is not a behaviour worth porting. The
+port guards all three entry points; see D-45 in `docs/modules/utils-hash-tables.md`.
+
+### B-94 — `hash-tables`: the key `0` occupies a slot that still reads as empty
+`status: VERIFIED against Node 24.18.1` · `mnemonist utils/hash-tables.js`
+`0` is the empty sentinel *and* an ordinary `Uint32Array` value. The sequence is subtler than "key
+0 cannot be stored":
+
+```js
+var lp = require('mnemonist/utils/hash-tables').linearProbing;
+var keys = new Uint32Array(4), values = new Uint32Array(4), h = function () { return 0; };
+
+lp.set(h, keys, values, 0, 42);
+Array.from(keys);                  // [0, 0, 0, 0] -- indistinguishable from empty
+lp.get(h, keys, values, 0);        // 42  -- `c === key` is tested BEFORE `c === 0`
+lp.set(h, keys, values, 5, 43);    // slot 0 looks free, so this OVERWRITES
+Array.from(keys);                  // [5, 0, 0, 0]
+lp.get(h, keys, values, 0);        // 0  -- the 42 is gone, silently
+```
+
+So the entry is readable right up until something collides with it, then vanishes with no error.
+Reproduced exactly, including the readable-until-it-isn't part.
+
+### B-90 — `SuffixArray`'s radix sort silently narrows to 8 bits
+`status: VERIFIED against Node 24.18.1` · `mnemonist suffix-array.js`
+`sort()` picks its radix width from `j = Math.max(string[array[i] + offset], j)`, and that index runs
+past the padded sequence for `offset` 1 and 2 — `convert()` pads with `length % 3` zeros, which is
+not enough. The read is `undefined`, `Math.max(undefined, j)` is `NaN`, every shift of `NaN` is `0`,
+so `j >> 24 && 32 || j >> 16 && 24 || j >> 8 && 16 || 8` falls through to **8**. The sort then
+compares only the low byte of each 16-bit symbol.
+
+Mechanism confirmed by instrumenting upstream's own `sort`, not inferred: for a 15-symbol input the
+offset-2 and offset-1 passes read index 16 and report `bits = 8`, while the offset-0 pass reads in
+range and reports `bits = 16` for a maximum symbol of 513.
+
+```js
+> new (require('mnemonist/suffix-array'))('ĀĀĀĀȁĀĀȁȁȁȁȁĀȁȁ').array
+[0,1,2,5,3,12,6, 4,14,11,10,13,9,8,7]     // upstream
+[0,1,2,5,3,12,6,14, 4,11,13,10,9,8,7]     // correct
+```
+
+Two transpositions rather than a scrambling, so a spot-check of the first entries looks fine. Any
+alphabet where two symbols share a low byte is affected, including every character at or above
+U+0100 whose low byte collides with the `0` padding. Measured: **81% wrong** over 10,000 random
+inputs of length 1..30 drawn from `{'A', 'Ł'}` at `length % 3 == 0`. Pure ASCII is unaffected.
+Reproduced; see `docs/modules/suffix-array.md`.
+
+### B-91 — `SuffixArray` loses the DC3 sentinel when `length % 3 === 1`
+`status: VERIFIED against Node 24.18.1` · `mnemonist suffix-array.js`
+The reduced string DC3 recurses on is the ≡1 ranks concatenated with the ≡2 ranks, which is only
+sound if the first group ends in a symbol nothing else can equal. `al = (2 * l / 3) | 0` omits the
+≡1 position that would have carried it when `l % 3 === 1`, so the two halves run together and, once
+the recursion fires (i.e. once a triple repeats), the answer is wrong.
+
+```js
+> new (require('mnemonist/suffix-array'))('aaaaaaa').array
+[6,5,3,0,2,4,1]      // correct: [6,5,4,3,2,1,0]
+```
+
+Exhaustively over binary strings, failures occur at lengths **7, 10, 13 and 16** and at no other
+length up to 16 — all ≡ 1 (mod 3); 4 is clean only because it is too short to recurse. The rule
+applies at every recursion level, which is why the occasional length ≡ 2 (mod 3) also fails: its own
+`al` is ≡ 1 (mod 3). Measured: **12% wrong** over 10,000 random 3-letter inputs of length 1..30 at
+`length % 3 == 1`, 0% at the other two residues.
+
+Upstream's own suite contains a length-22 input, which *is* ≡ 1 (mod 3), and passes — only because
+`'This is a long string.'` has no repeated trigram, so `j === al` and the recursion never runs. The
+suite is one repeated trigram away from having caught this.
+
+Distinct from the module's own `it.skip('should work with int values (issue #196)')`, which is about
+the token-case sentinel and needs token input; both of these fire on plain strings. Reproduced.
+
+### B-93 — `murmurhash3`'s `sum32` is not a 32-bit adder, and a swapped constant hides it
+`status: VERIFIED against Node 24.18.1` · `mnemonist utils/murmurhash3.js`
+```js
+function sum32(a, b) {
+  return (a & 0xffff) + (b >>> 16) + (((a >>> 16) + b & 0xffff) << 16) & 0xffffffff;
+}
+```
+The correct form takes `b & 0xffff` for the low half and `b >>> 16` for the high half. This one has
+them the wrong way round in **both** places, so it adds `b`'s high half to `a`'s low half and `b`'s
+low half to `a`'s high half. `sum32(1, 1)` is **65537**.
+
+It is called exactly once, with `n = 0x6b64e654` — MurmurHash3's published `0xe6546b64` with its
+halves swapped. The two errors cancel exactly: `sum32(hash, 0x6b64e654) === (hash + 0xe6546b64) mod
+2^32` for every 32-bit `hash`, checked over 200,000 random inputs against BigInt arithmetic.
+
+So the digest is correct, the helper is wrong, and the only thing holding them together is a
+constant nobody would recognise as a typo. Anyone reusing `sum32` — it looks entirely general — gets
+nonsense; anyone "correcting" `n` to the published constant breaks every filter the library has ever
+produced.
+
+Demonstrated end to end through the original suite as a control on gate 6: replacing
+`sum32(hash, N)` with `hash + 0xe6546b64` leaves all six `test/bloom-filter.js` cases green, while
+replacing it with `hash + N` turns two of them red. Reproduced, with both halves pinned by tests.
+
+### B-97 — `BloomFilter` with zero hash functions answers `true` to everything
+`status: VERIFIED against Node 24.18.1` · `mnemonist bloom-filter.js`
+`hashFunctions = (length * 8 / capacity * Math.LN2) | 0`, unchecked. When it truncates to `0`, `add`
+writes no bits and `test` returns `true` **vacuously** — the loop it would have returned `false`
+from never runs.
+
+```js
+> var f = new BloomFilter(0.5);      // passes every validation upstream has
+> f.hashFunctions                    // 0
+> f.test('anything')                 // true
+> f.test('anything else')            // true
+```
+
+`0.5` gets through because the check is `typeof capacity === 'number' && capacity > 0`, despite the
+error message beside it saying "positive **integer**". `{capacity: 10, errorRate: 0.5}` reaches the
+same state with a **non-empty** `data`, so this is not merely "an empty filter": the bit array
+exists, is all zeros, and every query says yes. Reproduced.
+
+### B-98 — every non-string item hashes identically
+`status: VERIFIED against Node 24.18.1` · `mnemonist bloom-filter.js`
+`stringToByteArray` does `new Uint16Array(string.length)`. On a number, `.length` is `undefined`,
+the typed array is **empty**, and the loop never runs — so the item hashes as the empty sequence,
+which is the same sequence `''` hashes.
+
+```js
+> var f = new BloomFilter(3);
+> f.add(42);
+> f.test(7)       // true
+> f.test(true)    // true
+> f.test('')      // true
+```
+
+A filter of numbers reports every number, every boolean and the empty string as present. The
+neighbours are inconsistent rather than uniformly permissive, which is what makes it a bug and not a
+coercion policy: `add(null)`/`add(undefined)` throw a `TypeError` from the property read,
+`add(['a'])` throws `string.charCodeAt is not a function`, and `add(new String('hello'))` works and
+equals `add('hello')`. Reproduced, all four cases.
+
+### B-99 — an `errorRate` above 1 is a raw `RangeError`, but only for a large enough capacity
+`status: VERIFIED against Node 24.18.1` · `mnemonist bloom-filter.js`
+`Math.log` of anything above 1 is positive, so `bits` goes negative and the allocation throws:
+
+```js
+> new BloomFilter({capacity: 50, errorRate: 100})
+RangeError: Invalid typed array length: -59
+> new BloomFilter({capacity: 50, errorRate: 3})
+RangeError: Invalid typed array length: -14
+> new BloomFilter({capacity: 5, errorRate: 2})     // no error at all
+BloomFilter { capacity: 5, errorRate: 2, hashFunctions: 0, data: Uint8Array(0) [] }
+```
+
+The third case is the interesting one: `(-7.2 / 8) | 0` truncates to `0`, so the *same* invalid
+option gives a silent B-97 always-true filter instead of an error, and which of the two you get
+depends on the capacity. Neither is the module's own error message, and `errorRate` is the one
+option upstream believes it validates. Reproduced, including the split.
+
 > Differential fuzzing has not run yet. Expect the best candidates to come from there, not from
 > reading. Add them here with the minimised repro attached.
 

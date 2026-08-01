@@ -40,6 +40,10 @@ pub mod iterables;
 pub mod set;
 pub mod sort;
 
+// Appended, never interleaved: this list is a shared registry (CLAUDE.md, Git).
+pub mod bloom_filter;
+pub mod suffix_array;
+
 #[napi]
 pub fn ping() -> &'static str {
     "pong"

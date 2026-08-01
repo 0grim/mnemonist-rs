@@ -26,6 +26,12 @@ use difffuzz::modules::static_disjoint_set::{StaticDisjointSetSpec, REGRESSIONS}
 // broken three merges. New imports go on the end.
 use difffuzz::modules::set::{SetSpec, REGRESSIONS as SET_REGRESSIONS};
 use difffuzz::modules::sort::{SortSpec, REGRESSIONS as SORT_REGRESSIONS};
+// Appended, never interleaved (CLAUDE.md, Git).
+use difffuzz::modules::bloom_filter::{BloomFilterSpec, REGRESSIONS as BLOOM_REGRESSIONS};
+use difffuzz::modules::suffix_array::{
+    GeneralizedSuffixArraySpec, SuffixArraySpec, GENERALIZED_REGRESSIONS,
+    REGRESSIONS as SUFFIX_ARRAY_REGRESSIONS,
+};
 use difffuzz::Campaign;
 // Appended at the end of the import run, never inserted.
 use difffuzz::modules::circular_buffer::{
@@ -279,6 +285,10 @@ fn every_regression_corpus_explains_where_its_seeds_came_from() {
         SPARSE_REGRESSIONS,
         SPARSE_MAP_REGRESSIONS,
         SPARSE_QUEUE_REGRESSIONS,
+        // Appended at the END of the list (CLAUDE.md, Git).
+        SUFFIX_ARRAY_REGRESSIONS,
+        GENERALIZED_REGRESSIONS,
+        BLOOM_REGRESSIONS,
     ] {
         let text = std::fs::read_to_string(corpus)
             .unwrap_or_else(|_| panic!("{corpus} must be checked in"));
@@ -305,6 +315,29 @@ fn fixed_stack_matches_upstream() {
     let campaign = Campaign::cases(0xF15A, 96, FIXED_STACK_REGRESSIONS);
 
     let report = difffuzz::run(&FixedStackSpec, &campaign)
+        .expect("oracle must be reachable; `node` is required for differential tests");
+
+    assert!(
+        report.ops > 0,
+        "campaign ran no operations, so it proved nothing: {}",
+        report.log_line()
+    );
+
+    if let Some(divergence) = report.divergence {
+        panic!("{divergence}");
+    }
+}
+
+// Appended at the END of the file, never between existing tests (CLAUDE.md).
+
+/// `suffix-array` is the first module here with no mutating method: the whole
+/// computation is the constructor, so the campaign spends its budget on
+/// constructions rather than on op sequences. See the spec's module docs.
+#[test]
+fn suffix_array_matches_upstream() {
+    let campaign = Campaign::cases(0x5FFA, 96, SUFFIX_ARRAY_REGRESSIONS);
+
+    let report = difffuzz::run(&SuffixArraySpec, &campaign)
         .expect("oracle must be reachable; `node` is required for differential tests");
 
     assert!(
@@ -355,6 +388,27 @@ fn fixed_deque_matches_upstream() {
     let campaign = Campaign::cases(0xF1DE, 96, FIXED_DEQUE_REGRESSIONS);
 
     let report = difffuzz::run(&FixedDequeSpec, &campaign)
+        .expect("oracle must be reachable; `node` is required for differential tests");
+
+    assert!(
+        report.ops > 0,
+        "campaign ran no operations, so it proved nothing: {}",
+        report.log_line()
+    );
+
+    if let Some(divergence) = report.divergence {
+        panic!("{divergence}");
+    }
+}
+
+/// The generalized variant, which is where `longestCommonSubsequence` -- the
+/// only method in this unit with branching logic outside the constructor --
+/// gets exercised.
+#[test]
+fn generalized_suffix_array_matches_upstream() {
+    let campaign = Campaign::cases(0x65FA, 96, GENERALIZED_REGRESSIONS);
+
+    let report = difffuzz::run(&GeneralizedSuffixArraySpec, &campaign)
         .expect("oracle must be reachable; `node` is required for differential tests");
 
     assert!(
@@ -424,6 +478,28 @@ fn set_matches_upstream() {
     let campaign = Campaign::cases(0x5E7, 96, SET_REGRESSIONS);
 
     let report = difffuzz::run(&SetSpec, &campaign)
+        .expect("oracle must be reachable; `node` is required for differential tests");
+
+    assert!(
+        report.ops > 0,
+        "campaign ran no operations, so it proved nothing: {}",
+        report.log_line()
+    );
+
+    if let Some(divergence) = report.divergence {
+        panic!("{divergence}");
+    }
+}
+
+/// `bloom-filter` is the only module whose op arguments are deliberately
+/// ill-typed: `add` and `test` take numbers and booleans as well as strings,
+/// because every non-string collapses onto the empty sequence upstream (B-98)
+/// and that is only reachable if the grammar can express one.
+#[test]
+fn bloom_filter_matches_upstream() {
+    let campaign = Campaign::cases(0xB100, 96, BLOOM_REGRESSIONS);
+
+    let report = difffuzz::run(&BloomFilterSpec, &campaign)
         .expect("oracle must be reachable; `node` is required for differential tests");
 
     assert!(
