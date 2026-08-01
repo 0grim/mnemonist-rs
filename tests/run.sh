@@ -29,15 +29,26 @@ cp -R "$ROOT/tests/original/test" "$WORK/test"      # byte-identical originals
 cp -R "$ROOT/tests/bridge/."      "$WORK/"          # our shims
 cp    "$ROOT/tests/harness-package.json" "$WORK/package.json"
 
-# 4. Publish the addon as a resolvable package so shims can require it from
+# 3b. Our own specs for things upstream has no test file for -- the obliterator
+#     primitives, which are a runtime dependency there and ported code here.
+#     Kept out of test/ so the originals directory stays exactly the originals.
+[ -d "$ROOT/tests/boundary" ] && cp -R "$ROOT/tests/boundary" "$WORK/boundary"
+
+# 4. Deps, only when missing.
+#
+#    BEFORE publishing the addon, not after: npm prunes anything in
+#    node_modules that its manifest does not mention, and @port/addon is
+#    deliberately not in the manifest. Publishing first meant the very first
+#    run on a fresh tree deleted the addon and failed to resolve it, while
+#    every run after that passed -- a fresh-clone-only failure.
+[ -d "$WORK/node_modules/mocha" ] \
+  || ( cd "$WORK" && npm install --no-audit --no-fund --silent )
+
+# 5. Publish the addon as a resolvable package so shims can require it from
 #    any depth.
 mkdir -p "$ADDON"
 cp "$ROOT/target/release/libmnemonist_napi.so" "$ADDON/addon.node"
 printf '{"name":"@port/addon","main":"addon.node"}' > "$ADDON/package.json"
-
-# 5. Deps, only when missing.
-[ -d "$WORK/node_modules/mocha" ] \
-  || ( cd "$WORK" && npm install --no-audit --no-fund --silent )
 
 # 6. Default to every spec we have a shim for.
 cd "$WORK"
@@ -48,6 +59,9 @@ else
   for shim in "$ROOT"/tests/bridge/*.js; do
     name="$(basename "$shim")"
     [ -f "test/$name" ] && SPECS+=("test/$name")
+  done
+  for spec in boundary/*.js; do
+    [ -f "$spec" ] && SPECS+=("$spec")
   done
 fi
 
