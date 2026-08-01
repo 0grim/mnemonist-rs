@@ -475,6 +475,55 @@ lp.get(h, keys, values, 0);        // 0  -- the 42 is gone, silently
 So the entry is readable right up until something collides with it, then vanishes with no error.
 Reproduced exactly, including the readable-until-it-isn't part.
 
+### B-90 — `SuffixArray`'s radix sort silently narrows to 8 bits
+`status: VERIFIED against Node 24.18.1` · `mnemonist suffix-array.js`
+`sort()` picks its radix width from `j = Math.max(string[array[i] + offset], j)`, and that index runs
+past the padded sequence for `offset` 1 and 2 — `convert()` pads with `length % 3` zeros, which is
+not enough. The read is `undefined`, `Math.max(undefined, j)` is `NaN`, every shift of `NaN` is `0`,
+so `j >> 24 && 32 || j >> 16 && 24 || j >> 8 && 16 || 8` falls through to **8**. The sort then
+compares only the low byte of each 16-bit symbol.
+
+Mechanism confirmed by instrumenting upstream's own `sort`, not inferred: for a 15-symbol input the
+offset-2 and offset-1 passes read index 16 and report `bits = 8`, while the offset-0 pass reads in
+range and reports `bits = 16` for a maximum symbol of 513.
+
+```js
+> new (require('mnemonist/suffix-array'))('ĀĀĀĀȁĀĀȁȁȁȁȁĀȁȁ').array
+[0,1,2,5,3,12,6, 4,14,11,10,13,9,8,7]     // upstream
+[0,1,2,5,3,12,6,14, 4,11,13,10,9,8,7]     // correct
+```
+
+Two transpositions rather than a scrambling, so a spot-check of the first entries looks fine. Any
+alphabet where two symbols share a low byte is affected, including every character at or above
+U+0100 whose low byte collides with the `0` padding. Measured: **81% wrong** over 10,000 random
+inputs of length 1..30 drawn from `{'A', 'Ł'}` at `length % 3 == 0`. Pure ASCII is unaffected.
+Reproduced; see `docs/modules/suffix-array.md`.
+
+### B-91 — `SuffixArray` loses the DC3 sentinel when `length % 3 === 1`
+`status: VERIFIED against Node 24.18.1` · `mnemonist suffix-array.js`
+The reduced string DC3 recurses on is the ≡1 ranks concatenated with the ≡2 ranks, which is only
+sound if the first group ends in a symbol nothing else can equal. `al = (2 * l / 3) | 0` omits the
+≡1 position that would have carried it when `l % 3 === 1`, so the two halves run together and, once
+the recursion fires (i.e. once a triple repeats), the answer is wrong.
+
+```js
+> new (require('mnemonist/suffix-array'))('aaaaaaa').array
+[6,5,3,0,2,4,1]      // correct: [6,5,4,3,2,1,0]
+```
+
+Exhaustively over binary strings, failures occur at lengths **7, 10, 13 and 16** and at no other
+length up to 16 — all ≡ 1 (mod 3); 4 is clean only because it is too short to recurse. The rule
+applies at every recursion level, which is why the occasional length ≡ 2 (mod 3) also fails: its own
+`al` is ≡ 1 (mod 3). Measured: **12% wrong** over 10,000 random 3-letter inputs of length 1..30 at
+`length % 3 == 1`, 0% at the other two residues.
+
+Upstream's own suite contains a length-22 input, which *is* ≡ 1 (mod 3), and passes — only because
+`'This is a long string.'` has no repeated trigram, so `j === al` and the recursion never runs. The
+suite is one repeated trigram away from having caught this.
+
+Distinct from the module's own `it.skip('should work with int values (issue #196)')`, which is about
+the token-case sentinel and needs token input; both of these fire on plain strings. Reproduced.
+
 > Differential fuzzing has not run yet. Expect the best candidates to come from there, not from
 > reading. Add them here with the minimised repro attached.
 
