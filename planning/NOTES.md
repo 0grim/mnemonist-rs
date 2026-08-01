@@ -1792,3 +1792,86 @@ also masked two further defects that only surfaced once the protocols were recon
 
 *Write-up beat: the cost of parallelism is not the merge, it is the convergent design you then have
 to reconcile — and the reconciliation is where the interesting bugs were hiding.*
+
+## Wave 2 — bi-map, fuzzy-map, bk-tree (B-120..B-139 range)
+
+Appended at the end of the file rather than into the bug-candidate section above, for the same
+reason Wave 1 is: only an addition at the very end can never land inside another agent's hunk.
+
+### B-120 — `BiMap.prototype.clear` resets only ONE of its two size counters
+
+`status: verified against Node 24.18.1` · `bi-map.js` · found by differential fuzzing (proptest,
+seed 42), caught twice while fixing the port to match
+
+`BiMap`/`InverseMap` share one `clear` function:
+
+```js
+function clear() {
+  this.size = 0;
+  this.items.clear();
+  this.inverse.items.clear();
+}
+```
+
+Both underlying `Map`s are genuinely emptied regardless of which side calls it, but only `this.size`
+is reset — `this.inverse.size` (or, from the inverse view, `this.size`) is left at whatever it was.
+Reproduced exactly:
+
+```js
+var m = new BiMap(); m.set('a', 'a');
+m.clear();
+m.size          // 0
+m.inverse.size  // 1, STALE — items.size and inverse.items.size are both 0
+```
+
+The stale counter is not permanent: the next `set`/`delete` on either side recomputes both counters
+from the live maps (`this.size = this.items.size; this.inverse.size = this.inverse.items.size;`),
+so it heals on the very next mutation. `delete` on an absent key, however, is a no-op that returns
+`false` **before** touching either counter — so a `clear()` immediately followed by a `delete()`
+that finds nothing leaves the stale counter stale for a second op, which is the case fuzzing caught
+on the fix's own first re-run (see below).
+
+**Two rounds, because a naive fix "healed" the desync (more correct than upstream, i.e. wrong):**
+
+1. The first port derived `size()`/`inverse_size()` from `OrderedMap::len()`, so `clear()`
+   incidentally zeroed both — a real defect (the port more correct than upstream), caught in 18
+   cases (0.3s) on `set("a","a"); clear();`.
+2. The fix added two real stored counters, reset asymmetrically by `clear`/`clear_reverse` — but
+   resynced both counters from the live maps unconditionally after every `set`/`delete` call. Since
+   `delete` on an absent key is upstream's other place that must NOT touch either counter, and that
+   is reachable right after a genuine `clear()` (the maps really are empty, so the next `delete` on
+   any key is a no-op), the unconditional resync "healed" the still-stale counter one op early.
+   Caught in 177 cases (0.3s) on `set("a","a"); clear(); delete("a");` — the very next campaign run
+   against round 1's fix.
+
+Fixed by resyncing `delete`/`delete_reverse` only on an actual removal (`Some(_)`), matching
+upstream's `del`, which only touches the counters on its own falling-through path. Both seeds are
+committed with provenance in `crates/difffuzz/proptest-regressions/bi-map.txt`; the campaign is
+clean on the current tree (5,000 cases / 38.3s, seed 42, zero divergences).
+
+**Strong candidate**, and a useful cautionary tale for this project's own porting discipline: the
+module doc for `mnemonist_core::structures::bi_map` had already analysed and named this exact bug
+(B-120) in prose before the implementation caught up to it — a reminder that a doc comment
+describing intended behaviour is not evidence the code behind it does that, only a claim to verify.
+
+### fuzzy-map's difffuzz spec — a harness bug, not an upstream one
+
+Not a bug candidate (recorded here so the fix has a paper trail): `crates/difffuzz/src/modules/
+fuzzy_map.rs`'s `Hash::named` matched literal names `"identity"`/`"lower"`, but the ctor strategy
+and `fuzz/oracle.js`'s `FACTORIES` table both use the prefixed names `fuzzyIdentity`/`fuzzyLower`
+(chosen precisely so this module's factory names cannot collide with `default-map`'s — see
+`fuzz/oracle.js`). Every generated program panicked at construction before ever reaching a real
+comparison, which is why this spec had never actually run: `cargo test` never wired it into
+`tests/differential.rs`, and the one manual campaign attempt persisted a regression seed that
+turned out to be the harness panic, not a divergence. Fixed by matching the prefixed names; that
+spurious regression file was deleted rather than kept, since it recorded a harness defect, not a
+finding.
+
+### bk-tree — clean, and the grammar was already sound
+
+No divergence found. `crates/difffuzz/src/modules/bk_tree.rs`'s grammar was already built the way
+CLAUDE.md's fuzz-campaign guidance asks for: items and queries drawn from a 12-wide range with
+`distance = |a - b|`, dense enough that repeated `add`s collide on distance constantly (the only way
+a node grows more than one child), and `search`'s radius reaching up to twice the item range so it
+usually visits the whole tree — the closest thing to an observation of `root`'s shape this grammar
+has, since core exposes no direct equivalent. 5,000 cases / ~35s at seed 42, zero divergences.

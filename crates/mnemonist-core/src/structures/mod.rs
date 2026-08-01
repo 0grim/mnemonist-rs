@@ -32,6 +32,12 @@ pub mod suffix_array;
 pub mod static_interval_tree;
 pub mod vector;
 
+// Appended at the end, never inserted: this file is edited by several agents
+// at once and a new line anywhere else is a merge conflict.
+pub mod bi_map;
+pub mod bk_tree;
+pub mod fuzzy_map;
+
 // Appended at the end of the list rather than in alphabetical position: this
 // file is shared, and three merges have broken on a conflict boundary landing
 // mid-list.

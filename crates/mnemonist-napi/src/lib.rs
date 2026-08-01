@@ -57,6 +57,12 @@ pub mod fixed_reverse_heap;
 pub mod heap;
 pub mod js_array;
 
+// Appended at the end, never inserted: this file is edited by several agents
+// at once and a new line anywhere else is a merge conflict.
+pub mod bi_map;
+pub mod bk_tree;
+pub mod fuzzy_map;
+
 #[napi]
 pub fn ping() -> &'static str {
     "pong"
