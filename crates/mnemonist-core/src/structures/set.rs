@@ -24,8 +24,10 @@
 //!   first. `intersection(new Set([3,2,1]), new Set([1,2]))` is `[1, 2]` while
 //!   `intersection(new Set([3,2,1]), new Set([1,2,3]))` is `[3, 2, 1]`.
 //!   Confirmed against Node 24.18.1.
-//! * `disjunct` adds `B \ A` **before** deleting `A ∩ B`, so `{1,2}` disjunct
-//!   `{2,3}` is `[1, 3]` and not `[3, 1]`.
+//! * `disjunct` decides what to add **while `A` still holds the intersection**,
+//!   and deletes afterwards. See [`disjunct`] for what that does and does not
+//!   buy — the first draft of this note claimed more than is true, and a
+//!   sabotage that reordered only the *writes* stayed green.
 //! * `Set.add` on a member that is already present does **not** move it, which
 //!   is [`crate::map::OrderedMap::set`]'s behaviour and the reason this is
 //!   built on it rather than on a fresh structure.
@@ -335,14 +337,30 @@ pub fn intersect<T: Hash + Eq + Clone>(a: &mut OrderedSet<T>, b: &OrderedSet<T>)
 
 /// `exports.disjunct` — turn `A` into the symmetric difference of `A` and `B`.
 ///
-/// The order of the three phases is upstream's and is observable:
+/// Upstream's three phases, in order:
 ///
 /// 1. collect `A ∩ B` into `toRemove`;
-/// 2. **add** every member of `B` not in `A` — checked against `A` as it stands
-///    *before* any deletion, which is the state upstream's own loop sees;
+/// 2. add every member of `B` not in `A`;
 /// 3. delete `toRemove`.
 ///
-/// So `{1, 2}` disjunct `{2, 3}` is `[1, 3]`, not `[3, 1]`.
+/// # What phase 2 preceding phase 3 does and does not buy — measured
+///
+/// The load-bearing part is that the `!A.has(member)` test in phase 2 sees an
+/// `A` that **still holds the intersection**. Delete first and every member of
+/// `A ∩ B` passes that test, gets re-added, and the answer becomes `A ∪ B`.
+/// That sabotage turns `test/set.js`'s `#.disjunct` block red.
+///
+/// The *write* order buys nothing observable, which is not what an earlier
+/// draft of this doc claimed. Reordering only the writes — deleting first while
+/// still testing against the original `A` — leaves both the result and its
+/// order unchanged, because a member of `B \ A` is appended at the end either
+/// way and a member of `A ∩ B` is gone either way. Sabotaged and confirmed:
+/// `test/set.js` stayed at 16 passing, and so did `tests/boundary/set.js`.
+///
+/// The trace is still emitted add-then-delete, because that is the sequence of
+/// calls upstream makes and the bridge replays them onto a live JavaScript
+/// `Set`. It is faithfulness with no test able to see it, and it is labelled as
+/// such rather than justified with a benefit it does not have.
 pub fn disjunct<T: Hash + Eq + Clone>(a: &mut OrderedSet<T>, b: &OrderedSet<T>) -> Vec<SetOp<T>> {
     let to_remove: Vec<T> = a.iter().filter(|member| b.has(member)).cloned().collect();
 
@@ -626,8 +644,6 @@ mod tests {
         assert_eq!(ops, vec![SetOp::Delete(1)]);
     }
 
-    /// The phase order is what fixes the answer's order: `3` is appended before
-    /// `2` is removed, so the result is `[1, 3]` and not `[3, 1]`.
     #[test]
     fn disjunct_matches_the_original_suite_in_upstreams_phase_order() {
         let mut a = set(&[1, 2]);
@@ -635,6 +651,28 @@ mod tests {
 
         assert_eq!(members(&a), vec![1, 3]);
         assert_eq!(ops, vec![SetOp::Add(3), SetOp::Delete(2)]);
+    }
+
+    /// The part of `disjunct`'s phase order that is actually load-bearing:
+    /// phase 2 tests against an `A` that still holds the intersection. Delete
+    /// first and every shared member passes `!A.has`, is re-added, and the
+    /// answer becomes the union instead of the symmetric difference.
+    ///
+    /// Pinned separately from the block above because the block above passes
+    /// under that sabotage *and* under the harmless one — reordering only the
+    /// writes — and the two need telling apart. See [`super::disjunct`].
+    #[test]
+    fn disjunct_decides_what_to_add_before_it_deletes_anything() {
+        let mut a = set(&[1, 2, 3]);
+        let ops = disjunct(&mut a, &set(&[2, 3, 4]));
+
+        // 2 and 3 are shared: removed, and never re-added.
+        assert_eq!(members(&a), vec![1, 4]);
+        assert_eq!(
+            ops,
+            vec![SetOp::Add(4), SetOp::Delete(2), SetOp::Delete(3)],
+            "no shared member may appear as an Add"
+        );
     }
 
     /// Self-application, which the original suite never does. All four have a

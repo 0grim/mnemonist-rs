@@ -125,16 +125,23 @@ describe('set — boundary', function() {
       assert.deepStrictEqual(backward, [4, 5, 1, 2]);
     });
 
-    it('should add before deleting in disjunct.', function() {
-      // {1,2} disjunct {2,3} is [1,3] and not [3,1] only because the addition
-      // of B\A happens BEFORE the removal of the intersection.
+    it('should decide what to add in disjunct before it deletes anything.', function() {
+      // The load-bearing half of disjunct's phase order. The `!A.has(member)`
+      // test runs while A still holds the intersection; delete first and every
+      // shared member passes it, is re-added, and the answer becomes the UNION.
+      //
+      // Note what is NOT claimed here, because an earlier draft claimed it:
+      // reordering only the WRITES -- deleting first while still testing
+      // against the original A -- is unobservable. A member of B\A is appended
+      // at the end either way and a shared member is gone either way. Measured:
+      // that sabotage left both this file and test/set.js fully green.
       var order = agree('disjunct order', function(f) {
-        var A = new Set([1, 2]);
-        f.disjunct(A, new Set([2, 3]));
+        var A = new Set([1, 2, 3]);
+        f.disjunct(A, new Set([2, 3, 4]));
         return Array.from(A);
       });
 
-      assert.deepStrictEqual(order, [1, 3]);
+      assert.deepStrictEqual(order, [1, 4]);
     });
 
     it('should not move a member that is re-added.', function() {
@@ -199,7 +206,7 @@ describe('set — boundary', function() {
       assert.deepStrictEqual(seen, [2, 3]);
     });
 
-    it('should reach a live iterator through disjunct\'s add-then-delete.', function() {
+    it('should reach a live iterator through disjunct\'s adds and deletes.', function() {
       var seen = agree('live iterator across disjunct', function(f) {
         var A = new Set([1, 2]);
         var iterator = A.values();

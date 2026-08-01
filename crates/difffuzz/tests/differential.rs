@@ -24,6 +24,7 @@ use difffuzz::modules::static_disjoint_set::{StaticDisjointSetSpec, REGRESSIONS}
 // Appended rather than filed alphabetically: this list is edited from several
 // worktrees at once, and a conflict boundary that lands inside it has already
 // broken three merges. New imports go on the end.
+use difffuzz::modules::set::{SetSpec, REGRESSIONS as SET_REGRESSIONS};
 use difffuzz::modules::sort::{SortSpec, REGRESSIONS as SORT_REGRESSIONS};
 use difffuzz::Campaign;
 
@@ -303,6 +304,28 @@ fn sort_matches_upstream() {
     let campaign = Campaign::cases(0x5057, 96, SORT_REGRESSIONS);
 
     let report = difffuzz::run(&SortSpec, &campaign)
+        .expect("oracle must be reachable; `node` is required for differential tests");
+
+    assert!(
+        report.ops > 0,
+        "campaign ran no operations, so it proved nothing: {}",
+        report.log_line()
+    );
+
+    if let Some(divergence) = report.divergence {
+        panic!("{divergence}");
+    }
+}
+
+/// The second free-function module, and the one whose campaign leans hardest
+/// on the argument echo: four of `set.js`'s fourteen functions return
+/// `undefined` and do all their work to their first argument, so without it
+/// they would be compared against nothing at all.
+#[test]
+fn set_matches_upstream() {
+    let campaign = Campaign::cases(0x5E7, 96, SET_REGRESSIONS);
+
+    let report = difffuzz::run(&SetSpec, &campaign)
         .expect("oracle must be reachable; `node` is required for differential tests");
 
     assert!(

@@ -30,6 +30,7 @@ use difffuzz::modules::static_disjoint_set::StaticDisjointSetSpec;
 // Appended rather than filed alphabetically: this list is edited from several
 // worktrees at once, and a conflict boundary that lands inside it has already
 // broken three merges. New modules go on the end.
+use difffuzz::modules::set::SetSpec;
 use difffuzz::modules::sort::SortSpec;
 use difffuzz::{Campaign, Report};
 
@@ -38,7 +39,7 @@ usage: difffuzz --module <name> [--seed N] [--duration SECONDS] [--cases N] [--b
 
   --module    module to fuzz; currently: static-disjoint-set, sparse-set,
               sparse-map, sparse-queue-set, hashed-array-tree, bit-set,
-              bit-vector, stack, queue, default-map, sort
+              bit-vector, stack, queue, default-map, sort, set
   --seed      campaign seed (default 42); with --cases, reproduces exactly
   --duration  wall-clock budget in seconds (default 60)
   --cases     stop after N cases instead of after --duration
@@ -148,6 +149,13 @@ fn main() -> ExitCode {
             &SortSpec,
             &Campaign {
                 regressions: difffuzz::modules::sort::REGRESSIONS,
+                ..campaign
+            },
+        ),
+        "set" => difffuzz::run(
+            &SetSpec,
+            &Campaign {
+                regressions: difffuzz::modules::set::REGRESSIONS,
                 ..campaign
             },
         ),
