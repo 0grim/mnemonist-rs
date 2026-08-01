@@ -469,9 +469,32 @@ build`, so **a green build carries no information about whether test code even p
 that means to say "this compiles" must run `cargo test`, not `cargo build`. `tests/verify.sh`
 already does — which is worth noting as a design choice that paid off rather than luck.
 
-### The pattern these three share
+### THE NUMBER — the rigor gap, measured in one experiment
 
-Three separate incidents today, all the same meta-failure — *the check I ran did not check what I
+`sparse-map`'s B-11 is a plain correctness bug: `delete` moves the last *member* into the hole but
+not the last *value*, so `set(3,'a') set(4,'b') set(5,'c'); delete(3)` leaves `get(5) === 'a'`.
+In-range input, no edge case, straightforwardly wrong.
+
+Sabotage the port to **fix** it — making our port more correct than upstream, therefore wrong —
+and measure what each layer of evidence says:
+
+| Evidence layer | Verdict on a port that diverges from upstream |
+|---|---|
+| **The upstream mocha suite, unmodified** | **9 passing / 0 failing — sees nothing** |
+| Our native Rust tests | **4 red** |
+| The differential fuzzer | **caught in 3.0 s**, shrunk to 3 operations |
+
+**That is the entire thesis of this event in one pair of numbers.** The original test suite — the
+artifact the 40% category is built on — cannot detect a behavioural divergence in a module it
+nominally covers, because it only ever deletes from a one-element map where the swap is a
+self-assignment. The 30% and 20% categories are where the detection actually lives.
+
+Use this as the headline for the write-up and quote it in the README. It is far stronger than any
+"we passed N tests" claim, because it is evidence about *evidence*.
+
+### The pattern these five share
+
+Five separate incidents, all the same meta-failure — *the check I ran did not check what I
 believed it checked*:
 
 | Incident | What it appeared to verify | What it actually verified |
@@ -480,6 +503,7 @@ believed it checked*:
 | RSS as evidence for the L3 hypothesis | that the footprint shrank | nothing — the pages were never resident to begin with |
 | `cargo build` clean | that the code compiles | that *non-test* code compiles |
 | `cases=16666` in a fuzz campaign | 16,666 distinct programs | 32 programs, plus two saved seeds re-run ~8,300 times each |
+| `cargo clippy \| tail -5` exit 0 | that clippy passed | that **`tail`** succeeded — a pipeline's status is its *last* command's |
 
 Each one produced a **confident green signal that was empty**, and in every case the failure was
 invisible until something forced the question "what would this look like if it were broken?"
