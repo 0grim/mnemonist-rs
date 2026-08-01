@@ -14,10 +14,14 @@ A Rust port of the JS library `mnemonist`, entered in Port Mortem 2026. Kickoff 
 
 `git log` is dense and deliberately so; the merge commits carry the reasoning.
 
-## Position as of 2026-08-01 ~20:00 UTC
+## Position as of 2026-08-01 ~17:30 UTC (H+23)
 
-**79% ported, 0% scoped.** 670 Rust tests, 657 upstream harness specs, all green on `main`.
-One worktree, one branch — all merged worktrees and branches have been pruned.
+**83% ported, 0% scoped.** 721 Rust tests, 680 upstream harness specs, all green on `main`.
+Merged worktrees and branches are pruned as each batch lands.
+
+**The submission is now the binding item, not the port.** None of README, `DECISIONS.md`, the
+Dockerfile or CI exists yet; only `.port-mortem.toml` does. 105 decision candidates and 69 bug
+candidates sit in working files no judge will open. See ROADMAP *What remains*.
 
 The 0% is not a mistake and not a crisis — see "Why 0% scoped" below. It is the single most
 important thing to fix, and it is fixed by running benchmarks, not by porting more.
@@ -36,8 +40,8 @@ Remaining batches, in priority order so that stopping early stops at the best av
 | # | batch | lines | bug IDs | status |
 |---|---|---|---|---|
 | 1 | `fibonacci-heap` + close D-105 | 115 | B-220–239 | **merged** (B-220–222 used) |
-| 2 | `default-weak-map`, `linked-list`, `inverted-index` | 325 | B-240–259 | **in flight** |
-| 3 | `critbit-tree-map`, `fixed-critbit-tree-map` | 294 | B-260–279 | not started |
+| 2 | `default-weak-map`, `linked-list`, `inverted-index` | 325 | B-240–259 | **merged** (B-240–242 used) |
+| 3 | `critbit-tree-map`, `fixed-critbit-tree-map` | 294 | B-260–279 | **in flight** |
 | 4 | `vp-tree`, `kd-tree` | 344 | B-280–299 | not started |
 | 5 | `passjoin-index`, `symspell`, `multi-array` | 639 | B-300–319 | not started |
 

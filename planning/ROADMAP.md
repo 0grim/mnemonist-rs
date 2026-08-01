@@ -25,31 +25,59 @@ all four bonuses.
 **So the gates are worth more than the coverage they would buy.** Any plan that trades gate rigor
 for module count is a losing trade, and this is the sentence to re-read at hour 55.
 
-### Budget, measured at H+8
+### Budget: what the H+8 estimate got wrong
 
-~65h to freeze, minus ~21h sleep, minus ~12h reserved at CP4 for the batched benchmark pass, docs,
-video and submission → **~32 working hours**.
+The original estimate said a full port was **~1.35× over budget** — ~43h of work against ~32h
+available — and concluded: *do not pre-commit to the whole repo.*
 
-Remaining after Wave 1: **30 modules, 9,960 LOC**, plus 886 LOC of utils. Tier estimate:
+That was wrong, and the reason it was wrong is worth keeping.
 
-| Tier | Modules | Est. |
-|---|---|---|
-| T2 heaps — comparator callbacks across FFI | 5 | ~5h |
-| T3 maps — `JsKey` design + modules | 11 | ~14h |
-| T4 tries — **needs new cursor machinery (D-38)** | 5 | ~8h |
-| T5 spatial/probabilistic | 8 | ~12h |
-| utils incl. `merge` (563 LOC) | 3 | ~4h |
-| | | **~43h against ~32h** |
+**At H+23 the port is 83% done with ~47h to freeze.** The estimate was not off because the work was
+smaller than thought; it was off because it priced agent-hours as if they were serial human hours.
+Three things changed the arithmetic:
 
-**A full port is ~1.35× over budget** before counting incidents, and we averaged one incident every
-~2.5h in the first eight (session death, API error mid-agent, WSL wedge). Do not pre-commit to the
-whole repo: that commitment is what would pressure us into cutting gates.
+1. **Ports run in parallel with the orchestrator's own work.** An agent porting `lru-cache` costs
+   wall-clock it does not consume from anyone.
+2. **Tier-first ordering compounded harder than modelled.** Each landed tier turned later units
+   from "design a new capability" into "follow an existing reference".
+3. **Model routing cut the per-unit cost roughly fourfold** without measurable quality loss — see
+   Working agreements.
 
-**Commit instead to maximal coverage subject to the DoD holding.** Let the gates pace the work.
+**The conclusion it drew was still right for the wrong reason.** Refusing to pre-commit to the whole
+repo kept the gates from being squeezed, and the gates are what the score actually rewards. Had we
+committed early to 100% coverage, the pressure would have landed on gate 6 and gate 9 — the two
+that are easiest to satisfy dishonestly.
+
+**The commitment remains: maximal coverage subject to the DoD holding.** Coverage is now the
+*cheap* axis; the expensive and more valuable one is the submission write-up, which does not exist
+yet.
+
+### What remains
+
+| # | batch | lines | bug IDs | status |
+|---|---|---|---|---|
+| 1 | `fibonacci-heap` + close D-105 | 115 | B-220–239 | merged |
+| 2 | `default-weak-map`, `linked-list`, `inverted-index` | 325 | B-240–259 | merged |
+| 3 | `critbit-tree-map`, `fixed-critbit-tree-map` | 294 | B-260–279 | **in flight** |
+| 4 | `vp-tree`, `kd-tree` | 344 | B-280–299 | not started |
+| 5 | `passjoin-index`, `symspell`, `multi-array` | 639 | B-300–319 | not started |
+
+Then: **benchmark pass** (gate 10, idle machine), scope the benched units, re-scope `sparse-set`,
+and the submission — README, `DECISIONS.md`, demo, Dockerfile, CI. `DESIGN.md` §12 has the specs.
+
+**The submission is now the binding item, not the port.** 105 decision candidates and 69 bug
+candidates sit in two working files written by a dozen agents in their own idioms; no judge will
+open either. Turning them into a document that reads start-to-finish is real work and is where the
+rigor score actually lands. **If it comes to a choice, drop batch 5 rather than the write-up.**
 
 ---
 
 ## Tier order, by unlock value
+
+> **Historical — every tier below has landed.** Kept because the ordering reasoning drove the
+> project and was largely borne out: unblocking really was worth more than the module it shipped
+> with. Read it as the record of why things happened in this order, not as work outstanding. For
+> what is outstanding, see *What remains* above.
 
 Every tier is a *bridge* capability, not a core one — the pattern has held three times now.
 
@@ -196,8 +224,13 @@ wave boundaries in §6:
   right up until that window opens.
   Consequence, and it is fine: modules sit complete-except-gate-10 for longer, so `scope.txt` lags
   reality. `scripts/status.sh` shows them as `pend` with `bench --`, which is the honest picture.
-- **Isolated worktrees per agent**, shared-file edits additive only. Four branches merging into
-  three registry files is the practical ceiling on parallelism.
+- **One agent at a time — superseding the earlier parallelism guidance.** Ten merges of parallel
+  work cost **ten split-block repairs** (a match arm or test function halved, because git picks
+  conflict boundaries by line similarity, not syntax) and **four** cases of two agents building the
+  same machinery independently. Every split was caught by the compiler, none by `git`. Since going
+  sequential: zero conflicts, zero repairs, and agents reuse what exists because they can see it.
+  Wall-clock is rarely what binds here; orchestrator tokens are, and merge repair spends them.
+  Isolated worktrees and additive-only shared-file edits still apply.
 - **Stop-and-review before a design is inherited.** Applied to the cursor, to `forEach`, and now to
   `JsKey`.
 - **Route by task shape, not by default.** Nine of the first ten agents ran on the session default
