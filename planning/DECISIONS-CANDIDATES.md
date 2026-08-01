@@ -1792,3 +1792,134 @@ in the opposite direction: there, object keys are out of scope because nothing t
 object keys are the entire point, and function/symbol keys are what nothing tests.
 **Verify:** `crates/mnemonist-napi/src/default_weak_map.rs`'s `as_object`/`UNSUPPORTED`;
 `docs/modules/default-weak-map.md`.
+
+## Divergences reconciled from module docs (D-300+)
+
+Appended as one self-contained block at the very end: this file is edited from several worktrees at
+once, and it has already suffered one merge collision — D-01, D-80, D-81 and D-89 each appear twice.
+
+These were documented in their module docs from the start, but numbered `—` rather than `D-nnn`, so
+they never reached this registry. `DECISIONS.md` is assembled from here, so they would have been
+dropped. The text is **relocated verbatim from the module doc**, not re-summarised: the original
+author had the source in front of them and this pass did not.
+
+### D-300 — Not a T3 module — no Map, no OrderedMap
+`unit: bk-tree` · relocated from `docs/modules/bk-tree.md`
+
+`node.children` is a plain `HashMap<i64, Node<I>>` here, matching upstream's plain-object-keyed-by-number exactly: `add` does one `get`/`insert` at an exact distance, `search` probes a bounded numeric range one value at a time, and nothing ever iterates the *keys* of a children table. No ordering machinery is needed because upstream's own algorithm never needs one either.
+
+### D-301 — distance is fallible at the core level
+`unit: bk-tree` · relocated from `docs/modules/bk-tree.md`
+
+`try_add`/`try_search` take `FnMut(&I, &I) -> Result<i64, E>` so a JS distance function that throws propagates as a real `Err`, leaving the tree exactly as it was — both of upstream's mutations are textually after the call that can throw, in every path through both loops. `add`/`search` are the infallible convenience for a Rust caller whose distance cannot fail.
+
+### D-302 — The bridge refuses a distance function that re-enters the tree, rather than serving it half-built state
+`unit: bk-tree` · relocated from `docs/modules/bk-tree.md`
+
+`distance` is called from *inside* both `add`'s descent and `search`'s traversal, holding the bridge's `RefCell` borrow for the whole call — the same shape as `bit_vector`'s growth-policy re-entrancy (B-31). A distance function that calls back into the same tree meets that outstanding borrow and gets a catchable `REENTRANT_DISTANCE` error. Upstream would instead serve such a call from a tree mid-traversal and get whatever half-built state it finds. Narrower than upstream, and recorded rather than hidden — the same trade `bit_vector.rs` makes.
+
+### D-303 — n and distance's return value are i64/f64, not upstream's implicit string-keyed coercion
+`unit: bk-tree` · relocated from `docs/modules/bk-tree.md`
+
+No test anywhere gives `distance` a reason to return anything but a small non-negative integer; reproducing `ToPropertyKey`'s full stringification would need a string-keyed children table for a case no test can observe. Stated as a narrowing rather than silently mismodelled.
+
+### D-304 — toJSON()/inspect() are not ported
+`unit: bk-tree` · relocated from `docs/modules/bk-tree.md`
+
+Node/JSON display conveniences with no upstream assertion.
+
+### D-305 — The fuzz grammar excludes a throwing distance and string/object items
+`unit: bk-tree` · relocated from `docs/modules/bk-tree.md`
+
+`Math.abs` (this grammar's distance) cannot throw, so the fallible path is covered by `mnemonist_core::structures::bk_tree`'s own native tests instead, which control the failure directly rather than hoping a generated program provokes it. Integers keep the metric a one-line, unmistakably-correct mirror on both sides; `mnemonist_napi::bk_tree`'s bridge is exercised against strings and `levenshtein` by the original suite, and against `Item` objects by core's own tests.
+
+### D-306 — Only plain objects are accepted as keys; functions and symbols are rejected
+`unit: default-weak-map` · relocated from `docs/modules/default-weak-map.md`
+
+with a message naming the limit. A real `WeakMap` accepts all three. `test/default-weak-map.js` never constructs a key any way but `{}`. Implementing napi's function/symbol reference paths for a distinction nothing here exercises would be unverifiable scope — the same judgement call `js_key.rs` makes for object keys in the `Map` family, mirrored in the opposite direction: there, object keys are out of scope because nothing tests them; here, they are the *entire point*, and it is function/symbol keys that are out of scope for the identical reason.
+
+### D-307 — A non-object key given to get is rejected immediately, before the factory runs — upstream runs the factory first and only fails at the internal items.set
+`unit: default-weak-map` · relocated from `docs/modules/default-weak-map.md`
+
+Verified against Node 24.18.1: `get(1)` on a fresh map calls the factory (with whatever side effects it has) and *then* throws `TypeError: Invalid value used as weak map key`. Reproducing that exact order would mean calling this port's typed factory (`FunctionRef<FnArgs<(JsSlot,)>, Received>`) with a value its own signature has no slot for. `peek`/`has`/`delete` all match upstream exactly for a non-object key (a quiet miss, never a throw, because a real `WeakMap.prototype.get`/`.has`/`.delete` don't throw for one either) — only `get`'s *ordering*, on the one path no upstream test reaches, differs.
+
+### D-308 — A collected key's entry is never proactively released
+`unit: default-weak-map` · relocated from `docs/modules/default-weak-map.md`
+
+No finalizer is registered per key to notice the moment of collection; a dead `WeakKey` (one whose `napi_ref` upgrade fails) simply never matches any future candidate again — the correct answer, since a caller could not present that exact object as an argument again either — but its stored *value* stays retained, taking a slot in the linear scan, until the whole `DefaultWeakMap` itself is finalized. Nothing upstream exposes can distinguish this from prompt reclamation (there is no `size`, no iteration), so this is a memory-shape divergence, not a behavioural one — and implementing per-key finalization for a distinction nothing can observe would be exactly the "building machinery no test can reach" CLAUDE.md and `js_key.rs` both warn against.
+
+### D-309 — WeakKey is a linear scan (O(n)), not a hash table
+`unit: default-weak-map` · relocated from `docs/modules/default-weak-map.md`
+
+`crate::structures::default_weak_map::DefaultWeakMap` takes an identity predicate per call rather than requiring `K: Hash + Eq`, because JS object identity has no Rust-expressible hash — the same conclusion `js_key.rs` reaches and declines to act on for `Map` keys (out of scope there); here it is unavoidable, because identity comparison is the entire reason this structure exists. Correct, not fast, and nothing about a 60-line test file or a `WeakMap`'s own contract asks for anything faster.
+
+### D-310 — undefined is spelled None
+`unit: default-weak-map` · relocated from `docs/modules/default-weak-map.md`
+
+exactly as in `default-map`, for the identical reason: it is what makes B-242 expressible and testable from pure Rust, and it gets `peek` right for free.
+
+### D-311 — inspect() is not ported
+`unit: default-weak-map` · relocated from `docs/modules/default-weak-map.md`
+
+It returns the inner `WeakMap`, which does not exist in this port, and nothing asserts on it.
+
+### D-312 — Core stores Option<V>, not V
+`unit: fuzzy-map` · relocated from `docs/modules/fuzzy-map.md`
+
+`this.items.get(key)` is `undefined` for both "no such key" and "the key holds `undefined`", exactly as `default-map`. `None` spells the latter; `has`/`get` diverge on it the same way upstream's do.
+
+### D-313 — Hashing lives entirely in the bridge
+`unit: fuzzy-map` · relocated from `docs/modules/fuzzy-map.md`
+
+The hash function(s) are JS callbacks; core takes the already-hashed key, the same split `default-map`'s factory makes. `crates/mnemonist-napi/src/fuzzy_map.rs`'s `HashFn` is `FunctionRef<Unknown<'static>, Unknown<'static>>` rather than a typed signature, because `add`'s hash argument is genuinely unconstrained (upstream's own test hashes a bare object).
+
+### D-314 — A falsy descriptor slot becomes None, not a stored identity closure
+`unit: fuzzy-map` · relocated from `docs/modules/fuzzy-map.md`
+
+`if (!this.writeHashFunction) this.writeHashFunction = identity;` is a truthiness test (`0`, `''`, `false`, `null` all fall through), not a null check. `resolve_hash` mirrors the truthiness test; `None` means "classify the value directly," which is observably identical to calling a real `identity` and feeding its return into `JsKey::from_unknown`, without paying for a `FunctionRef` and a JS round trip for what is a no-op.
+
+### D-315 — forEach's second callback argument is the value, not a hashed key
+`unit: fuzzy-map` · relocated from `docs/modules/fuzzy-map.md`
+
+Reproduces the exact one-parameter delegation shown above; both core's `values_mut`/cursor step and the bridge's `for_each` project the *value* out twice. Not tested upstream (gap 1 above), but changing it would be wrong regardless.
+
+### D-316 — inspect() is not ported
+`unit: fuzzy-map` · relocated from `docs/modules/fuzzy-map.md`
+
+A Node display convenience with no upstream assertion.
+
+### D-317 — The [write, read] array-descriptor form is excluded from the fuzz grammar
+`unit: fuzzy-map` · relocated from `docs/modules/fuzzy-map.md`
+
+It needs two independent named factories per case; the single-function form is what the campaign spends its budget on, and the pair form is covered instead by `FuzzyMap.from`'s own upstream test and by `mnemonist_napi::fuzzy_map`'s construction tests. Disclosed rather than silently narrowed.
+
+### D-318 — Fuzzed items are always strings, never objects
+`unit: fuzzy-map` · relocated from `docs/modules/fuzzy-map.md`
+
+A hash function that can throw (`item.title.toLowerCase()` on a bare string) would turn every non-title-bearing generated item into an apparatus failure rather than a comparison; `identity`/`lower` both accept a bare string, keeping every generated program well-defined on both sides.
+
+### D-319 — Every function takes f64 and returns i32
+`unit: utils-bitwise` · relocated from `docs/modules/utils-bitwise.md`
+
+Not an aesthetic choice. Each is written in terms of JS bitwise operators, and every JS bitwise operator begins with ToInt32; taking `u32` would delete the conversion, and the conversion is where three of the four defects live. `to_int32` and `to_uint32` are exposed so a caller sees the coercion rather than inferring it.
+
+### D-320 — to_int32 is not upstream code
+`unit: utils-bitwise` · relocated from `docs/modules/utils-bitwise.md`
+
+It is the *implicit* first step of every operator in the file, written out once. Implemented with an exact `fmod`, so it is right for magnitudes past 2^53 where an `i64` cast saturates and would silently disagree.
+
+### D-321 — TABLE8 is built from u8::count_ones, not from popcount
+`unit: utils-bitwise` · relocated from `docs/modules/utils-bitwise.md`
+
+Upstream fills it by calling its own `popcount` at module load, which cannot be done in a `const fn`. The substitution is only legitimate if the two agree everywhere, so `table8_is_exactly_popcount_of_every_byte` checks all 256 entries against `popcount` rather than assuming it.
+
+### D-322 — popcount's intermediates are f64
+`unit: utils-bitwise` · relocated from `docs/modules/utils-bitwise.md`
+
+Upstream's first statement is `x -= x >> 1 & 0x55555555`, where the subtraction happens on the *Number* and only the right-hand side is converted — so an input at or above 2^31 stays a float across the first step. Doing the whole thing in `i32` gives the same answer for every input tested, but by a different route, and the point of a bug-for-bug port is to transcribe the route.
+
+### D-323 — No napi bridge
+`unit: utils-bitwise` · relocated from `docs/modules/utils-bitwise.md`
+
+Nothing in the upstream test corpus calls these functions from JavaScript, and a bridge with no caller is scaffolding for its own sake.
+

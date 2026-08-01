@@ -127,11 +127,11 @@ diverging.
 
 | # | Divergence | Why |
 |---|---|---|
-| — | **Every function takes `f64` and returns `i32`.** | Not an aesthetic choice. Each is written in terms of JS bitwise operators, and every JS bitwise operator begins with ToInt32; taking `u32` would delete the conversion, and the conversion is where three of the four defects live. `to_int32` and `to_uint32` are exposed so a caller sees the coercion rather than inferring it. |
-| — | **`to_int32` is not upstream code.** | It is the *implicit* first step of every operator in the file, written out once. Implemented with an exact `fmod`, so it is right for magnitudes past 2^53 where an `i64` cast saturates and would silently disagree. |
-| — | **`TABLE8` is built from `u8::count_ones`, not from `popcount`.** | Upstream fills it by calling its own `popcount` at module load, which cannot be done in a `const fn`. The substitution is only legitimate if the two agree everywhere, so `table8_is_exactly_popcount_of_every_byte` checks all 256 entries against `popcount` rather than assuming it. |
-| — | **`popcount`'s intermediates are `f64`.** | Upstream's first statement is `x -= x >> 1 & 0x55555555`, where the subtraction happens on the *Number* and only the right-hand side is converted — so an input at or above 2^31 stays a float across the first step. Doing the whole thing in `i32` gives the same answer for every input tested, but by a different route, and the point of a bug-for-bug port is to transcribe the route. |
-| — | **No napi bridge.** | Nothing in the upstream test corpus calls these functions from JavaScript, and a bridge with no caller is scaffolding for its own sake. |
+| D-319 | **Every function takes `f64` and returns `i32`.** | Not an aesthetic choice. Each is written in terms of JS bitwise operators, and every JS bitwise operator begins with ToInt32; taking `u32` would delete the conversion, and the conversion is where three of the four defects live. `to_int32` and `to_uint32` are exposed so a caller sees the coercion rather than inferring it. |
+| D-320 | **`to_int32` is not upstream code.** | It is the *implicit* first step of every operator in the file, written out once. Implemented with an exact `fmod`, so it is right for magnitudes past 2^53 where an `i64` cast saturates and would silently disagree. |
+| D-321 | **`TABLE8` is built from `u8::count_ones`, not from `popcount`.** | Upstream fills it by calling its own `popcount` at module load, which cannot be done in a `const fn`. The substitution is only legitimate if the two agree everywhere, so `table8_is_exactly_popcount_of_every_byte` checks all 256 entries against `popcount` rather than assuming it. |
+| D-322 | **`popcount`'s intermediates are `f64`.** | Upstream's first statement is `x -= x >> 1 & 0x55555555`, where the subtraction happens on the *Number* and only the right-hand side is converted — so an input at or above 2^31 stays a float across the first step. Doing the whole thing in `i32` gives the same answer for every input tested, but by a different route, and the point of a bug-for-bug port is to transcribe the route. |
+| D-323 | **No napi bridge.** | Nothing in the upstream test corpus calls these functions from JavaScript, and a bridge with no caller is scaffolding for its own sake. |
 
 ## Fuzz + bench
 
