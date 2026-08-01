@@ -3,3 +3,4 @@
 # Consumers: tests/run.sh spec selection, README scope table, .port-mortem.toml.
 
 static-disjoint-set
+sparse-set
