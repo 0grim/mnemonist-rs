@@ -306,6 +306,16 @@ impl<V> FixedCritBitTreeMap<V> {
         // *live* entries" observably part ways, matching upstream.
     }
 
+    /// Every stored value, mutably. Exists for the bridge, matching
+    /// `critbit_tree_map::CritBitTreeMap::values_mut`'s reasoning — a value
+    /// that holds a JS reference must have it released before it is
+    /// dropped. There is no `delete` on this structure (see the module
+    /// docs), so every stored value is always live: no filtering is needed
+    /// the way the unbounded variant's `Option<V>` slots need.
+    pub fn values_mut(&mut self) -> impl Iterator<Item = &mut V> {
+        self.values.iter_mut()
+    }
+
     /// Upstream's `set`. `Ok(Some(old))` replaces an existing key's value;
     /// `Ok(None)` is a fresh insertion; `Err(Error::Corrupted)` is upstream's
     /// own crash once more than `capacity` distinct keys have been inserted

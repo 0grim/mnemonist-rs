@@ -204,6 +204,17 @@ impl<V> CritBitTreeMap<V> {
         self.size = 0;
     }
 
+    /// Every stored value, mutably. Exists for the bridge: a value that
+    /// holds a JS reference must have it released — on `clear` and at
+    /// finalization — before it is dropped, matching
+    /// `trie_map::TrieMap::values_mut`'s own reasoning. A `delete`d slot is
+    /// already `None` (see `delete`'s doc comment), so filtering to
+    /// `Some` here is exactly "every value still reachable from `root`",
+    /// with no separate reachability walk needed.
+    pub fn values_mut(&mut self) -> impl Iterator<Item = &mut V> {
+        self.values.iter_mut().filter_map(Option::as_mut)
+    }
+
     /// Upstream's `set`. Returns the value displaced, if the key already
     /// existed — upstream returns `this` for chaining and gives no other way
     /// to observe the old value; the bridge and the fuzz spec both want it,
