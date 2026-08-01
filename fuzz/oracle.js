@@ -397,6 +397,17 @@ const FACTORIES = {
       return heapAscending(a, b);
     };
   },
+  // Appended at the end, never inserted (CLAUDE.md, Git): a new key anywhere
+  // else is a merge conflict inside an object literal. `trie-map.update`'s
+  // and `trie.update`'s factories -- both trivial, deterministic, and named
+  // rather than transmitted as source for the same reason every factory
+  // above is (see `FACTORIES`' own docs).
+  trieIncrement: () => (old) => (typeof old === 'number' ? old : 0) + 1,
+  // `has` is presence-based (`SENTINEL in node`), not a truthiness check, so
+  // toggling a `Trie` node's value to `false` still leaves it a stored word
+  // -- this factory is what lets `difffuzz::modules::trie` reach that state
+  // on both sides.
+  trieToggle: () => (old) => !old,
 };
 
 // Upstream's DEFAULT_COMPARATOR, written out so the factories above can wrap it.

@@ -1383,14 +1383,17 @@ underneath it) and which a live Rust borrow cannot express across calls. A path 
 resolves (the node it named, or an ancestor of it, was pruned since the frame was queued) is simply
 skipped.
 **Rationale:** the two designs agree on every sequence either original test file performs — neither
-interleaves a `delete` with an open walk over the deleted region — and agree on every `delete` that
-does not happen to take the "prune from an ancestor, leave the descendant's own value untouched"
-branch (B-201's exact shape). Reproducing upstream's live-reference behaviour instead would mean the
-walk holds an aliased pointer into the trie, which is precisely what the path-based, detached design
-exists to avoid — and B-201's shape is narrow enough (the delete must land above an ALREADY-QUEUED
-node, not merely above any node) that no fuzz campaign for this unit generates it by construction;
-see that campaign's own docs for the alphabet that makes this an explicit, disclosed narrowing
-rather than a silent one.
+interleaves a `delete` with an open walk over the deleted region — and agree on every `delete` or
+`clear` that does not happen to prune something an open cursor has already queued. Reproducing
+upstream's live-reference behaviour instead would mean the walk holds an aliased pointer into the
+trie, which is precisely what the path-based, detached design exists to avoid.
+**Corrected after measuring, not assumed:** an earlier draft of this entry claimed the fuzz grammar
+could not reach this shape "by construction." That was wrong, and finding out was the point of
+running the campaign — the first ungated run for *each* unit diverged inside a few hundred
+operations (`trie-map` over `delete`, `trie` over `clear`; NOTES.md B-201). The grammar now carries
+an explicit, disclosed regime split — `delete`/`clear` never share a generated program with a
+persistent `$iter`/`$next` cursor — rather than relying on the interaction being rare; see
+`crates/difffuzz/src/modules/trie_map.rs`'s module docs for the mechanism and both repros.
 **Verify:** `crates/mnemonist-core/src/structures/trie_map.rs`'s module docs (D-201) and
 `an_addition_inside_an_already_queued_branch_is_visible_to_an_open_walk`, which pins the half of
 this design's behaviour that DOES match upstream (a live addition to an already-queued node is

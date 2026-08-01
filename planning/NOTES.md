@@ -2054,3 +2054,14 @@ step rather than holding a live reference, so it disagrees with upstream in exac
 recorded as D-201 in DECISIONS-CANDIDATES.md rather than reproduced, since doing so would mean
 storing live aliased references inside a structure this port also needs to hand across the FFI
 boundary as a detached, resumable cursor.
+
+**Independently confirmed by the differential fuzzer, twice, before this narrowing existed.** The
+first ungated campaign for each unit diverged inside a few hundred operations: `trie-map`'s over
+`delete` unlinking a queued `entries()` frame (the scenario above, exactly), `trie`'s over `clear`
+replacing the whole root out from under an open `keys()` cursor (upstream's stale root, having
+nothing on it yet, correctly answers `{done: true}`; the port's live re-navigation sees the
+addition that happened after `clear` and wrongly keeps going). Both are the same underlying gap,
+not two bugs — `clear` is `delete` of everything at once, from the cursor's point of view. Both
+campaigns were fixed by excluding `delete`/`clear` from ever sharing a generated program with a
+persistent `$iter`/`$next` cursor; see `crates/difffuzz/src/modules/trie_map.rs`'s module docs for
+the exact repros and the regime-flag mechanism.
