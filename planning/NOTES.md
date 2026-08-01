@@ -222,7 +222,7 @@ Other structures capture `this.size`. These coincide for `Stack` today; the inco
 rather than active.
 **Probably not a bug** — log it, don't file it.
 
-### B-11 — `HashedArrayTree.pop` reads the last BLOCK, not the popped index's block
+### B-15 — `HashedArrayTree.pop` reads the last BLOCK, not the popped index's block
 `status: VERIFIED against Node 24.18.1` · `mnemonist hashed-array-tree.js`
 ```js
 var lastBlock = this.blocks[this.blocks.length - 1];   // the LAST block
@@ -238,7 +238,7 @@ value is wrong and nothing downstream notices. A shrinking `resize` reaches it w
 all, because `resize` never deallocates: push `7,8,9,10`, `resize(1)`, `pop()` gives `9`.
 **Strong candidate** — a data structure returning the wrong element from `pop`.
 
-### B-12 — `HashedArrayTree`'s bounds guard is `length < index`, admitting `index === length`
+### B-16 — `HashedArrayTree`'s bounds guard is `length < index`, admitting `index === length`
 `status: VERIFIED against Node 24.18.1` · `mnemonist hashed-array-tree.js`
 The same `if (this.length < index)` guards `set` and `get`, and the strict `<` lets one-past-the-end
 through. Three different outcomes depending on where `length` sits:
@@ -249,7 +249,7 @@ through. Three different outcomes depending on where `length` sits:
 * when the admitted index is also `capacity`, `blocks[capacity >> blockMask]` is `undefined` and
   upstream raises `TypeError: Cannot set properties of undefined (setting '0')`.
 
-### B-13 — `BitSet`/`BitVector.reset` omits the `>>> 0` that `set` and `flip` apply, so `size` drifts and can go NEGATIVE
+### B-17 — `BitSet`/`BitVector.reset` omits the `>>> 0` that `set` and `flip` apply, so `size` drifts and can go NEGATIVE
 `status: VERIFIED against Node 24.18.1` · `mnemonist bit-set.js` + `bit-vector.js` (copy-pasted)
 `size` is never a popcount; it is maintained by comparing the word before and after each write,
 which only works if both readings are unsigned. `set` and `flip` say so explicitly:
@@ -272,7 +272,7 @@ Three no-op resets give `size === -2`. **Strongest of this batch**: it is a one-
 two correct call sites are three lines away, and the consequence propagates into `rank` and
 `select`, both of which bail on `size === 0`.
 
-### B-14 — `BitSet`/`BitVector.select` does not advance its position across skipped words
+### B-18 — `BitSet`/`BitVector.select` does not advance its position across skipped words
 `status: VERIFIED against Node 24.18.1` · `mnemonist bit-set.js` + `bit-vector.js` (copy-pasted)
 ```js
 for (var i = 0; i < l; i++) {
@@ -286,7 +286,7 @@ for (var i = 0; i < l; i++) {
 a `BitSet(96)`, `select(1) === 3` (right, nothing skipped) and `select(2) === 38` (wrong by 32).
 Invisible upstream because both `select` tests use a length of 11 — a single word.
 
-### B-15 — `bitwise.msb32` returns 0 for every input whose bit 31 is set
+### B-19 — `bitwise.msb32` returns 0 for every input whose bit 31 is set
 `status: VERIFIED against Node 24.18.1` · `mnemonist utils/bitwise.js`
 `x |= (x >> 1)` is an **arithmetic** shift, so an input with the top bit set smears to `-1` at the
 first step, and the final `x & ~(x >> 1)` is then `-1 & ~(-1)`, which is `-1 & 0`, which is `0`.
@@ -295,7 +295,7 @@ most obvious: `msb32(0xFFFFFFFF) === 0`, `msb32(2**31) === 0`, `msb32(-1) === 0`
 everywhere below the sign bit, which is why nothing has noticed. `msb8` has the same shape but the
 smear stops before bit 31, so it only misfires on input that is not a byte (`msb8(256) === 256`).
 
-### B-16 — `bitwise.criticalBit32Mask`'s trailing `& 0xffffffff` undoes its own `>>> 0`
+### B-20 — `bitwise.criticalBit32Mask`'s trailing `& 0xffffffff` undoes its own `>>> 0`
 `status: VERIFIED against Node 24.18.1` · `mnemonist utils/bitwise.js`
 ```js
 exports.criticalBit32Mask = function (a, b) {
@@ -308,7 +308,7 @@ signed 32-bit — `0xffffffff` is `-1` there — so the mask is an identity that
 `criticalBit8Mask` ends in `& 0xff` and is correct, which makes the pair a nice illustration of the
 same idiom being right at one width and wrong at another. **Low severity** — file with the others.
 
-### B-17 — `BitVector.pop` never decrements `size` and `push(0)` never clears the slot
+### B-21 — `BitVector.pop` never decrements `size` and `push(0)` never clears the slot
 `status: VERIFIED against Node 24.18.1` · `mnemonist bit-vector.js`
 Three defects in six lines. `push(0)` returns `++this.length` without storing anything, so a slot a
 `pop` released keeps its stale `1`; `push(1)` does `this.size++` unconditionally, so a re-push over
@@ -323,7 +323,7 @@ v.get(0)                // 1, not 0     <-- the test asserts get(1) instead
 v.push(1);              // size 3, with two bits actually set
 ```
 
-### B-18 — `length % 32 || 32` treats a length of 0 as a full final word
+### B-22 — `length % 32 || 32` treats a length of 0 as a full final word
 `status: VERIFIED against Node 24.18.1` · `mnemonist bit-set.js` + `bit-vector.js`
 Both iteration paths size the last word as `length % 32 || 32`. The `|| 32` is there for a length
 that fills its last word exactly, and `0 % 32` is also falsy, so a length of **zero** over a
@@ -331,7 +331,7 @@ non-empty array yields 32 bits. `BitSet` cannot reach it — its array is empty 
 but a `BitVector` can, because capacity outlives length: `new BitVector(); v.grow();` then `forEach`
 calls back **32 times** on a vector of length 0.
 
-### B-19 — `BitSet.set` accepts an index past `length` but inside the last word, and then nothing can see it
+### B-23 — `BitSet.set` accepts an index past `length` but inside the last word, and then nothing can see it
 `status: VERIFIED against Node 24.18.1` · `mnemonist bit-set.js` + `bit-vector.js`
 `new BitSet(10)` allocates one 32-bit word, and `set(20)` lands in it: `size === 1`, `array` is
 `[1048576]`, while `rank(10) === 0`, `select(1) === undefined` and iteration yields ten zeros. So

@@ -35,7 +35,7 @@ Ten `it` blocks. Characterising the shape rather than restating them:
 1. **No element outside block 0 is ever read back.** `array.get(34)` after 250 pushes into
    128-element blocks is the only read, and 34 is in the first block. So the `index >> blockMask` /
    `index & offsetMask` split is never checked against an index that needs it.
-2. **`pop` never crosses a block boundary**, which is why defect B-11 below survives.
+2. **`pop` never crosses a block boundary**, which is why defect B-15 below survives.
 3. **`blockMask` and `offsetMask` are never asserted**, only `capacity`.
 4. **A `blockSize` of 1** — every element its own block — is never constructed.
 
@@ -82,10 +82,10 @@ Ten `it` blocks. Characterising the shape rather than restating them:
 | Test | Closes gap |
 |---|---|
 | `reproduces_the_upstream_suite` | 1:1 port of all ten upstream blocks, as a baseline |
-| `pop_reads_the_last_block_rather_than_the_popped_index_s_block` | 2 — B-11, pinned value by value against Node |
+| `pop_reads_the_last_block_rather_than_the_popped_index_s_block` | 2 — B-15, pinned value by value against Node |
 | `pop_after_a_shrinking_resize_reads_a_block_that_is_no_longer_live` | 2, 8 — the same defect reached a second way |
-| `get_at_length_reads_the_block_instead_of_reporting_absence` | 5 — B-12 |
-| `set_at_length_writes_a_slot_that_length_does_not_cover` | 6 — B-12's write half |
+| `get_at_length_reads_the_block_instead_of_reporting_absence` | 5 — B-16 |
+| `set_at_length_writes_a_slot_that_length_does_not_cover` | 6 — B-16's write half |
 | `indexing_at_capacity_raises_the_typeerror_upstream_raises` | 7 — including V8's exact message |
 | `the_out_of_bounds_message_names_the_array_class` | across all three widths; upstream matches `/bounds/` |
 | `stores_truncate_at_the_element_width` | 12, 13 |
@@ -112,7 +112,7 @@ table), and non-integer lengths, which `usize` cannot hold.
 
 ## Bugs this found
 
-**B-11 — `pop` reads the last *block*, not the block holding the popped index.**
+**B-15 — `pop` reads the last *block*, not the block holding the popped index.**
 `status: VERIFIED against Node 24.18.1`. The sharpest defect in the file:
 
 ```js
@@ -138,7 +138,7 @@ so only the return value is wrong — which is why nothing downstream notices. A
 reaches the same defect without any growth at all, because `resize` never deallocates:
 `push 7,8,9,10; resize(1); pop()` gives `9`, not `7`.
 
-**B-12 — the `set`/`get` bounds guard is `length < index`, admitting `index === length`.**
+**B-16 — the `set`/`get` bounds guard is `length < index`, admitting `index === length`.**
 `status: VERIFIED against Node 24.18.1`. Three consequences:
 
 * `get(length)` returns the raw block slot rather than `undefined`. A **brand-new tree answers

@@ -70,13 +70,13 @@ Everything, so the useful form of this section is *which properties were never c
 | `non_integers_truncate_toward_zero_first` | 5 |
 | `values_past_the_32_bit_range_wrap` | 5 — including 2^53 and 1e30, where an `i64` cast would saturate |
 | `non_finite_inputs_become_zero` | 5 |
-| `msb32_returns_zero_for_every_input_with_the_top_bit_set` | 3 — B-15 |
+| `msb32_returns_zero_for_every_input_with_the_top_bit_set` | 3 — B-19 |
 | `msb32_is_correct_below_the_sign_bit` | 3 — the half that works, over the same word sample |
 | `msb8_is_correct_on_bytes_and_unmasked_above_them` | 3, 4 — all 256 bytes, then the overflow cases |
 | `test_reads_one_bit_and_wraps_the_shift_count` | 6 |
 | `the_byte_wide_critical_bit_helpers_agree_with_each_other` | 7 — the complement property over 4,096 byte pairs |
 | `test_critical_bit8_carries_through_number_arithmetic` | 9 |
-| `critical_bit32_mask_is_negative_because_the_trailing_mask_re_signs_it` | 8 — B-16 |
+| `critical_bit32_mask_is_negative_because_the_trailing_mask_re_signs_it` | 8 — B-20 |
 
 **The cross-product test is the one that matters.** 28 inputs × 9 second arguments, every one of the
 nine functions evaluated on each, run through the **upstream file on real Node 24.18.1** and pasted
@@ -92,7 +92,7 @@ precisely because it is the one a reader would be least surprised to find broken
 
 ## Bugs this found
 
-**B-15 — `msb32` returns `0` for every input whose bit 31 is set.**
+**B-19 — `msb32` returns `0` for every input whose bit 31 is set.**
 `status: VERIFIED against Node 24.18.1`. `x |= (x >> 1)` is an **arithmetic** shift. An input with
 the top bit set smears to `-1` at the first step, and the closing `x & ~(x >> 1)` is then
 `-1 & ~(-1)`, which is `-1 & 0`, which is `0`. Measured: `msb32(0xFFFFFFFF) === 0`,
@@ -104,7 +104,7 @@ confined to the half where "which is the highest set bit?" has the most obvious 
 on input that is not a byte — `msb8(256) === 256`. Upstream's JSDoc says "a byte" and the code never
 checks.
 
-**B-16 — `criticalBit32Mask`'s trailing `& 0xffffffff` undoes its own `>>> 0`.**
+**B-20 — `criticalBit32Mask`'s trailing `& 0xffffffff` undoes its own `>>> 0`.**
 `status: VERIFIED against Node 24.18.1`.
 
 ```js

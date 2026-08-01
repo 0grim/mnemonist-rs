@@ -12,7 +12,7 @@ Shim: `tests/bridge/bit-vector.js`.
 
 The largest module in this batch, and the one with the best test:source ratio of the four. It shares
 `bits.rs` with `bit-set` because **upstream copy-pastes seven methods between the two files** — so
-B-13 and B-14 arrive here for free, exactly as they arrived upstream for free. Both were
+B-17 and B-18 arrive here for free, exactly as they arrived upstream for free. Both were
 re-verified against `BitVector` on Node rather than inferred from `BitSet`.
 
 ---
@@ -42,7 +42,7 @@ any assertion about `size` after a `pop`.
 
 1. **`get(0)` after the pop/push(0) sequence.** The `pop` test does
    `push(1); push(1); pop(); pop(); push(0); push(1)` and then asserts `get(1)`. Asking about
-   `get(0)` instead would have returned `1` and exposed B-17 on the spot.
+   `get(0)` instead would have returned `1` and exposed B-21 on the spot.
 2. **`size` is never read after a `pop`.** It is asserted eleven times elsewhere in the file and not
    once here.
 3. **Pushing `1` onto a slot that already holds `1`** — i.e. re-pushing after a pop — is never
@@ -61,7 +61,7 @@ any assertion about `size` after a `pop`.
 **Capacity and length coming apart**
 
 7. **A vector with capacity but zero length is never iterated.** `new BitVector(); v.grow();` then
-   `forEach` calls back **32 times** on a vector of length 0 — B-18.
+   `forEach` calls back **32 times** on a vector of length 0 — B-22.
 8. **`reallocate` to `0`** is never done.
 9. **A shrinking `reallocate` that discards a word holding set bits** is never done.
 10. **`reallocate` where the rounded capacity is unchanged but `length` still gets clamped** — the
@@ -79,9 +79,9 @@ any assertion about `size` after a `pop`.
 
 **Inherited from `bit-set`, and untested here for the same reasons**
 
-16. `reset` on an already-clear bit (B-13). 17. `select` skipping an empty word (B-14).
+16. `reset` on an already-clear bit (B-17). 17. `select` skipping an empty word (B-18).
 18. `select` past the population, and on an empty vector. 19. Indices past `length` but inside the
-last word (B-19). 20. Mutation during iteration, and re-draining a cursor. 21. `forEach`'s `scope`.
+last word (B-23). 20. Mutation during iteration, and re-draining a cursor. 21. `forEach`'s `scope`.
 
 **Never called at all**
 
@@ -94,11 +94,11 @@ last word (B-19). 20. Mutation during iteration, and re-draining a cursor. 21. `
 | Test | Closes gap |
 |---|---|
 | `reproduces_the_upstream_suite` | 1:1 port of all twenty-one upstream blocks, as a baseline |
-| `pop_leaves_size_and_the_bits_behind` | 1, 2, 3, 4 — B-17, the whole sequence with the assertion upstream skipped |
+| `pop_leaves_size_and_the_bits_behind` | 1, 2, 3, 4 — B-21, the whole sequence with the assertion upstream skipped |
 | `pushing_true_onto_an_already_set_slot_counts_it_twice` | 3 |
 | `set_at_length_writes_a_bit_that_length_does_not_cover` | 5, 6 |
 | `get_is_undefined_only_strictly_past_the_length` | 6 |
-| `a_zero_length_vector_with_capacity_still_iterates_a_whole_word` | 7 — B-18 |
+| `a_zero_length_vector_with_capacity_still_iterates_a_whole_word` | 7 — B-22 |
 | `a_length_that_exactly_fills_its_words_walks_all_of_them` | 7 — the same misfire where it is also correct |
 | `reallocate_clamps_length_even_when_the_capacity_does_not_change` | 10 |
 | `reallocate_to_zero_drops_the_array_and_the_length` | 8 |
@@ -123,7 +123,7 @@ table).
 
 ## Bugs this found
 
-**B-17 — `pop` maintains neither `size` nor the bit, and `push(0)` clears nothing.**
+**B-21 — `pop` maintains neither `size` nor the bit, and `push(0)` clears nothing.**
 `status: VERIFIED against Node 24.18.1`. Three defects in six lines:
 
 ```js
@@ -155,22 +155,22 @@ v.push(1);              // size 3, with two bits actually set
 **Upstream's own `pop` test performs exactly this sequence** and asserts `v.get(1) === 1`, which is
 true either way. One index to the left and it would have failed.
 
-**B-18 — `length % 32 || 32` treats a length of 0 as a full final word.**
+**B-22 — `length % 32 || 32` treats a length of 0 as a full final word.**
 `status: VERIFIED against Node 24.18.1`. The `|| 32` exists for a length that fills its last word
 exactly, and `0 % 32` is also falsy. `BitSet` cannot reach it — its array is empty when its length
 is — but `BitVector` can, because capacity outlives length: `new BitVector(); v.grow();` then
 `forEach` calls back 32 times on a vector of length 0.
 
-**And the same `length < index` off-by-one as `HashedArrayTree`** (B-12's shape, in a different
+**And the same `length < index` off-by-one as `HashedArrayTree`** (B-16's shape, in a different
 file): `set(length, v)` writes into the capacity region without moving `length`. Measured:
 `new BitVector(5); set(5, 1)` gives `size === 1`, `get(5) === 1`, `test(5) === true`, `rank(5) === 0`
 and iteration over five bits. Two of this batch's four modules have the identical guard bug, written
 independently.
 
-**Inherited verbatim from the copy-paste:** B-13 (`reset`'s missing `>>> 0` driving `size` negative)
-and B-14 (`select` losing 32 positions per skipped word). Both re-measured against `BitVector` on
-Node. See `docs/modules/bit-set.md` for the analysis and `docs/modules/utils-bitwise.md` for B-15
-and B-16, also in this unit's require-closure.
+**Inherited verbatim from the copy-paste:** B-17 (`reset`'s missing `>>> 0` driving `size` negative)
+and B-18 (`select` losing 32 positions per skipped word). Both re-measured against `BitVector` on
+Node. See `docs/modules/bit-set.md` for the analysis and `docs/modules/utils-bitwise.md` for B-19
+and B-20, also in this unit's require-closure.
 
 ## Deliberate divergences
 
@@ -214,7 +214,7 @@ A wall-clock-bounded campaign is not reproducible in case count; only `--cases` 
 * **Initial lengths:** `0..=200`. **Indices:** `0..length + 64`. **Extents:** `0..512`.
 * **Program length:** 1..200 ops.
 * `push(1)` and `push(0)` are separate ops on purpose: only the former touches `size` and only the
-  latter leaves a stale bit, and B-17 needs both interleaved with `pop`.
+  latter leaves a stale bit, and B-21 needs both interleaved with `pop`.
 * `set` is the only op in this grammar that throws, and its message is compared in full through the
   `{"$throw": …}` encoding added for `hashed-array-tree`.
 
@@ -256,7 +256,7 @@ policy that returns exactly the current capacity. A boundary flip, not a deletio
 at `test/bit-vector.js:291`. Reverted; **confirmed green again**: 21 passing.
 
 **Recorded because it is the gate's own lesson, and this module has two examples of it.** Neither of
-B-17's halves could have served as the sabotage:
+B-21's halves could have served as the sabotage:
 
 * "Fixing" `push(0)` to clear its slot leaves the suite **green**, because every slot the push test
   writes over is already zero.
