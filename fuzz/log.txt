@@ -937,3 +937,6 @@
 # seed 42 on the fixed build so the claim does not rest on that argument alone.
 2026-08-01T10:41:06Z  module=heap seed=42 cases=12589 ops=1283659 wall=60.0s divergences=0
 2026-08-01T10:42:18Z  module=fixed-reverse-heap seed=42 cases=12879 ops=1273022 wall=60.0s divergences=0
+2026-08-01T12:17:45Z  module=bi-map seed=42 cases=11778 ops=1178193 wall=90.0s divergences=0
+2026-08-01T12:19:20Z  module=fuzzy-map seed=42 cases=12019 ops=1210496 wall=90.0s divergences=0
+2026-08-01T12:20:55Z  module=bk-tree seed=42 cases=13238 ops=1325206 wall=90.0s divergences=0
