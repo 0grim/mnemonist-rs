@@ -2407,3 +2407,39 @@ fibonacci_heap.rs`'s `catch_unwind` wrapper can use the panic payload directly a
 instead of a hand-maintained table that could drift from what Node actually says. Found by the
 differential fuzzer itself, inside the first few hundred generated cases once the `fibClearer`
 factory was in the grammar — not by reading, unlike B-220 and B-221.
+
+## The falsification that stayed green and was caught anyway
+
+Appended at the end of the file rather than into the sections above: only an addition at the very
+end can never land inside another agent's hunk.
+
+`fibonacci-heap` named two sabotages in advance. The first — flipping `consolidate`'s swap
+comparator — went red everywhere, including a full **Node process abort** when the corrupted tree
+reached a panic through the FFI boundary.
+
+The second was **predicted to stay green, and did**. Flipping `push`'s `<=` tie-break is invisible
+to this unit's 12 native tests and to the 6-block upstream suite, because identical tied values
+carry no information at the assertion level. The differential fuzzer caught it in 425 cases, and so
+did `merge.rs`'s D-105 regression test.
+
+**This is the clearest evidence so far that the fuzzer and the test suite are not redundant
+instruments.** Every previous argument for the fuzzer was that it covers *more* of the same kind of
+ground. This is a defect of a kind the assertions cannot express at all: a tie-break order that no
+single expected-value check can observe, because the values it reorders are equal. Only a
+differential comparison against a reference implementation can see it.
+
+It also sharpens what gate 6 is for. A sabotage that stays green is not automatically a failure of
+the gate — it can be a true statement about which instrument covers what. The failure mode is not
+"stayed green"; it is "stayed green and nobody looked at why".
+
+## Cascading cuts: a path that does not exist
+
+The brief for `fibonacci-heap` demanded the fuzz grammar reach `decreaseKey`'s cascading-cut path,
+and demanded it be reported plainly if unreachable. It is unreachable: `~/upstream-mnemonist`'s
+`fibonacci-heap.js` has no `decreaseKey`, no `delete`, no `mark`, no cut. Upstream implements the
+consolidation half of the structure and not the amortisation half.
+
+Recorded because the shape recurs: **an instruction to exercise a path assumes the path is there.**
+The honest answer to "make X fire" is sometimes "X does not exist", and that answer is only
+available to someone who reads the source rather than tuning the grammar until the report looks
+right.
