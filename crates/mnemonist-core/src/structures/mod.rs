@@ -45,3 +45,8 @@ pub mod lru_cache;
 // mid-list.
 pub mod fixed_reverse_heap;
 pub mod heap;
+
+// Appended at the end, never inserted: this file is a shared registry
+// (CLAUDE.md, Git) and a new line anywhere else is a merge conflict.
+pub mod trie;
+pub mod trie_map;
