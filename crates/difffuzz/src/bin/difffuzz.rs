@@ -28,6 +28,7 @@ use difffuzz::modules::sparse_set::SparseSetSpec;
 use difffuzz::modules::stack::StackSpec;
 use difffuzz::modules::static_disjoint_set::StaticDisjointSetSpec;
 // Appended, never interleaved (CLAUDE.md, Git).
+use difffuzz::modules::bloom_filter::BloomFilterSpec;
 use difffuzz::modules::suffix_array::{GeneralizedSuffixArraySpec, SuffixArraySpec};
 use difffuzz::{Campaign, Report};
 
@@ -37,7 +38,7 @@ usage: difffuzz --module <name> [--seed N] [--duration SECONDS] [--cases N] [--b
   --module    module to fuzz; currently: static-disjoint-set, sparse-set,
               sparse-map, sparse-queue-set, hashed-array-tree, bit-set,
               bit-vector, stack, queue, default-map, suffix-array,
-              generalized-suffix-array
+              generalized-suffix-array, bloom-filter
   --seed      campaign seed (default 42); with --cases, reproduces exactly
   --duration  wall-clock budget in seconds (default 60)
   --cases     stop after N cases instead of after --duration
@@ -153,6 +154,13 @@ fn main() -> ExitCode {
             &GeneralizedSuffixArraySpec,
             &Campaign {
                 regressions: difffuzz::modules::suffix_array::GENERALIZED_REGRESSIONS,
+                ..campaign
+            },
+        ),
+        "bloom-filter" => difffuzz::run(
+            &BloomFilterSpec,
+            &Campaign {
+                regressions: difffuzz::modules::bloom_filter::REGRESSIONS,
                 ..campaign
             },
         ),

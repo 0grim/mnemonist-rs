@@ -1,0 +1,26 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+#
+# PROVENANCE OF THE ENTRY BELOW -- read before assuming it recorded a real port
+# defect. It did not. It was produced by a deliberate falsification, in the
+# spirit of DoD gate 6: a fuzzer that has never been seen to fail is just a
+# second green light.
+#
+# The sabotage: an early `if self.hash_functions == 0 { return false; }` was
+# added to `test`, i.e. upstream defect B-97 was "fixed" so that a filter with
+# zero hash functions stops answering true to everything. The campaign reported
+# a return-value divergence on the FIRST op of the minimised program --
+# `new BloomFilter({capacity: 21, errorRate: 0.98}).test(...)`, where an
+# errorRate that loose truncates hashFunctions to 0. The sabotage was reverted;
+# the seed is replayed before any novel case on every run, so a future
+# "tidy-up" of B-97 fails here.
+#
+# Not recorded as a seed, because it was fixed rather than pinned: this spec's
+# FIRST run reported `capacity: port 6.0, upstream 6` before a single operation
+# ran -- a JSON encoding mismatch in the spec, not a port defect. See
+# `js_number` in crates/difffuzz/src/modules/bloom_filter.rs.
+cc 706b671f1d4ebe42f42ccd041c6ebe0ff73eb631611f436837c6eb6c74c0491d # shrinks to Program { ctor: [Object {"capacity": Number(21), "errorRate": Number(0.98)}], ops: [Op { name: "test", args: [String("\u{1}ȁcĀ\0cȁ\0\0\u{1}")] }] }

@@ -19,4 +19,5 @@ pub mod static_disjoint_set;
 // `suffix_array` declares two specs, `SuffixArraySpec` and
 // `GeneralizedSuffixArraySpec`, because they are two exports of one upstream
 // file; see that module's docs.
+pub mod bloom_filter;
 pub mod suffix_array;

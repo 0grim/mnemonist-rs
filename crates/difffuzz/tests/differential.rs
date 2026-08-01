@@ -22,6 +22,7 @@ use difffuzz::modules::sparse_queue_set::{
 use difffuzz::modules::sparse_set::{SparseSetSpec, REGRESSIONS as SPARSE_REGRESSIONS};
 use difffuzz::modules::static_disjoint_set::{StaticDisjointSetSpec, REGRESSIONS};
 // Appended, never interleaved (CLAUDE.md, Git).
+use difffuzz::modules::bloom_filter::{BloomFilterSpec, REGRESSIONS as BLOOM_REGRESSIONS};
 use difffuzz::modules::suffix_array::{
     GeneralizedSuffixArraySpec, SuffixArraySpec, GENERALIZED_REGRESSIONS,
     REGRESSIONS as SUFFIX_ARRAY_REGRESSIONS,
@@ -276,6 +277,7 @@ fn every_regression_corpus_explains_where_its_seeds_came_from() {
         // Appended at the END of the list (CLAUDE.md, Git).
         SUFFIX_ARRAY_REGRESSIONS,
         GENERALIZED_REGRESSIONS,
+        BLOOM_REGRESSIONS,
     ] {
         let text = std::fs::read_to_string(corpus)
             .unwrap_or_else(|_| panic!("{corpus} must be checked in"));
@@ -323,6 +325,28 @@ fn generalized_suffix_array_matches_upstream() {
     let campaign = Campaign::cases(0x65FA, 96, GENERALIZED_REGRESSIONS);
 
     let report = difffuzz::run(&GeneralizedSuffixArraySpec, &campaign)
+        .expect("oracle must be reachable; `node` is required for differential tests");
+
+    assert!(
+        report.ops > 0,
+        "campaign ran no operations, so it proved nothing: {}",
+        report.log_line()
+    );
+
+    if let Some(divergence) = report.divergence {
+        panic!("{divergence}");
+    }
+}
+
+/// `bloom-filter` is the only module whose op arguments are deliberately
+/// ill-typed: `add` and `test` take numbers and booleans as well as strings,
+/// because every non-string collapses onto the empty sequence upstream (B-98)
+/// and that is only reachable if the grammar can express one.
+#[test]
+fn bloom_filter_matches_upstream() {
+    let campaign = Campaign::cases(0xB100, 96, BLOOM_REGRESSIONS);
+
+    let report = difffuzz::run(&BloomFilterSpec, &campaign)
         .expect("oracle must be reachable; `node` is required for differential tests");
 
     assert!(
