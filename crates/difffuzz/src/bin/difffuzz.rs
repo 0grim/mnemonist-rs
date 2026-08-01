@@ -17,14 +17,17 @@
 use std::process::ExitCode;
 use std::time::Duration;
 
+use difffuzz::modules::queue::QueueSpec;
 use difffuzz::modules::sparse_set::SparseSetSpec;
+use difffuzz::modules::stack::StackSpec;
 use difffuzz::modules::static_disjoint_set::StaticDisjointSetSpec;
 use difffuzz::{Campaign, Report};
 
 const USAGE: &str = "\
 usage: difffuzz --module <name> [--seed N] [--duration SECONDS] [--cases N] [--batch N]
 
-  --module    module to fuzz; currently: static-disjoint-set, sparse-set
+  --module    module to fuzz; currently: static-disjoint-set, sparse-set,
+              stack, queue
   --seed      campaign seed (default 42); with --cases, reproduces exactly
   --duration  wall-clock budget in seconds (default 60)
   --cases     stop after N cases instead of after --duration
@@ -68,6 +71,20 @@ fn main() -> ExitCode {
             &SparseSetSpec,
             &Campaign {
                 regressions: difffuzz::modules::sparse_set::REGRESSIONS,
+                ..campaign
+            },
+        ),
+        "stack" => difffuzz::run(
+            &StackSpec,
+            &Campaign {
+                regressions: difffuzz::modules::stack::REGRESSIONS,
+                ..campaign
+            },
+        ),
+        "queue" => difffuzz::run(
+            &QueueSpec,
+            &Campaign {
+                regressions: difffuzz::modules::queue::REGRESSIONS,
                 ..campaign
             },
         ),

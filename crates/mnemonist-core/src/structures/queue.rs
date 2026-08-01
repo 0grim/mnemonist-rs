@@ -175,6 +175,15 @@ impl<T: Clone> Queue<T> {
             .unwrap_or_default()
     }
 
+    /// The backing array itself, dead prefix included.
+    ///
+    /// `items` is a **public property** upstream. The differential fuzzer
+    /// observes it after every operation, which is what makes the compaction —
+    /// invisible through `toArray` — checkable directly.
+    pub fn items(&self) -> Vec<T> {
+        self.items.borrow().clone()
+    }
+
     /// One element of a **live** read: `this.items[index]`, absolute index.
     ///
     /// This is `Queue.prototype.forEach`'s read. Upstream freezes the loop

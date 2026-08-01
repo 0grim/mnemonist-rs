@@ -114,6 +114,57 @@
 #   the repo that satisfies D-21's iteration-interleaved-with-mutation
 #   requirement; static-disjoint-set had no iterator surface to reach it with.
 #
+# stack
+#   ops          push(v) [weight 6] · pop() [3] · peek() [2] · clear() [2]
+#                $iter("values") [2] · $next() [4] · $spread() [1]
+#   observed     size · items · toArray()
+#                after EVERY op, on both sides. `items` is a public property
+#                upstream, and observing it directly is what makes the
+#                ARRAY-REBINDING of clear() checkable without waiting for a
+#                cursor to notice. size and items.length are separate
+#                quantities upstream (D-19); comparing both is how a port that
+#                silently unified them would be caught.
+#   values       0..48, small enough that duplicates are frequent -- a stack is
+#                not a set, and a port that deduplicated is only caught by
+#                repeats
+#   program len  1..200 ops
+#   EXCLUDED     NOTHING. Every method stack.js exposes is in the alphabet or
+#                the observation set, except inspect(), which is not ported.
+#
+#   THE POINT OF THIS GRAMMAR IS A PAIR OF MUTATIONS THAT MUST DIFFER.
+#   clear() is `this.items = []` -- a NEW array -- so a cursor opened
+#   beforehand keeps walking the old one and is unaffected. pop() shortens the
+#   SAME array, so a cursor opened beforehand reads past its new end and yields
+#   undefined. A port backing `items` with a Vec<T> produces identical (wrong)
+#   answers for both, and no upstream test notices, because test/stack.js never
+#   mutates between opening a cursor and draining it. That is why clear()
+#   carries real weight here rather than being a token op.
+#
+# queue
+#   ops          enqueue(v) [weight 6] · dequeue() [4] · peek() [2] · clear() [1]
+#                $iter("values") [2] · $next() [4] · $spread() [1]
+#   observed     size · offset · items · toArray()
+#                after EVERY op, on both sides. offset and items are the point:
+#                toArray() alone cannot tell a compacted queue from an
+#                uncompacted one holding the same elements, so a port could get
+#                the whole compaction schedule wrong for an entire program with
+#                nothing noticing.
+#   values       0..48
+#   program len  1..200 ops
+#   EXCLUDED     NOTHING.
+#
+#   dequeue is weighted heavily because the compaction only fires on a dequeue
+#   and `++offset * 2 >= items.length` needs several in a row to be
+#   interesting. $next outweighs $iter four to one so cursors are stepped
+#   repeatedly with enqueues and compactions landing between the steps.
+#
+#   THE STEP-AFTER-EXHAUSTION CASE IS A BEHAVIOUR HERE, NOT A CORNER.
+#   Queue.prototype.values re-reads items.length on EVERY step where
+#   Stack.prototype.values freezes it, four files away in otherwise identical
+#   code, and obliterator's Iterator has no done flag -- so a queue cursor that
+#   has already reported {done: true} RESUMES when the queue grows. Core
+#   expresses that as Sequence::limit (D-42).
+#
 # ---------------------------------------------------------------------------
 # THE FUZZER WAS FALSIFIED BEFORE IT WAS TRUSTED.
 #
@@ -146,6 +197,27 @@
 #      because no upstream TEST reaches it, but it is reachable from the
 #      public API in two calls and the fuzzer sees it immediately.
 #
+# stack and queue were each falsified once, on the behaviour their grammar
+# exists to check. Both reverted, both seeds committed with provenance in
+# crates/difffuzz/proptest-regressions/{stack,queue}.txt:
+#
+#   stack. clear() emptying the backing array in place instead of REBINDING it
+#      -- the only thing a Vec<T> can do, and it makes clear() indistinguishable
+#      from popping everything. Caught in 101 cases (0.1s), shrunk from 200 ops
+#      to four:
+#          var s = new Stack(); s.push(0);
+#          var it = s.values(); s.clear(); it.next();
+#          port {value: undefined}   upstream {value: 0}
+#
+#   queue. Sequence::limit returning the FROZEN length, i.e. giving the queue
+#      the stack's cursor -- exactly what a port that generalised one cursor
+#      shape across modules would produce. Caught in 99 cases (0.1s), shrunk to
+#      THREE operations, the smallest program that can express it:
+#          var s = new Queue(); var it = s.values(); s.enqueue(0); it.next();
+#          port {done: true}   upstream {value: 0}
+#      The repro also demonstrates the no-done-flag half: the cursor had
+#      already run off the end of an empty queue, and it resumes.
+#
 # ---------------------------------------------------------------------------
 # Throughput: ~23,600 op/s including a full mapping()+compile() comparison
 # after every single op. That is the persistent-oracle decision (D-23) paying
@@ -159,3 +231,7 @@
 2026-08-01T00:20:00Z  module=static-disjoint-set seed=20260731 cases=2301 ops=700097 wall=60.0s divergences=0
 2026-08-01T00:31:30Z  module=sparse-set seed=42 cases=19006 ops=1961772 wall=120.0s divergences=0
 2026-08-01T00:35:52Z  module=sparse-set seed=20260801 cases=9425 ops=980895 wall=60.0s divergences=0
+2026-08-01T02:14:03Z  module=stack seed=42 cases=28240 ops=2823415 wall=120.0s divergences=0
+2026-08-01T02:16:22Z  module=queue seed=42 cases=25731 ops=2559824 wall=120.0s divergences=0
+2026-08-01T02:17:27Z  module=stack seed=20260801 cases=15752 ops=1579917 wall=60.0s divergences=0
+2026-08-01T02:19:13Z  module=queue seed=20260801 cases=15805 ops=1573126 wall=60.0s divergences=0

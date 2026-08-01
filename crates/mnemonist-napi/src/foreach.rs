@@ -32,7 +32,7 @@
 //!   `'[object Arguments]'` and hijack branch 1. Both are reproduced.
 //!
 //! And one behaviour that is not in the table because it is not in the comments
-//! either — see [`for_each`] and NOTES B-11: a *truthy primitive* reaches the
+//! either — see [`for_each`] and NOTES B-30: a *truthy primitive* reaches the
 //! `in` operator in branch 3, and `in` requires an object, so `forEach(5, cb)`
 //! dies with a `TypeError` from V8 rather than with obliterator's own guard.
 //!
@@ -140,7 +140,7 @@ pub fn for_each<'env>(env: &Env, iterable: Unknown<'env>, callback: Unknown<'env
     // the falsy guard and branch 1, so it arrives here and V8 throws. That is
     // upstream behaviour, not ours: obliterator has no guard for it, and the
     // error a caller sees names the `in` operator rather than the library.
-    // NOTES B-11.
+    // NOTES B-30.
     if !matches!(value_type, ValueType::Object | ValueType::Function) {
         return Err(type_error(
             env,

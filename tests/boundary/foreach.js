@@ -497,7 +497,7 @@ describe('obliterator/forEach', function () {
     });
   });
 
-  describe('truthy primitives — the unguarded hole (B-11)', function () {
+  describe('truthy primitives — the unguarded hole (B-30)', function () {
 
     it('should die in the `in` operator, not in obliterator.', function () {
       // A truthy primitive survives the falsy guard, is not an indexed

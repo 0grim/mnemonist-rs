@@ -166,6 +166,17 @@ impl<T: Clone> Stack<T> {
             .collect()
     }
 
+    /// The backing array itself, oldest first.
+    ///
+    /// `items` is a **public property** upstream, so this exposes exactly the
+    /// surface a JS caller already has. The differential fuzzer observes it
+    /// after every operation, which is what makes the array-rebinding of
+    /// `clear()` checkable directly rather than only through its effect on an
+    /// open cursor.
+    pub fn items(&self) -> Vec<T> {
+        self.items.borrow().clone()
+    }
+
     /// One element of a **live** newest-first walk: `this.items[l - i - 1]`.
     ///
     /// This is `Stack.prototype.forEach`'s read, and it deliberately goes

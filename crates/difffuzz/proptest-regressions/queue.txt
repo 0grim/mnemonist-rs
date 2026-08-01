@@ -1,0 +1,39 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+#
+# PROVENANCE OF THE ENTRY BELOW -- read before assuming it recorded a real port
+# defect. It did not. It was produced by a deliberate falsification of the
+# fuzzer, in the spirit of DoD gate 6. The sabotage was reverted; the seed is
+# replayed before any novel case on every run.
+#
+# --- the cursor's end frozen instead of live ---
+#
+# `Queue.prototype.values` re-reads `items.length` on every step:
+#     var items = this.items, i = this.offset;
+#     return new Iterator(function () {
+#       if (i >= items.length) return {done: true};
+#       ...
+#     });
+# where the structurally identical `Stack.prototype.values`, four files away,
+# writes `l = items.length` once. The sabotage was to make `Sequence::limit`
+# return the frozen length -- i.e. to give the queue the stack's cursor, which
+# is exactly what a port that generalised "one cursor shape for all modules"
+# would produce.
+#
+# Nothing in test/queue.js reaches it: the suite never mutates a queue between
+# opening a cursor and draining it. The fuzzer found it in 99 cases (0.1s) and
+# shrunk from 200 ops to THREE -- the smallest program that can express it:
+#
+#     var s = new Queue();
+#     var it = s.values();     // opened on an empty queue
+#     s.enqueue(0);
+#     it.next();               // port {done: true}, upstream {value: 0}
+#
+# Note what the last line also proves: obliterator's Iterator has no `done`
+# flag, so a walk that already reported {done: true} resumes.
+#
+cc 3fe055880922d7ad1d3b89d007145e049449af40740e4d6bb8b32ba5653eed3b # shrinks to Program { ctor: [], ops: [Op { name: "$iter", args: [String("values")] }, Op { name: "enqueue", args: [Number(0)] }, Op { name: "$next", args: [] }] }

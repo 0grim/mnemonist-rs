@@ -1,0 +1,36 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+#
+# PROVENANCE OF THE ENTRY BELOW -- read before assuming it recorded a real port
+# defect. It did not. It was produced by a deliberate falsification of the
+# fuzzer, in the spirit of DoD gate 6: a fuzzer that has never been seen to
+# fail is just a second green light. The sabotage was reverted; the seed is
+# replayed before any novel case on every run.
+#
+# --- clear() emptying the backing array instead of REBINDING it ---
+#
+# Upstream's clear is
+#     this.items = [];        // a NEW array
+#     this.size = 0;
+# and `Stack.prototype.values` captured the OLD array object, so a cursor
+# opened beforehand is completely unaffected by the clear. The sabotage was
+# `self.items.borrow_mut().clear()` -- emptying the array in place, which is
+# the only thing a `Vec<T>` backing store can do, and which makes `clear()`
+# indistinguishable from `pop()`-ing everything.
+#
+# That is the mistake this module's whole Rc<RefCell<Vec<T>>> design exists to
+# avoid, and it is invisible to test/stack.js, which never mutates a stack
+# between opening a cursor and draining it. Found in 101 cases (0.1s) and
+# shrunk from 200 ops to four:
+#
+#     var s = new Stack();
+#     s.push(0);
+#     var it = s.values();
+#     s.clear();
+#     it.next();      // port {value: undefined}, upstream {value: 0}
+#
+cc 3fe055880922d7ad1d3b89d007145e049449af40740e4d6bb8b32ba5653eed3b # shrinks to Program { ctor: [], ops: [Op { name: "push", args: [Number(0)] }, Op { name: "$iter", args: [String("values")] }, Op { name: "clear", args: [] }, Op { name: "$next", args: [] }] }

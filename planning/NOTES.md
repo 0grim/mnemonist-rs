@@ -138,6 +138,36 @@ as fuzzer falsification sabotage A — caught in 6.6s and shrunk to seven ops.
 *Lesson worth keeping: for a bug-for-bug port, read JS one statement at a time and confirm each
 against the runtime. Reading for intent is how you write the correct version by accident.*
 
+### B-30 — `forEach` on a truthy primitive dies in the `in` operator, not in its own guard
+`status: VERIFIED against Node 24.18.1` · `obliterator v2.0.4/2.0.5 foreach.js`
+A truthy primitive — a number, a boolean, a symbol, a bigint — survives `if (!iterable) throw`,
+is not an indexed sequence, and has no `.forEach`. It then reaches
+
+```js
+if (SYMBOL_SUPPORT && Symbol.iterator in iterable && ...)
+```
+
+and `in` **requires an object**. So:
+
+```js
+forEach(5, cb)  // TypeError: Cannot use 'in' operator to search for 'Symbol(Symbol.iterator)' in 5
+```
+
+Measured on Node 24.18.1 for `5`, `true`, `10n` (which stringifies as `10`, not `10n`) and
+`Symbol(x)`. The error a caller sees names V8's operator rather than the library that called it,
+and the library's *own* guard for "this is not iterable" never fires — a caller who passes a
+number gets a message that reads like a bug in obliterator's internals.
+
+**Related, same file, same dispatch:** `forEach(Object.create(null), cb)` throws
+`TypeError: iterable.toString is not a function`, because branch 1 calls `toString()` unguarded
+on an arbitrary value (that is B-5, with a second symptom). Both are reproduced verbatim by the
+port and pinned in `tests/boundary/foreach.js`.
+
+**Severity: low, but it is a genuine gap in a guard that exists.** Two lines would close it
+(`typeof iterable !== 'object' && typeof iterable !== 'function'` before the `in`), and a
+one-line doc note would close it as documentation. Worth filing alongside B-4, which is the same
+guard's other blind spot.
+
 ### B-6 — `Stack.values()` captures `items.length`, not `this.size`
 `status: unverified` · `mnemonist stack.js`
 Other structures capture `this.size`. These coincide for `Stack` today; the inconsistency is latent
@@ -391,6 +421,56 @@ build`, so **a green build carries no information about whether test code even p
 that means to say "this compiles" must run `cargo test`, not `cargo build`. `tests/verify.sh`
 already does — which is worth noting as a design choice that paid off rather than luck.
 
+### H+? — `&self` is a promise the FFI boundary cannot keep
+
+Found while porting `stack`/`queue`, by differentially probing the *bridge* rather than the core.
+Three defects, two of them in code that was already green and one of them in a module already in
+`tests/scope.txt`.
+
+**1. `noalias` ate a mutation.** napi hands the same wrapped struct to JS as `&self` for one
+method and `&mut self` for another, and JavaScript calls the second from inside a callback the
+first is still running:
+
+```js
+q.forEach(function (value, i) { if (i === 0) { q.dequeue(); q.dequeue(); } });
+```
+
+Upstream yields `1, 4, undefined, undefined` — its `forEach` re-reads `this.items` every
+iteration and the second dequeue rebinds it. The port yielded `1, 2, 3, 4`. rustc marks a `&T`
+parameter `noalias readonly` whenever `T: Freeze`, so LLVM hoisted the read straight out of the
+loop; the *same object* reported the new `offset` correctly through a separate call one line
+later.
+
+The fix is not a barrier, it is the type: a struct holding a `RefCell` inline is not `Freeze`, so
+`&self` carries neither attribute. The bridges now hold `RefCell<Core*>` and release every borrow
+before any JS call.
+
+**This is also present in the `sparse-set` bridge, which is already in `tests/scope.txt`.**
+Measured: a `forEach` callback that deletes yields `[1, 4, 3, 4]` against upstream's `[1, 4]`. Not
+fixed in this pass — out of lane — and the same `RefCell` change fixes it.
+
+**2. napi's iterator installs a `#.return` that latches.** `obliterator/iterator` has no `return`
+and no `done` flag, so breaking out of a `for…of` leaves the cursor where it stopped and a later
+`next()` resumes. napi's `#[napi(iterator)]` sets `next`/`return`/`throw` as own properties on
+every instance, and its `return` writes `[[GeneratorState]] = true` **before** the Rust
+`complete()` runs — so `complete` cannot prevent it and every later `next()` answered
+`{done: true}`. The addon now deletes the method at load, which is exactly upstream's situation.
+
+This **corrects a claim in `crates/mnemonist-napi/src/sparse_set.rs`'s docs** — that napi's
+default `complete` is observably the same as having no `return`. It was reasoned about, not
+measured, and it is wrong.
+
+**3. `napi_create_reference` rejects primitives.** Below Node-API 10, and napi-rs 3.12 does not
+export `node_api_module_get_api_version_v1`, so an addon built with it is a version-8 module
+however its Cargo features are set — moving the workspace from `napi9` to `napi10` changes
+nothing. Measured. Storing arbitrary JS values therefore needs an enum: references for
+object/function/symbol, by value for primitives, which is observationally exact because
+primitives are immutable and compared by value.
+
+*Write-up beat: every one of these is the FFI layer being more honest than the type system. (5) in
+the angle list gets stronger — "the boundary gave me the semantics idiomatic Rust would have
+broken" now has a companion, "and it took the semantics `&T` would have broken away from me".*
+
 ### The pattern these three share
 
 Three separate incidents today, all the same meta-failure — *the check I ran did not check what I
@@ -402,6 +482,9 @@ believed it checked*:
 | RSS as evidence for the L3 hypothesis | that the footprint shrank | nothing — the pages were never resident to begin with |
 | `cargo build` clean | that the code compiles | that *non-test* code compiles |
 | `cases=16666` in a fuzz campaign | 16,666 distinct programs | 32 programs, plus two saved seeds re-run ~8,300 times each |
+| `sparse-set` bridge green on `forEach` | that the loop re-reads `size` | nothing — the read was hoisted; no test or fuzz case mutates from a bridge callback |
+| A cursor's `complete()` returning `None` | that `break` leaves the walk resumable | the opposite — napi had already latched `[[GeneratorState]]` |
+| `cargo build … \| tail -1` before a fuzz run | that the sabotage was compiled in | tail's exit status; the run used a stale binary and reported "clean" |
 
 Each one produced a **confident green signal that was empty**, and in every case the failure was
 invisible until something forced the question "what would this look like if it were broken?"
