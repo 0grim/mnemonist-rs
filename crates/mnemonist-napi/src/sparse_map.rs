@@ -47,6 +47,13 @@ const VALUE_CONSTRUCTORS: &[(&str, Option<PointerWidth>)] = &[
     ("Uint32Array", Some(PointerWidth::U32)),
 ];
 
+/// What upstream's `forEach` callback is invoked with: `(value, key)`, in that
+/// order, and either of them possibly `undefined`.
+///
+/// A named alias rather than the type spelled inline, because spelled inline it
+/// is four nested generics and clippy's `type_complexity` is right about it.
+type ForEachArgs = FnArgs<(Either<f64, Undefined>, Either<u32, Undefined>)>;
+
 /// A map from the members `0..length` to JS numbers.
 #[napi(js_name = "SparseMap")]
 pub struct JsSparseMap {
@@ -192,7 +199,7 @@ impl JsSparseMap {
     pub fn for_each(
         &self,
         this: This,
-        callback: Function<FnArgs<(Either<f64, Undefined>, Either<u32, Undefined>)>, Unknown>,
+        callback: Function<ForEachArgs, Unknown>,
         scope: Option<Unknown>,
     ) -> Result<()> {
         let mut index = 0;
