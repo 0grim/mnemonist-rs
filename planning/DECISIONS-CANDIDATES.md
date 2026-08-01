@@ -651,5 +651,51 @@ yields the rest. `semi-dynamic-trie` alone stays roadmap.
 - `utils/merge.js` (563 LOC) semantics — heaviest util, only `inverted-index` needs it
 - Typed-array pointer-width selection (`getPointerArray`) and its Rust equivalent
 - Comparator callback semantics across the boundary (Wave 2, tier T2)
-- Arbitrary JS values as keys + SameValueZero equality (Wave 3, tier T3)
 - `random`-dependent structures needing deterministic seeding for differential comparison
+
+---
+
+## T3 — resolved by the `default-map` pilot
+
+**Numbers deliberately not assigned.** `D-40` is already taken and three agents are allocating from
+the same sequential space concurrently; these get numbers at merge. Full rationale for each is in
+`planning/DESIGN.md` §3.8 and `docs/modules/default-map.md`.
+
+### T3-a — `Map` is ported once, generically, and is NOT the `obliterator` cursor
+Eleven modules keep their state in a `new Map()`, so T3 is one capability, not a family.
+`mnemonist_core::map::OrderedMap<K: Hash + Eq + Clone, V>` is it. It deliberately does **not**
+implement `cursor::Sequence`: an `obliterator` cursor freezes a length and reads lazily, a `Map`
+cursor owns its entry list, skips tombstones and sees appends. Both are faithful to different
+things, and one abstraction over both gets one of them wrong.
+**Rejected alternative:** `indexmap`. Core is zero-dependency by declaration.
+
+### T3-b — Cursors are located by monotonic slot id, not by physical index
+`delete` tombstones (O(1), as V8's `OrderedHashMap` does) and compaction reclaims, which moves
+entries. A cursor holding an index would break. Every slot carries a never-reused `id`, so `slots`
+stays sorted across any number of compactions and a cursor binary-searches for the id it wants,
+with a *validated* index hint for the O(1) common case.
+**Rejected alternative:** V8's own approach — chain old tables to new and transition live iterators
+through a hole list. Correct, and strictly more bookkeeping; the id needs no communication between
+map and cursor at all, which is what leaves `MapCursor` `Copy` and impossible to invalidate.
+**Rejected alternative:** never compacting. Unbounded growth under the delete/insert churn
+`lru-map` does by design.
+
+### T3-c — Object keys are rejected loudly, not implemented
+`Map` compares objects by identity and no identity hash for a JS object is reachable from Rust. The
+two implementable designs (a hidden `Symbol` tag; an association list probed with
+`napi_strict_equals`) each cost something real. **No upstream test in the whole T3 family uses an
+object key** — audited across all ten test files. Machinery no test can reach is worse than a
+stated limit; a silently wrong answer is worse than both.
+**Revisit if:** a module lands whose tests need it. Nothing in the graph suggests one will.
+
+### T3-d — Primitive values are stored by value; only objects are stored by reference
+`napi_create_reference` rejects a number at `NAPI_VERSION` 9 — measured, it failed two of seven
+upstream assertions on the bridge's first run. Independently right: a `napi_ref` is a V8 global
+handle, and one per value would mean a million of them for a million-entry `lru-cache`. Nothing is
+observable, because a JS primitive has no identity.
+
+### T3-e — `undefined` is `None`; `null` is a value
+Core spells absence `None` and stores `Option<V>`, which is what makes B-40 expressible from pure
+Rust. The bridge cannot use napi's `Option<T>` conversion, which folds `null` into `None` as well —
+`test/lru-cache.js` asserts that a stored `null` round-trips.
+

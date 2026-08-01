@@ -695,6 +695,146 @@ decision-log quality the 20% criterion asks for.
 
 </details>
 
+### 3.8 T3 — reproducing JavaScript `Map` (BUILT, piloted on `default-map`)
+
+T3 is not a family of related structures. It is **one capability that eleven modules share**:
+`default-map`, `bi-map`, `fuzzy-map`, `fuzzy-multi-map`, `multi-map`, `multi-set`, `lru-map` and
+`lru-map-with-delete` all keep their state in a `new Map()`. So "port T3" means, precisely,
+"reproduce `Map`" — written once, exactly as `obliterator` was written once in §3.4.
+
+**Corrections to what §3.3 assumed.** Verified against the vendored sources, not inferred:
+
+| module | actually backed by | consequence |
+|---|---|---|
+| `set.js` | **native `Set`, and it is not a wrapper at all** — free functions over `Set`s | not a T3 module; needs `Set`, not `Map` |
+| `lru-cache`, `lru-cache-with-delete` | **a plain object `{}`** | keys are *string-coerced by the index* while `entries()` reads the raw key array, and `test/lru-cache.js:65` asserts both halves |
+| `sparse-map` | three typed arrays | T0, not T3 |
+| `fuzzy-multi-map` | a `MultiMap`, not a `Map` directly | T3 transitively |
+
+#### The split: core owns order, the bridge owns equality
+
+```
+mnemonist_core::map::OrderedMap<K: Hash + Eq + Clone, V>   insertion order, liveness, tombstones
+mnemonist_napi::js_key::JsKey                              SameValueZero
+mnemonist_napi::js_value::{Received, Retained, Loaned}     JS values held across calls
+```
+
+Core never sees a JavaScript value. SameValueZero is a property of the **key type**, so it lives
+entirely in the bridge and core simply requires `Hash + Eq`. A Rust caller gets an ordinary
+insertion-ordered map.
+
+#### The four behaviours `std::collections::HashMap` does not have
+
+All four confirmed against Node 24.18.1 rather than read off the spec:
+
+1. **Guaranteed insertion order.** Every T3 test file asserts it.
+2. **Delete-then-reinsert moves the key to the end; overwrite does not.** `set` on a present key
+   updates in place and keeps the *original* key — which is what makes `-0` come back as `+0`.
+3. **Iterators are live.** An entry appended behind a cursor **is** visited; one deleted ahead of
+   it is **skipped**; a cursor that has once reported `{done: true}` stays detached even if the map
+   grows; and `clear()` followed by `set()` **is** visible to a cursor that has not yet finished,
+   while `clear()` followed by `next()` detaches it first. The order of those last two operations
+   is the whole distinction.
+4. **SameValueZero**, delegated to the key type.
+
+**This is a different discipline from §3.4's cursor, and must not be merged with it.** An
+`obliterator` cursor freezes a length at construction and reads elements lazily (hybrid capture,
+D-08); a `Map` cursor owns its entry list, skips tombstones and sees appends. Both are faithful —
+to different things. `MapCursor` therefore does *not* implement `cursor::Sequence`, and there is no
+`Step::Gap`: a `Map` cursor has no frozen length to run past.
+
+#### Representation, and the one genuinely hard part
+
+```rust
+slots:   Vec<Slot<K, V>>        // Slot { id: u64, entry: Option<(K, V)> }, sorted by id
+index:   HashMap<K, usize>      // key -> physical slot
+live:    usize                  // Map.prototype.size
+next_id: u64                    // never reset, not even by clear()
+```
+
+`delete` **tombstones** — O(1), and V8's own `OrderedHashMap` does not shift either. Tombstones
+accumulate, so `slots` is **compacted** once the dead outnumber the live (amortised O(1), since
+each pass halves). Compaction moves entries, which would invalidate a cursor holding a physical
+index.
+
+**So a cursor does not hold one.** Every slot carries a monotonically increasing `id`, assigned at
+insertion and never reused, so `slots` is *always* sorted strictly ascending by `id` no matter how
+many compactions have run. A `MapCursor` stores the id it wants next and locates it by binary
+search, with a physical-index hint that makes the uncompacted step O(1) and that is **validated,
+never trusted**.
+
+V8 solves the same problem by chaining old tables to new ones and transitioning live iterators
+through a recorded hole list. The id is that idea with the bookkeeping deleted: it needs no
+communication between the map and its cursors at all, which leaves `MapCursor` `Copy`, borrow-free
+and impossible to invalidate — exactly what the FFI boundary needs, where a JS cursor outlives the
+call that produced it and the map stays mutable underneath it.
+
+`clear()` does **not** reset `next_id`, and that is load-bearing: keeping it monotonic is what makes
+post-`clear` entries visible to an unfinished cursor.
+
+**Known cost, stated:** the key is stored twice. `indexmap` avoids that with `hashbrown`'s raw-entry
+API; core is zero-dependency by declaration and `std` exposes no equivalent on stable. Mitigated by
+making the bridge's string keys `Rc<str>`, so the second copy is a refcount rather than the text.
+
+#### `JsKey` — SameValueZero without a hand-written `PartialEq`
+
+```rust
+enum JsKey { Undefined, Null, Bool(bool), Number(u64 /* normalised f64 bits */), String(Rc<str>) }
+```
+
+`Hash` and `Eq` are **derived**. `Number` holds the bits of an *already normalised* double — every
+`NaN` folded to one canonical `NaN`, `-0.0` folded to `+0.0` — so the derived pair is SameValueZero
+by construction and there is no way for equality and hashing to disagree. That disagreement is the
+failure mode a hand-written `PartialEq` beside a derived `Hash` invites, and its symptom is two map
+entries under one key with every other test still passing.
+
+**Object keys are rejected, loudly.** `Map` compares objects by identity and there is no identity
+hash for a JS object reachable from Rust. Two designs are implementable and both cost something
+real: tagging each object with a hidden id under a private `Symbol` is O(1) but mutates the
+caller's object and fails on a frozen one; an association list of `napi_ref` probed with
+`napi_strict_equals` touches nothing but is O(n) per operation and holds a strong reference to
+every key it has ever seen.
+
+**Neither was built, because no upstream test in the entire T3 family uses an object key.** Audited
+across all ten test files: every key that reaches a `Map` is a string or a number. `fuzzy-map` and
+`fuzzy-multi-map` *accept* objects at the public API but hash them to strings before the `Map` sees
+one. Machinery no test can reach is worse than a stated limit; a silently wrong answer is worse
+than both. Revisit only if a module lands that needs it.
+
+#### JS values, which for `default-map` was the larger half
+
+`map.get('one').push(1)` mutates a stored array in place and reads it back, so values must be the
+caller's actual objects. `Retained` is split on the one question that matters — *does this value
+have an identity a caller could observe?*
+
+| value | stored as |
+|---|---|
+| object, function, symbol, bigint | a counted `napi_ref` |
+| null, boolean, number, string | by value |
+
+Forced twice over. **Required:** `napi_create_reference` rejects a number at `NAPI_VERSION` 9,
+which the addon declares — measured, it is what made two of seven upstream assertions fail on the
+first run. **And right:** a `napi_ref` is a V8 global handle, and one per stored value would mean a
+million global handles for a million-entry `lru-cache` against upstream's inline SMIs. Nothing is
+observable either way, because a JS primitive has no identity.
+
+`Received` exists because napi's own `FromNapiValue for Option<T>` maps **both** `undefined` and
+`null` to `None`. `null` is a perfectly good `Map` value that must round-trip —
+`test/lru-cache.js` asserts exactly that — and only `undefined` is absence. Core spells that
+absence `None`: `DefaultMap<K, V>` stores `Option<V>`.
+
+A `napi_ref` is not freed by dropping the Rust value that holds it, because
+`napi_delete_reference` needs an `Env` and `Drop` has none. Every removal path releases explicitly,
+and `#[napi(custom_finalize)]` covers the last one.
+
+#### What this costs the next ten modules
+
+A T3 module is now: a core type over `OrderedMap`, a `#[napi]` class using `JsKey`/`Received`/
+`Loaned`, one `MapBridgeCursor` per iterator flavour, one row in `ITERATOR_FACTORIES` — **which is
+not always `values`**; `DefaultMap`'s last line aliases `entries` — and a `ModuleSpec`. The oracle
+needed three additive changes for `default-map` (`Map` encoding, argument decoding for
+`undefined`/`-0`/`NaN`, named factories) and should need none for the rest.
+
 ---
 
 ## 4. Differential fuzzer

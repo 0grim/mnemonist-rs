@@ -214,6 +214,9 @@ const ITERATOR_FACTORIES: &[(&str, &str)] = &[
     ("BitVector", "values"),
     ("Stack", "values"),
     ("Queue", "values"),
+    // Not always `values`: `DefaultMap`'s last line aliases `entries` too, so a
+    // spread of one yields `[key, value]` pairs.
+    ("DefaultMap", "entries"),
 ];
 
 /// Wire every collection's `Symbol.iterator` to its cursor factory.

@@ -6,6 +6,7 @@
 
 pub mod bit_set;
 pub mod bit_vector;
+pub mod default_map;
 pub mod hashed_array_tree;
 pub mod queue;
 pub mod sparse_map;

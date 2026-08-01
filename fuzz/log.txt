@@ -501,3 +501,5 @@
 2026-08-01T02:16:22Z  module=queue seed=42 cases=25731 ops=2559824 wall=120.0s divergences=0
 2026-08-01T02:17:27Z  module=stack seed=20260801 cases=15752 ops=1579917 wall=60.0s divergences=0
 2026-08-01T02:19:13Z  module=queue seed=20260801 cases=15805 ops=1573126 wall=60.0s divergences=0
+2026-08-01T02:31:44Z  module=default-map seed=42 cases=29525 ops=2939502 wall=120.0s divergences=0
+2026-08-01T02:32:53Z  module=default-map seed=20260801 cases=14492 ops=1432987 wall=60.0s divergences=0

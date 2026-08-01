@@ -19,6 +19,7 @@ use std::time::Duration;
 
 use difffuzz::modules::bit_set::BitSetSpec;
 use difffuzz::modules::bit_vector::BitVectorSpec;
+use difffuzz::modules::default_map::DefaultMapSpec;
 use difffuzz::modules::hashed_array_tree::HashedArrayTreeSpec;
 use difffuzz::modules::queue::QueueSpec;
 use difffuzz::modules::sparse_map::SparseMapSpec;
@@ -33,7 +34,7 @@ usage: difffuzz --module <name> [--seed N] [--duration SECONDS] [--cases N] [--b
 
   --module    module to fuzz; currently: static-disjoint-set, sparse-set,
               sparse-map, sparse-queue-set, hashed-array-tree, bit-set,
-              bit-vector, stack, queue
+              bit-vector, stack, queue, default-map
   --seed      campaign seed (default 42); with --cases, reproduces exactly
   --duration  wall-clock budget in seconds (default 60)
   --cases     stop after N cases instead of after --duration
@@ -126,6 +127,13 @@ fn main() -> ExitCode {
             &QueueSpec,
             &Campaign {
                 regressions: difffuzz::modules::queue::REGRESSIONS,
+                ..campaign
+            },
+        ),
+        "default-map" => difffuzz::run(
+            &DefaultMapSpec,
+            &Campaign {
+                regressions: difffuzz::modules::default_map::REGRESSIONS,
                 ..campaign
             },
         ),

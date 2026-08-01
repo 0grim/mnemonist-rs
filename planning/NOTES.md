@@ -244,6 +244,41 @@ port and pinned in `tests/boundary/foreach.js`.
 (`typeof iterable !== 'object' && typeof iterable !== 'function'` before the `in`), and a
 one-line doc note would close it as documentation. Worth filing alongside B-4, which is the same
 guard's other blind spot.
+### B-40 — `DefaultMap.get` tests the VALUE, not the key, and `size` then drifts without bound
+`status: VERIFIED against Node 24.18.1` · `mnemonist default-map.js`
+```js
+DefaultMap.prototype.get = function(key) {
+  var value = this.items.get(key);
+  if (typeof value === 'undefined') {   // (1) asks about the VALUE, not `items.has(key)`
+    value = this.factory(key, this.size);
+    this.items.set(key, value);
+    this.size++;                        // (2) a counter, where set/delete read items.size
+  }
+  return value;
+};
+```
+Measured:
+```text
+m.set('a', undefined);   size 1   items.size 1
+m.get('a');              size 2   items.size 1   factory called AGAIN
+m.get('a');              size 3   items.size 1   factory called AGAIN
+m.delete('a');           size 0   items.size 0   resynchronised
+```
+Three consequences: the factory re-runs on every *read* of a key whose value is `undefined` (so a
+stateful factory such as `DefaultMap.autoIncrement()` advances on a read); `size` is unbounded in
+the number of reads rather than the number of entries; and the drift is **silent and self-healing**,
+because any `set` or `delete` snaps `size` back, so an interleaved program shows a `size` that is
+sometimes right with nothing to say which.
+
+Reproduced, not corrected. **The correction is what a careful porter writes by accident** — making
+`size` return the entry count is tidier, is what the name suggests, and leaves all seven upstream
+assertions green. Confirmed as gate-9 falsification sabotage A: the original suite stayed at
+7 passing while the differential fuzzer caught it in 136 cases (0.1 s) and shrank it to two
+operations. Full write-up in `docs/modules/default-map.md`.
+
+*Lesson: the same one B-10 taught, from the other side. B-10 was found by reading statement by
+statement; B-40 is a case where reading for intent gives you a **cleaner** program than upstream's,
+and the original tests cannot tell the difference.*
 
 ### B-6 — `Stack.values()` captures `items.length`, not `this.size`
 `status: unverified` · `mnemonist stack.js`
