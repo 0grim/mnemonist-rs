@@ -139,9 +139,12 @@ impl ModuleSpec for UtilsSpec {
 
     fn op_strategy(&self, _ctor: &[Value]) -> BoxedStrategy<Op> {
         prop_oneof![
-            4 => arrays_op("merge"),
-            4 => arrays_op("unionUnique"),
-            3 => arrays_op("intersectionUnique"),
+            4 => arrays_op("merge", true),
+            4 => arrays_op("unionUnique", true),
+            // `false`: `intersectionUnique`'s k-way path has its own,
+            // separate, already-documented `NaN` gap that D-105 never
+            // touched — see `arrays_op`'s own docs.
+            3 => arrays_op("intersectionUnique", false),
             3 => search_op("search"),
             3 => search_op("lowerBound"),
             3 => search_op("upperBound"),
@@ -203,30 +206,29 @@ impl ModuleSpec for UtilsSpec {
 /// 2 to 5 number arrays, each independently 0 to 5 elements. The 0-length
 /// case is not filtered out — it is the whole point (B-180).
 ///
-/// # `NaN` is excluded from three-or-more-array groups
+/// # WIDENED — D-105 is closed, so ties are back in the k-way pool
 ///
-/// Found by this very campaign's first run, seed 42: `merge([-5], [NaN],
-/// [-1])` diverges (`port: [-5, NaN, -1]`, `upstream: [-1, NaN, -5]`) even
-/// though `filtered.len() == original_len == 3` and B-180 does not apply.
-/// The cause is [`k_way_scan`](mnemonist_core::utils::merge)'s "current
-/// minimum across live arrays" pick, which this file's docs already flagged
-/// as a linear scan standing in for upstream's `FibonacciHeap` — every
-/// comparison against `NaN` is `false` in both directions, so "which array
-/// has the smaller head" stops being well-defined the moment `NaN`
-/// participates in a three-or-more-way pick, and the two implementations'
-/// arbitrary tie-breaks disagree about *which real value* comes out first.
-/// This is not B-180 and not a stale-length bug: it reproduces on plain,
-/// distinctly-sized arrays with no empties at all.
+/// This grammar used to narrow the k-way generator to globally distinct
+/// values (`k_way_arrays_op` below) specifically because
+/// `mnemonist_core::utils::merge`'s k-way `merge`/`unionUnique` path was a
+/// linear scan standing in for upstream's `FibonacciHeap`, and the two
+/// disagreed on ties (see the history recorded on [`k_way_arrays_op`] and
+/// NOTES.md's `_utils` section for the exact pre-widening divergence this
+/// campaign's first runs found). Now that `fibonacci-heap` is a ported unit
+/// and `merge.rs`'s k-way `merge`/`unionUnique` drive the real thing (D-105,
+/// `docs/modules/_utils.md`), that narrowing excuse is gone for those two —
+/// CLAUDE.md is explicit that a narrowed grammar must not stay narrowed once
+/// the reason for narrowing it is fixed.
 ///
-/// The two-array path (`merge_two`/`union_unique_two`) has no such pick — it
-/// is a direct pointer-driven merge with the exact `<=`/`<` comparisons
-/// upstream's own two-array functions use, verified against Node to still
-/// agree with `NaN` present (`merge([-5, NaN], [-1, 3])` matches on both
-/// sides) — so `NaN` stays in the pool there. See
-/// `docs/modules/_utils.md`'s "Deliberate divergences" for the D-entry this
-/// exclusion documents rather than silently works around.
-fn arrays_op(name: &'static str) -> BoxedStrategy<Op> {
-    prop_oneof![2 => two_arrays_op(name), 3 => k_way_arrays_op(name)].boxed()
+/// `allow_nan_in_k_way` stays `false` for `intersectionUnique` alone: see
+/// [`k_way_arrays_op`]'s own docs for why that is a genuinely different,
+/// still-open gap D-105 never touched, not a re-narrowing of this one.
+fn arrays_op(name: &'static str, allow_nan_in_k_way: bool) -> BoxedStrategy<Op> {
+    prop_oneof![
+        2 => two_arrays_op(name),
+        3 => k_way_arrays_op(name, allow_nan_in_k_way),
+    ]
+    .boxed()
 }
 
 /// Exactly two arrays, small and repetitive pool, `NaN` included. Neither
@@ -247,62 +249,69 @@ fn two_arrays_op(name: &'static str) -> BoxedStrategy<Op> {
         .boxed()
 }
 
-/// Three to five arrays, values **globally distinct across the whole group**
-/// (never mind repetitive) — a deliberate restriction, and the reason is a
-/// second real finding from this campaign's own first runs, not a
-/// convenience:
+/// Three to five arrays, drawn from the same small, repetitive pool as
+/// [`two_arrays_op`] — `NaN` included when `allow_nan` is `true`.
 ///
-/// `unionUnique([3], [2, -5], [2])` disagreed (`port: [2,-5,2,3]`, `upstream:
-/// [2,-5,3]`), and — sharper still — `merge([3], [2, -5], [2])` disagrees on
-/// **order alone**: upstream is `[2, 2, -5, 3]`, this port `[2, -5, 2, 3]`.
-/// The cause is [`k_way_scan`](mnemonist_core::utils::merge)'s tie-break: it
-/// keeps the earliest array on a value tie, where upstream's `FibonacciHeap`
-/// updates its `min` pointer with `<=`, favouring the **most recently
-/// pushed** node — and after consolidation restructures the tree across
-/// pops, which node that ends up being depends on the heap's internal
-/// degree-bucket merging (`consolidate`, `fibonacci-heap.js`), not on
-/// insertion order alone. Reproducing that exactly means porting
-/// `fibonacci-heap.js` itself (T2 tier, ~115 LOC, not part of this unit's
-/// require-closure — DESIGN.md's own tier table). Recorded as a stated
-/// divergence rather than chased: `docs/modules/_utils.md`, "Deliberate
-/// divergences".
+/// # History — this generator used to force globally distinct values, for
+/// `merge`/`unionUnique` AND `intersectionUnique` alike
 ///
-/// What stays true regardless of tie-break policy: when no two currently-live
-/// array heads are ever equal, "the global minimum" is unambiguous and every
-/// correct implementation — heap or linear scan — extracts the identical
-/// sequence. So distinct values sidestep the gap structurally rather than
-/// avoiding the input shape that would reveal it; B-180 does not depend on
-/// value content at all (it is a pure index-count bug) and stays fully
-/// reachable through this strategy's own 0-length arrays.
-fn k_way_arrays_op(name: &'static str) -> BoxedStrategy<Op> {
-    collection::vec(0usize..6, 3..6)
-        .prop_flat_map(|lengths| {
-            let total: usize = lengths.iter().sum();
+/// Two real divergences surfaced from this campaign's own first runs, back
+/// when `merge`/`unionUnique`'s k-way path was a linear scan:
+///
+/// * `unionUnique([3], [2, -5], [2])` disagreed (`port: [2,-5,2,3]`,
+///   `upstream: [2,-5,3]`), and — sharper still — `merge([3], [2, -5], [2])`
+///   disagreed on **order alone**: upstream is `[2, 2, -5, 3]`, the port was
+///   `[2, -5, 2, 3]`. The cause: the linear scan kept the earliest array on a
+///   value tie, where upstream's `FibonacciHeap` updates its `min` pointer
+///   with `<=`, favouring the most recently *pushed* node — and after
+///   `consolidate` restructures the tree across pops, which node that ends
+///   up being depends on the heap's internal degree-bucket merging, not on
+///   insertion order alone. Porting `fibonacci-heap` (this repository's own
+///   T2 unit) closed this gap — D-105, `docs/modules/_utils.md` — and
+///   `merge_k_matches_upstreams_real_heap_on_the_case_that_found_d_105`
+///   (`mnemonist_core::utils::merge`'s own tests) pins this exact case
+///   directly.
+/// * `merge([-5], [NaN], [-1])` diverged too (`port: [-5, NaN, -1]`,
+///   `upstream: [-1, NaN, -5]`), for the same underlying reason: every
+///   comparison against `NaN` is `false` in both directions, so "which array
+///   has the smaller head" was never well-defined for the linear scan the
+///   moment `NaN` entered a three-or-more-way pick. The real heap has no
+///   such ambiguity — it is upstream's own algorithm — so `NaN` is safe to
+///   reinstate for `merge`/`unionUnique` alongside ties.
+///
+/// # `intersectionUnique` is different, and `allow_nan` stays `false` there
+///
+/// `kWayIntersectionUniqueArrays` never touches a heap (see
+/// `intersection_unique_k`'s own module docs) — it folds running bounds
+/// seeded from JS's `-Infinity`/`Infinity` sentinels, which this port seeds
+/// from `Option<T>` instead. That is a **separate, pre-existing, already
+/// documented divergence D-105 never claimed to close.** It was unreachable
+/// by this grammar only as a side effect of `NaN` being excluded from every
+/// k-way group; reinstating `NaN` broadly (rather than only where D-105
+/// actually applies) reached it immediately on this widening's own first
+/// verification run: `intersectionUnique([-1], [NaN], [-5])` — `port: [-5]`,
+/// `upstream: []`. Recorded rather than silently re-narrowed: `allow_nan` is
+/// `false` for `intersectionUnique` specifically, which widens exactly what
+/// D-105 asked for (ties, for the two functions D-105 is about) without
+/// papering over a different, older, still-open gap under the same commit.
+/// B-180 does not depend on value content at all (it is a pure index-count
+/// bug) and stays fully reachable through this strategy's own 0-length
+/// arrays regardless of `allow_nan`.
+fn k_way_arrays_op(name: &'static str, allow_nan: bool) -> BoxedStrategy<Op> {
+    let pool_size = if allow_nan {
+        NUMBER_POOL
+    } else {
+        NUMBER_POOL - 1
+    };
 
-            (Just(lengths), distinct_values(total))
-        })
-        .prop_map(move |(lengths, mut values)| {
-            let args: Vec<Value> = lengths
+    collection::vec(collection::vec(0usize..pool_size, 0..6), 3..6)
+        .prop_map(move |arrays| {
+            let args: Vec<Value> = arrays
                 .into_iter()
-                .map(|length| {
-                    Value::Array(values.drain(0..length).map(|value| json!(value)).collect())
-                })
+                .map(|indices| Value::Array(indices.into_iter().map(number_at).collect()))
                 .collect();
 
             Op::new(name, args)
-        })
-        .boxed()
-}
-
-/// `total` pairwise-distinct `i32`s. The pool (20,000 values) is wide enough
-/// against the small counts this grammar ever asks for (at most 25) that
-/// `prop_filter`'s rejection sampling essentially never has to retry.
-fn distinct_values(total: usize) -> BoxedStrategy<Vec<i32>> {
-    collection::vec(-10_000i32..10_000, total..=total)
-        .prop_filter("values must be pairwise distinct", |values| {
-            let unique: std::collections::HashSet<i32> = values.iter().copied().collect();
-
-            unique.len() == values.len()
         })
         .boxed()
 }

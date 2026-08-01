@@ -66,22 +66,37 @@
 //! has no exceptions, so the divergence is a `Result`, matching the
 //! `TABLE_IS_FULL` convention in [`crate::utils::hash_tables`].
 //!
-//! # The heap is a linear scan, not a `FibonacciHeap`
+//! # D-105 CLOSED — the k-way scan now drives a real `FibonacciHeap`
 //!
-//! Upstream's k-way algorithms drive a `FibonacciHeap` keyed on the arrays'
-//! current head values. `fibonacci-heap.js` is not ported (T2 in
-//! `planning/ROADMAP.md`), so this file picks the minimum head by a linear
-//! scan over the live arrays instead. The two are observably identical for
-//! every case reachable here: a tie between two arrays' heads is broken
-//! arbitrarily by *both* implementations, and the only place a tie is
-//! observable is the union's "differs from the last pushed value" dedup
-//! check, which compares against the immediately preceding *value*, not
-//! against which array supplied it. Stated as a divergence rather than
-//! elided, because it is a real algorithmic substitution, not "the same
-//! algorithm in different words" — just one with no path to a different
-//! flattened result.
+//! Upstream's `kWayMergeArrays`/`kWayUnionUniqueArrays` construct
+//! `new FibonacciHeap(function (a, b) { a = arrays[a][pointers[a]]; b =
+//! arrays[b][pointers[b]]; ... })` — a heap over **array indices**, keyed by
+//! each array's *current* head value through a shared, mutable `pointers`
+//! array the comparator closure reads fresh on every call. `fibonacci-heap`
+//! is now ported (`crate::structures::fibonacci_heap`), so [`k_way_scan`]
+//! below is the same algorithm, not a substitute for it: [`KWayKeyComparator`]
+//! is that exact closure, and the loop is upstream's `while (heap.size) { p =
+//! heap.pop(); ...; if (pointers[p] < arrays[p].length) heap.push(p); }`
+//! verbatim.
+//!
+//! This closes D-105 (`planning/DECISIONS-CANDIDATES.md`, `docs/modules/
+//! _utils.md`): the previous cut of this file picked the minimum head by a
+//! **linear scan** that kept the earliest array on a tie, where upstream's
+//! heap updates `min` with `<=` — favouring the most recently *pushed* node,
+//! which after `consolidate`'s degree-bucket restructuring is not simply "the
+//! last array". Confirmed via the differential fuzzer with the widened
+//! grammar (ties and `NaN` both reinstated in the k-way generator — see
+//! `crates/difffuzz/src/modules/_utils.rs`): zero divergences, where the
+//! linear-scan cut disagreed with upstream inside its first few hundred
+//! generated cases on exactly this shape (`merge([3], [2, -5], [2])`, see
+//! NOTES.md's `_utils` section and the pre-fix campaign note in
+//! `fuzz/log.txt`).
+
+use std::cell::RefCell;
 
 use super::binary_search::{lower_bound, upper_bound};
+use crate::structures::fibonacci_heap::FibonacciHeap;
+use crate::utils::comparators::{Comparator, Thrown};
 
 /// Merge two sorted slices into one, preserving every duplicate.
 ///
@@ -317,46 +332,93 @@ pub fn union_unique_k<T: Clone + PartialOrd>(arrays: &[&[T]]) -> Result<Vec<T>, 
     Ok(k_way_scan(&filtered, push_unique))
 }
 
-/// Repeatedly pick the smallest live head across `arrays` and hand it to
-/// `sink`, in lockstep, until every array is exhausted.
+/// The comparator upstream's k-way algorithms build inline:
 ///
-/// The linear scan standing in for upstream's `FibonacciHeap` -- see the
-/// module docs for why the substitution is unobservable here.
+/// ```js
+/// new FibonacciHeap(function (a, b) {
+///   a = arrays[a][pointers[a]];
+///   b = arrays[b][pointers[b]];
+///   if (a < b) return -1;
+///   if (a > b) return 1;
+///   return 0;
+/// });
+/// ```
+///
+/// The heap stores **array indices** (`usize`), not values; `pointers` is
+/// read fresh on every call, exactly as the JS closure over a shared,
+/// mutable array is, so a comparison always sees each array's *current*
+/// head. `Thrown` because native comparisons here never fail — `T:
+/// PartialOrd`'s `<`/`>` on two Rust values cannot throw the way `ToPrimitive`
+/// on two JS values can (see `crate::utils::comparators`'s own docs on why
+/// the bridge needs `Operand` where this needs nothing).
+struct KWayKeyComparator<'a, T> {
+    arrays: &'a [&'a [T]],
+    pointers: &'a RefCell<Vec<usize>>,
+}
+
+impl<T: PartialOrd> Comparator<usize, Thrown> for KWayKeyComparator<'_, T> {
+    fn compare(&self, a: &usize, b: &usize) -> Result<f64, Thrown> {
+        let pointers = self.pointers.borrow();
+        let a_head = &self.arrays[*a][pointers[*a]];
+        let b_head = &self.arrays[*b][pointers[*b]];
+
+        if a_head < b_head {
+            return Ok(-1.0);
+        }
+
+        if a_head > b_head {
+            return Ok(1.0);
+        }
+
+        Ok(0.0)
+    }
+}
+
+/// `kWayMergeArrays`/`kWayUnionUniqueArrays`'s shared body, once the
+/// stale-length check (B-180) has passed: seed a [`FibonacciHeap`] with one
+/// entry per array, then repeatedly pop the index whose current head is
+/// smallest, hand its value to `sink`, and re-push that index if its array
+/// has more left — upstream's own `while (heap.size) { p = heap.pop(); v =
+/// arrays[p][pointers[p]++]; ...; if (pointers[p] < arrays[p].length)
+/// heap.push(p); }`, verbatim.
 fn k_way_scan<T, F>(arrays: &[&[T]], mut sink: F) -> Vec<T>
 where
     T: Clone + PartialOrd,
     F: FnMut(&mut Vec<T>, T),
 {
     let total: usize = arrays.iter().map(|a| a.len()).sum();
-    let mut pointers = vec![0usize; arrays.len()];
+    let pointers = RefCell::new(vec![0usize; arrays.len()]);
+    let comparator = KWayKeyComparator {
+        arrays,
+        pointers: &pointers,
+    };
+    let heap: FibonacciHeap<usize, _, Thrown> = FibonacciHeap::new(comparator);
+
+    for index in 0..arrays.len() {
+        heap.push(index)
+            .expect("KWayKeyComparator over Rust PartialOrd never fails");
+    }
+
     let mut out = Vec::with_capacity(total);
 
-    loop {
-        let mut best: Option<usize> = None;
+    while heap.size() > 0 {
+        let index = heap
+            .pop()
+            .expect("KWayKeyComparator over Rust PartialOrd never fails")
+            .expect("heap.size() > 0 guarantees pop() yields Some");
 
-        for (index, array) in arrays.iter().enumerate() {
-            if pointers[index] >= array.len() {
-                continue;
-            }
+        let value = arrays[index][pointers.borrow()[index]].clone();
 
-            best = match best {
-                None => Some(index),
-                Some(current) if array[pointers[index]] < arrays[current][pointers[current]] => {
-                    Some(index)
-                }
-                Some(current) => Some(current),
-            };
-        }
+        pointers.borrow_mut()[index] += 1;
+        sink(&mut out, value);
 
-        match best {
-            None => return out,
-            Some(index) => {
-                let value = arrays[index][pointers[index]].clone();
-                pointers[index] += 1;
-                sink(&mut out, value);
-            }
+        if pointers.borrow()[index] < arrays[index].len() {
+            heap.push(index)
+                .expect("KWayKeyComparator over Rust PartialOrd never fails");
         }
     }
+
+    out
 }
 
 /// Intersection of `k` sorted, duplicate-free array-likes.
@@ -622,6 +684,32 @@ mod tests {
         assert_eq!(intersection_unique_k(&arrays4), vec![3, 4]);
     }
 
+    // -------------------------------------------------------------- D-105
+
+    /// The exact case that found D-105 (`docs/modules/_utils.md`, NOTES.md's
+    /// `_utils` section): three arrays, one of them (`[2, -5]`) genuinely
+    /// unsorted -- upstream never validates sortedness, and this is where a
+    /// tie-break disagreement actually shows up in the output, not merely in
+    /// theory. Traced against upstream's real algorithm by hand (`push(0)`,
+    /// `push(1)`, `push(2)`; the third push ties `arrays[1][0] == arrays[2][0]
+    /// == 2` and `FibonacciHeap.push`'s `<=` tie-break makes the JUST-pushed
+    /// index 2 win, so index 2's lone element pops first, then index 1 pops
+    /// its own tied `2`, exposing its unsorted second element `-5` next, and
+    /// only then index 0's `3`): upstream's real output is `[2, 2, -5, 3]`,
+    /// which is what this test pins now that D-105 is closed. The linear-scan
+    /// cut this file used to have gave `[2, -5, 2, 3]` instead -- see this
+    /// test's sibling `ties_across_arrays_do_not_affect_the_merged_multiset`
+    /// for why that only matters once a tie meets an unsorted array.
+    #[test]
+    fn merge_k_matches_upstreams_real_heap_on_the_case_that_found_d_105() {
+        let a: [i32; 1] = [3];
+        let b: [i32; 2] = [2, -5];
+        let c: [i32; 1] = [2];
+        let arrays: [&[i32]; 3] = [&a, &b, &c];
+
+        assert_eq!(merge_k(&arrays), Ok(vec![2, 2, -5, 3]));
+    }
+
     // ---------------------------------------------------------------- B-180
 
     /// B-180, isolated at its sharpest: three non-empty arrays plus one empty
@@ -702,10 +790,16 @@ mod tests {
         assert!(result.iter().all(|v| v.is_nan()));
     }
 
-    /// A tie broken by the linear scan is unobservable in the merge's flat
-    /// output: swapping which of two equal-valued arrays "wins" the pick
-    /// cannot change the resulting multiset, only which array a given
-    /// position's value happened to come from -- and nothing here can tell.
+    /// A tie among IDENTICAL values (every element here is `3`) is
+    /// unobservable in the merge's flat output regardless of which
+    /// implementation breaks it: whichever array's `3` the heap pops first,
+    /// the emitted value is still `3`, so the tie-break choice cannot change
+    /// what a caller sees. This is NOT the same claim as "ties never matter"
+    /// -- see the module docs' D-105 section: once tied *unsorted* arrays
+    /// interleave with distinct later values, which array wins a tie
+    /// genuinely changes the output, which is exactly what made the
+    /// pre-heap linear-scan cut of this file (D-105, now closed) diverge
+    /// from upstream on `merge([3], [2, -5], [2])`.
     #[test]
     fn ties_across_arrays_do_not_affect_the_merged_multiset() {
         let a = [3, 3, 3];

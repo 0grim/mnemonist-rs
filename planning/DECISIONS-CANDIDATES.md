@@ -1365,26 +1365,73 @@ refusal).
 `merge_k_reproduces_b_180_when_filtering_drops_the_length` and
 `union_unique_k_reproduces_b_180_when_filtering_drops_the_length`; NOTES.md B-180.
 
-### D-105 — the k-way merge/union's tie-break is a linear scan's, not `FibonacciHeap`'s
-**Status:** CONFIRMED · **Category:** architecture · **Divergence:** yes
+### D-105 — CLOSED — the k-way merge/union's tie-break was a linear scan's, not `FibonacciHeap`'s
+**Status:** CLOSED (was CONFIRMED, open) · **Category:** architecture · **Divergence:** no (was yes)
 **Upstream:** `kWayMergeArrays`/`kWayUnionUniqueArrays` pick the next value via a real
 `FibonacciHeap`, whose tie-break (which of several equal-valued array heads is extracted first) is
 an artifact of `push`'s `<=`-favours-latest rule and, after the first `pop`, of `consolidate`'s
 degree-bucket merging — genuinely dependent on the heap's internal tree shape, not on insertion
 order alone.
-**Port:** `mnemonist_core::utils::merge::k_way_scan` picks the minimum head by a plain linear scan,
-keeping the earliest array on a tie.
-**Rationale:** `fibonacci-heap.js` (~115 LOC, T2 tier per `planning/ROADMAP.md`) is not part of this
-unit's require-closure and is not ported. Found observable, not merely theoretical, by this unit's
-first fuzz campaign: `merge([3], [2, -5], [2])` disagrees in element ORDER (upstream
-`[2, 2, -5, 3]`, port `[2, -5, 2, 3]`) and `unionUnique([3], [2, -5], [2])` disagrees in which values
-survive deduplication (upstream `[2, -5, 3]`, port `[2, -5, 2, 3]`) — both from the identical root
-cause. The two-array functions (`merge_two`/`union_unique_two`) have no such gap: they are a direct
-two-pointer walk with no "pick among several" step at all, confirmed tie-order-invariant and
-swap-side-invariant by two falsification attempts that stayed green (NOTES.md, "_utils", gate 6).
-**Verify:** `crates/difffuzz/src/modules/_utils.rs`'s `k_way_arrays_op`, which works around the gap
-by generating globally-distinct values for every three-or-more-array case rather than hiding it;
-NOTES.md B-180's write-up, "Two port defects... found by differential fuzzing".
+**Port, before closing:** `mnemonist_core::utils::merge::k_way_scan` picked the minimum head by a
+plain linear scan, keeping the earliest array on a tie.
+**How it closed:** `fibonacci-heap` is now a ported unit (`crates/mnemonist-core/src/structures/
+fibonacci_heap.rs`, `docs/modules/fibonacci-heap.md`). `k_way_scan` now drives a real
+`FibonacciHeap<usize, KWayKeyComparator, Thrown>` — the heap holds array *indices*, and
+`KWayKeyComparator` is upstream's own inline closure (`arrays[a][pointers[a]] < arrays[b]
+[pointers[b]]`) translated directly, reading `pointers` fresh on every comparison exactly as the JS
+closure over a shared mutable array does. This is upstream's algorithm, not a second substitute for
+it.
+**Verification:** the exact case that found this (`merge([3], [2, -5], [2])`) is now pinned as a
+Rust unit test, `merge_k_matches_upstreams_real_heap_on_the_case_that_found_d_105`, asserting the
+real heap's output (`[2, 2, -5, 3]`) rather than the old linear scan's (`[2, -5, 2, 3]`).
+`crates/difffuzz/src/modules/_utils.rs`'s `k_way_arrays_op` grammar, previously narrowed to
+globally-distinct values specifically to avoid this gap, is widened back to the same small,
+repetitive, tie-producing pool `two_arrays_op` always used, for `merge`/`unionUnique` — see that
+function's own doc comment for the full before/after. Two fresh 60-second campaigns (seeds 42 and
+20260801, ~1.35M ops combined) ran clean against the widened grammar; `fuzz/log.txt`'s earlier,
+narrower-grammar entries are kept rather than deleted, per CLAUDE.md, as the honest record of what
+was covered before.
+**Not part of this closure, and NOT quietly re-narrowed to hide it:** `intersectionUnique`'s k-way
+path (`kWayIntersectionUniqueArrays`/`intersection_unique_k`) never used a heap at all — it folds
+bounds seeded from JS's `-Infinity`/`Infinity` sentinels, which this port seeds from `Option<T>`
+instead, a *different*, pre-existing, already-documented divergence (see
+`intersection_unique_k`'s own module docs) this task never claimed to close. Reinstating `NaN`
+broadly (rather than only for the two functions D-105 is about) reached it immediately on the
+first verification run of the widened grammar: `intersectionUnique([-1], [NaN], [-5])` — port
+`[-5]`, upstream `[]`. `k_way_arrays_op` therefore takes an `allow_nan` flag and stays `false` for
+`intersectionUnique` specifically, so the widening is exactly what D-105 needed and nothing was
+swept back under a narrower grammar to report green.
+**Verify:** `crates/mnemonist-core/src/utils/merge.rs`'s `KWayKeyComparator` and `k_way_scan`, and
+its `merge_k_matches_upstreams_real_heap_on_the_case_that_found_d_105` test;
+`crates/difffuzz/src/modules/_utils.rs`'s `arrays_op`/`k_way_arrays_op`; `docs/modules/
+fibonacci-heap.md`; `docs/modules/_utils.md`'s updated D-105 entry; `fuzz/log.txt`'s four
+`module=_utils` lines (two pre-closure, two post-).
+
+### D-106 — `intersectionUnique`'s k-way `NaN` handling is a separate, still-open gap D-105 never touched
+**Status:** CONFIRMED · **Category:** behavioural · **Divergence:** yes
+**Upstream:** `kWayIntersectionUniqueArrays` seeds `maxStart`/`minEnd` from the JS sentinels
+`-Infinity`/`Infinity`; `first > maxStart` (and symmetrically for `minEnd`) is `false` whenever
+`first` is `NaN`, so a `NaN`-headed array leaves the sentinel in place until a later, non-`NaN`
+array supplies a real bound.
+**Port:** `intersection_unique_k` seeds `max_start`/`min_end` from `Option<T>`, so the *first* array
+scanned always sets the accumulator, `NaN` included — there is no generic `T`-shaped `-Infinity` to
+seed from without a `Sentinel`-style trait (`crate::utils::comparators`'s own, built for
+`heap.rs`'s `nsmallest`/`nlargest`, is over the wrong shape here: a per-slot sentinel value, not a
+running-fold accumulator).
+**Rationale:** `kWayIntersectionUniqueArrays` never touches a `FibonacciHeap` at all — it folds
+`intersection_unique_two`'s binary-search walk left to right, seeded from `arrays[0]`. D-105's
+closure (porting `fibonacci-heap` and wiring it into `merge_k`/`union_unique_k`) has nothing to say
+about this function, and this gap predates D-105's closure — it was simply unreachable while `NaN`
+was excluded from every k-way group, `intersectionUnique` included alongside `merge`/`unionUnique`.
+Reinstating `NaN` for the two D-105 actually covers reached this immediately
+(`intersectionUnique([-1], [NaN], [-5])`: port `[-5]`, upstream `[]`), and `NaN` is kept excluded
+from `intersectionUnique`'s own k-way fuzz pool specifically rather than fixed under the same
+commit, since fixing it needs a different mechanism (a fold-accumulator sentinel) than the one
+D-105's closure built.
+**Verify:** `crates/mnemonist-core/src/utils/merge.rs`'s `intersection_unique_k` module docs;
+`crates/difffuzz/src/modules/_utils.rs`'s `k_way_arrays_op`'s `allow_nan` parameter;
+`docs/modules/_utils.md`'s D-106 entry.
+
 ### D-200 — the trie node keeps its value and its children in separate fields, not one shared keyspace
 **Status:** CONFIRMED · **Category:** behavioural · **Divergence:** yes
 **Upstream:** every trie node is a plain object; `node[SENTINEL]` (the stored value) and
