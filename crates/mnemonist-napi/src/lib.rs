@@ -27,6 +27,9 @@ pub mod stack;
 pub mod static_disjoint_set;
 pub mod statics;
 
+// Appended, never interleaved: this list is a shared registry (CLAUDE.md, Git).
+pub mod suffix_array;
+
 #[napi]
 pub fn ping() -> &'static str {
     "pong"
