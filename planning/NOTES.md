@@ -1413,3 +1413,30 @@ pinned by its own test.
 
 *Gate 6's discipline applied to prose: a sabotage that stays green does not vindicate the code, it
 falsifies the sentence explaining it.*
+
+### Six merges in, the merge rule I wrote does not work
+
+After three merges broke identically, I added a rule: agents append new registry entries at the
+**end** of each list, never in the middle, so a conflict boundary cannot land inside someone else's
+hunk. Two agents adopted it and left comments in the source saying why.
+
+**Merges five and six broke in exactly the same place anyway.** Git picks conflict boundaries by
+line similarity, not syntax, and it split the *previous* entry — closing an existing match arm or
+test function mid-body so both sides shared its tail. Seven hand repairs across those two merges.
+
+The rule did help: merge four dropped from nine conflicts to five, and none in the four files that
+had broken every previous merge. It narrows the surface; it does not close it. **A mechanical
+resolver that treats a conflict as a set of lines is wrong whenever the hunk is not a whole
+syntactic unit, and no authoring convention can fully prevent that.** What actually catches it every
+time is the compiler — and for three of the seven, only `cargo test`, because `cargo build` does not
+compile `#[cfg(test)]` blocks.
+
+**Parallel agents also solve the same sub-problem twice.** Three instances: the `{"$global": …}`
+constructor encoding, invented independently with the same JSON shape and the same function name;
+the `tests/run.sh` fresh-clone bug, found and fixed twice; and a `$forEach` fuzz op built twice with
+**incompatible signatures**, whose duplicate handlers landed in one JS `switch` — where the first
+silently wins and `node --check` passes, because duplicate cases are legal syntax. That last one
+also masked two further defects that only surfaced once the protocols were reconciled.
+
+*Write-up beat: the cost of parallelism is not the merge, it is the convergent design you then have
+to reconcile — and the reconciliation is where the interesting bugs were hiding.*
