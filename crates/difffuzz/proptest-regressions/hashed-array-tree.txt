@@ -1,0 +1,55 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+#
+# PROVENANCE OF THE ENTRIES BELOW -- read before assuming either recorded a
+# real port defect. Neither did. Both were produced by deliberate
+# falsifications of the fuzzer (D-32): a fuzzer that has never been seen to
+# fail is just a second green light. Both sabotages were reverted; both seeds
+# are replayed before any novel case on every run.
+#
+# Note what both sabotages have in common: each makes the port strictly MORE
+# correct than upstream. That is the only direction differential fuzzing can
+# work in on a bug-for-bug port (D-33), and this module has two independent
+# defects to demonstrate it with.
+#
+# --- A: pop() reading the block that actually holds the popped index ---
+#
+# Upstream's pop takes the offset from the popped index but the block
+# unconditionally from the end of `blocks`:
+#     var lastBlock = this.blocks[this.blocks.length - 1];
+#     var i = (--this.length) & this.offsetMask;
+#     return lastBlock[i];
+# The two agree only while the tree fits in one block, which is all upstream's
+# own test ever uses. The sabotage was `blocks[length >> blockMask]` -- the
+# obvious cleanup. Found in 1,228 cases (1.8s) and shrunk from 200 ops to five:
+#
+#     var s = new HashedArrayTree(Uint8Array, {blockSize: 1});
+#     s.resize(2);   // two one-element blocks, length 2
+#     s.pop();       // length 1
+#     s.pop();       // length 0
+#     s.push(1);     // writes block 0
+#     s.pop();       // port 1 (block 0), upstream 0 (block 1, the last one)
+#
+cc 70b0df5065314c3bffe40687fe27d07184199cdf317c0a4fc17b89b1b0a1fb64 # shrinks to Program { ctor: [Object {"$global": String("Uint8Array")}, Object {"blockSize": Number(1), "initialCapacity": Number(0), "initialLength": Number(0)}], ops: [Op { name: "resize", args: [Number(2)] }, Op { name: "pop", args: [] }, Op { name: "pop", args: [] }, Op { name: "push", args: [Number(1)] }, Op { name: "pop", args: [] }] }
+#
+# --- B: set()'s off-by-one guard "fixed" ---
+#
+# Upstream guards with `if (this.length < index) throw`, so `index === length`
+# is admitted and writes a slot that `length` does not cover. The sabotage was
+# `<=`, i.e. rejecting it -- which is what anyone tidying the bounds check
+# would write. Found in 2,165 cases (5.2s), shrunk to ten ops ending in:
+#
+#     s.set(19, 0);
+#     // port     {"$throw": "HashedArrayTree(Uint8Array).set: index out of bounds."}
+#     // upstream {"$self": true}
+#
+# This is also the entry that exercises the `{"$throw": ...}` encoding added to
+# fuzz/oracle.js for this module: without it the port's throw would have
+# arrived as apparatus failure and ABORTED the campaign instead of being
+# reported as the divergence it is.
+#
+cc 5614c490e9ad8a19d302dc8f924a36c47d82b0268f54a9356e4afcdc6c97d60e # shrinks to Program { ctor: [Object {"$global": String("Uint8Array")}, Object {"blockSize": Number(1), "initialCapacity": Number(0), "initialLength": Number(0)}], ops: [Op { name: "resize", args: [Number(19)] }, Op { name: "pop", args: [] }, Op { name: "push", args: [Number(0)] }, Op { name: "push", args: [Number(0)] }, Op { name: "pop", args: [] }, Op { name: "push", args: [Number(0)] }, Op { name: "pop", args: [] }, Op { name: "pop", args: [] }, Op { name: "push", args: [Number(0)] }, Op { name: "set", args: [Number(19), Number(0)] }] }

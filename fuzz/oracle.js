@@ -110,6 +110,16 @@ function encode(value) {
   return value;
 }
 
+// Constructor arguments are JSON, and some upstream constructors take a
+// *constructor* -- `new HashedArrayTree(Uint8Array, …)`. `{"$global":"Uint8Array"}`
+// names one on globalThis; everything else passes through untouched.
+function decodeCtorArg(value) {
+  if (value !== null && typeof value === 'object' && typeof value.$global === 'string')
+    return globalThis[value.$global];
+
+  return value;
+}
+
 function observe() {
   const state = {};
 
@@ -156,7 +166,7 @@ function handle(request) {
 
     case 'init': {
       const Ctor = require(path.join(UPSTREAM, request.module + '.js'));
-      instance = new Ctor(...request.ctor);
+      instance = new Ctor(...request.ctor.map(decodeCtorArg));
       observations = request.observe;
       cursor = null;
       return {ok: true, state: observe()};
@@ -164,9 +174,24 @@ function handle(request) {
 
     case 'op': {
       if (instance === null) throw new Error('op before init');
-      const result = request.name.charAt(0) === '$'
-        ? cursorOp(request)
-        : encode(instance[request.name](...request.args));
+
+      if (request.name.charAt(0) === '$')
+        return {ok: true, result: cursorOp(request), state: observe()};
+
+      let result;
+
+      // An exception thrown BY AN OPERATION is a comparable result, not
+      // apparatus failure. Reporting it as {ok:false} would reach the Rust
+      // side as OracleError and ABORT the campaign, when "upstream threw and
+      // the port did not" is precisely the divergence worth catching. See the
+      // "Trap for the next module" note on spec::CheckFailure, written before
+      // there was a module that throws; hashed-array-tree is that module.
+      try {
+        result = encode(instance[request.name](...request.args));
+      } catch (error) {
+        result = {$throw: String(error && error.message ? error.message : error)};
+      }
+
       return {ok: true, result: result, state: observe()};
     }
 

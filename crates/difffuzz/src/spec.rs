@@ -58,7 +58,18 @@ impl Program {
             })
             .collect();
 
-        let ctor: Vec<String> = self.ctor.iter().map(ToString::to_string).collect();
+        // `{"$global": "Uint8Array"}` is how a constructor argument that is
+        // itself a *constructor* survives JSON (see `fuzz/oracle.js`). Printing
+        // it literally would produce a repro that throws instead of
+        // reproducing, which defeats the whole point of shrinking.
+        let ctor: Vec<String> = self
+            .ctor
+            .iter()
+            .map(|arg| match arg.get("$global").and_then(Value::as_str) {
+                Some(name) => name.to_owned(),
+                None => arg.to_string(),
+            })
+            .collect();
         let mut out = format!("var s = new {constructor}({});\n", ctor.join(", "));
 
         for op in &self.ops {

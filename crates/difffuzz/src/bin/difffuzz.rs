@@ -17,6 +17,7 @@
 use std::process::ExitCode;
 use std::time::Duration;
 
+use difffuzz::modules::hashed_array_tree::HashedArrayTreeSpec;
 use difffuzz::modules::sparse_set::SparseSetSpec;
 use difffuzz::modules::static_disjoint_set::StaticDisjointSetSpec;
 use difffuzz::{Campaign, Report};
@@ -24,7 +25,8 @@ use difffuzz::{Campaign, Report};
 const USAGE: &str = "\
 usage: difffuzz --module <name> [--seed N] [--duration SECONDS] [--cases N] [--batch N]
 
-  --module    module to fuzz; currently: static-disjoint-set, sparse-set
+  --module    module to fuzz; currently: static-disjoint-set, sparse-set,
+              hashed-array-tree
   --seed      campaign seed (default 42); with --cases, reproduces exactly
   --duration  wall-clock budget in seconds (default 60)
   --cases     stop after N cases instead of after --duration
@@ -68,6 +70,13 @@ fn main() -> ExitCode {
             &SparseSetSpec,
             &Campaign {
                 regressions: difffuzz::modules::sparse_set::REGRESSIONS,
+                ..campaign
+            },
+        ),
+        "hashed-array-tree" => difffuzz::run(
+            &HashedArrayTreeSpec,
+            &Campaign {
+                regressions: difffuzz::modules::hashed_array_tree::REGRESSIONS,
                 ..campaign
             },
         ),

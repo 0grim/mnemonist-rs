@@ -159,3 +159,5 @@
 2026-08-01T00:20:00Z  module=static-disjoint-set seed=20260731 cases=2301 ops=700097 wall=60.0s divergences=0
 2026-08-01T00:31:30Z  module=sparse-set seed=42 cases=19006 ops=1961772 wall=120.0s divergences=0
 2026-08-01T00:35:52Z  module=sparse-set seed=20260801 cases=9425 ops=980895 wall=60.0s divergences=0
+2026-08-01T01:42:40Z  module=hashed-array-tree seed=42 cases=14429 ops=1429629 wall=120.0s divergences=0
+2026-08-01T01:46:00Z  module=hashed-array-tree seed=20260801 cases=7319 ops=723058 wall=60.0s divergences=0
