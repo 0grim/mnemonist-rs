@@ -699,3 +699,72 @@ Core spells absence `None` and stores `Option<V>`, which is what makes B-40 expr
 Rust. The bridge cannot use napi's `Option<T>` conversion, which folds `null` into `None` as well —
 `test/lru-cache.js` asserts that a stored `null` round-trips.
 
+
+---
+
+## sort (D-80 .. D-83)
+
+**Numbering note.** This unit was built in an isolated worktree alongside three others, and only a
+bug-ID range (B-80..B-89) was allocated. `D-47` onward is the obvious next number and therefore the
+one another agent is most likely to have taken, so these are numbered to match the allocated B
+range instead. Renumber at merge if the orchestrator prefers; nothing references them by number
+except `docs/modules/sort.md`.
+
+### D-80 — The sort helpers take numbers; upstream takes anything
+`sort/quick.js` and `sort/insertion.js` are duck-typed: `array` is anything indexable and elements
+are compared with `>`, `>=`, `<=`, which coerce through `valueOf`/`toString`. Supporting that means
+calling into JavaScript from inside the sort loop — DESIGN.md 3.3's **T2 tier** — which this unit
+does not reach for. Every input in `test/sort.js` is a number, and mnemonist's own callers
+(`passjoin-index.js`, `suffix-array.js`) pass typed arrays of numbers.
+
+Rejected alternative: coerce non-numbers with `ToNumber` on the Rust side. It would accept the
+inputs and answer differently, because JavaScript's relational comparison on two strings is
+lexicographic and not numeric. A loud refusal naming the limit is better than a quiet wrong answer.
+
+**Consequence worth stating in the write-up, because the direction is easy to get backwards:**
+B-80 and B-81 are unreachable in the port, and the port is *not* fixing them. It is refusing the
+only inputs that can observe them. With numeric elements no user code runs during a comparison, so
+upstream's shared global counter and shared partition stack are never re-entered and a local
+behaves identically. Reproducing them bug-for-bug would mean implementing T2 first and then adding
+shared state to reproduce a defect nothing can see — strictly less faithful.
+
+### D-81 — Sort windows outside `0..=length` are refused
+Upstream reads `undefined` past the end and writes into holes, producing a genuinely sparse array.
+A JS array hole has no Rust representation, and modelling one would mean `Vec<Option<f64>>`
+throughout for a regime `test/sort.js` never enters. `mnemonist_core::sort::check_window` asserts
+instead and the bridge reports it with a message naming the limit — the same position
+`PointerVec::get` already takes, for the same reason.
+
+### D-82 — `utils/typed_arrays::indices` takes an `f64`, not a `usize`
+Upstream's `exports.indices` uses its argument twice and coerces it **differently** each time:
+`getPointerArray` compares `length - 1` as a double, while the `TypedArray` constructor applies
+`ToIndex` and truncates. So `indices(256.5)` is a `Uint16Array` of **256** elements — one width
+wider than 256 elements need — and `indices(-0.5)` is an empty `Uint8Array` while `indices(-1)`
+throws. All confirmed against Node 24.18.1.
+
+Rejected alternative: take a `usize` and let the bridge truncate. That was the first draft; it
+produced `Uint8Array(256)` for `256.5`. Caught by `tests/boundary/sort.js`, and now pinned by the
+fuzzer's first falsification seed.
+
+### D-83 — A free-function unit's export shape is re-assembled by the shim, and the aggregate is the source
+The addon exports into one flat namespace, so there is no `sort/quick` object to hand back, and
+`indices` is far too generic a name to claim at the top of an addon that will eventually carry forty
+modules' worth of helpers. It is `typedArraysIndices` in the addon and mapped back in
+`tests/bridge/sort.js` — DESIGN.md 2.3's Problem 2, which was written for exactly this.
+
+The *direction* of the shim tree is the decision. `tests/bridge/sort.js` holds the assembly and
+`sort/insertion.js`, `sort/quick.js` and `utils/typed-arrays.js` are cut from it. The reverse — three
+leaf shims plus an aggregate that re-requires them — would leave `sort.js` decorative, existing only
+to satisfy `tests/verify.sh` gate 3, which looks for a shim named after the unit. `test/sort.js`
+never requires `../sort.js` itself.
+
+### D-84 — The differential fuzzer models a free-function module by echoing its arguments
+`ModuleSpec::functions()` names the upstream **files** a unit spans (three, for `sort`); the oracle
+merges their exports and `instance` becomes that object. Such a module has no observable state, so
+`observe()` is `{}` forever and the comparison would rest entirely on return values — useless for
+functions whose whole job is mutating an argument. `fuzz/oracle.js` therefore re-encodes every
+argument after the call and compares those too.
+
+Rejected alternative: a per-function declaration of which parameters are out-parameters. It would
+compare slightly less and would go stale silently the first time someone added a function; echoing
+everything is generic, and the oracle's whole design principle is that it holds no module knowledge.
