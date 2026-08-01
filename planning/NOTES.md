@@ -438,6 +438,43 @@ directions, `lowerBound(...)` walking right to `100` and `upperBound(...)` left 
 no single "undefined sorts high" rule to reason from — each call site has to be checked. The same
 `undefined`-loses-both rule makes `search([NaN, NaN, NaN], 1)` return `1`. Reproduced.
 
+### B-92 — `hash-tables.linearProbing.get`/`has`/`set` loop forever on a zero-length table
+`status: VERIFIED against Node 24.18.1` · `mnemonist utils/hash-tables.js`
+`i %= n` with `n === 0` is `NaN`. `keys[NaN]` is `undefined`, which is neither the key nor `0`, so
+neither exit fires; and the "full turn" guard `i === j` can never be true, because `NaN !== NaN`.
+`while (true)` then never exits.
+
+```console
+$ timeout 5 node -e "require('mnemonist/utils/hash-tables').linearProbing.get(
+    require('mnemonist/utils/hash-tables').hashes.jenkinsInt32,
+    new Uint32Array(0), new Uint32Array(0), 1)"
+$ echo $?
+124
+```
+
+NOT reproduced — hanging a `cargo test` or a fuzz campaign is not a behaviour worth porting. The
+port guards all three entry points; see D-45 in `docs/modules/utils-hash-tables.md`.
+
+### B-94 — `hash-tables`: the key `0` occupies a slot that still reads as empty
+`status: VERIFIED against Node 24.18.1` · `mnemonist utils/hash-tables.js`
+`0` is the empty sentinel *and* an ordinary `Uint32Array` value. The sequence is subtler than "key
+0 cannot be stored":
+
+```js
+var lp = require('mnemonist/utils/hash-tables').linearProbing;
+var keys = new Uint32Array(4), values = new Uint32Array(4), h = function () { return 0; };
+
+lp.set(h, keys, values, 0, 42);
+Array.from(keys);                  // [0, 0, 0, 0] -- indistinguishable from empty
+lp.get(h, keys, values, 0);        // 42  -- `c === key` is tested BEFORE `c === 0`
+lp.set(h, keys, values, 5, 43);    // slot 0 looks free, so this OVERWRITES
+Array.from(keys);                  // [5, 0, 0, 0]
+lp.get(h, keys, values, 0);        // 0  -- the 42 is gone, silently
+```
+
+So the entry is readable right up until something collides with it, then vanishes with no error.
+Reproduced exactly, including the readable-until-it-isn't part.
+
 > Differential fuzzing has not run yet. Expect the best candidates to come from there, not from
 > reading. Add them here with the minimised repro attached.
 
