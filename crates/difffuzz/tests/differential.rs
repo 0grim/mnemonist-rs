@@ -68,6 +68,10 @@ use difffuzz::modules::fuzzy_multi_map::{
 };
 use difffuzz::modules::multi_map::{MultiMapSpec, REGRESSIONS as MULTI_MAP_REGRESSIONS};
 use difffuzz::modules::multi_set::{MultiSetSpec, REGRESSIONS as MULTI_SET_REGRESSIONS};
+// Appended at the end of the import run, never inserted (CLAUDE.md, Git).
+use difffuzz::modules::fibonacci_heap::{
+    FibonacciHeapSpec, REGRESSIONS as FIBONACCI_HEAP_REGRESSIONS,
+};
 
 #[test]
 fn bit_set_matches_upstream() {
@@ -849,6 +853,28 @@ fn fuzzy_multi_map_matches_upstream() {
     let campaign = Campaign::cases(0x1_20132, 96, FUZZY_MULTI_MAP_REGRESSIONS);
 
     let report = difffuzz::run(&FuzzyMultiMapSpec, &campaign)
+        .expect("oracle must be reachable; `node` is required for differential tests");
+
+    assert!(
+        report.ops > 0,
+        "campaign ran no operations, so it proved nothing: {}",
+        report.log_line()
+    );
+
+    if let Some(divergence) = report.divergence {
+        panic!("{divergence}");
+    }
+}
+
+/// `fibonacci-heap` — a short sanity campaign so `cargo test` exercises the
+/// re-entrant comparator path (`fibPushy`/`fibPopper`/`fibClearer`) briefly,
+/// not just at compile time. The 60-second gate-9 campaigns live in
+/// `fuzz/log.txt`; this only guards that the harness still works.
+#[test]
+fn fibonacci_heap_matches_upstream() {
+    let campaign = Campaign::cases(0x1_20133, 96, FIBONACCI_HEAP_REGRESSIONS);
+
+    let report = difffuzz::run(&FibonacciHeapSpec, &campaign)
         .expect("oracle must be reachable; `node` is required for differential tests");
 
     assert!(
