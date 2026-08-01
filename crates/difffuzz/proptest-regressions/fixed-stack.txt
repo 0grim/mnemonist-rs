@@ -1,0 +1,26 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+#
+# PROVENANCE
+# ----------
+# Both seeds below came from DELIBERATE SABOTAGES of the port, run to falsify
+# this module's grammar before trusting it. Neither is a defect the fuzzer
+# found in real code; the port has never diverged here.
+#
+#   A  `FixedStack::items_len` made to return `self.size` -- the "tidy-up" a
+#      naive port makes when it notices that `forEach`'s bound is the array's
+#      length rather than the stack's size (B-61). Caught in 57 cases (0.0s),
+#      shrunk to two lines. This is the seed recorded below.
+#
+#   B  `Sequence::freeze` made to capture `items.len()` instead of `self.size`
+#      -- the mirror-image mistake, on the cursor half of the alphabet. Caught
+#      in 57 cases (0.0s) on seed 4242, shrunk to `new FixedStack(Array, 1);
+#      s.values().next()`. Not persisted: the run was seeded differently and
+#      the corpus below already exercises the same file.
+#
+# Both were reverted; the campaign is clean on the reverted tree.
+cc 70b0df5065314c3bffe40687fe27d07184199cdf317c0a4fc17b89b1b0a1fb64 # shrinks to Program { ctor: [Object {"$global": String("Array")}, Number(1)], ops: [Op { name: "$forEach", args: [Null, Number(0)] }] }

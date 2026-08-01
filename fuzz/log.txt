@@ -503,3 +503,64 @@
 2026-08-01T02:19:13Z  module=queue seed=20260801 cases=15805 ops=1573126 wall=60.0s divergences=0
 2026-08-01T02:31:44Z  module=default-map seed=42 cases=29525 ops=2939502 wall=120.0s divergences=0
 2026-08-01T02:32:53Z  module=default-map seed=20260801 cases=14492 ops=1432987 wall=60.0s divergences=0
+2026-08-01T09:20:45Z  module=fixed-stack seed=42 cases=18277 ops=1802802 wall=90.0s divergences=0
+2026-08-01T09:21:54Z  module=fixed-stack seed=20260801 cases=10195 ops=1011340 wall=60.0s divergences=0
+#
+# ---------------------------------------------------------------------------
+# GRAMMAR, WAVE 1 FIXED-CAPACITY MODULES — appended here rather than into the
+# per-module section above, because several agents edit this file at once and
+# only an addition at the very end can never land inside another one's hunk.
+#
+# fixed-stack
+#   ops          push(v) [weight 6] · pop() [3] · peek() [2] · clear() [2]
+#                $iter("values") [2] · $next() [4] · $spread() [1]
+#                $forEach(mutation|null, at) [3]   <-- NEW OP, see below
+#   observed     size · capacity · items · toArray()
+#                after EVERY op, on both sides. `items` is a public property
+#                upstream, and comparing it slot for slot is what makes the
+#                debris that pop() and clear() deliberately leave behind
+#                checkable directly rather than only through a later forEach.
+#   ctor         BOTH backing classes, because they are NOT interchangeable:
+#                  new FixedStack(Array, capacity)       holes, grows on an
+#                                                        out-of-range store
+#                  new FixedStack(Uint8Array, capacity)  zero filled, drops it
+#   capacities   1..=8. Small on purpose: push() must hit the ceiling and
+#                throw often, and forEach's capacity-vs-size bound only differs
+#                BELOW it.
+#   values       0..320, past a Uint8Array element's range, so the truncating
+#                store is exercised.
+#   program len  1..200 ops
+#   EXCLUDED     `from` in all its forms, and the `scope` argument of forEach.
+#                `from` is a static, so it cannot appear in an op sequence at
+#                all -- it is covered by test/fixed-stack.js and by the
+#                differential probes in docs/modules/fixed-stack.md. `scope` is
+#                a documented divergence (napi cannot see arity), so fuzzing it
+#                would only re-report a known decision.
+#
+#   $forEach is the op this wave adds to the harness, and it is not cosmetic.
+#   Every earlier grammar drives iteration through $iter/$next, which is enough
+#   for an obliterator CURSOR -- a cursor freezes its state at creation. It is
+#   not enough for #.forEach, which freezes only its loop bound and re-reads
+#   the backing array on every step, so a callback that mutates the collection
+#   is visible to the reads after it. B-31 -- the port's own worst bug, an LLVM
+#   `noalias` hoist -- was reachable ONLY through a mutating forEach, and it
+#   survived 2.94M operations because no grammar had one.
+#
+#   args are (mutation, at): a nullary non-throwing method to call, or null,
+#   and the callback index to call it at. `at` ranges past the largest capacity
+#   so a good share of programs mutate at an index the walk never reaches,
+#   which is the control case. Both sides record [index, value, this === self]
+#   per callback invocation, so the second argument's VALUE and the callback's
+#   `this` binding are both compared.
+#
+#   FALSIFIED TWICE before being trusted (D-32), both reverted:
+#     A  items_len() made to return self.size -- the "tidy-up" a naive port
+#        makes on noticing that forEach's bound is the array's length and not
+#        the stack's size (B-61). Caught in 57 cases / 0.0s, shrunk to
+#        `new FixedStack(Array, 1); s.forEach(function () {});`
+#     B  Sequence::freeze made to capture items.len() instead of self.size --
+#        the mirror-image mistake, on the cursor half. Caught in 57 cases /
+#        0.0s on seed 4242, shrunk to `new FixedStack(Array, 1);
+#        s.values().next()`.
+#   Seed A is committed with provenance in
+#   crates/difffuzz/proptest-regressions/fixed-stack.txt.

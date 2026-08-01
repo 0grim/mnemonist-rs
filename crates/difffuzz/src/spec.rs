@@ -86,6 +86,17 @@ impl Program {
                 }
                 "$next" => out.push_str("it.next();\n"),
                 "$spread" => out.push_str("Array.from(s);\n"),
+                // Appended at the end of the run, never inserted.
+                "$forEach" => {
+                    let mutation = op.args.first().and_then(Value::as_str);
+                    let at = op.args.get(1).and_then(Value::as_u64).unwrap_or(0);
+                    let body = match mutation {
+                        None => String::new(),
+                        Some(name) => format!(" if (i === {at}) s.{name}();"),
+                    };
+
+                    out.push_str(&format!("s.forEach(function (v, i) {{{body} }});\n"));
+                }
                 _ => out.push_str(&format!("s.{op};\n")),
             }
         }

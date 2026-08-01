@@ -175,6 +175,38 @@ function cursorOp(request) {
     case '$spread':
       return Array.from(instance).map(encode);
 
+    // Appended at the end of the switch, never inserted: several agents edit
+    // this file and a case added mid-list is a merge conflict inside a `switch`.
+    //
+    // `$forEach` runs the structure's OWN `#.forEach` with a callback that may
+    // mutate the collection partway through. That is a different thing from
+    // `$iter`/`$next`: an obliterator cursor freezes its state at creation,
+    // while `forEach` re-reads the backing array on every step, so only this op
+    // can observe a mutation racing a walk in progress. It is also the only op
+    // that sees a `forEach` whose loop bound is not `this.size`.
+    //
+    //   args[0]  mutation to perform, or null -- a nullary method that cannot
+    //            throw, so every generated program stays well formed
+    //   args[1]  index at which to perform it; past the end means "never",
+    //            which is the control case
+    //
+    // The record is `[index, value, this === instance]` per call: the second
+    // argument's value AND the callback's `this` binding, which upstream sets
+    // to the collection when no scope is passed.
+    case '$forEach': {
+      var mutation = request.args[0];
+      var at = request.args[1];
+      var seen = [];
+
+      instance.forEach(function (value, index, self) {
+        seen.push([index, encode(value), self === instance]);
+
+        if (mutation !== null && index === at) instance[mutation]();
+      });
+
+      return seen;
+    }
+
     default:
       throw new Error('unknown cursor op: ' + request.name);
   }
