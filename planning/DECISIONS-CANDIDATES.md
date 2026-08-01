@@ -847,3 +847,49 @@ change is also strictly more accurate for `sparse-map`, whose holes really do re
 and never as `null`; its own doc already recorded that nothing in that grammar can tell them apart.
 **Verify:** `cargo test -p difffuzz` — all fourteen differential campaigns, `sparse-map` included.
 
+### D-79 — `Store::allocate` and `Store::plain_array` are different operations
+**Status:** CONFIRMED · **Category:** behavioural · **Divergence:** no
+**Upstream:** `Heap.prototype.clear` is `this.items = []` and `Heap.consume` opens with
+`var array = new Array(l)` — unconditional literals. Only `nsmallest`'s `n === 1` path
+(`new iterable.constructor(1)`) and `FixedReverseHeap`'s `new ArrayClass(size)` preserve a class.
+**Port:** two `Store` methods. One `allocate` serving all three made
+`Heap.from(new Uint8Array(…)).consume()` return a `Uint8Array` where upstream gives a plain
+`Array`.
+**Rationale:** a port that is *more* class-faithful than upstream is a defect, not an
+improvement. Found by an independent review, not by any gate: the fuzzer's `VecStore` has a single
+class, so the bug is structurally invisible to it.
+**Verify:** `tests/boundary/heap.js` — "should clear and consume into a PLAIN array, whatever class
+items was", which passes unchanged against upstream.
+
+### D-80 — `n` is carried as a JavaScript number and never validated up front
+**Status:** CONFIRMED · **Category:** behavioural · **Divergence:** no
+**Upstream:** `nsmallest`/`nlargest` never validate `n`. They compare it (`n === 1`,
+`n >= iterable.length`), slice with it, and use it as a **loop counter** —
+`for (i = n; i < l; i++)` with the raw number. A fractional `n` therefore reads `iterable[2.5]`,
+`iterable[3.5]`, … all `undefined`, and the scan does nothing. Measured:
+`Heap.nsmallest(cmp, 2.5, array)` is `[2, 5]`, `NaN` is `[]`, `-1` is eleven elements.
+**Port:** `n: f64` through core, with a `scan` helper that iterates on the raw number and answers
+`undefined` for any index that is not a non-negative integer. The single refusal upstream has —
+`new Array(n)` on the non-array-like path — is raised from where upstream has it, as a real
+`RangeError` thrown into the environment so napi re-throws the right constructor.
+**Rationale:** the bridge's up-front check was a guard upstream does not have, and it fired on the
+two paths upstream never validates. Also found by the independent review.
+**Verify:** `tests/boundary/heap.js` — "should not validate n before upstream would".
+**Known, reproduced, untestable:** `n = -Infinity` never terminates, upstream or here, because
+`-Infinity + 1` is `-Infinity`. See `planning/NOTES.md`.
+
+### D-81 — a borrow is bound to a local before any `Store` call, never chained
+**Status:** CONFIRMED · **Category:** architecture · **Divergence:** no
+**Problem:** `self.items.borrow().allocate(0)?` keeps the `Ref` alive for the whole call, because a
+temporary lives to the end of the *statement*. On the bridge that call read `items.constructor` and
+invoked it — user JavaScript — so a re-entrant `clear()` reached the following `borrow_mut()` and
+**aborted the Node process** with `SIGABRT`. A Rust panic across the FFI boundary is not a
+catchable `Error`. `peek()` had the same shape through an accessor on index 0.
+**Port:** every method binds `let items = self.items.borrow().clone();` first. The comment that
+previously claimed the chained form was safe asserted the opposite of what it did.
+**Rationale:** D-43 says the bridge holds a `RefCell` and releases every borrow before any JS call.
+This is the third thing needed to make that true: `borrow()`-only is necessary, and so is not
+letting the temporary outlive the call.
+**Verify:** `tests/boundary/heap.js` — "should not hold a RefCell borrow across the JS its own
+peek() runs", and "should not run ANY user JavaScript from clear()", which asserts the cause rather
+than the symptom.

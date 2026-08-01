@@ -314,38 +314,32 @@ fn raw_pair<'env>(
 }
 
 /// `if (arguments.length === 2) { iterable = n; n = compare; compare = DEFAULT; }`
+///
+/// `n` leaves here as the JavaScript number it arrived as, **unvalidated**.
+/// Upstream never validates it either: it is compared (`n === 1`,
+/// `n >= iterable.length`), used as a `slice` end, and used as a *loop counter*
+/// — and the only construct that can refuse it is the `new Array(n)` on the
+/// iterable path, which core raises from where upstream has it. An earlier cut
+/// checked it here, which made `Heap.nsmallest(cmp, -1, array)` throw where
+/// upstream answers.
 fn top_arguments<'env>(
     env: &Env,
     first: Unknown<'env>,
     second: Unknown<'env>,
     third: Option<Unknown<'env>>,
-) -> Result<(BridgeComparator, usize, Unknown<'env>)> {
+) -> Result<(BridgeComparator, f64, Unknown<'env>)> {
     match third {
         Some(iterable) => Ok((
             BridgeComparator::resolve(env, Some(first), HEAP_COMPARATOR)?,
-            count(env, &second)?,
+            coerce_length(env, &second)?,
             iterable,
         )),
         None => Ok((
             BridgeComparator::resolve(env, None, HEAP_COMPARATOR)?,
-            count(env, &first)?,
+            coerce_length(env, &first)?,
             second,
         )),
     }
-}
-
-/// `n`, as `new Array(n)` would take it.
-fn count(env: &Env, value: &Unknown) -> Result<usize> {
-    let n = coerce_length(env, value)?;
-
-    if !n.is_finite() || n < 0.0 || n.fract() != 0.0 {
-        return Err(Error::new(
-            Status::InvalidArg,
-            "Invalid array length".to_owned(),
-        ));
-    }
-
-    Ok(n as usize)
 }
 
 /// `iterables.isArrayLike(iterable) ? … : forEach(iterable, …)`.

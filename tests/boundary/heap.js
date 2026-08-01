@@ -291,6 +291,116 @@ describe('Heap (boundary) — re-entrancy, exhaustively', function() {
   });
 });
 
+describe('Heap (boundary) — three defects an independent review found', function() {
+
+  // All three were live in the first cut of this bridge, all three passed every
+  // other gate — 21 upstream assertions, 47 boundary cases, 5M fuzz ops — and
+  // all three were found by a reviewer poking the built addon by hand. They are
+  // pinned here so they cannot come back.
+
+  it('should not run ANY user JavaScript from clear().', function() {
+    // `Heap.prototype.clear` is `this.items = []` — a literal, so it consults
+    // nothing. The first cut of this bridge allocated through
+    // `items.constructor`, which had two consequences: the cleared array kept
+    // the wrong class (below), and, because the borrow of `this.items` was
+    // still live across that call, a constructor that re-entered and cleared
+    // again hit `borrow_mut()` and **aborted the process** — a Rust panic, not
+    // a catchable error, so a `try` around it would not have helped.
+    //
+    // Both are gone, and this asserts the cause rather than the symptom: the
+    // constructor is never consulted at all.
+    var heap = new Heap();
+
+    heap.push(1);
+    heap.push(2);
+    heap.push(3);
+
+    var consulted = false;
+
+    Object.defineProperty(heap.items, 'constructor', {
+      get: function() { consulted = true; return Array; },
+      configurable: true
+    });
+
+    heap.clear();
+
+    assert.strictEqual(consulted, false);
+    assert.strictEqual(heap.size, 0);
+    assert.strictEqual(heap.items.length, 0);
+    assert.strictEqual(heap.items.constructor, Array);
+  });
+
+  it('should not hold a RefCell borrow across the JS its own peek() runs.', function() {
+    // Same shape one method over: `peek()` is `this.items[0]`, a real property
+    // read, and an accessor on index 0 re-enters.
+    var heap = new Heap();
+
+    heap.push(1);
+
+    var array = heap.items;
+
+    Object.defineProperty(array, '0', {
+      get: function() { heap.clear(); return 1; },
+      configurable: true
+    });
+
+    assert.strictEqual(heap.peek(), 1);
+    assert.strictEqual(heap.size, 0);
+  });
+
+  it('should clear and consume into a PLAIN array, whatever class items was.', function() {
+    // `Heap.prototype.clear` is `this.items = []` and `Heap.consume` opens with
+    // `var array = new Array(l)` — both unconditional literals. Only
+    // `nsmallest`'s `n === 1` path is class-preserving
+    // (`new iterable.constructor(1)`). One `allocate` for all three made the
+    // port MORE class-faithful than upstream, which is a defect.
+    function MyArr() {}
+    MyArr.prototype = Object.create(Array.prototype);
+
+    var cleared = Heap.from(new Uint8Array([3, 1, 2]));
+
+    cleared.clear();
+    assert.strictEqual(cleared.items.constructor, Array);
+
+    var subclass = Heap.from(Object.assign([3, 1, 2], {constructor: MyArr}));
+
+    assert.strictEqual(subclass.consume().constructor, Array);
+
+    var again = Heap.from(Object.assign([3, 1, 2], {constructor: MyArr}));
+
+    assert.strictEqual(again.toArray().constructor, Array);
+
+    // …while nsmallest's n === 1 path really does preserve it.
+    assert.ok(Heap.nsmallest(1, new Uint8Array([3, 1, 2])) instanceof Uint8Array);
+  });
+
+  it('should not validate n before upstream would.', function() {
+    var array = [5, 2, 4, 8, 9, 1, 45, 134, -34, 4, -1, 0];
+
+    // Upstream never validates `n`. It compares it, slices with it, and uses it
+    // as a LOOP COUNTER — `for (i = n; i < l; i++)` with the raw number. So a
+    // fractional `n` reads `iterable[2.5]`, `[3.5]`, … which are all
+    // `undefined`, and the scan does nothing at all.
+    assert.deepStrictEqual(Heap.nsmallest(ascending, 2.5, array), [2, 5]);
+    assert.deepStrictEqual(Heap.nlargest(ascending, 2.5, array), [5, 2]);
+    assert.deepStrictEqual(Heap.nsmallest(ascending, NaN, array), []);
+    assert.deepStrictEqual(Heap.nsmallest(ascending, 1.0000001, array), [5]);
+
+    // A negative `n` slices from the end and starts the scan below zero.
+    assert.strictEqual(Heap.nsmallest(ascending, -1, array).length, 11);
+
+    // The ONE place upstream can refuse `n` is `new Array(n)`, which is only
+    // reached for a non-array-like source — and it is a RangeError, not the
+    // bridge's own error.
+    assert.throws(function() {
+      Heap.nsmallest(ascending, -1, new Set(array));
+    }, RangeError);
+    assert.throws(function() {
+      Heap.nsmallest(ascending, 2.5, new Set(array));
+    }, /Invalid array length/);
+  });
+});
+
 describe('Heap (boundary) — the raw-array statics', function() {
 
   it('should expose all eight statics next to the prototype methods of the same name.', function() {

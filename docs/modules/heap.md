@@ -89,7 +89,9 @@ Everything below is reachable through the public API and never exercised.
     `n` values then give contradictory answers on the same input.
 15. **A typed array is never passed.** `new iterable.constructor(1)` means the `n === 1` path
     returns the source's class; the `n >= length` path sorts a typed-array clone.
-16. **`n === 0` is never passed**, nor a fractional or negative `n`.
+16. **`n === 0` is never passed**, nor a fractional, negative or `NaN` `n`. Upstream accepts all
+    of them on the array-like path without complaint, because `n` is a *loop counter* there and not
+    an index — see "Bugs this found", defect 3.
 17. **That the source is not mutated** is never asserted.
 18. **`guessLength`'s `.size` branch is exercised** (via `Set`) **but its `.length` branch is
     not**, because anything with a `.length` is array-like and takes the other path entirely.
@@ -132,10 +134,10 @@ Everything below is reachable through the public API and never exercised.
 | `reverse_swaps_arguments_rather_than_negating`, `the_two_reverses_agree_pointwise` | 6, 7 |
 | `tuple_comparator_is_lexicographic`, `tuple_comparator_reads_past_a_short_tuple_as_undefined` | 9 |
 
-**JavaScript boundary spec** — `tests/boundary/heap.js`, **47 cases**, covering everything that
+**JavaScript boundary spec** — `tests/boundary/heap.js`, **51 cases**, covering everything that
 needs a real JS comparator, a real array or a real typed array. Its provenance is the important
 part: **every expectation was run against the pinned upstream source first** (`bench/upstream/`,
-Node 24.18.1) and is what upstream printed. Re-pointed at upstream, 46 of the 47 pass unchanged;
+Node 24.18.1) and is what upstream printed. Re-pointed at upstream, 50 of the 51 pass unchanged;
 the only failure is the one explicitly about the bridge's own surface. So the file measures
 divergence in *either* direction, not merely "the port does what I expected".
 
@@ -154,10 +156,17 @@ coexist with the five prototype methods of the same name.
 
 **Differential fuzzer** — see "Fuzz + bench". Its grammar exists for gap 1 specifically.
 
-**Still untested, stated rather than glossed:** gap 23 (`inspect`, not ported), gap 16 (a
-fractional or negative `n`, refused by the bridge's `count` before any port code runs — upstream's
-`new Array(n)` refuses it too, with a different message), and gap 9's `createTupleComparator`
-beyond its Rust unit tests, since no upstream test file reaches it until `kd-tree`.
+**Still untested, stated rather than glossed:** gap 23 (`inspect`, not ported) and gap 9's
+`createTupleComparator` beyond its Rust unit tests, since no upstream test file reaches it until
+`kd-tree`.
+
+**And one behaviour that is reproduced and cannot be tested:** `Heap.nsmallest(cmp, -Infinity, array)`
+**does not terminate**, upstream or here. The scan is `for (i = n; i < l; i++)` and
+`-Infinity + 1` is `-Infinity`, so the loop reads `iterable[-Infinity]` — `undefined` — forever.
+The port hangs identically, which is bug-for-bug correct and therefore unrunnable in any test or
+fuzz grammar. It is a genuine upstream defect and it has **no `B-` number**: this agent's allocated
+range (B-70..B-79) was fully spent before it was found, and CLAUDE.md says to say so rather than
+spill past the range. Flagged for the orchestrator.
 
 ## Bugs this found
 
@@ -187,7 +196,66 @@ Heap.nsmallest(descending, 2, [Infinity, 5])   // [Infinity, 5]
 
 Two adjacent values of `n` disagree about which element is smallest.
 
-**Two defects in the port, both found by the port's own machinery, both fixed:**
+**Three defects in the port that every gate missed, found by an independent review.**
+`status: all fixed, all pinned by tests/boundary/heap.js`
+
+This is the most important paragraph in the document, because the unit had 21 upstream assertions,
+47 boundary cases, three fuzz campaigns and 5 M operations all green when they were found. It is
+the sixth entry for `planning/NOTES.md`'s table of confident green signals that were verifying
+something other than what was believed — and, like B-31, it was found by *a second, independent
+look* rather than by the machinery.
+
+*1 — a `RefCell` borrow held across a call into JavaScript, which aborted the process.*
+`Heap::clear` was written as
+
+```rust
+let fresh = self.items.borrow().allocate(0)?;   // the Ref lives to the end of the STATEMENT
+*self.items.borrow_mut() = fresh;
+```
+
+with a comment asserting the opposite. The temporary `Ref` is alive for the whole `allocate` call,
+and on the bridge that call read `items.constructor` and invoked it — user JavaScript. Re-entering
+`clear()` from that constructor reached the `borrow_mut()` and panicked. A Rust panic across the
+FFI boundary is not a catchable `Error`: it aborted Node with `SIGABRT`. `Heap::peek` had the same
+shape one method over, reachable through an accessor on index 0.
+
+The fuzzer could not have found it: its `VecStore` never calls JavaScript from `allocate`, so the
+class of bug is structurally unreachable there. Fixed by binding the store to a local before using
+it — the pattern the other eight methods already used — and, for `clear`, by the fix below, which
+removes the JavaScript call entirely.
+
+*2 — `clear()` and `consume()` preserved a class upstream discards.* `Heap.prototype.clear` is
+`this.items = []` and `Heap.consume` opens with `var array = new Array(l)`; both are unconditional
+literals. Only `nsmallest`'s `n === 1` path is class-preserving (`new iterable.constructor(1)`).
+The bridge had one `Store::allocate` doing duty for all three, so
+`Heap.from(new Uint8Array(…)).consume()` came back a `Uint8Array` where upstream gives a plain
+`Array`. **A port that is more class-faithful than upstream is a defect**, and this one was
+invisible to a fuzzer whose only store has a single class. Fixed by splitting `Store::allocate`
+(class-preserving) from `Store::plain_array` (always `Array`).
+
+*3 — `n` was validated before upstream would have validated it.* The bridge refused a negative,
+fractional or `NaN` `n` up front. Upstream never validates `n` at all: it *compares* it
+(`n === 1`, `n >= iterable.length`), *slices* with it, and uses it as a **loop counter** —
+`for (i = n; i < l; i++)` with the raw number. So `Heap.nsmallest(cmp, 2.5, array)` reads
+`iterable[2.5]`, `iterable[3.5]`, … every one of which is `undefined`, and the scan does nothing;
+the answer is the first two elements sorted. Measured against upstream, all of these answer
+without throwing where the port threw:
+
+```js
+Heap.nsmallest(cmp, -1,  array)   // 11 elements
+Heap.nsmallest(cmp, 2.5, array)   // [2, 5]
+Heap.nsmallest(cmp, NaN, array)   // []
+```
+
+The one place upstream *can* refuse `n` is the `new Array(n)` on the non-array-like path, and it
+raises a **`RangeError`**, not mnemonist's own error. Fixed by carrying `n` as the `f64` it is,
+reproducing the fractional/negative loop exactly, moving the refusal to where upstream has it, and
+raising a real `RangeError` through the environment so napi re-throws the right constructor.
+
+The doc's own gap 16 previously claimed "upstream's `new Array(n)` refuses it too", which was true
+for one of three code paths and false for the two the bridge actually intercepted. Corrected above.
+
+**Two more defects in the port, both found by the port's own machinery, both fixed:**
 
 *napi-rs registers a class's statics and its prototype methods through one name table.* Upstream
 has five name pairs that exist as both — `push`, `pop`, `replace`, `pushpop`, `consume` — and
@@ -220,6 +288,8 @@ below.
 | D-76 | **The `Infinity` sentinel is a value, not an `Option`.** | `Option<Item>` would have fixed B-71 *and* B-72. A slot type that cannot hold `Infinity` answers `is_infinity` false, which is the same statement one level up rather than a papered-over divergence. |
 | D-77 | **`#.comparator` is not exposed.** *(divergence: yes)* | The bridge stores a `BridgeComparator`, whose default variant has no JS function behind it at all. Synthesising one to satisfy a getter would be a fabrication — it would not be the object the sift calls. No upstream assertion reads it. |
 | — | **`nsmallest(cmp, n, undefined)` is read as the three-argument form.** | Upstream keys off `arguments.length === 2`, which napi's typed signature cannot see. The two forms the original suite uses are exact. |
+| — | **`Store::allocate` and `Store::plain_array` are different operations.** | `clear()` and `consume()` allocate a plain `Array` unconditionally, as upstream's `[]` and `new Array(l)` do; only `nsmallest`'s `n === 1` path and `FixedReverseHeap`'s `new ArrayClass(size)` preserve a class. One method doing both made the port *more* class-faithful than upstream. |
+| — | **`n` is carried as the `f64` it is, never validated up front.** | Upstream compares `n`, slices with it and uses it as a loop counter; the only construct that can refuse it is the `new Array(n)` on the non-array-like path. A fractional `n` therefore makes the scan read `iterable[2.5]` — `undefined` — every time, and the port reproduces that rather than truncating. |
 | — | **A `Store` whose `push` reports zero sifts at index 0, where upstream sifts at `-1`.** | Not reachable from core, whose `VecStore` always reports at least 1; reachable through the bridge, because `push` is a real method lookup on a real JS array (D-73) and can be tampered with. `usize` underflow would panic in debug and wrap in release into an index asking the store to grow to `usize::MAX`, so it is `saturating_sub`. **Measured afterwards: the observable result is identical.** Upstream's `heap[-1] = heap[-1]` writes an expando nothing reads; ours rewrites `heap[0]` with the value it just read. Both leave `items` and `size` exactly as the other does. |
 | — | **A missing array method throws an `Error`, not V8's `TypeError`.** | `Heap.from(typedArray).toArray()` reaches `heap.pop()` on a typed array, which has none. Upstream dies with `TypeError: heap.pop is not a function`; the bridge raises `Error: pop is not a function`, because the receiver in V8's message comes from the *source text* of the call site and no Rust code has it. Both throw, at the same point, for the same reason. Measured across ~35 edge cases against the pinned upstream source, this is **the only textual difference**. |
 | — | **`inspect()` is not ported.** | A Node display convenience with no upstream assertion. |

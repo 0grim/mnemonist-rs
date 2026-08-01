@@ -62,6 +62,13 @@ use crate::utils::comparators::{Comparator, MaybeUndefined, Reversed, Sentinel, 
 /// Upstream's message, verbatim. `test/heap.js` asserts against `/replace/`.
 pub const REPLACE_EMPTY: &str = "mnemonist/heap.replace: cannot pop an empty heap.";
 
+/// V8's message for `new Array(n)` with an `n` that is not an array length.
+///
+/// Upstream never validates `n` itself; the only place it can be refused is the
+/// `new Array(n)` inside `nsmallest`/`nlargest`'s iterable branch, and this is
+/// what that raises.
+pub const INVALID_ARRAY_LENGTH: &str = "Invalid array length";
+
 /// A JavaScript array, as the heap algorithms address one.
 ///
 /// # Why every method takes `&self`
@@ -119,12 +126,31 @@ pub trait Store: Clone + Sized {
     /// `array.length = length`, truncating or extending with holes.
     fn set_length(&self, length: usize) -> Result<(), Self::Error>;
 
-    /// `new ArrayClass(length)` — a fresh, hole-filled array of the same class.
+    /// `new this.constructor(length)` — a fresh, hole-filled array **of the
+    /// same class**.
     ///
-    /// Upstream writes `new Array(l)` in `consume` and
-    /// `new iterable.constructor(1)` in `nsmallest`; both are "another array
-    /// like this one", which is what this is.
+    /// This is `nsmallest`'s `new iterable.constructor(1)` and
+    /// `fixed-reverse-heap`'s `new ArrayClass(size)`, and *only* those. It is
+    /// deliberately not the same operation as [`plain_array`](Store::plain_array):
+    /// conflating the two made `clear()` and `consume()` preserve a class
+    /// upstream discards.
     fn allocate(&self, length: usize) -> Result<Self, Self::Error>;
+
+    /// `[]` / `new Array(length)` — a fresh **plain** array, whatever class
+    /// `self` is.
+    ///
+    /// `Heap.prototype.clear` is `this.items = []` and `Heap.consume` opens
+    /// with `var array = new Array(l)`; both are unconditional literals, so a
+    /// heap built from a `Uint8Array` clears to a plain `Array` and consumes
+    /// into one.
+    fn plain_array(&self, length: usize) -> Result<Self, Self::Error>;
+
+    /// The `undefined` this array answers a hole with.
+    ///
+    /// Needed because `nsmallest`'s scan loop can start at a *fractional* or
+    /// negative index (`for (i = n; …)` with the raw `n`), where every read is
+    /// `undefined` without the array being consulted at all.
+    fn undefined(&self) -> Result<Self::Item, Self::Error>;
 
     /// `array.slice(start, end)`.
     fn slice(&self, start: usize, end: usize) -> Result<Self, Self::Error>;
@@ -238,6 +264,16 @@ impl<T: Clone> Store for VecStore<T> {
         Ok(Self {
             cells: Rc::new(RefCell::new(vec![None; length])),
         })
+    }
+
+    /// Identical to [`allocate`](Store::allocate) here: a `VecStore` has only
+    /// one class. The distinction exists for the bridge, whose arrays do not.
+    fn plain_array(&self, length: usize) -> Result<Self, Thrown> {
+        self.allocate(length)
+    }
+
+    fn undefined(&self) -> Result<Option<T>, Thrown> {
+        Ok(None)
     }
 
     fn slice(&self, start: usize, end: usize) -> Result<Self, Thrown> {
@@ -456,7 +492,10 @@ where
     let l = heap.length()?;
     let mut i = 0;
 
-    let array = heap.allocate(l)?;
+    // `var array = new Array(l)` — a plain array literal, NOT one of `heap`'s
+    // class. `Heap.from(new Uint8Array(…)).consume()` returns a plain `Array`
+    // upstream, and an earlier cut of this port returned a `Uint8Array`.
+    let array = heap.plain_array(l)?;
 
     while i < l {
         let item = pop(compare, heap)?;
@@ -577,7 +616,7 @@ pub enum Source<S: Store> {
 /// Four distinct code paths upstream, all reproduced: `n === 1` over an
 /// array-like, `n === 1` over an iterable, `n >= length` over an array-like
 /// (clone and sort), and the bounded-heap path.
-pub fn nsmallest<S, C>(compare: &C, n: usize, source: Source<S>) -> Result<S, S::Error>
+pub fn nsmallest<S, C>(compare: &C, n: f64, source: Source<S>) -> Result<S, S::Error>
 where
     S: Store,
     S::Item: MaybeUndefined + Sentinel,
@@ -587,7 +626,7 @@ where
 
     match source {
         Source::ArrayLike(iterable) => {
-            if n == 1 {
+            if n == 1.0 {
                 // `var min = Infinity` used as an "unset" sentinel, then
                 // `if (min === Infinity || compare(v, min) < 0)`. NOTES B-72:
                 // the sentinel is a real value, so an element that *is*
@@ -613,7 +652,7 @@ where
 
             let length = iterable.length()?;
 
-            if n >= length {
+            if n >= length as f64 {
                 let clone = iterable.slice(0, length)?;
 
                 sort_with(&clone, compare)?;
@@ -621,17 +660,17 @@ where
                 return Ok(clone);
             }
 
-            let result = iterable.slice(0, n)?;
+            let result = iterable.slice(0, slice_end(n, length))?;
 
             heapify(&reverse_compare, &result)?;
 
-            for i in n..length {
-                let candidate = iterable.get(i)?;
-
+            scan(n, length, &iterable, |candidate| {
                 if reverse_compare.compare(&candidate, &result.get(0)?)? > 0.0 {
                     replace(&reverse_compare, &result, candidate)?;
                 }
-            }
+
+                Ok(())
+            })?;
 
             sort_with(&result, compare)?;
 
@@ -642,7 +681,7 @@ where
             guessed_length,
             plain,
         } => {
-            if n == 1 {
+            if n == 1.0 {
                 let mut min = Unset::new(false);
 
                 for value in values {
@@ -666,7 +705,7 @@ where
 
 /// `Heap.nlargest(compare, n, iterable)` — `nsmallest` with the two
 /// comparators exchanged, exactly as upstream writes it out twice.
-pub fn nlargest<S, C>(compare: &C, n: usize, source: Source<S>) -> Result<S, S::Error>
+pub fn nlargest<S, C>(compare: &C, n: f64, source: Source<S>) -> Result<S, S::Error>
 where
     S: Store,
     S::Item: MaybeUndefined + Sentinel,
@@ -676,7 +715,7 @@ where
 
     match source {
         Source::ArrayLike(iterable) => {
-            if n == 1 {
+            if n == 1.0 {
                 let mut max = Unset::new(true);
 
                 for i in 0..iterable.length()? {
@@ -697,7 +736,7 @@ where
 
             let length = iterable.length()?;
 
-            if n >= length {
+            if n >= length as f64 {
                 let clone = iterable.slice(0, length)?;
 
                 sort_with(&clone, &reverse_compare)?;
@@ -705,17 +744,17 @@ where
                 return Ok(clone);
             }
 
-            let result = iterable.slice(0, n)?;
+            let result = iterable.slice(0, slice_end(n, length))?;
 
             heapify(compare, &result)?;
 
-            for i in n..length {
-                let candidate = iterable.get(i)?;
-
+            scan(n, length, &iterable, |candidate| {
                 if compare.compare(&candidate, &result.get(0)?)? > 0.0 {
                     replace(compare, &result, candidate)?;
                 }
-            }
+
+                Ok(())
+            })?;
 
             sort_with(&result, &reverse_compare)?;
 
@@ -726,7 +765,7 @@ where
             guessed_length,
             plain,
         } => {
-            if n == 1 {
+            if n == 1.0 {
                 let mut max = Unset::new(true);
 
                 for value in values {
@@ -756,7 +795,7 @@ where
 fn bounded<S, F, H>(
     final_sort: &F,
     heap_compare: &H,
-    mut n: usize,
+    mut n: f64,
     guessed_length: Option<usize>,
     values: Vec<S::Item>,
     plain: S,
@@ -771,19 +810,27 @@ where
     // `undefined`, never `null`, so the guard reads oddly but behaves: an
     // absent length leaves `n` alone because `undefined < n` is false.
     if let Some(size) = guessed_length {
-        if size < n {
-            n = size;
+        if (size as f64) < n {
+            n = size as f64;
         }
     }
 
-    let result = plain.allocate(n)?;
+    // `new Array(n)` — and this is upstream's ONLY validation of `n` anywhere.
+    // It is reached on this path and on no other, which is why the bridge must
+    // not pre-validate: `nsmallest(cmp, -1, [array])` goes down the array-like
+    // path and answers without complaint.
+    if !is_array_length(n) {
+        return Err(plain.raise(INVALID_ARRAY_LENGTH));
+    }
+
+    let result = plain.plain_array(n as usize)?;
     let mut i = 0usize;
 
     for value in values {
-        if i < n {
+        if (i as f64) < n {
             result.set(i, value)?;
         } else {
-            if i == n {
+            if i as f64 == n {
                 heapify(heap_compare, &result)?;
             }
 
@@ -804,6 +851,62 @@ where
     sort_with(&result, final_sort)?;
 
     Ok(result)
+}
+
+/// `array.slice(0, n)`'s end index, as ECMA-262 computes one.
+///
+/// `ToIntegerOrInfinity` truncates towards zero and maps `NaN` to `0`; a
+/// negative end counts back from the end; the result is clamped to the array.
+/// The port cannot pass a negative `end` through `Store::slice`, so the whole
+/// computation happens here and the store sees a plain index.
+fn slice_end(n: f64, length: usize) -> usize {
+    let relative = if n.is_nan() { 0.0 } else { n.trunc() };
+    let length = length as f64;
+
+    let end = if relative < 0.0 {
+        (length + relative).max(0.0)
+    } else {
+        relative.min(length)
+    };
+
+    end as usize
+}
+
+/// `new Array(n)` accepts exactly this set.
+fn is_array_length(n: f64) -> bool {
+    n.is_finite() && n >= 0.0 && n.fract() == 0.0 && n <= 4_294_967_295.0
+}
+
+/// `for (i = n, l = iterable.length; i < l; i++)`, with the **raw** `n`.
+///
+/// The loop counter is upstream's JavaScript number, not an index, and that is
+/// observable: `nsmallest(cmp, 2.5, array)` reads `iterable[2.5]`, `[3.5]`, …,
+/// every one of which is `undefined` — so the scan sees nothing at all and the
+/// answer is just the first two elements sorted. A negative `n` starts the loop
+/// below zero and reads `undefined` once before reaching real elements. Neither
+/// is a case any upstream test covers, and neither throws upstream.
+fn scan<S, F>(n: f64, length: usize, iterable: &S, mut visit: F) -> Result<(), S::Error>
+where
+    S: Store,
+    F: FnMut(S::Item) -> Result<(), S::Error>,
+{
+    let mut i = n;
+
+    while i < length as f64 {
+        // `iterable[i]` — a hole for any `i` that is not a non-negative
+        // integer, and JavaScript answers a hole with `undefined`.
+        let candidate = if i >= 0.0 && i.fract() == 0.0 {
+            iterable.get(i as usize)?
+        } else {
+            iterable.undefined()?
+        };
+
+        visit(candidate)?;
+
+        i += 1.0;
+    }
+
+    Ok(())
 }
 
 /// `var min = Infinity` used as "no candidate yet", reproduced exactly.
@@ -897,11 +1000,17 @@ impl<S: Store, C: Comparator<S::Item, S::Error>> Heap<S, C> {
         &self.comparator
     }
 
-    /// `#.clear` — a **new** array, not a truncation.
+    /// `#.clear` — `this.items = []`, a **new plain array**, not a truncation.
     pub fn clear(&self) -> Result<(), S::Error> {
-        // Computed before the rebind so no borrow is outstanding while the
-        // store allocates, which for the bridge means calling into JS.
-        let fresh = self.items.borrow().allocate(0)?;
+        // Two statements, and the split is load-bearing rather than tidy.
+        // `self.items.borrow().plain_array(0)` would keep the `Ref` alive for
+        // the whole `plain_array` call, because the temporary lives to the end
+        // of the statement -- and for the bridge that call reads a `constructor`
+        // property and invokes a constructor, i.e. runs JavaScript, which can
+        // re-enter and reach the `borrow_mut()` below. Measured: it aborts the
+        // process with `RefCell already borrowed`, not a catchable error.
+        let items = self.items.borrow().clone();
+        let fresh = items.plain_array(0)?;
 
         *self.items.borrow_mut() = fresh;
         self.size.set(0);
@@ -927,7 +1036,12 @@ impl<S: Store, C: Comparator<S::Item, S::Error>> Heap<S, C> {
 
     /// `#.peek` — `this.items[0]`, `undefined` when empty.
     pub fn peek(&self) -> Result<S::Item, S::Error> {
-        self.items.borrow().clone().get(0)
+        // Bound to a local for the reason in `clear`: a single expression would
+        // hold the `Ref` across `get(0)`, which for the bridge is a real
+        // property read and can run a getter or a proxy trap.
+        let items = self.items.borrow().clone();
+
+        items.get(0)
     }
 
     /// `#.pop`.
@@ -1246,15 +1360,15 @@ mod tests {
     fn nsmallest_over_an_array_like() {
         let array = VecStore::from_values([5, 2, 4, 8, 9, 1, 45, 134, -34, 4, -1, 0]);
 
-        let three = nsmallest(&DefaultComparator, 3, Source::ArrayLike(array.clone())).unwrap();
+        let three = nsmallest(&DefaultComparator, 3.0, Source::ArrayLike(array.clone())).unwrap();
 
         assert_eq!(values(&three), vec![Some(-34), Some(-1), Some(0)]);
 
-        let one = nsmallest(&DefaultComparator, 1, Source::ArrayLike(array.clone())).unwrap();
+        let one = nsmallest(&DefaultComparator, 1.0, Source::ArrayLike(array.clone())).unwrap();
 
         assert_eq!(values(&one), vec![Some(-34)]);
 
-        let all = nsmallest(&DefaultComparator, 34, Source::ArrayLike(array)).unwrap();
+        let all = nsmallest(&DefaultComparator, 34.0, Source::ArrayLike(array)).unwrap();
 
         assert_eq!(all.length().unwrap(), 12);
         assert_eq!(all.get(0).unwrap(), Some(-34));
@@ -1271,7 +1385,7 @@ mod tests {
 
         let three = nlargest(
             &DefaultComparator,
-            3,
+            3.0,
             Source::Iterable {
                 values: values_in,
                 guessed_length: None,

@@ -41,7 +41,7 @@
 use std::ptr;
 use std::rc::Rc;
 
-use mnemonist_core::structures::heap::Store;
+use mnemonist_core::structures::heap::{Store, INVALID_ARRAY_LENGTH};
 use napi::bindgen_prelude::*;
 use napi::sys;
 
@@ -198,9 +198,28 @@ impl Store for JsArray {
     type Item = JsSlot;
     type Error = Error;
 
-    /// `throw new Error(message)`, which for `Heap.replace` on an empty heap is
-    /// the message `test/heap.js` matches against.
+    /// `throw new Error(message)` — or a `RangeError`, where the thing doing
+    /// the throwing upstream is V8 rather than mnemonist.
+    ///
+    /// Core raises by message and the bridge picks the constructor, because
+    /// `mnemonist-core` has no notion of a JavaScript error class. Two messages
+    /// reach here: `Heap.replace`'s, which upstream raises with
+    /// `throw new Error(...)`, and `new Array(n)`'s, which is V8's
+    /// `RangeError: Invalid array length`.
+    ///
+    /// The `RangeError` is thrown *into the environment* and reported back as
+    /// [`Status::PendingException`], which is what makes napi re-throw the real
+    /// object instead of wrapping it in a fresh `Error` — the same mechanism a
+    /// throwing comparator rides out on.
     fn raise(&self, message: &'static str) -> Error {
+        if message == INVALID_ARRAY_LENGTH {
+            let env = Env::from_raw(self.env);
+
+            if env.throw_range_error(message, None).is_ok() {
+                return Error::new(Status::PendingException, message);
+            }
+        }
+
         Error::new(Status::GenericFailure, message)
     }
 
@@ -281,6 +300,31 @@ impl Store for JsArray {
         let value = new_instance(self.env, constructor, double(self.env, length as f64)?)?;
 
         Self::adopt(self.env, value)
+    }
+
+    /// `new Array(length)`, whatever class this array is.
+    ///
+    /// The distinction from [`allocate`](Store::allocate) is upstream's and it
+    /// is observable: `Heap.prototype.clear` is `this.items = []` and
+    /// `Heap.consume` opens with `var array = new Array(l)`, both unconditional
+    /// literals, while `nsmallest`'s `n === 1` path writes
+    /// `new iterable.constructor(1)`. An earlier cut used `allocate` for all
+    /// three, so `Heap.from(new Uint8Array(…)).consume()` came back a
+    /// `Uint8Array` where upstream gives a plain `Array`.
+    fn plain_array(&self, length: usize) -> Result<Self> {
+        let mut value = ptr::null_mut();
+
+        // SAFETY: `env` is live; the out-parameter is written on success.
+        check(
+            unsafe { sys::napi_create_array_with_length(self.env, length, &mut value) },
+            "napi_create_array_with_length",
+        )?;
+
+        Self::adopt(self.env, value)
+    }
+
+    fn undefined(&self) -> Result<JsSlot> {
+        Ok(JsSlot::Undefined)
     }
 
     fn slice(&self, start: usize, end: usize) -> Result<Self> {

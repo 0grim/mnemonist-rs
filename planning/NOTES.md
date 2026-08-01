@@ -638,6 +638,44 @@ and not the first. Minor, but it is the reason the port cannot implement the gua
 truthy non-function must not.
 
 
+
+### Not allocated a `B-` number — `Heap.nsmallest(compare, -Infinity, arrayLike)` never terminates
+
+`status: verified against Node 24.18.1` · `heap.js` · **needs an ID from the orchestrator**
+
+The scan loop in the array-like branch is `for (i = n, l = iterable.length; i < l; i++)` with the
+raw `n`. `-Infinity + 1` is `-Infinity`, so `i` never advances, `i < l` stays true and
+`iterable[-Infinity]` — `undefined` — is read forever. Upstream hangs; the port hangs identically,
+which is bug-for-bug correct and therefore untestable and unfuzzable.
+
+Found while probing the `n`-validation defect the T2 review turned up, by which point this agent's
+allocated range (B-70..B-79) was fully spent. CLAUDE.md says to say so rather than spill past the
+range, so it is recorded here without an ID.
+
+### Sixth entry for the confident-green-signal table — the T2 review
+
+`status: three defects found, all fixed` · not upstream's; ours
+
+The `heap` / `fixed-reverse-heap` unit had **21 upstream assertions, 47 boundary cases, three fuzz
+campaigns and 5 M operations, all green**, while carrying:
+
+1. a `RefCell` borrow held across a call into JavaScript, which **aborted the Node process** with
+   `SIGABRT` when a re-entrant `clear()` reached it — not a catchable error;
+2. `clear()` and `consume()` preserving an array class that upstream discards, i.e. the port being
+   *more* faithful than upstream and therefore wrong;
+3. `n` validated in the bridge before upstream would have validated it, so
+   `Heap.nsmallest(cmp, 2.5, array)` threw where upstream answers `[2, 5]`.
+
+None was reachable by the fuzzer **by construction**: its `VecStore` never calls JavaScript from
+`allocate` (so 1 is structurally impossible there), has a single class (so 2 cannot appear), and
+`nsmallest`/`nlargest` are outside the grammar (so 3 cannot). All three were found by a reviewer
+poking the built addon by hand.
+
+*Same lesson as B-31, and it is now twice: passing your own verification is not the same as being
+correct, and both times the only thing that caught it was a second, independent look. The specific
+generalisation is sharper than "fuzz more" — a differential fuzzer whose oracle-side store cannot
+run user code cannot find a bug that needs user code to run, however many operations it does.*
+
 ---
 
 ## Log
