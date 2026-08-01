@@ -80,6 +80,13 @@ pub struct Messages {
 }
 
 /// A JS array constructor, plus everything derived from it once.
+///
+/// `Clone` (added for `lru-cache`'s optional `Keys`/`Values` classes, which a
+/// populating `.from` must hold onto for the life of a JS closure that
+/// outlives the borrow that produced them): every field is already `Clone`
+/// (`JsSlot`, `Backing<JsSlot>`, `&'static str`), so this costs nothing beyond
+/// what those types already cost to duplicate.
+#[derive(Clone)]
 pub struct ArrayClass {
     /// `this.ArrayClass`. Held as a slot because a `napi_value` does not
     /// survive the call that produced it.

@@ -43,6 +43,12 @@ pub mod sort;
 // Appended, never interleaved: this list is a shared registry (CLAUDE.md, Git).
 pub mod bloom_filter;
 pub mod suffix_array;
+// Appended at the end, never inserted: this file is edited by several agents
+// at once and a new line at the end can never land inside another one's hunk.
+pub mod lru_cache;
+pub mod lru_cache_with_delete;
+pub mod lru_map;
+pub mod lru_map_with_delete;
 
 #[napi]
 pub fn ping() -> &'static str {

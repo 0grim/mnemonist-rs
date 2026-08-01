@@ -215,6 +215,28 @@ impl<IK: Hash + Eq, K, V> LruCache<IK, K, V> {
         self.size == 0
     }
 
+    /// Upstream's `head` property: the pointer of the most recently used
+    /// entry. `test/lru-cache.js` asserts this directly after emptying a
+    /// `-with-delete` cache (`cache.head === 0`).
+    pub fn head(&self) -> usize {
+        self.head
+    }
+
+    /// Upstream's `tail` property: the pointer of the least recently used
+    /// entry.
+    pub fn tail(&self) -> usize {
+        self.tail
+    }
+
+    /// The pointer index, key by key — upstream's `this.items` itself, which
+    /// `test/lru-cache.js:65` inspects directly
+    /// (`Object.keys(cache.items).length` / `cache.items.size`). Exposed so
+    /// the bridge can rebuild the same shape the original test observes
+    /// without needing a second copy of the index.
+    pub fn index_entries(&self) -> impl Iterator<Item = (&IK, usize)> {
+        self.index.iter().map(|(key, &pointer)| (key, pointer))
+    }
+
     /// Upstream's `clear`. Resets the index and the bookkeeping only —
     /// `keys`/`values`/`forward`/`backward` are left exactly as they were,
     /// because upstream's `this.items = {}` / `new Map()` rebinds only the
@@ -464,11 +486,19 @@ impl<IK: Hash + Eq, K: Clone, V: Clone> Sequence for LruCache<IK, K, V> {
 }
 
 impl<IK: Hash + Eq, K: Clone, V: Clone> LruCache<IK, K, V> {
+    /// The frozen state one of the three walks starts from: `head`, captured
+    /// now, next to which walk this is. Exposed so the napi bridge can open a
+    /// [`crate::cursor::CellCursor`] directly (it needs the `Frozen` payload,
+    /// not a borrowing [`CursorState`]) without reaching into private fields.
+    pub fn frozen(&self, projection: Projection) -> <Self as Sequence>::Frozen {
+        (Cell::new(self.head), projection)
+    }
+
     /// Open one of the three walks — upstream's `keys`/`values`/`entries`,
     /// and the shape `forEach` uses internally too. See the module docs for
     /// why one `Sequence` impl, selected by [`Projection`], serves all four.
     pub fn walk(&self, projection: Projection) -> CursorState<Self> {
-        CursorState::open_projected(self, (Cell::new(self.head), projection))
+        CursorState::open_projected(self, self.frozen(projection))
     }
 }
 

@@ -237,6 +237,15 @@ const ITERATOR_FACTORIES: &[(&str, &str)] = &[
     ("FixedStack", "values"),
     ("FixedDeque", "values"),
     ("CircularBuffer", "values"),
+    // Appended at the end, never inserted: this file is edited by several
+    // agents at once and a new row can never land inside another one's hunk.
+    // All four alias `entries`, not `values` -- upstream's own last line for
+    // all of `lru-cache.js`/`lru-map.js`/the two `-with-delete` files is
+    // `X.prototype[Symbol.iterator] = X.prototype.entries`.
+    ("LRUCache", "entries"),
+    ("LRUCacheWithDelete", "entries"),
+    ("LRUMap", "entries"),
+    ("LRUMapWithDelete", "entries"),
 ];
 
 /// Wire every collection's `Symbol.iterator` to its cursor factory.
