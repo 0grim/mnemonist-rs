@@ -12,8 +12,11 @@ use napi_derive::napi;
 pub mod cursor;
 pub mod foreach;
 pub mod js_slot;
+pub mod queue;
 pub mod sparse_set;
+pub mod stack;
 pub mod static_disjoint_set;
+pub mod statics;
 
 #[napi]
 pub fn ping() -> &'static str {

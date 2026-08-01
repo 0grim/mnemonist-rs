@@ -285,7 +285,7 @@ pub fn collect(env: &Env, iterable: Unknown) -> Result<Vec<JsSlot>> {
 /// bytes — so a surrogate pair yields two halves and a lone surrogate survives.
 /// Going through Rust `char`s would silently repair both.
 fn each_string(env: &Env, iterable: &Unknown, callback: &Unknown) -> Result<()> {
-    let units = utf16_units(env, iterable)?;
+    let units = crate::js_slot::read_utf16(env, iterable)?;
     // SAFETY: `callback` is type-checked by the caller.
     let callback: Function<'_, FnArgs<(Unknown, u32)>, Unknown> = unsafe { callback.cast()? };
 
@@ -503,55 +503,33 @@ fn to_number(env: &Env, value: &Unknown) -> Result<f64> {
     Ok(result)
 }
 
-/// `String(value)`, used only to build the `in`-operator `TypeError`'s text.
+/// `array.join(',')`, which several structures define `toString` as.
+///
+/// Not `Vec<String>::join`: `Array.prototype.join` renders `null` and
+/// `undefined` as the empty string and everything else through `String(v)`, so
+/// `[1, null, 2].join(',')` is `"1,,2"` and not `"1,null,2"`.
+pub(crate) fn join(env: &Env, slots: &[JsSlot]) -> Result<String> {
+    let mut parts = Vec::with_capacity(slots.len());
+
+    for slot in slots {
+        let value = slot.get(env)?;
+
+        parts.push(match value.get_type()? {
+            ValueType::Null | ValueType::Undefined => String::new(),
+            _ => display(env, &value)?,
+        });
+    }
+
+    Ok(parts.join(","))
+}
+
+/// `String(value)`, used to build the `in`-operator `TypeError`'s text and to
+/// render elements for [`join`].
 fn display(env: &Env, value: &Unknown) -> Result<String> {
     let global = env.get_global()?;
     let string_ctor: Function<'_, Unknown, String> = global.get_named_property("String")?;
 
     string_ctor.call(*value)
-}
-
-/// The UTF-16 code units of a JS string, which is how JS indexes one.
-fn utf16_units(env: &Env, value: &Unknown) -> Result<Vec<u16>> {
-    let mut length = 0;
-
-    // SAFETY: the caller checked `typeof === 'string'`. A null buffer asks
-    // N-API for the length in code units.
-    check(
-        unsafe {
-            sys::napi_get_value_string_utf16(
-                env.raw(),
-                value.raw(),
-                ptr::null_mut(),
-                0,
-                &mut length,
-            )
-        },
-        "napi_get_value_string_utf16",
-    )?;
-
-    // The API writes a trailing NUL, so the buffer is one longer than the
-    // string and the extra unit is dropped afterwards.
-    let mut units = vec![0u16; length + 1];
-    let mut written = 0;
-
-    // SAFETY: `units` has room for `length` code units plus the terminator.
-    check(
-        unsafe {
-            sys::napi_get_value_string_utf16(
-                env.raw(),
-                value.raw(),
-                units.as_mut_ptr(),
-                units.len(),
-                &mut written,
-            )
-        },
-        "napi_get_value_string_utf16",
-    )?;
-
-    units.truncate(written);
-
-    Ok(units)
 }
 
 fn undefined<'env>(env: &'env Env) -> Result<Unknown<'env>> {
