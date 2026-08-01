@@ -524,6 +524,86 @@ suite is one repeated trigram away from having caught this.
 Distinct from the module's own `it.skip('should work with int values (issue #196)')`, which is about
 the token-case sentinel and needs token input; both of these fire on plain strings. Reproduced.
 
+### B-93 — `murmurhash3`'s `sum32` is not a 32-bit adder, and a swapped constant hides it
+`status: VERIFIED against Node 24.18.1` · `mnemonist utils/murmurhash3.js`
+```js
+function sum32(a, b) {
+  return (a & 0xffff) + (b >>> 16) + (((a >>> 16) + b & 0xffff) << 16) & 0xffffffff;
+}
+```
+The correct form takes `b & 0xffff` for the low half and `b >>> 16` for the high half. This one has
+them the wrong way round in **both** places, so it adds `b`'s high half to `a`'s low half and `b`'s
+low half to `a`'s high half. `sum32(1, 1)` is **65537**.
+
+It is called exactly once, with `n = 0x6b64e654` — MurmurHash3's published `0xe6546b64` with its
+halves swapped. The two errors cancel exactly: `sum32(hash, 0x6b64e654) === (hash + 0xe6546b64) mod
+2^32` for every 32-bit `hash`, checked over 200,000 random inputs against BigInt arithmetic.
+
+So the digest is correct, the helper is wrong, and the only thing holding them together is a
+constant nobody would recognise as a typo. Anyone reusing `sum32` — it looks entirely general — gets
+nonsense; anyone "correcting" `n` to the published constant breaks every filter the library has ever
+produced.
+
+Demonstrated end to end through the original suite as a control on gate 6: replacing
+`sum32(hash, N)` with `hash + 0xe6546b64` leaves all six `test/bloom-filter.js` cases green, while
+replacing it with `hash + N` turns two of them red. Reproduced, with both halves pinned by tests.
+
+### B-97 — `BloomFilter` with zero hash functions answers `true` to everything
+`status: VERIFIED against Node 24.18.1` · `mnemonist bloom-filter.js`
+`hashFunctions = (length * 8 / capacity * Math.LN2) | 0`, unchecked. When it truncates to `0`, `add`
+writes no bits and `test` returns `true` **vacuously** — the loop it would have returned `false`
+from never runs.
+
+```js
+> var f = new BloomFilter(0.5);      // passes every validation upstream has
+> f.hashFunctions                    // 0
+> f.test('anything')                 // true
+> f.test('anything else')            // true
+```
+
+`0.5` gets through because the check is `typeof capacity === 'number' && capacity > 0`, despite the
+error message beside it saying "positive **integer**". `{capacity: 10, errorRate: 0.5}` reaches the
+same state with a **non-empty** `data`, so this is not merely "an empty filter": the bit array
+exists, is all zeros, and every query says yes. Reproduced.
+
+### B-98 — every non-string item hashes identically
+`status: VERIFIED against Node 24.18.1` · `mnemonist bloom-filter.js`
+`stringToByteArray` does `new Uint16Array(string.length)`. On a number, `.length` is `undefined`,
+the typed array is **empty**, and the loop never runs — so the item hashes as the empty sequence,
+which is the same sequence `''` hashes.
+
+```js
+> var f = new BloomFilter(3);
+> f.add(42);
+> f.test(7)       // true
+> f.test(true)    // true
+> f.test('')      // true
+```
+
+A filter of numbers reports every number, every boolean and the empty string as present. The
+neighbours are inconsistent rather than uniformly permissive, which is what makes it a bug and not a
+coercion policy: `add(null)`/`add(undefined)` throw a `TypeError` from the property read,
+`add(['a'])` throws `string.charCodeAt is not a function`, and `add(new String('hello'))` works and
+equals `add('hello')`. Reproduced, all four cases.
+
+### B-99 — an `errorRate` above 1 is a raw `RangeError`, but only for a large enough capacity
+`status: VERIFIED against Node 24.18.1` · `mnemonist bloom-filter.js`
+`Math.log` of anything above 1 is positive, so `bits` goes negative and the allocation throws:
+
+```js
+> new BloomFilter({capacity: 50, errorRate: 100})
+RangeError: Invalid typed array length: -59
+> new BloomFilter({capacity: 50, errorRate: 3})
+RangeError: Invalid typed array length: -14
+> new BloomFilter({capacity: 5, errorRate: 2})     // no error at all
+BloomFilter { capacity: 5, errorRate: 2, hashFunctions: 0, data: Uint8Array(0) [] }
+```
+
+The third case is the interesting one: `(-7.2 / 8) | 0` truncates to `0`, so the *same* invalid
+option gives a silent B-97 always-true filter instead of an error, and which of the two you get
+depends on the capacity. Neither is the module's own error message, and `errorRate` is the one
+option upstream believes it validates. Reproduced, including the split.
+
 > Differential fuzzing has not run yet. Expect the best candidates to come from there, not from
 > reading. Add them here with the minimised repro attached.
 
