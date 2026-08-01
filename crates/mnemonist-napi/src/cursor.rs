@@ -274,6 +274,11 @@ const ITERATOR_FACTORIES: &[(&str, &str)] = &[
     // `values` -- there is no bare `values()` method on it at all.
     ("LinkedList", "values"),
     ("InvertedIndex", "documents"),
+    // Appended at the end, never inserted (CLAUDE.md, Git): a new row
+    // anywhere else is a merge conflict inside an array literal.
+    // `PassjoinIndex`'s last line aliases `values`, matching
+    // `test/passjoin-index.js`'s `for (var string of index)`.
+    ("PassjoinIndex", "values"),
 ];
 
 /// Wire every collection's `Symbol.iterator` to its cursor factory.

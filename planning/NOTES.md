@@ -2784,3 +2784,64 @@ logged in `fuzz/log.txt` — the logged campaigns for both units are clean.
 
 Observable through the oracle: every return value of `get`/`peek`/`has`/`delete`/`set` — which is
 the entire public surface, since a real `WeakMap` has no `size` and no iteration to compare.
+
+## multi-array, symspell, passjoin-index (B-300..B-319 range)
+
+No upstream bugs found in any of the three units, stated plainly rather than padded: read against
+the real source, ported variable-for-variable (`passjoin-index`'s partition arithmetic especially,
+checked line-by-line against `~/upstream-mnemonist/passjoin-index.js` and against
+`test/passjoin-index.js`'s own pinned segment/position/interval examples), and exercised by
+~1.7M differential-fuzz operations per unit (two seeds each, `fuzz/log.txt`) with zero divergences
+against real upstream on Node 24.18.1. B-300..B-319 are entirely unused; a later agent needing IDs
+in this range should not assume any are claimed.
+
+### Two port defects found by fuzzing or by the original suite itself, both fixed before any clean
+### campaign was logged (not upstream bugs, no B-id)
+
+Same precedent as the `critbit-tree-map`/`fixed-critbit-tree-map` entry above: recorded here because
+a defect this port's own machinery caught belongs in the capture log even without a `B-nn`.
+
+**`symspell`'s very first fuzz run (`--seed 1 --duration 10`) found a real algorithmic bug in this
+port's own `lookup`, not a harness artefact**: `add("jello")` then `search("hello")` at
+`{maxDistance: 1, verbosity: 0}` returned `[]` from the port against
+`[{"term":"jello","distance":1,"count":1}]` from real upstream. Cause: upstream's dictionary stores
+an entry two ways — a bare number (`Compact`, "the first word index this delete-form was ever
+reached from") or a full `{suggestions, count}` object (`Full`) — and `lookup` *locally* promotes a
+`Compact` entry to a full one on read (`item = createDictionaryItem(item)`) before iterating its
+suggestions, without persisting that promotion back to the dictionary. This port's `Entry::as_full`
+returned `None` for `Compact`, silently skipping the suggestions walk entirely for every delete-form
+only one word had ever reached — which is the common case for a sparsely-populated dictionary, not
+an edge case. Fixed by `Entry::suggestions()`, which reproduces the same local, non-persisted
+promotion for both variants. See `symspell.rs`'s
+`a_compact_dictionary_entry_still_contributes_its_suggestion`. The proptest regression seed for the
+original divergence was deleted before being captured (a process slip, not a data loss anyone should
+repeat) — the native test above is the permanent regression guard instead.
+
+**`multi-array`'s very first fuzz run (`--seed 1 --duration 8`) found a bridge API-shape bug**: a
+fresh, empty `MultiArray`'s `containers()` returned `[]` from the port against `{}` from upstream —
+not a data disagreement but a *type* one. Upstream builds a genuine `obliterator` `Iterator` object
+for `containers`/`associations`/`values`/`entries`/`keys` (an opaque `{next: fn}`, not an `Array`),
+which `fuzz/oracle.js`'s `encode()` has no special case for and reduces to `{}`; this port's bridge
+had returned a plain `Vec`/`Array` from all five instead, which the *original* test suite could never
+catch because `take()` (obliterator, used by every relevant `it` block) accepts either shape via
+duck-typing. Fixed by giving each of the five a real `#[napi(iterator)]` generator over a snapshot
+taken at call time, matching `multi_map.rs`'s and `vector.rs`'s own established pattern — which this
+port's first attempt at the module should have followed from the start rather than reaching for a
+plain array as a shortcut. See `crates/mnemonist-napi/src/multi_array.rs`'s module docs. Once fixed,
+these five methods were also dropped from the differential-fuzz op alphabet entirely: both sides now
+render `{}` for them, a comparison that can only ever agree trivially, the same reasoning
+`multi-map`'s own spec gives for excluding its cursor-lifecycle ops.
+
+Neither defect involved a fuzz-harness misconfiguration or an oracle bug — the fuzzer's first attempt
+at each of two units found a real, previously-committed port defect on the very first short smoke
+run, before any full campaign was logged. Both fixes are covered by native tests and confirmed against
+real upstream Node output directly (not merely re-run through the fuzzer), and the logged campaigns in
+`fuzz/log.txt` for both units post-date both fixes.
+
+A third defect, caught during a `cargo clippy` pass rather than by fuzzing: `symspell`'s
+`maxDistance` validation initially rejected `NaN`, the opposite of upstream's own guard
+(`maxDistance <= 0`, which is `false` for `NaN` and therefore lets it through uncaught). Fixed to
+match upstream's actual — surprising — behaviour rather than the "more defensive" one a first
+reading suggests. See `symspell.rs`'s `SymSpell::new` docs and D-451's neighbouring discussion in
+`DECISIONS-CANDIDATES.md` for the class of gap this is adjacent to (though this specific one is
+fidelity restored, not a disclosed divergence).

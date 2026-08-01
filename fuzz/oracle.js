@@ -446,6 +446,16 @@ const FACTORIES = {
       return heapAscending(a, b);
     };
   },
+  // Appended at the end, never inserted (CLAUDE.md, Git): a new key anywhere
+  // else is a merge conflict inside an object literal.
+  //
+  // `passjoin-index`'s `levenshtein` ctor argument. The real `leven` package
+  // (a harness dependency, `tests/harness-package.json`) rather than a
+  // hand-rolled metric: `PassjoinIndex` is only ever fuzzed together with the
+  // exact distance function `test/passjoin-index.js` itself uses, so there
+  // is no simplification to make here the way `bkAbsDiff` makes for
+  // `bk-tree`'s arbitrary caller-supplied metric.
+  pjLeven: () => require('leven'),
 };
 
 // Upstream's DEFAULT_COMPARATOR, written out so the factories above can wrap it.
