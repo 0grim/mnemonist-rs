@@ -1163,3 +1163,81 @@ letting the temporary outlive the call.
 **Verify:** `tests/boundary/heap.js` — "should not hold a RefCell borrow across the JS its own
 peek() runs", and "should not run ANY user JavaScript from clear()", which asserts the cause rather
 than the symptom.
+
+## vector, static-interval-tree (D-100 .. D-103)
+
+Same numbering caveat as D-60..D-69/D-80..D-88 above: only a bug-ID range (B-100..B-119) was
+allocated to this agent, so D-100..D-103 are chosen to mirror it rather than continuing the
+sequential D count, which other agents may be allocating from concurrently.
+
+### D-100 — `StaticIntervalTree::new` refuses zero intervals with an `Err`, not a panic
+**Status:** CONFIRMED · **Category:** behavioural · **Divergence:** no
+**Upstream:** `new StaticIntervalTree([])` throws a raw `TypeError: Cannot read properties of
+undefined (reading '1')` — three stack frames down inside `buildBST`, which is called
+unconditionally even for `length === 0`. See B-100.
+**Port:** `StaticIntervalTree::new` returns `Err(Error::EmptyIntervals)` for zero intervals,
+rather than reproducing the index-into-`undefined` mechanism as a Rust panic.
+**Rationale:** a Rust panic unwinding across the napi boundary is worse than the JS exception it
+would stand in for — napi 3.12 does not `catch_unwind` a synchronous call, so a panic here would
+abort the whole Node process rather than raise a catchable error the way upstream's `TypeError`
+does. Reproducing the *outcome* (construction fails, with a message pointing at the empty-input
+cause) is the faithful port; reproducing the *mechanism* would require deliberately indexing past
+an array's end, which `#![forbid(unsafe_code)]` and Rust's own bounds checking make impossible
+without a panic.
+**Verify:** `crates/mnemonist-core/src/structures/static_interval_tree.rs`,
+`zero_intervals_is_refused_rather_than_silently_accepted`; `docs/modules/static-interval-tree.md`.
+
+### D-101 — `Vector::get`/`set` admit `index == length`, bug-for-bug
+**Status:** CONFIRMED · **Category:** behavioural · **Divergence:** no
+**Upstream:** both bounds guards compare with `<`, not `<=`, so `get(length)`/`set(length, v)`
+are admitted rather than refused — see B-101.
+**Port:** `Vector::get`/`Vector::set` compare `self.length < index` exactly as upstream does, and
+let the *actual* backing-array bound (`index < self.capacity`) decide whether the access lands at
+all — the same two-guard shape upstream has, not a "tidier" single check at `length`.
+**Rationale:** a bounds check tightened to `<=` would be more correct than upstream and would
+silently drop a `set(length, v)` that upstream honours, which is exactly the "more correct than
+upstream" failure mode this port is required to avoid. `docs/modules/vector.md` documents the
+consequence (B-102) rather than quietly closing it.
+**Verify:** `crates/mnemonist-core/src/structures/vector.rs`,
+`get_and_set_admit_index_equal_to_length`, `a_full_vector_drops_the_admitted_write`; falsified in
+`docs/modules/vector.md` (tightening the guard to `<=` turns `vector_matches_upstream` red).
+
+### D-102 — `Storage::grown` bulk-copies the whole old capacity, not just `length`
+**Status:** CONFIRMED · **Category:** behavioural · **Divergence:** no
+**Upstream:** growth does `this.array.set(oldArray, 0)` — the whole old typed array, capacity
+region included — and `pop()` never clears the slot it releases. Together these let a popped
+value's stale data survive a grow and stay reachable through D-101's admission; see B-102.
+**Port:** `Storage::grown` copies the old backing store's full length (its capacity), matching the
+bulk-copy upstream's `TypedArray.prototype.set` performs, rather than copying only up to the
+vector's logical `length`.
+**Rationale:** copying only up to `length` is the "obvious correct" implementation a hand-written
+port would reach for, and it would silently zero the stale slot upstream leaves behind — closing a
+real, verified behaviour rather than reproducing it. The differential fuzzer's `array` observation
+compares the whole backing store slot for slot specifically so this stays checked.
+**Verify:** `crates/mnemonist-core/src/structures/vector.rs`,
+`stale_data_from_a_pop_survives_a_growth_and_stays_reachable`; `docs/modules/vector.md`.
+
+### D-103 — the fuzz harness parses oracle floats with serde_json's `float_roundtrip` feature
+**Status:** CONFIRMED · **Category:** tooling · **Divergence:** no
+**Problem:** `serde_json`'s default (fast) float parser is not always correctly rounded: parsing
+the literal `"38403.356486892444"` — an ordinary value `vector`'s fuzz grammar generates from a
+wide `f64` range — landed one ULP away from the value Rust's own `f64::from_str` recovers
+(`0x40e2c06b68573311` vs. the correct `0x...310`), confirmed with a scratch test comparing the two
+parses directly. Every value the oracle sends back over the line-delimited JSON pipe goes through
+this parse, so a high-precision `Float64Array` campaign reported divergences that were an artifact
+of the harness's own deserialization, not of the port or upstream — the wire log showed the port
+and the oracle's raw response text agreeing exactly, while the *parsed* `Value` the comparison used
+did not.
+**Port:** `serde_json = { version = "1", features = ["float_roundtrip"] }` in the workspace
+`Cargo.toml`. The feature trades a small parsing cost for a parser that is always correctly
+rounded, which is what a byte-for-byte oracle comparison requires.
+**Rationale:** this is the same class of finding as D-78 (the oracle's own array-holes-vs-`undefined`
+encoding bug) — a harness defect that manufactures divergences rather than catching them — and, per
+CLAUDE.md, "before trusting a check, ask what it would look like if the thing it checks were
+broken": here the check (a raw `Value` comparison) actively re-introduced the imprecision it was
+trying to detect. `vector` and `static-interval-tree` are the first two modules whose grammars
+generate `f64` values wide enough to hit the affected range; every other module's campaign had
+either passed on narrower/discrete float sets or not yet exercised the unlucky bit pattern.
+**Verify:** `cargo test -p difffuzz --test differential vector_matches_upstream
+static_interval_tree_matches_upstream`; the four campaigns in `fuzz/log.txt` for both modules,
+zero divergences at ~1.45M ops each.
