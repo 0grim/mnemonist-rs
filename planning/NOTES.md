@@ -405,6 +405,39 @@ recur**: `set`/`reset`/`flip` past the *array* are inert no-ops and `get` is `0`
 `BitSet`'s counter is derived from a before/after comparison that an `undefined` read makes false,
 where `SparseSet` increments its counter unconditionally after a dropped store (B-8).
 
+### B-95 — `binary-search.lowerBoundIndices` defaults `hi` from the wrong array
+`status: VERIFIED against Node 24.18.1` · `mnemonist utils/binary-search.js`
+Every other reference in the function is to `indices`; the `hi` fallback is `array.length`. When
+`indices` is shorter than `array` — the normal shape for a partial argsort, which is what an index
+array is for — the walk runs off the end of `indices`, reads `undefined`, indexes `array[undefined]`
+for another `undefined`, fails `value <= undefined`, and moves right.
+
+```js
+> require('mnemonist/utils/binary-search').lowerBoundIndices([0,1,2,3,4,5,6,7], [0,1], 1)
+8            // indices has 2 entries; 8 is a position in neither array
+> require('mnemonist/utils/binary-search').lowerBoundIndices([0,1,2,3,4,5,6,7], [0,1], 1, 0, 2)
+1            // what the caller meant
+```
+
+Latent in the shipped library: `vp-tree.js`, the only caller, always passes an `indices` the same
+length as `array`. Reachable from the public API, since `utils/` is `require`-able. Reproduced;
+see `docs/modules/utils-binary-search.md`.
+
+### B-96 — `binary-search.search` with an out-of-range `hi` reports a match at a hole
+`status: VERIFIED against Node 24.18.1` · `mnemonist utils/binary-search.js`
+`undefined` loses **both** comparisons, so `current > value` and `current < value` are each false
+and the `else` arm — which means "equal" — returns the midpoint.
+
+```js
+> require('mnemonist/utils/binary-search').search([1, 2, 3], 9, 0, 100)
+49
+```
+
+Worth recording alongside it: the two bound functions react to the same `undefined` in *opposite*
+directions, `lowerBound(...)` walking right to `100` and `upperBound(...)` left to `3`. So there is
+no single "undefined sorts high" rule to reason from — each call site has to be checked. The same
+`undefined`-loses-both rule makes `search([NaN, NaN, NaN], 1)` return `1`. Reproduced.
+
 > Differential fuzzing has not run yet. Expect the best candidates to come from there, not from
 > reading. Add them here with the minimised repro attached.
 
