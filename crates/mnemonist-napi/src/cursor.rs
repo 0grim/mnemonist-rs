@@ -268,6 +268,12 @@ const ITERATOR_FACTORIES: &[(&str, &str)] = &[
     ("MultiSet", "values"),
     // Appended at the end, never inserted (CLAUDE.md, Git).
     ("FuzzyMultiMap", "values"),
+    // Appended at the end, never inserted: this table is a shared registry
+    // (CLAUDE.md, Git) and a new row anywhere else is a merge conflict inside
+    // an array literal. `InvertedIndex`'s last line aliases `documents`, not
+    // `values` -- there is no bare `values()` method on it at all.
+    ("LinkedList", "values"),
+    ("InvertedIndex", "documents"),
 ];
 
 /// Wire every collection's `Symbol.iterator` to its cursor factory.
