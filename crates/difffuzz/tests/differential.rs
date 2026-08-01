@@ -12,6 +12,9 @@
 use std::time::Duration;
 
 use difffuzz::modules::sparse_map::{SparseMapSpec, REGRESSIONS as SPARSE_MAP_REGRESSIONS};
+use difffuzz::modules::sparse_queue_set::{
+    SparseQueueSetSpec, REGRESSIONS as SPARSE_QUEUE_REGRESSIONS,
+};
 use difffuzz::modules::sparse_set::{SparseSetSpec, REGRESSIONS as SPARSE_REGRESSIONS};
 use difffuzz::modules::static_disjoint_set::{StaticDisjointSetSpec, REGRESSIONS};
 use difffuzz::Campaign;
@@ -39,6 +42,24 @@ fn sparse_map_matches_upstream() {
     let campaign = Campaign::cases(0x5A99, 96, SPARSE_MAP_REGRESSIONS);
 
     let report = difffuzz::run(&SparseMapSpec, &campaign)
+        .expect("oracle must be reachable; `node` is required for differential tests");
+
+    assert!(
+        report.ops > 0,
+        "campaign ran no operations, so it proved nothing: {}",
+        report.log_line()
+    );
+
+    if let Some(divergence) = report.divergence {
+        panic!("{divergence}");
+    }
+}
+
+#[test]
+fn sparse_queue_set_matches_upstream() {
+    let campaign = Campaign::cases(0x5A11, 96, SPARSE_QUEUE_REGRESSIONS);
+
+    let report = difffuzz::run(&SparseQueueSetSpec, &campaign)
         .expect("oracle must be reachable; `node` is required for differential tests");
 
     assert!(
@@ -160,13 +181,18 @@ fn regression_corpus_is_committed() {
 
 /// Every committed seed must carry a provenance note.
 ///
-/// All seven seeds in this repo came from deliberate sabotages, not from real
+/// All eight seeds in this repo came from deliberate sabotages, not from real
 /// port defects. An unlabelled `cc` line reads as "a bug was found and fixed
 /// here", which is the opposite of what happened, and the labelling is only
 /// worth anything if something notices when it goes missing.
 #[test]
 fn every_regression_corpus_explains_where_its_seeds_came_from() {
-    for corpus in [REGRESSIONS, SPARSE_REGRESSIONS, SPARSE_MAP_REGRESSIONS] {
+    for corpus in [
+        REGRESSIONS,
+        SPARSE_REGRESSIONS,
+        SPARSE_MAP_REGRESSIONS,
+        SPARSE_QUEUE_REGRESSIONS,
+    ] {
         let text = std::fs::read_to_string(corpus)
             .unwrap_or_else(|_| panic!("{corpus} must be checked in"));
 

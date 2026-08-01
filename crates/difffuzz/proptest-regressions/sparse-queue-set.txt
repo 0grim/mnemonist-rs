@@ -1,0 +1,54 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+#
+# PROVENANCE OF THE ENTRIES BELOW -- read before assuming either recorded a
+# real port defect. Neither did. Both were produced by deliberate
+# falsifications of the fuzzer, one per half of this module's new grammar --
+# the ring and the degenerate capacity -- in the spirit of DoD gate 6: a fuzzer
+# that has never been seen to fail is just a second green light. Both sabotages
+# were reverted; both seeds are replayed before any novel case on every run.
+#
+# --- A: `enqueue` "fixed" to refuse a full ring ---
+#
+# Nothing upstream bounds `size` by `capacity`. Adding `if (size >= capacity)
+# return this;` is the obvious repair for B-13, and it is wrong for the same
+# reason every repair in this port is wrong: it is not what the library does.
+# Found in 811 cases (0.8s) and shrunk to two operations on the smallest
+# possible ring:
+#
+#     var s = new SparseQueueSet(1);
+#     s.enqueue(0);
+#     s.enqueue(1);   // out of range on a capacity-1 queue
+#                     // port dense [0] size 1, upstream dense [1] size 2
+#
+# Note what the repro also demonstrates: at capacity 1 the second enqueue
+# EVICTS the first, which is B-13 at its smallest.
+#
+# As with sparse-map's seed A, the same sabotage leaves the upstream mocha
+# suite at 7 passing / 0 failing, while turning three native tests red.
+#
+cc f4a192425ac07d6e36238d9fff10fa59ca8f7e8ffe5a8344482e1c888393cb46 # shrinks to Program { ctor: [Number(1)], ops: [Op { name: "enqueue", args: [Number(0)] }, Op { name: "enqueue", args: [Number(1)] }] }
+#
+# --- B: `dequeue`'s wrap check tidied from `===` to `>=` ---
+#
+# Upstream writes `if (this.start === this.capacity) this.start = 0;`. Reading
+# that as a bounds check and "hardening" it to `>=` is the most invisible
+# change in this module: the two are identical for every capacity but ZERO,
+# where upstream's `start` climbs without bound because `1 === 0` is false and
+# the hardened version resets it. That is the second half of B-14.
+#
+# Found in 854 cases (3.9s) and shrunk to two operations:
+#
+#     var s = new SparseQueueSet(0);
+#     s.enqueue(0);
+#     s.dequeue();   // port start 0, upstream start 1
+#
+# It proves two things at once: that `start` earns its place in the observed
+# state -- no member, no size and neither backing array differs here -- and
+# that the ctor strategy really does generate capacity 0.
+#
+cc fc47ee96ea6f33fb57c6da6938a93eb8f89963bf88b7f157fafa081dd3dc5c9f # shrinks to Program { ctor: [Number(0)], ops: [Op { name: "enqueue", args: [Number(0)] }, Op { name: "dequeue", args: [] }] }

@@ -153,6 +153,46 @@
 #   through the collection's Symbol.iterator, which upstream aliases to
 #   entries() rather than values().
 #
+# sparse-queue-set
+#   ops          enqueue(m) [weight 4] · dequeue() [3] · has(m) [3]
+#                clear() [1] · $iter("values") [2] · $next() [3] · $spread() [1]
+#   observed     size · capacity · START · dense · sparse
+#                after EVERY op, on both sides. `start` is the one this module
+#                adds over its siblings and it earns its place: falsification B
+#                below differs in NOTHING ELSE -- same size, same members, both
+#                backing arrays identical -- so without `start` observed it
+#                would have gone undetected.
+#   ctor         a mixture rather than one range, because the interesting
+#                capacities are not uniformly distributed:
+#                  0..=400  [weight 4]  the ordinary range, 0 included because
+#                                       `new SparseQueueSet(0)` is legal and
+#                                       makes every index computation NaN (B-14)
+#                  1..=8    [weight 3]  small rings, where a 200-op program
+#                                       wraps many times instead of filling once
+#                  {255,256}[weight 2]  the B-12 boundary and its control. 256
+#                                       is a POINT, not a range: a uniform draw
+#                                       over 0..=400 reaches it about once in
+#                                       400 programs.
+#   members      0..capacity+64, so roughly one in eight is OUT OF RANGE
+#   program len  1..200 ops
+#   EXCLUDED     capacity 65536, the SECOND B-12 boundary. It is the same defect
+#                one width up and it is covered by a native test
+#                (`the_sentinel_truncates_at_the_second_boundary_too`) instead.
+#                Including it cost about 95% of this campaign's throughput --
+#                MEASURED, 880 op/s against 15,000 -- because the observable
+#                state is two backing arrays, serialised, sent and compared
+#                after every single operation. A 60-second campaign executing 5%
+#                of the programs is a worse check than a native test plus a fast
+#                campaign. Nothing else is excluded; every out-of-range member
+#                is generated.
+#
+#   Why dequeue is weighted at 3. It is the only op that moves `start`, and the
+#   ring is what this module has that its siblings do not. A read-heavy mix
+#   would fill the ring once and never rotate it.
+#
+#   The B-12 sentinel needs no special op to observe: `sparse` is in the
+#   observed state, so every dequeue compares the value written into it.
+#
 # ---------------------------------------------------------------------------
 # THE FUZZER WAS FALSIFIED BEFORE IT WAS TRUSTED.
 #
@@ -209,6 +249,27 @@
 #      the ctor strategy generates all four value constructors rather than the
 #      one the upstream test file happens to use.
 #
+# sparse-queue-set was falsified twice, once per half of its new grammar -- the
+# ring and the degenerate capacity -- both reverted, both seeds committed with
+# provenance in crates/difffuzz/proptest-regressions/sparse-queue-set.txt:
+#
+#   A. `enqueue` "fixed" to refuse a full ring, i.e. B-13 repaired. Caught in
+#      811 cases (0.8s), shrunk to two ops on the smallest possible ring:
+#          var s = new SparseQueueSet(1); s.enqueue(0); s.enqueue(1);
+#          port dense [0] size 1   upstream dense [1] size 2
+#      As with sparse-map's A, the same sabotage leaves the upstream mocha
+#      suite at 7 passing / 0 failing while turning three native tests red.
+#
+#   B. `dequeue`'s wrap check tidied from `===` to `>=`. The two are identical
+#      for every capacity but ZERO, where upstream's `start` climbs without
+#      bound because `1 === 0` is false. Caught in 854 cases (3.9s), shrunk to
+#      two ops:
+#          var s = new SparseQueueSet(0); s.enqueue(0); s.dequeue();
+#          port start 0   upstream start 1
+#      Nothing else differs -- not size, not the members, not either backing
+#      array -- so this seed is simultaneously the justification for observing
+#      `start` and the proof that the ctor strategy really generates capacity 0.
+#
 # ---------------------------------------------------------------------------
 # Throughput: ~23,600 op/s including a full mapping()+compile() comparison
 # after every single op. That is the persistent-oracle decision (D-23) paying
@@ -224,3 +285,5 @@
 2026-08-01T00:35:52Z  module=sparse-set seed=20260801 cases=9425 ops=980895 wall=60.0s divergences=0
 2026-08-01T01:37:17Z  module=sparse-map seed=42 cases=17268 ops=1789276 wall=120.0s divergences=0
 2026-08-01T01:38:17Z  module=sparse-map seed=20260801 cases=8330 ops=860398 wall=60.0s divergences=0
+2026-08-01T01:51:39Z  module=sparse-queue-set seed=42 cases=21564 ops=2254268 wall=120.0s divergences=0
+2026-08-01T01:52:39Z  module=sparse-queue-set seed=20260801 cases=10535 ops=1103405 wall=60.0s divergences=0

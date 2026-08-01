@@ -18,6 +18,7 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use difffuzz::modules::sparse_map::SparseMapSpec;
+use difffuzz::modules::sparse_queue_set::SparseQueueSetSpec;
 use difffuzz::modules::sparse_set::SparseSetSpec;
 use difffuzz::modules::static_disjoint_set::StaticDisjointSetSpec;
 use difffuzz::{Campaign, Report};
@@ -26,7 +27,7 @@ const USAGE: &str = "\
 usage: difffuzz --module <name> [--seed N] [--duration SECONDS] [--cases N] [--batch N]
 
   --module    module to fuzz; currently: static-disjoint-set, sparse-set,
-              sparse-map
+              sparse-map, sparse-queue-set
   --seed      campaign seed (default 42); with --cases, reproduces exactly
   --duration  wall-clock budget in seconds (default 60)
   --cases     stop after N cases instead of after --duration
@@ -77,6 +78,13 @@ fn main() -> ExitCode {
             &SparseMapSpec,
             &Campaign {
                 regressions: difffuzz::modules::sparse_map::REGRESSIONS,
+                ..campaign
+            },
+        ),
+        "sparse-queue-set" => difffuzz::run(
+            &SparseQueueSetSpec,
+            &Campaign {
+                regressions: difffuzz::modules::sparse_queue_set::REGRESSIONS,
                 ..campaign
             },
         ),
