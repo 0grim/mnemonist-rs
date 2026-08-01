@@ -69,6 +69,9 @@ use difffuzz::modules::trie_map::TrieMapSpec;
 use difffuzz::modules::fuzzy_multi_map::FuzzyMultiMapSpec;
 use difffuzz::modules::multi_map::MultiMapSpec;
 use difffuzz::modules::multi_set::MultiSetSpec;
+// Appended at the end, never inserted (CLAUDE.md, Git): a new line anywhere
+// else is a merge conflict.
+use difffuzz::modules::fibonacci_heap::FibonacciHeapSpec;
 
 const USAGE: &str = "\
 usage: difffuzz --module <name> [--seed N] [--duration SECONDS] [--cases N] [--batch N]
@@ -83,7 +86,7 @@ usage: difffuzz --module <name> [--seed N] [--duration SECONDS] [--cases N] [--b
               bk-tree, heap, fixed-reverse-heap, trie-map, trie
               bk-tree, heap, fixed-reverse-heap, lru-cache,
               lru-cache-with-delete, lru-map, lru-map-with-delete,
-              multi-map, multi-set, fuzzy-multi-map
+              multi-map, multi-set, fuzzy-multi-map, fibonacci-heap
   --seed      campaign seed (default 42); with --cases, reproduces exactly
   --duration  wall-clock budget in seconds (default 60)
   --cases     stop after N cases instead of after --duration
@@ -380,6 +383,15 @@ fn main() -> ExitCode {
             &FuzzyMultiMapSpec,
             &Campaign {
                 regressions: difffuzz::modules::fuzzy_multi_map::REGRESSIONS,
+                ..campaign
+            },
+        ),
+        // Appended at the END of the match, never between two existing arms
+        // (CLAUDE.md, Git).
+        "fibonacci-heap" => difffuzz::run(
+            &FibonacciHeapSpec,
+            &Campaign {
+                regressions: difffuzz::modules::fibonacci_heap::REGRESSIONS,
                 ..campaign
             },
         ),

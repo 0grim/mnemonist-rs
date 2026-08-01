@@ -2334,8 +2334,76 @@ has no exceptions) rather than a `Result::Err`; pinned by
 (`a_comparator_that_clears_the_heap_mid_pop_does_not_panic`).
 
 Found while writing this unit's own re-entrancy tests (the shape CLAUDE.md's brief for this unit
-named directly: "the comparator ... can mutate the heap mid-operation"), not by the differential
-fuzzer — the fuzz grammar does not generate a program long enough after a `clear()`-capable
-comparator's budget to specifically retrigger a *second* `pop` against the corrupted state; see
-`docs/modules/fibonacci-heap.md`'s "What we test in addition" for why this is stated as a native-
-test-only finding rather than claimed as fuzz coverage it does not have.
+named directly: "the comparator ... can mutate the heap mid-operation"). **Correction, recorded
+rather than silently fixed in place:** an earlier draft of this entry claimed the fuzzer could not
+reach this because a generated program would need to retrigger a *second* `pop` against the
+corrupted state specifically. That was wrong — the `fibClearer` factory's grammar (see
+`crates/difffuzz/src/modules/fibonacci_heap.rs`) generates exactly this: many pushes and pops in one
+program, so a `clear()` firing once inside an early `pop`'s `consolidate` routinely leaves a later
+`pop` in the same program to hit the corrupted state. The differential fuzzer's own campaign hits
+this constantly (see `docs/modules/fibonacci-heap.md`'s "Fuzz + bench"); it is caught with
+`std::panic::catch_unwind` at the one call site the harness needs to keep a campaign running past a
+single generated case's crash, and the panic *message itself* is upstream's own `TypeError` text
+verbatim, so the harness needs no separate translation table — see that module's own doc comments.
+
+### B-221 — `MaxFibonacciHeap.prototype = FibonacciHeap.prototype`, so `instanceof` cannot tell them
+### apart
+
+`status: verified by reading` · `fibonacci-heap.js`. The same anti-pattern `heap.js`'s B-75
+documents, one file over: `MaxFibonacciHeap.prototype = FibonacciHeap.prototype;` at load time means
+`new FibonacciHeap() instanceof MaxFibonacciHeap` is `true`, and `new MaxFibonacciHeap().constructor`
+is `FibonacciHeap`, not `MaxFibonacciHeap`. `test/fibonacci-heap.js` never inspects either. Reproduced
+verbatim in `crates/mnemonist-napi/src/fibonacci_heap.rs`'s `install_fibonacci_heap_statics`, the
+same load-time-JS-installer approach `crate::heap`'s `install_heap_statics` already established for
+B-75 — a second native `#[napi]` class for `MaxFibonacciHeap` would have its own prototype and
+silently repair the blur instead of reproducing it.
+
+A related, smaller inconsistency in the same two constructors, not worth its own ID: both throw the
+identical string `'mnemonist/FibonacciHeap.constructor: given comparator should be a function.'` —
+`MaxFibonacciHeap`'s own constructor never names itself in its error. Reproduced verbatim (one
+shared message constant in the bridge).
+
+### B-222 — a `clear()` fired from inside a **`push`'s** tie-break (not a `pop`'s `consolidate`)
+### leaves `root` null while `min` is a real node, and the next `pop` crashes on a DIFFERENT
+### `TypeError` than B-220's
+
+`status: verified by tracing upstream's own deterministic control flow` · `fibonacci-heap.js`'s
+`push`.
+
+B-220 is not the only way a re-entrant `clear()` corrupts this heap — it is the one reachable from
+inside `pop`. This one is reachable from inside `push`:
+
+```js
+FibonacciHeap.prototype.push = function(item) {
+  var node = createNode(item);
+  node.left = node; node.right = node;
+  mergeWithRoot(this, node);                                    // (1) `this.root` is set here
+  if (!this.min || this.comparator(node.item, this.min.item) <= 0)  // (2) comparator runs
+    this.min = node;                                            // (3) `this.min` is set AFTER
+  return ++this.size;
+};
+```
+
+If the comparator at (2) calls `heap.clear()` (`root = null, min = null, size = 0`), step (1) has
+already run — `this.root` is now stale-`null` regardless — but step (3) runs **after** the clear,
+unconditionally setting `this.min` back to a real node whenever the comparison favours it. The net
+result: `root === null`, `min` is a genuine node, `size` is off by whatever `push`'s own `++` and the
+clear's reset add up to. Neither field is inconsistent in isolation; the *pair* is.
+
+A later `pop()` then reads a perfectly valid `z` from `min` (no crash at B-220's site at all),
+proceeds through `removeFromRoot(z)` (a no-op on `heap.root`, since `heap.root !== z`), finds
+`z.right !== z` (that field was never touched by the `clear()`, so it still reflects the multi-node
+state `z` had when it was linked, before `root` went stale), and calls `consolidate(this)`.
+`consolidate`'s own `consumeLinkedList(heap.root)` receives `null`, pushes it into its own
+accumulator on the first loop iteration (its `flag` dance visits `head` once even when `head` is
+`null`), and then evaluates `node.right` on it: `TypeError: Cannot read properties of null (reading
+'right')` — one property name over from B-220's `'child'`, and a different call site.
+
+**Port:** both crash sites are Rust panics whose message is upstream's exact `TypeError` text
+(`FibonacciHeap::pop`'s `self.min.get().expect("Cannot read properties of null (reading 'child')")`
+for B-220; `FibonacciHeap::consolidate`'s `self.root.get().expect("Cannot read properties of null
+(reading 'right')")` for this one) — chosen specifically so `crates/difffuzz/src/modules/
+fibonacci_heap.rs`'s `catch_unwind` wrapper can use the panic payload directly as the `$throw` text
+instead of a hand-maintained table that could drift from what Node actually says. Found by the
+differential fuzzer itself, inside the first few hundred generated cases once the `fibClearer`
+factory was in the grammar — not by reading, unlike B-220 and B-221.

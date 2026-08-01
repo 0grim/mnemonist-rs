@@ -39,12 +39,17 @@
 //! An arena sidesteps the question instead of solving it in `Rc`: every node
 //! lives in `Arena::slots`, addressed by a plain `usize` (`NodeId`), and
 //! `left`/`right`/`parent`/`child` are indices, not owning pointers. Nothing
-//! here can form a reference cycle because indices do not own anything —
-//! the arena is the sole owner, `pop` (via [`Arena::dealloc`]) frees a
-//! node's slot explicitly, and freed slots are recycled by
-//! [`Arena::alloc`]. This is an implementation detail invisible to any
-//! caller: JavaScript never observes node identity, so nothing about the
-//! public API depends on which representation backs it.
+//! here can form a reference cycle because indices do not own anything.
+//! Unlike a typical arena, though, **a popped node's slot is never freed or
+//! recycled** — see [`Arena`]'s own docs for why a recycling arena panics
+//! (or worse, silently aliases two logically distinct nodes) the moment a
+//! re-entrant comparator pops from inside another pop's `consolidate`, a
+//! shape the fuzz grammar in `crates/difffuzz/src/modules/fibonacci_heap.rs`
+//! found inside its first fifty generated cases. This is an implementation
+//! detail invisible to any caller either way: JavaScript never observes node
+//! identity, so nothing about the public API depends on which
+//! representation backs it, or on whether an unreachable node's memory is
+//! ever reclaimed.
 //!
 //! # Re-entrancy — the comparator runs *from inside* a sift, again
 //!
@@ -94,53 +99,59 @@ struct Node<T> {
 
 /// The node table backing every [`FibonacciHeap`]. See the module docs for
 /// why this exists instead of `Rc<RefCell<Node<T>>>`.
+///
+/// # Slots are never recycled, on purpose
+///
+/// A first cut of this arena freed a node's slot the moment `pop` was done
+/// with it and recycled the id on the next `create_node` — measured, this
+/// panics under re-entrancy, and the reason is exactly the re-entrancy this
+/// tier exists for. `consolidate`'s `nodes` list is a **snapshot** of
+/// `NodeId`s taken once, at the top of the call, precisely so it survives
+/// whatever a comparator does next (see that method's docs). If a
+/// `fibPopper`-shaped comparator (see `crates/difffuzz/src/modules/
+/// fibonacci_heap.rs`) runs a **nested** `pop` from inside that
+/// `consolidate`, and the nested `pop` happens to `dealloc` a node that is
+/// *also* sitting in the outer call's `nodes` snapshot, a recycling arena
+/// would let a later `create_node` hand that same id to a brand-new,
+/// unrelated node -- and the outer loop would then read or link the wrong
+/// node entirely, or, once the slot legitimately went back to `None` between
+/// the free and the reuse, panic outright (which is what a differential-fuzz
+/// campaign against this exact grammar found in under 50 generated cases).
+///
+/// JavaScript has no such hazard: `consumeLinkedList`'s array holds real
+/// object references, and a JS object stays exactly as it was for as long as
+/// *anything* holds a reference to it — including a suspended outer call
+/// frame's local variable during re-entrancy — regardless of whether it has
+/// been spliced out of every list it used to belong to. Nothing here can
+/// synthesize that guarantee from an id that gets handed to someone else, so
+/// the arena instead never hands an id back out: a "freed" node's slot keeps
+/// its last-known fields forever (unobservable through any public API, since
+/// nothing exposes node identity), and the arena grows with the heap's total
+/// lifetime creation count rather than its live size. The real-world
+/// equivalent is V8 declining to collect an object a suspended stack frame
+/// still closes over — bounded differently, but the same shape of promise.
 struct Arena<T> {
-    slots: Vec<Option<Node<T>>>,
-    free: Vec<NodeId>,
+    slots: Vec<Node<T>>,
 }
 
 impl<T> Arena<T> {
     fn new() -> Self {
-        Self {
-            slots: Vec::new(),
-            free: Vec::new(),
-        }
+        Self { slots: Vec::new() }
     }
 
-    /// Allocate a node, reusing a freed slot when one exists, and return its
-    /// id.
+    /// Allocate a node and return its id. Never reused once handed out — see
+    /// the struct's own docs.
     fn alloc(&mut self, node: Node<T>) -> NodeId {
-        if let Some(id) = self.free.pop() {
-            self.slots[id] = Some(node);
-            return id;
-        }
-
-        self.slots.push(Some(node));
+        self.slots.push(node);
         self.slots.len() - 1
     }
 
-    /// Free `id` and return its item. The slot is recycled by a later
-    /// [`alloc`](Self::alloc).
-    fn dealloc(&mut self, id: NodeId) -> T {
-        let node = self.slots[id]
-            .take()
-            .expect("dealloc is only ever called on a live node id");
-
-        self.free.push(id);
-
-        node.item
-    }
-
     fn node(&self, id: NodeId) -> &Node<T> {
-        self.slots[id]
-            .as_ref()
-            .expect("every NodeId this module hands out names a live node")
+        &self.slots[id]
     }
 
     fn node_mut(&mut self, id: NodeId) -> &mut Node<T> {
-        self.slots[id]
-            .as_mut()
-            .expect("every NodeId this module hands out names a live node")
+        &mut self.slots[id]
     }
 }
 
@@ -248,6 +259,18 @@ impl<T: Clone, C, E> FibonacciHeap<T, C, E> {
     /// See the field's own docs for why this exists.
     pub fn merges(&self) -> u64 {
         self.merges.get()
+    }
+
+    /// The comparator this heap was built with.
+    ///
+    /// Not part of upstream's API (no test reads `this.comparator`
+    /// meaningfully), but needed by any comparator that has to reach back
+    /// into the very heap holding it — a re-entrant fuzz comparator attaches
+    /// itself here after construction, exactly as
+    /// `crate::structures::heap::Heap::comparator` is used for the same
+    /// purpose.
+    pub fn comparator(&self) -> &C {
+        &self.comparator
     }
 
     fn item(&self, id: NodeId) -> T {
@@ -442,10 +465,15 @@ impl<T: Clone, E, C: Comparator<T, E>> FibonacciHeap<T, C, E> {
             return Ok(None);
         }
 
-        let z = self.min.get().expect(
-            "upstream crashes here too (TypeError reading .child of null) once B-220's negative \
-             size has been reached; see this method's doc comment",
-        );
+        // The panic message IS the reproduction: upstream's own
+        // `TypeError` text for `null.child`, verbatim, so a caller (the
+        // fuzz harness included) that catches this panic can use the
+        // payload directly as the thrown message rather than needing a
+        // translation table that could drift from what Node actually says.
+        let z = self
+            .min
+            .get()
+            .expect("Cannot read properties of null (reading 'child')");
 
         if let Some(child) = self.child(z) {
             // Captured as a `Vec` BEFORE any of it is touched, exactly as
@@ -482,11 +510,11 @@ impl<T: Clone, E, C: Comparator<T, E>> FibonacciHeap<T, C, E> {
         // (see that method's docs).
         self.size.set(self.size.get() - 1);
 
-        Ok(Some(self.dealloc(z)))
-    }
-
-    fn dealloc(&self, id: NodeId) -> T {
-        self.arena.borrow_mut().dealloc(id)
+        // `return z.item;` -- a read, not a removal. The arena never frees
+        // `z`'s slot (see `Arena`'s own docs): `z` may still be sitting in a
+        // re-entrant caller's own snapshot of the root list, and JavaScript
+        // would let that caller go on reading `z.item` too.
+        Ok(Some(self.item(z)))
     }
 
     /// `consolidate(heap)` — merges root-list trees of equal degree until
@@ -502,11 +530,32 @@ impl<T: Clone, E, C: Comparator<T, E>> FibonacciHeap<T, C, E> {
     /// `self.size.get()`, read fresh every iteration, rather than a `for i
     /// in 0..captured_size`, which would silently diverge under exactly
     /// that re-entrant case.
+    ///
+    /// # NOTES.md B-222 — `root` can be `null` here too, from a DIFFERENT
+    /// re-entrant path than B-220's
+    ///
+    /// `pop`'s caller only reaches this method when `z.right !== z` held —
+    /// "more than one root existed", checked against `z`'s own (frozen)
+    /// `right` pointer. That field is never touched by `clear()`, which only
+    /// resets the *heap's* `root`/`min`/`size`. So a `clear()` that fires
+    /// from inside a **`push`'s** tie-break comparison (not a `pop`'s
+    /// `consolidate` — a different call site than B-220's) can leave
+    /// `heap.root` `null` while `heap.min` is restored to a real node
+    /// immediately afterward, by the same `push`'s own `this.min = node`
+    /// line. A later `pop` then reads a perfectly real `z` (no crash at the
+    /// B-220 site at all), walks past it, and reaches *this* method with
+    /// `heap.root` still `null`. Upstream's `consumeLinkedList(null)` pushes
+    /// `null` into its own accumulator on its first iteration and then reads
+    /// `null.right` — a `TypeError`, one property name over from B-220's.
+    /// Verified by tracing upstream's own deterministic control flow
+    /// (`~/upstream-mnemonist/fibonacci-heap.js`'s `consumeLinkedList`), the
+    /// same way B-220 was. Reproduced the same way: the panic message below
+    /// IS the exact upstream text.
     fn consolidate(&self) -> Result<(), E> {
         let root = self
             .root
             .get()
-            .expect("consolidate is only called from pop() with a non-empty root list");
+            .expect("Cannot read properties of null (reading 'right')");
         let nodes = self.consume_linked_list(root);
 
         // `new Array(heap.size)` upstream is a capacity hint, not a bound --
@@ -962,7 +1011,7 @@ mod tests {
     /// outcome: both sides fail hard, deliberately, rather than the port
     /// quietly recovering into a state upstream cannot reach.
     #[test]
-    #[should_panic(expected = "upstream crashes here too")]
+    #[should_panic(expected = "Cannot read properties of null (reading 'child')")]
     fn a_pop_after_b_220s_negative_size_panics_matching_upstreams_null_dereference() {
         use std::rc::{Rc, Weak};
 
