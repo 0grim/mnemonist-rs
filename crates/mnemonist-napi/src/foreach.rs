@@ -554,6 +554,20 @@ pub(crate) fn type_error(env: &Env, message: &str) -> Error {
     Error::new(Status::PendingException, message.to_owned())
 }
 
+/// As [`type_error`], for the `RangeError` a bad array length produces.
+///
+/// `new Array(-1)` and `new Array(2.5)` both throw `RangeError: Invalid array
+/// length`, and the fixed-capacity structures reach it through their
+/// `new this.ArrayClass(this.capacity)`. A napi `Error` would arrive in JS as a
+/// plain `Error`, which `assert.throws(fn, RangeError)` would not accept.
+pub(crate) fn range_error(env: &Env, message: &str) -> Error {
+    if env.throw_range_error(message, None).is_err() {
+        return Error::new(Status::GenericFailure, message.to_owned());
+    }
+
+    Error::new(Status::PendingException, message.to_owned())
+}
+
 pub(crate) fn check(status: sys::napi_status, call: &str) -> Result<()> {
     if status == sys::Status::napi_ok {
         return Ok(());

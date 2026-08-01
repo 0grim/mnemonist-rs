@@ -29,6 +29,8 @@ pub mod statics;
 // Appended, not merged into the alphabetical run above: this file is edited by
 // several agents at once and a new line at the end can never land inside
 // another one's hunk.
+pub mod array_class;
+pub mod fixed_stack;
 pub mod iterables;
 
 #[napi]

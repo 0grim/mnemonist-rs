@@ -217,6 +217,10 @@ const ITERATOR_FACTORIES: &[(&str, &str)] = &[
     // Not always `values`: `DefaultMap`'s last line aliases `entries` too, so a
     // spread of one yields `[key, value]` pairs.
     ("DefaultMap", "entries"),
+    // Appended at the end, never inserted: this table is edited by several
+    // agents at once and a row added mid-list is a merge conflict inside an
+    // array literal.
+    ("FixedStack", "values"),
 ];
 
 /// Wire every collection's `Symbol.iterator` to its cursor factory.
