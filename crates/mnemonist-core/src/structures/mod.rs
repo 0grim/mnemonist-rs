@@ -26,3 +26,6 @@ pub mod set;
 // Appended, never interleaved: this list is a shared registry (CLAUDE.md, Git).
 pub mod bloom_filter;
 pub mod suffix_array;
+// Appended at the end, never inserted: this file is edited by several agents
+// at once and a new line at the end can never land inside another one's hunk.
+pub mod lru_cache;
