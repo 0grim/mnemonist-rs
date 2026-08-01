@@ -142,6 +142,11 @@ pub fn install_variadic_factories(exports: &mut Object, env: &Env) -> Result<()>
     crate::comparators::install_comparator_factories(exports, env)?;
     crate::heap::install_heap_statics(exports, env)?;
 
+    // Appended at the end, never inserted: this function is called from the
+    // one module-export hook the addon has, and a new call anywhere else is
+    // a merge conflict.
+    crate::trie_map::install_trie_statics(exports, env)?;
+
     Ok(())
 }
 

@@ -111,6 +111,31 @@ struct Node<T, V> {
     entries: Vec<Slot<T, V>>,
 }
 
+/// A read-only view of one node's own entries, in enumeration order — see
+/// [`TrieMap::root`].
+pub struct NodeView<'a, T, V> {
+    node: &'a Node<T, V>,
+}
+
+/// One of a [`NodeView`]'s own entries.
+pub enum Entry<'a, T, V> {
+    /// `node[SENTINEL]` — a sequence ends here.
+    Word(&'a V),
+    /// `node[token]` — a child, reached by `token`.
+    Child(&'a T, NodeView<'a, T, V>),
+}
+
+impl<'a, T, V> NodeView<'a, T, V> {
+    /// Own entries, in the same insertion order [`TrieMap::find`]/[`Walk`]
+    /// scan them in.
+    pub fn entries(&self) -> impl Iterator<Item = Entry<'a, T, V>> + 'a {
+        self.node.entries.iter().map(|slot| match slot {
+            Slot::Word(value) => Entry::Word(value),
+            Slot::Child(token, child) => Entry::Child(token, NodeView { node: child }),
+        })
+    }
+}
+
 impl<T, V> Node<T, V> {
     fn new() -> Self {
         Self {
@@ -521,6 +546,14 @@ impl<T: Clone + PartialEq, V> TrieMap<T, V> {
         }
     }
 
+    /// A read-only view of the root node's own entries — upstream's `root`
+    /// property, generalized so `Node`/`Slot` never need to be public types.
+    /// Exists for the bridge, which rebuilds the exact nested structure
+    /// `assert.deepStrictEqual` compares `root` against.
+    pub fn root(&self) -> NodeView<'_, T, V> {
+        NodeView { node: &self.root }
+    }
+
     fn navigate(&self, prefix: impl IntoIterator<Item = T>) -> Option<&Node<T, V>> {
         let mut node = &self.root;
 
@@ -834,6 +867,37 @@ mod tests {
         seen.sort_unstable();
 
         assert_eq!(seen, vec![1, 2, 3]);
+    }
+
+    /// `root()`'s own entries mirror what a plain-object-based upstream
+    /// would enumerate: value before children, in insertion order.
+    #[test]
+    fn root_exposes_entries_in_insertion_order() {
+        let mut trie: TrieMap<char, u32> = TrieMap::new();
+        trie.set(tokens("a"), 1);
+        trie.set(tokens("ab"), 2);
+
+        let root = trie.root();
+        let mut top = root.entries();
+
+        let Some(Entry::Child(token, child)) = top.next() else {
+            panic!("expected a single child 'a' at the root");
+        };
+        assert_eq!(*token, 'a');
+        assert!(top.next().is_none());
+
+        let mut a_entries = child.entries();
+
+        let Some(Entry::Word(value)) = a_entries.next() else {
+            panic!("expected 'a' node's own value first");
+        };
+        assert_eq!(*value, 1);
+
+        let Some(Entry::Child(token, _)) = a_entries.next() else {
+            panic!("expected 'a' node's child 'b' second");
+        };
+        assert_eq!(*token, 'b');
+        assert!(a_entries.next().is_none());
     }
 
     #[test]

@@ -68,6 +68,11 @@ pub mod bi_map;
 pub mod bk_tree;
 pub mod fuzzy_map;
 
+// Appended at the end, never inserted: this file is a shared registry
+// (CLAUDE.md, Git) and a new line anywhere else is a merge conflict.
+pub mod trie;
+pub mod trie_map;
+
 #[napi]
 pub fn ping() -> &'static str {
     "pong"

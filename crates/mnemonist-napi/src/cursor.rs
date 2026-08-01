@@ -253,6 +253,13 @@ const ITERATOR_FACTORIES: &[(&str, &str)] = &[
     ("LRUCacheWithDelete", "entries"),
     ("LRUMap", "entries"),
     ("LRUMapWithDelete", "entries"),
+    // Appended at the end, never inserted: this table is a shared registry
+    // (CLAUDE.md, Git) and a new row anywhere else is a merge conflict inside
+    // an array literal. `TrieMap`'s last line aliases `entries`; `trie.js`'s
+    // own last line aliases `keys`, not `entries` -- a `Trie` has no value to
+    // pair a key with.
+    ("TrieMap", "entries"),
+    ("Trie", "keys"),
 ];
 
 /// Wire every collection's `Symbol.iterator` to its cursor factory.

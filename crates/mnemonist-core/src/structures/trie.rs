@@ -120,6 +120,12 @@ impl<T: Clone + PartialEq> Trie<T> {
     pub fn step(&self, walk: &mut crate::structures::trie_map::Walk<T>) -> Option<Vec<T>> {
         walk.step(&self.inner).map(|(suffix, _value)| suffix)
     }
+
+    /// Upstream's `root` property. See
+    /// [`TrieMap::root`](crate::structures::trie_map::TrieMap::root).
+    pub fn root(&self) -> crate::structures::trie_map::NodeView<'_, T, bool> {
+        self.inner.root()
+    }
 }
 
 #[cfg(test)]
