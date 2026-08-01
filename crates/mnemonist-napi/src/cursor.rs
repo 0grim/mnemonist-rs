@@ -221,6 +221,8 @@ const ITERATOR_FACTORIES: &[(&str, &str)] = &[
     // agents at once and a row added mid-list is a merge conflict inside an
     // array literal.
     ("FixedStack", "values"),
+    ("FixedDeque", "values"),
+    ("CircularBuffer", "values"),
 ];
 
 /// Wire every collection's `Symbol.iterator` to its cursor factory.

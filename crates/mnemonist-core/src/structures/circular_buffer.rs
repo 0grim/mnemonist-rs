@@ -227,6 +227,11 @@ impl<T: Clone> CircularBuffer<T> {
         self.inner.start()
     }
 
+    /// `this.items[i]` — see [`FixedDeque::slot_at`].
+    pub fn slot_at(&self, index: usize) -> Option<T> {
+        self.inner.slot_at(index)
+    }
+
     pub fn is_empty(&self) -> bool {
         self.inner.is_empty()
     }

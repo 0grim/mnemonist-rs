@@ -59,6 +59,26 @@ use napi::sys;
 use crate::foreach::{check, coerce_to_object};
 use crate::js_slot::JsSlot;
 
+/// The upstream message strings one fixed-capacity module uses.
+///
+/// Grouped rather than passed one by one because all four differ per module —
+/// three of them name the file (`mnemonist/fixed-deque:` against
+/// `mnemonist/circular-buffer:`) and the fourth is the expression V8 was
+/// evaluating, which `fixed-stack.js` and its two siblings write differently.
+/// Threading them individually pushed `from_parts` past clippy's argument
+/// limit, and the struct is the better shape anyway: a module's whole
+/// vocabulary in one place.
+pub struct Messages {
+    /// `X.from` with no capacity and an unguessable iterable.
+    pub cannot_guess: &'static str,
+    /// `arguments.length < 2` / `< 3`.
+    pub missing: &'static str,
+    /// `typeof capacity !== 'number' || capacity <= 0`.
+    pub bad: &'static str,
+    /// V8's wording when the `ArrayClass` is not a constructor.
+    pub not_a_constructor: &'static str,
+}
+
 /// A JS array constructor, plus everything derived from it once.
 pub struct ArrayClass {
     /// `this.ArrayClass`. Held as a slot because a `napi_value` does not
@@ -68,6 +88,16 @@ pub struct ArrayClass {
     scratch: JsSlot,
     /// The two bits `mnemonist-core` needs.
     backing: Backing<JsSlot>,
+    /// What V8 says when the class is not a constructor.
+    ///
+    /// Not a constant, because the three modules word it differently and the
+    /// wording is the *expression* V8 was evaluating. `fixed-stack.js` writes
+    /// `this.items = new this.ArrayClass(this.capacity)`, while `fixed-deque.js`
+    /// and `circular-buffer.js` both write `new ArrayClass(this.capacity)` from
+    /// the parameter — so `FixedStack.from(new Set([1,2]))` dies with
+    /// `this.ArrayClass is not a constructor` and the other two with
+    /// `ArrayClass is not a constructor`. Measured on Node 24.18.1.
+    not_a_constructor: &'static str,
 }
 
 impl ArrayClass {
@@ -76,9 +106,13 @@ impl ArrayClass {
     /// Errors surface whatever the class's own constructor threw — a
     /// non-constructor value dies here with V8's `TypeError`, which is roughly
     /// where upstream's `new this.ArrayClass(this.capacity)` would have died.
-    pub fn probe(env: &Env, constructor: &Unknown) -> Result<Self> {
-        let scratch = instantiate(env, constructor, 1)?;
-        let probe = instantiate(env, constructor, 1)?;
+    pub fn probe(
+        env: &Env,
+        constructor: &Unknown,
+        not_a_constructor: &'static str,
+    ) -> Result<Self> {
+        let scratch = instantiate(env, constructor, 1, not_a_constructor)?;
+        let probe = instantiate(env, constructor, 1, not_a_constructor)?;
         let probe = coerce_to_object(env, &probe)?;
 
         // `0 in probe`: present for a zero-filled typed array, absent for the
@@ -95,6 +129,7 @@ impl ArrayClass {
             constructor: JsSlot::new(env, constructor)?,
             scratch: JsSlot::new(env, &scratch)?,
             backing,
+            not_a_constructor,
         })
     }
 
@@ -128,7 +163,7 @@ impl ArrayClass {
         slots: &[Option<JsSlot>],
     ) -> Result<Unknown<'env>> {
         let constructor = self.constructor.get(env)?;
-        let instance = instantiate(env, &constructor, slots.len())?;
+        let instance = instantiate(env, &constructor, slots.len(), self.not_a_constructor)?;
         let mut object = coerce_to_object(env, &instance)?;
 
         for (index, slot) in slots.iter().enumerate() {
@@ -147,6 +182,7 @@ fn instantiate<'env>(
     env: &'env Env,
     constructor: &Unknown,
     length: usize,
+    not_a_constructor: &'static str,
 ) -> Result<Unknown<'env>> {
     let argument = env.create_double(length as f64)?;
     let arguments = [argument.raw()];
@@ -173,11 +209,11 @@ fn instantiate<'env>(
     // reports that as V8 words it, naming the property:
     //
     //     TypeError: this.ArrayClass is not a constructor
+    //
+    // The exact wording is the caller's, because it is the *expression* V8 was
+    // evaluating and the three modules do not spell it the same way.
     if status != sys::Status::napi_ok && status != sys::Status::napi_pending_exception {
-        return Err(crate::foreach::type_error(
-            env,
-            "this.ArrayClass is not a constructor",
-        ));
+        return Err(crate::foreach::type_error(env, not_a_constructor));
     }
 
     check(status, "napi_new_instance")?;

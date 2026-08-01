@@ -39,7 +39,7 @@ use mnemonist_core::structures::fixed_stack::{
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 
-use crate::array_class::{capacity_of, ArrayClass};
+use crate::array_class::{capacity_of, ArrayClass, Messages};
 use crate::cursor::{yielded, CellCursor};
 use crate::foreach;
 use crate::iterables;
@@ -48,6 +48,21 @@ use crate::js_slot::JsSlot;
 /// What `iterables.forEach(...)` raises, because `utils/iterables.js` exports
 /// no `forEach`. Verbatim from Node 24.18.1; see NOTES B-60.
 pub(crate) const NO_ITERABLES_FOREACH: &str = "iterables.forEach is not a function";
+
+/// What V8 says when `FixedStack`'s `ArrayClass` is not a constructor.
+///
+/// `fixed-stack.js` allocates with `new this.ArrayClass(this.capacity)`, so the
+/// message names the property. Its two siblings use the bare parameter and get
+/// a different message; see [`crate::array_class::ArrayClass`].
+const NOT_A_CONSTRUCTOR: &str = "this.ArrayClass is not a constructor";
+
+/// This module's four upstream message strings.
+const MESSAGES: Messages = Messages {
+    cannot_guess: CANNOT_GUESS_LENGTH,
+    missing: MISSING_ARGUMENTS,
+    bad: BAD_CAPACITY,
+    not_a_constructor: NOT_A_CONSTRUCTOR,
+};
 
 /// A LIFO stack of fixed capacity holding arbitrary JavaScript values.
 #[napi(js_name = "FixedStack")]
@@ -75,7 +90,7 @@ impl JsFixedStack {
         }
 
         let capacity = capacity_of(&env, &capacity, MISSING_ARGUMENTS, BAD_CAPACITY)?;
-        let class = ArrayClass::probe(&env, &array_class)?;
+        let class = ArrayClass::probe(&env, &array_class, NOT_A_CONSTRUCTOR)?;
 
         CoreFixedStack::new(class.backing(), capacity)
             .map(|inner| Self {
@@ -234,15 +249,8 @@ impl JsFixedStack {
         array_class: Unknown,
         capacity: Unknown,
     ) -> Result<Self> {
-        let (class, capacity, values) = from_parts(
-            &env,
-            &iterable,
-            &array_class,
-            &capacity,
-            CANNOT_GUESS_LENGTH,
-            MISSING_ARGUMENTS,
-            BAD_CAPACITY,
-        )?;
+        let (class, capacity, values) =
+            from_parts(&env, &iterable, &array_class, &capacity, &MESSAGES)?;
 
         CoreFixedStack::from_array_like(class.backing(), capacity, values)
             .map(|inner| Self {
@@ -292,18 +300,16 @@ pub(crate) fn from_parts(
     iterable: &Unknown,
     array_class: &Unknown,
     capacity: &Unknown,
-    cannot_guess: &'static str,
-    missing: &'static str,
-    bad: &'static str,
+    messages: &Messages,
 ) -> Result<(ArrayClass, usize, Vec<JsSlot>)> {
     // `arguments.length < 3`, as far as napi can see it (D-61).
     let capacity = if capacity.get_type()? == ValueType::Undefined {
         match iterables::guess_length(env, iterable)? {
             Some(length) => length,
-            None => return Err(Error::new(Status::InvalidArg, cannot_guess)),
+            None => return Err(Error::new(Status::InvalidArg, messages.cannot_guess)),
         }
     } else {
-        return_capacity(env, capacity, missing, bad)?
+        return_capacity(env, capacity, messages.missing, messages.bad)?
     };
 
     // Upstream reaches this through `new X(ArrayClass, capacity)`, so the
@@ -312,9 +318,9 @@ pub(crate) fn from_parts(
     // SAFETY: a handle this call just created, in this scope.
     let capacity_value =
         unsafe { Unknown::from_raw_unchecked(env.raw(), napi::JsValue::raw(&capacity_value)) };
-    let capacity = capacity_of(env, &capacity_value, missing, bad)?;
+    let capacity = capacity_of(env, &capacity_value, messages.missing, messages.bad)?;
 
-    let class = ArrayClass::probe(env, array_class)?;
+    let class = ArrayClass::probe(env, array_class, messages.not_a_constructor)?;
 
     if !iterables::is_array_like(env, iterable)? {
         return Err(crate::foreach::type_error(env, NO_ITERABLES_FOREACH));

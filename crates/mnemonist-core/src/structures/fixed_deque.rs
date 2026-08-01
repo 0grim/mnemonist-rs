@@ -341,6 +341,18 @@ impl<T: Clone> FixedDeque<T> {
         self.start
     }
 
+    /// `this.items[i]` — a raw read at a **physical** index, with no geometry.
+    ///
+    /// `items` is a public property upstream, so this exposes a surface a JS
+    /// caller already has. It exists because `#.get`'s index is a JS number
+    /// and upstream's arithmetic on a negative or fractional one lands
+    /// somewhere [`get`](FixedDeque::get) cannot express: `get(-1)` on a deque
+    /// whose `start` is 2 really does return the element at physical slot 1.
+    /// See the bridge's `get` and B-62.
+    pub fn slot_at(&self, index: usize) -> Option<T> {
+        self.items.get(index).cloned().flatten()
+    }
+
     /// Whether the deque holds nothing. Not upstream; upstream writes
     /// `size === 0`.
     pub fn is_empty(&self) -> bool {

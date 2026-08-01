@@ -30,6 +30,8 @@ pub mod statics;
 // several agents at once and a new line at the end can never land inside
 // another one's hunk.
 pub mod array_class;
+pub mod circular_buffer;
+pub mod fixed_deque;
 pub mod fixed_stack;
 pub mod iterables;
 

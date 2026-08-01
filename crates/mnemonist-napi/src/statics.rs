@@ -66,6 +66,10 @@ const CURSOR_FACTORIES: &[(&str, &str)] = &[
     // `crate::cursor::ITERATOR_FACTORIES`.
     ("FixedStack", "values"),
     ("FixedStack", "entries"),
+    ("FixedDeque", "values"),
+    ("FixedDeque", "entries"),
+    ("CircularBuffer", "values"),
+    ("CircularBuffer", "entries"),
 ];
 
 /// Take `#.return` off every cursor, because upstream's cursors do not have one.
