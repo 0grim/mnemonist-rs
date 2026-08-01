@@ -20,9 +20,11 @@ use std::time::Duration;
 use difffuzz::modules::bit_set::BitSetSpec;
 use difffuzz::modules::bit_vector::BitVectorSpec;
 use difffuzz::modules::hashed_array_tree::HashedArrayTreeSpec;
+use difffuzz::modules::queue::QueueSpec;
 use difffuzz::modules::sparse_map::SparseMapSpec;
 use difffuzz::modules::sparse_queue_set::SparseQueueSetSpec;
 use difffuzz::modules::sparse_set::SparseSetSpec;
+use difffuzz::modules::stack::StackSpec;
 use difffuzz::modules::static_disjoint_set::StaticDisjointSetSpec;
 use difffuzz::{Campaign, Report};
 
@@ -31,7 +33,7 @@ usage: difffuzz --module <name> [--seed N] [--duration SECONDS] [--cases N] [--b
 
   --module    module to fuzz; currently: static-disjoint-set, sparse-set,
               sparse-map, sparse-queue-set, hashed-array-tree, bit-set,
-              bit-vector
+              bit-vector, stack, queue
   --seed      campaign seed (default 42); with --cases, reproduces exactly
   --duration  wall-clock budget in seconds (default 60)
   --cases     stop after N cases instead of after --duration
@@ -110,6 +112,20 @@ fn main() -> ExitCode {
             &BitVectorSpec,
             &Campaign {
                 regressions: difffuzz::modules::bit_vector::REGRESSIONS,
+                ..campaign
+            },
+        ),
+        "stack" => difffuzz::run(
+            &StackSpec,
+            &Campaign {
+                regressions: difffuzz::modules::stack::REGRESSIONS,
+                ..campaign
+            },
+        ),
+        "queue" => difffuzz::run(
+            &QueueSpec,
+            &Campaign {
+                regressions: difffuzz::modules::queue::REGRESSIONS,
                 ..campaign
             },
         ),

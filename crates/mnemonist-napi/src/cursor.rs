@@ -88,6 +88,55 @@ impl<Owner: 'static, S: Sequence + 'static> BridgeCursor<Owner, S> {
     }
 }
 
+/// A [`BridgeCursor`] over a source the JS side can mutate *while a `&self`
+/// method is on the stack*.
+///
+/// # The bug this exists to prevent, measured rather than reasoned about
+///
+/// napi hands the same wrapped struct to JS as `&self` for one method and
+/// `&mut self` for another, and JavaScript may call the second from inside a
+/// callback the first is running. rustc marks a `&T` parameter `noalias`
+/// `readonly` whenever `T: Freeze`, so LLVM is entitled to hoist a read out of
+/// such a loop — and it does:
+///
+/// ```js
+/// var q = Queue.from([1, 2, 3, 4]);
+/// q.forEach(function (value, i) { if (i === 0) { q.dequeue(); q.dequeue(); } });
+/// ```
+///
+/// Upstream sees `1, 4, undefined, undefined`, because its `forEach` re-reads
+/// `this.items` every iteration and the second dequeue rebinds it. A bridge
+/// holding a plain `&self` saw `1, 2, 3, 4`: the load was hoisted, and the
+/// mutation was invisible even though the *same* object reported the new
+/// `offset` through a separate call one line later.
+///
+/// The fix is not a `volatile` read or a compiler barrier, it is the type: a
+/// struct with a [`RefCell`](std::cell::RefCell) inline is not `Freeze`, so
+/// `&self` carries neither attribute and every read is genuinely a read. The
+/// bridges therefore wrap their core structure in a `RefCell`, which makes this
+/// cursor's projected source a `&RefCell<S>` rather than a `&S`.
+///
+/// The borrow is taken per step and released immediately, so a JS callback that
+/// re-enters and mutates never meets an outstanding borrow.
+pub struct CellCursor<Owner: 'static, S: Sequence + 'static> {
+    source: SharedReference<Owner, &'static std::cell::RefCell<S>>,
+    state: CursorState<S>,
+}
+
+impl<Owner: 'static, S: Sequence + 'static> CellCursor<Owner, S> {
+    /// Freeze the source now — at `values()` time, not at first `next()`.
+    pub fn open(source: SharedReference<Owner, &'static std::cell::RefCell<S>>) -> Self {
+        let state = CursorState::open(&*source.borrow());
+
+        Self { source, state }
+    }
+
+    /// One step, against the parent as it is *now*.
+    pub fn step(&mut self) -> Step<S::Item> {
+        self.state.step(&self.source.borrow())
+    }
+}
+
 /// Translate a core [`Step`] into what `Generator::next` must return.
 ///
 /// The three-way mapping is the whole of DESIGN.md 3.7 Option A, and it is
@@ -163,6 +212,8 @@ const ITERATOR_FACTORIES: &[(&str, &str)] = &[
     ("SparseQueueSet", "values"),
     ("BitSet", "values"),
     ("BitVector", "values"),
+    ("Stack", "values"),
+    ("Queue", "values"),
 ];
 
 /// Wire every collection's `Symbol.iterator` to its cursor factory.
@@ -184,6 +235,16 @@ pub fn install_iterator_factories(exports: Object, env: Env) -> Result<()> {
     let iterator: Unknown = symbol
         .get("iterator")?
         .ok_or_else(|| missing("Symbol.iterator"))?;
+
+    // The addon's only module-export hook, so the other load-time semantics
+    // upstream ships inside its modules ride along here: `X.of`, and taking
+    // `#.return` off the cursors. See `crate::statics`.
+    //
+    // BEFORE the aliasing below, not after: that loop copies whatever
+    // `X.prototype.values` is at the time, so patching afterwards would leave
+    // `Symbol.iterator` pointing at the unpatched factory and the two ways of
+    // getting a cursor would behave differently.
+    crate::statics::install_variadic_factories(&exports, &env)?;
 
     for (class, factory) in ITERATOR_FACTORIES {
         let constructor: Object = exports

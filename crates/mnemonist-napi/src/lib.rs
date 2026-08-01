@@ -12,11 +12,16 @@ use napi_derive::napi;
 pub mod bit_set;
 pub mod bit_vector;
 pub mod cursor;
+pub mod foreach;
 pub mod hashed_array_tree;
+pub mod js_slot;
+pub mod queue;
 pub mod sparse_map;
 pub mod sparse_queue_set;
 pub mod sparse_set;
+pub mod stack;
 pub mod static_disjoint_set;
+pub mod statics;
 
 #[napi]
 pub fn ping() -> &'static str {

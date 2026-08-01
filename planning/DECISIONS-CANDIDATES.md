@@ -519,6 +519,88 @@ workaround but the better shape — it frees `Option<Yield>` to keep its own mea
 `{done: true}`.
 **Verify:** `crates/mnemonist-napi/src/cursor.rs::yielded`, and the fuzzer's `$next`/`$spread` ops.
 
+### D-41 — A JS array is a *reference*, so the backing store is `Rc<RefCell<Vec<T>>>`
+**Status:** CONFIRMED (implemented in `stack`, `queue`) · **Category:** behavioural · **Divergence:** no
+**Upstream:** `Stack.prototype.clear` is `this.items = []` — a **new array**, not
+`items.length = 0`. `Queue`'s compaction is `this.items = this.items.slice(this.offset)`, likewise
+new. Both cursors captured `var items = this.items`, the array *object*, so both rebindings leave
+an open cursor walking the old contents — while `pop()`, which shortens the *same* array, is
+visible to it as an `undefined` hole.
+**Port:** the backing store is refcounted, so rebinding and in-place mutation are different
+operations. Mutators still take `&mut self`; this is not interior mutability for convenience.
+**Rationale:** a `Vec<T>` makes `clear()` and "pop everything" indistinguishable, and both would
+have shortened an open walk. No upstream test notices — neither suite mutates between opening a
+cursor and draining it — but the fuzzer catches the collapse in 0.1s and shrinks it to four ops.
+**Verify:** `clear_rebinds_the_array_and_leaves_an_open_cursor_untouched`,
+`a_compaction_detaches_an_open_cursor_onto_the_old_array`, and the committed regression seeds.
+
+### D-42 — A cursor's end may be live, not only frozen (`Sequence::limit`)
+**Status:** CONFIRMED · **Category:** behavioural · **Divergence:** no
+**Upstream:** `Stack.prototype.values` freezes `l = items.length`; the structurally identical
+`Queue.prototype.values`, four files away, writes `if (i >= items.length)` and re-reads it every
+step. obliterator's `Iterator` has no `done` flag, so a queue cursor that has already reported
+`{done: true}` **resumes** when the queue grows.
+**Port:** `Sequence::limit`, defaulting to the frozen length so every existing source is
+unchanged, overridden by `Queue`.
+**Rationale:** one uniform cursor shape would have silently terminated that walk. The
+inconsistency is upstream's and is not normalised.
+**Verify:** `a_finished_cursor_resumes_when_the_queue_grows`, plus the fuzz falsification whose
+minimised repro is three operations.
+
+### D-43 — Bridge structures are held in a `RefCell` because `&self` is `noalias`
+**Status:** CONFIRMED · **Category:** architecture · **Divergence:** no
+**Upstream:** n/a — this is about the port's own soundness.
+**Problem:** napi hands the same object to JS as `&self` and `&mut self`, and JS re-enters from a
+callback. rustc marks `&T` `noalias readonly` when `T: Freeze`, so LLVM may hoist a read out of a
+loop that upstream re-reads. Measured: a `forEach` callback that compacted a queue was invisible
+to the remaining iterations, while the same object reported its new `offset` one line later.
+**Port:** the `#[napi]` classes hold `RefCell<Core*>`, which is not `Freeze`, and every borrow is
+released before any JS call.
+**Rationale:** the fix is the type, not a barrier. A `volatile` read or a `black_box` would be
+papering over a `&self` that is simply not true at this boundary.
+**Verify:** `tests/boundary/stack-queue.js`, "should re-read the backing array on every iteration".
+**Note:** the `sparse-set` bridge has the same defect and is **not** fixed — it is already in
+`tests/scope.txt`. See NOTES.md.
+
+### D-44 — Arbitrary JS values are stored as an enum, not as a `napi_ref`
+**Status:** CONFIRMED · **Category:** architecture · **Divergence:** no
+**Upstream:** `Stack`/`Queue` hold anything.
+**Problem:** `napi_create_reference` rejects primitives below Node-API 10, and napi-rs 3.12 does
+not export `node_api_module_get_api_version_v1`, so an addon built with it is a version-8 module
+regardless of its Cargo features. Measured: switching `napi9` → `napi10` changes nothing.
+**Port:** `JsSlot` is an enum — references for object/function/symbol, by value for
+undefined/null/boolean/number/string/bigint, with strings kept as UTF-16 code units and bigints as
+raw words.
+**Rationale:** observationally exact, because primitives are immutable and compared by value;
+`Object.is` cannot tell a rebuilt `-0` or `NaN` from the original. Sharing is `Rc`, so the only
+hand-written lifetime rule is one `Drop`.
+**Verify:** the primitive round-trip and object-identity specs in `tests/boundary/stack-queue.js`.
+
+### D-45 — `X.of` is installed as evaluated JavaScript
+**Status:** CONFIRMED · **Category:** architecture · **Divergence:** YES (mechanism, not behaviour)
+**Upstream:** `Stack.of = function () { return Stack.from(arguments); };`
+**Port:** the same line, `run_script`-evaluated once at module load from a fixed literal.
+**Rationale:** napi-rs has no variadic parameter and `arguments` has no Rust representation. A
+native `of` would behave identically — **measured**: deleting branch 1's `[object Arguments]`
+clause leaves all 22 original assertions green, because a modern `arguments` object is iterable
+and falls through to branches 3/4 with the same numeric second argument. The reason to keep the JS
+form is that it is upstream's own definition and keeps the addon self-contained, not the
+coverage claim an earlier draft made.
+**Verify:** `Stack.of(1, 2, 3)` in the original suite; the Arguments clause itself is covered only
+by the hijacked-`toString` case in `tests/boundary/foreach.js`.
+
+### D-46 — napi's generator `#.return` is deleted, because upstream cursors have none
+**Status:** CONFIRMED · **Category:** behavioural · **Divergence:** no
+**Upstream:** `obliterator/iterator` defines a constructor and an identity `Symbol.iterator`, and
+nothing else. `IteratorClose` finds no `return`, so a `break` out of a `for…of` leaves the cursor
+exactly where it stopped and a later `next()` resumes.
+**Port:** napi's `#[napi(iterator)]` sets `next`/`return`/`throw` as own instance properties, and
+its `return` writes a `[[GeneratorState]]` flag **before** the Rust `complete()` runs, so
+`complete` cannot prevent it. The addon deletes the method from every cursor it hands out.
+**Verify:** "should keep going after a break" in `tests/boundary/stack-queue.js`.
+**Note:** this corrects a claim in the `sparse-set` bridge's docs that napi's default `complete`
+is observably equivalent to having no `return`. It is not.
+
 ### D-40 — Every fuzz batch must generate new cases
 **Status:** CONFIRMED · **Category:** tooling · **Divergence:** no
 **Problem:** proptest's `TestRunner` counts successes for its whole lifetime and loops
