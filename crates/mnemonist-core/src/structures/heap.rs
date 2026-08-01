@@ -354,7 +354,14 @@ where
     // length is re-read after the push, and nothing can run in between.
     let length = heap.push(item)?;
 
-    sift_down(compare, heap, 0, length - 1)
+    // `saturating_sub`, not `- 1`. A `Store` whose `push` reports a length of
+    // zero is not reachable from core, but the bridge's is a real JS `push`
+    // on a real JS array, and a subclassed or tampered `push` can return
+    // anything. `usize` underflow would panic in debug and, worse, wrap in
+    // release into an index that asks the store to grow to `usize::MAX`.
+    // JavaScript would have written `heap[-1]`, a string-keyed expando that
+    // nothing reads; a no-op sift at index 0 is the nearest honest equivalent.
+    sift_down(compare, heap, 0, length.saturating_sub(1))
 }
 
 /// `Heap.pop(compare, heap)` — the raw-array static.
