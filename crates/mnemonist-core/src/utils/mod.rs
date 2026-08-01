@@ -7,3 +7,4 @@ pub mod typed_arrays;
 // reordering becomes another agent's merge conflict (CLAUDE.md, Git).
 pub mod binary_search;
 pub mod hash_tables;
+pub mod murmurhash3;
