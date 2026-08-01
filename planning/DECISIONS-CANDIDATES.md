@@ -785,3 +785,21 @@ size and the capacity (returning debris) — as well as fractional, `NaN` and in
 JS value through arithmetic that has a well-defined numeric meaning everywhere else. The case is
 unreachable from any upstream test and from any sane caller; the divergence is stated instead.
 **Verify:** four differential probes per class in `docs/modules/fixed-deque.md`.
+
+### D-66 — `X.from` on a `DataView` gives `size === 0`, not `size === undefined`
+**Status:** CONFIRMED · **Category:** behavioural · **Divergence:** YES — the only one in this wave
+where the port is not bug-for-bug
+**Upstream:** B-63. `isArrayLike` accepts a `DataView` (via `ArrayBuffer.isView`), the copy loop
+reads its absent `.length`, and `size` is assigned `undefined`. Every later method is then
+arithmetic on `NaN`, and `toArray()` is `[undefined]`.
+**Port:** `size === 0`, an ordinary empty structure.
+**Rationale:** a `usize` cannot hold `undefined`, so D-37's rule — reproduce where reproducible,
+raise where not — leaves a choice between two inexact answers. `0` was chosen over a throw because
+"nothing was copied" is *true*, and because upstream does not throw either: raising a `RangeError`
+would break a caller upstream leaves running, which is a larger divergence than under-reporting a
+size. Recorded loudly rather than quietly: this is the one place in the wave where a fuzz
+divergence would mean the port is *more correct*, which the porting rules name as a bug in the
+port, and it is accepted only because the alternative is not expressible.
+**Reachable only through** `X.from(dataView, ArrayClass, capacity)` — with no capacity,
+`guessLength` returns `undefined` and the `could not guess iterable length` throw fires first.
+**Verify:** the `from(DataView)` differential probe in `docs/modules/fixed-stack.md`.

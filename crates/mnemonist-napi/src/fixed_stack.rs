@@ -294,6 +294,25 @@ impl JsFixedStack {
 /// Note also the *order*: the structure is constructed — so a bad capacity
 /// throws — **before** `isArrayLike` is consulted, and `guessLength` runs
 /// before that. Three different errors, in a fixed order.
+///
+/// # The one divergence in this wave: `size` when `.length` is not a number
+///
+/// `stack.size = l` assigns the *iterable's* `length` with no type check, and
+/// `isArrayLike` is `Array.isArray || ArrayBuffer.isView` — which is true for a
+/// **`DataView`**, and a `DataView` has `byteLength`, not `length`. Upstream
+/// therefore produces a structure whose `size` is `undefined`:
+///
+/// ```text
+/// FixedStack.from(new DataView(new ArrayBuffer(4)), Array, 3).size  // undefined
+///                                             …and .toArray()      // [ undefined ]
+/// ```
+///
+/// That is NOTES B-63, and it is the one behaviour here the port does not
+/// reproduce (D-66): a `usize` cannot hold `undefined`, and every later method
+/// would be arithmetic on `NaN`. [`iterables::array_like_values`] yields
+/// nothing for such a target and `size` becomes `0` — "nothing was copied",
+/// which is at least true. Reachable only with an explicit capacity; without
+/// one `guessLength` throws first.
 #[allow(clippy::type_complexity)]
 pub(crate) fn from_parts(
     env: &Env,

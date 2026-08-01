@@ -182,7 +182,7 @@ expected outcome (D-33).
 | — | **`push` and `unshift` return `usize`, not `Result<usize>`.** | Neither can fail here, which is the entire difference from `FixedDeque`. Encoding that in the type is what stops a caller from handling an error that cannot happen. |
 | — | **`inspect()` is not ported**, and with it the quirk that the pasted `inspect` reports the constructor as `FixedDeque`. | A Node display convenience with no upstream assertion. Noted rather than reproduced. |
 | D-65 | **`get` with a non-numeric index returns `undefined`.** | See `docs/modules/fixed-deque.md`. |
-| D-60, D-61, D-62, D-63, D-64 | See `docs/modules/fixed-stack.md`. | Shared by all three fixed-capacity modules. |
+| D-60, D-61, D-62, D-63, D-64, D-66 | See `docs/modules/fixed-stack.md`. | Shared by all three fixed-capacity modules -- they live in one `from_parts`. |
 | D-06, D-07, D-39, D-43 | See `docs/modules/fixed-stack.md`. | Cursor and bridge decisions, shared repo-wide. |
 
 ## Fuzz + bench

@@ -149,9 +149,10 @@ reduces to, which is what gaps 7 and 13 turn on.
 evidence for the bridge half and are not otherwise visible: B-60 for `Set` and for a string; B-61
 for both classes; coercion for `Uint8Array`/`Int8Array`/`Float64Array`; `toArray`'s class;
 oversized `from` for both classes; all five constructor error paths; `toString`; `toJSON`;
-`[...s]` twice; a cursor re-drained; `break` then `next()`; a mutating `forEach`; and
+`[...s]` twice; a cursor re-drained; `break` then `next()`; a mutating `forEach`; `from` on a
+`DataView` (the one disagreement, D-66/B-63); and
 `new FixedStack(Object, 3)` — where upstream produces a `Number` object carrying a `'0'` property,
-and so does the port. All 28 agree.
+and so does the port. All agree except the `DataView` case, which is D-66.
 
 **Still untested, stated rather than glossed:** gap 21 (`inspect`, not ported — a Node display
 convenience with no upstream assertion), gap 4 in its `arguments.length` form (see the divergence
@@ -214,6 +215,36 @@ writing `self.size` — **stays green through the entire original suite**. It wa
 cases once the grammar had a `forEach` op, and by two native tests written from the source rather
 than from the tests.
 
+**B-63 — `from` assigns `size` from `iterable.length` without checking it is a number.**
+`status: verified against Node 24.18.1`. The array-like branch of the shared `from` ends with
+
+```js
+for (i = 0, l = iterable.length; i < l; i++) stack.items[i] = iterable[i];
+stack.size = l;
+```
+
+and `isArrayLike` is `Array.isArray(t) || ArrayBuffer.isView(t)`. **`ArrayBuffer.isView` is true for
+a `DataView`, and a `DataView` has no `.length`** — it has `byteLength`. So `l` is `undefined`, the
+loop runs zero times, and `size` is assigned `undefined`:
+
+```js
+var s = FixedStack.from(new DataView(new ArrayBuffer(4)), Array, 3);
+s.size;       // undefined
+s.toArray();  // [ undefined ]   -- `new Array(undefined)` is a ONE-element array
+```
+
+`toArray()` is `[undefined]` rather than `[]` because `new this.ArrayClass(this.size)` is
+`new Array(undefined)`, which is the single-argument form holding one `undefined`, and the
+`while (i--)` loop then never runs because `undefined--` is `NaN`.
+
+A `DataView` is the only reachable input: every value `Array.isArray` accepts has a numeric
+`length`, and so does every typed array. It needs an explicit capacity, because with none
+`guessLength` returns `undefined` and the `could not guess iterable length` throw fires first.
+
+**Found by probing the port against upstream, not by reading**, and it is the one place in this
+wave where the port does *not* reproduce upstream: a `usize` cannot hold `undefined`, and a
+structure whose `size` is `undefined` poisons every method downstream. See D-66.
+
 **What the fuzzer found: nothing new.** 2.81 M operations, zero divergences. That is the expected
 outcome (D-33): a faithful port reproduces upstream's bugs, so differential fuzzing structurally
 cannot find them. Both bugs above were found by reading the file statement by statement and
@@ -228,6 +259,7 @@ to work in that direction twice — see Fuzz, below.
 | D-61 | **An omitted argument and an explicit `undefined` are the same thing.** | napi generates `CallbackInfo::new(.., None, ..)`, so it does not enforce arity and a missing argument arrives as `undefined`. `new FixedStack(Array, undefined)` therefore raises upstream's *arity* error where upstream raises its *capacity* error. `null` is distinguished correctly — the parameters are `Unknown`, not `Option<Unknown>`, precisely because napi maps `null` to `None` and `new FixedStack(Array, null)` must throw about the number. |
 | D-62 | **A fractional, `NaN` or infinite capacity always raises `RangeError: Invalid array length`.** | Upstream passes the raw number to the class and lets it decide, so `new FixedStack(Array, 2.5)` throws while `new FixedStack(Uint8Array, 2.5)` succeeds with `capacity === 2.5` against an `items.length` of 2 — after which the wrap arithmetic compares indices against 2.5. The port requires an integral capacity and raises the `Array` form for every class. The `Array` case is exact; the typed case is the divergence. |
 | D-63 | **The array class is probed, not listed.** | Coercion is `scratch[0] = v; scratch[0]` through a real one-element instance of the caller's class, and the backing is decided by `0 in new ArrayClass(1)`. That is exact for every array class, including ones nobody has written yet, where a name whitelist (the `hashed-array-tree` approach) diverges for nine of the twelve built-in typed arrays. **Cost, stated:** two extra one-element constructions of the caller's class per structure, invisible for `Array` and the typed arrays and observable for a constructor with side effects. |
+| D-66 | **`from` on a `DataView` gives `size === 0`, not `size === undefined`.** | B-63, and the one behaviour in this wave the port does not reproduce. Upstream assigns `size` from `iterable.length` without a type check, and a `DataView` passes `isArrayLike` while having no `.length` — so upstream produces a structure whose `size` is `undefined` and whose every later method is arithmetic on `NaN`. A `usize` cannot hold that, and D-37's rule ("reproduce where reproducible, raise where not") leaves a choice between two inexact answers. `0` was chosen over a throw because *nothing was copied* is true and upstream does not throw either; a `RangeError` would break a caller upstream does not break. Reachable only through `X.from(dataView, ArrayClass, capacity)` — with no capacity, `guessLength` throws first. |
 | D-64 | **B-60 is reproduced.** | See above. The `TypeError` is raised with V8's exact wording, from the same point in the sequence — after `guessLength`, after the capacity guards, after `isArrayLike` says no. |
 | — | **`items` is not exposed to JS.** | It is a public property upstream and a JS caller can write *through* it; napi can only hand out a copy, which would silently break the write-through. Same call as the `SparseSet` and `HashedArrayTree` bridges. It is exposed in Rust, and the differential fuzzer compares it slot for slot after every operation. |
 | — | **`toArray()`'s hole-vs-`undefined` distinction is the fast path's.** | Upstream writes every index of the result explicitly, so a missing slot is an own `undefined` property rather than a hole; the port leaves it unwritten, which is a hole in an `Array` and the class zero in a typed array. The two differ only under `in`/`hasOwnProperty`, and for `FixedStack` the case is unreachable anyway — every index below `size` that a plain `Array` can hold has been written. Reachable for `FixedDeque`, where it is the same call. |

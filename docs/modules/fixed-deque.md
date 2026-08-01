@@ -179,7 +179,7 @@ class: `FixedDeque.from(new Set([1,2,3]), Array, 3)` is
 | — | **`toArray()` produces the fast path's answer for a missing slot.** | Upstream has two paths: `items.slice(start, offset)` when `start + size < capacity`, which preserves a hole, and a slow path whose `array[j] = undefined` creates an own property. The port always produces the hole. Observable only through `in`/`hasOwnProperty`, and the elements are identical either way. |
 | — | **The wrap is one conditional subtraction, not `%`.** | Not a divergence — a *choice to reproduce* one. The two agree while `start + size < 2 * capacity`, which every path but an oversized `from` maintains; where they disagree, upstream keeps the out-of-range index and reads whatever is there. Writing `%` would have been the tidier code and the wrong answer. `values()` genuinely *is* `%`, because its loop steps and wraps on equality. |
 | — | **`items` is not exposed to JS.** | A public property upstream that a JS caller can write *through*; napi can only hand out a copy. Same call as `SparseSet`, `HashedArrayTree` and `FixedStack`. Exposed in Rust and compared slot for slot by the fuzzer. |
-| D-60, D-61, D-62, D-63, D-64 | See `docs/modules/fixed-stack.md`. | The `iterables`, arity, capacity, `ArrayClass` and B-60 decisions are shared by all three fixed-capacity modules. |
+| D-60, D-61, D-62, D-63, D-64, D-66 | See `docs/modules/fixed-stack.md`. | The `iterables`, arity, capacity, `ArrayClass`, B-60 and B-63 decisions are shared by all three fixed-capacity modules -- they live in one `from_parts`. |
 | D-06, D-07, D-39, D-43 | See `docs/modules/fixed-stack.md`. | Cursor and bridge decisions, shared repo-wide. |
 | — | **`inspect()` is not ported.** | A Node display convenience with no upstream assertion. |
 

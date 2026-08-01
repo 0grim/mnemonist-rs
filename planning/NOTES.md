@@ -930,3 +930,43 @@ copies by index and assigns `size` rather than pushing — leaving `size > capac
 whose entire purpose is to prevent that. `CircularBuffer.from([1,2,3], Array, 2)` gives `size 3`,
 `items [1,2,3]` and `toArray() [1, 2, 1]`. Verified on Node 24.18.1. Kept under B-60's umbrella
 rather than given its own ID: the shared `from` is one piece of code with two problems.
+
+### B-63 — `X.from` assigns `size` from `iterable.length` without checking it is a number
+
+`status: verified against Node 24.18.1` · `mnemonist fixed-stack.js`, `fixed-deque.js`,
+`circular-buffer.js`
+
+The array-like branch of the shared `from` static ends with
+
+```js
+for (i = 0, l = iterable.length; i < l; i++) stack.items[i] = iterable[i];
+stack.size = l;
+```
+
+and the predicate that selects it is `isArrayLike(t) = Array.isArray(t) || typed.isTypedArray(t)`,
+where `isTypedArray` is **`ArrayBuffer.isView`**. `ArrayBuffer.isView` is true for a `DataView`, and
+a `DataView` has no `.length` — it has `byteLength`. So `l` is `undefined`, the loop runs zero
+times, and `size` is assigned `undefined`:
+
+```js
+var s = FixedStack.from(new DataView(new ArrayBuffer(4)), Array, 3);
+s.size;       // undefined
+s.toArray();  // [ undefined ]
+```
+
+`toArray()` is a **one**-element array rather than empty because `new this.ArrayClass(this.size)` is
+`new Array(undefined)`, the single-argument form holding one `undefined`, and the `while (i--)`
+loop then never runs because `undefined--` is `NaN`.
+
+A `DataView` is the only reachable input — every value `Array.isArray` accepts has a numeric
+`length`, and so does every typed array — and it needs an explicit capacity, because with none
+`guessLength` returns `undefined` and the `could not guess iterable length` throw fires first.
+
+**Found by probing the port against upstream rather than by reading the file**, which makes it the
+one bug in this wave that the differential method found rather than confirmed. It is also the one
+behaviour in the wave the port does **not** reproduce (D-66): a `usize` cannot hold `undefined`, and
+a structure whose `size` is `undefined` is arithmetic on `NaN` from then on.
+
+**Moderate candidate.** Narrower than B-60 and B-61 — a `DataView` is an odd thing to hand a stack
+— but it is a genuine type confusion inside a predicate whose name says "array like", and the fix
+is one `typeof` check.
