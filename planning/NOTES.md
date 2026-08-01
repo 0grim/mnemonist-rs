@@ -91,6 +91,53 @@ observable; "fixing" it would be a silent behavioural divergence. Goes in `DECIS
 deliberate bug-for-bug reproduction, and upstream as an issue.
 *Also a good write-up beat: the class of bug that differential testing structurally cannot find.*
 
+### B-8 — `SparseSet.add(m)` with `m >= length` corrupts the set, three defects deep
+`status: VERIFIED against Node 24.18.1` · `mnemonist sparse-set.js`
+Neither guard in `add` fires for an out-of-range member, because `sparse[m]` is `undefined` and
+every comparison against `undefined` is false. Three separate silent failures then follow in three
+consecutive lines:
+```js
+this.dense[this.size] = member;    // (1) TRUNCATES — add(300) on a length-10 set stores 44
+this.sparse[member]   = this.size; // (2) DROPPED — out-of-range typed-array store is a no-op
+this.size++;                       // (3) happens anyway
+```
+Measured: `new SparseSet(10); add(300)` → `size === 1`, `dense === [44, 0, …]`, `sparse` untouched,
+`has(300) === has(44) === false`. The member is stored, counted, iterable and unfindable under
+either name.
+**We reproduce it.** Unlike `StaticDisjointSet`'s out-of-range read, every step here is a
+well-defined read, truncating store or dropped store, so the faithful port is expressible — and it
+is cheaper than a guard as well as more useful. See `docs/modules/sparse-set.md`.
+
+### B-9 — and therefore `size` can exceed `length`, so upstream's own iterator yields `undefined`
+`status: VERIFIED against Node 24.18.1` · `mnemonist sparse-set.js`
+The second-order consequence of B-8(3), and the more interesting half. `values()` freezes `size`
+and `dense` is a fixed-length typed array, so:
+```js
+var u = new SparseSet(2);
+u.add(100); u.add(101); u.add(102); u.add(103);   // size 4, length 2
+[...u]  // → [100, 101, undefined, undefined]
+```
+**This is DESIGN.md §3.7's shrink window, reached through the public API in four calls** — two, on
+a zero-length set. §3.7 chose Option A on the grounds that no upstream *test* reaches the window,
+which measured Option B as costing zero on the 40% axis. That remains true and the conclusion was
+right, but for a stronger reason than recorded: the window is not exotic, and the differential
+fuzzer finds it in 0.3s when the port takes Option B.
+
+### B-10 — `SparseSet.delete` past capacity writes a string-keyed expando onto a typed array
+`status: VERIFIED against Node 24.18.1` · `mnemonist sparse-set.js`
+```js
+index = this.dense[this.size - 1];        // undefined once size > length
+this.dense[this.sparse[member]] = index;  // LANDS, as 0 — a NaN element store is 0
+this.sparse[index]              = ...;    // does NOT land — sparse[undefined] is a PROPERTY
+```
+`new SparseSet(3)`, add `0/1/2/99`, `delete(1)` → `dense = [0, 0, 2]`, `sparse = [0, 1, 2]`,
+`sparse.undefined = 1`.
+**This one caught the port.** The first cut wrote `sparse[0]`, which is what reading the three
+lines as a unit produces rather than statement by statement. Fixed, pinned by a test, and then used
+as fuzzer falsification sabotage A — caught in 6.6s and shrunk to seven ops.
+*Lesson worth keeping: for a bug-for-bug port, read JS one statement at a time and confirm each
+against the runtime. Reading for intent is how you write the correct version by accident.*
+
 ### B-6 — `Stack.values()` captures `items.length`, not `this.size`
 `status: unverified` · `mnemonist stack.js`
 Other structures capture `this.size`. These coincide for `Stack` today; the inconsistency is latent
@@ -354,6 +401,7 @@ believed it checked*:
 | Falsification that stayed green | that the suite exercises Rust | nothing — it sabotaged a branch the test never takes |
 | RSS as evidence for the L3 hypothesis | that the footprint shrank | nothing — the pages were never resident to begin with |
 | `cargo build` clean | that the code compiles | that *non-test* code compiles |
+| `cases=16666` in a fuzz campaign | 16,666 distinct programs | 32 programs, plus two saved seeds re-run ~8,300 times each |
 
 Each one produced a **confident green signal that was empty**, and in every case the failure was
 invisible until something forced the question "what would this look like if it were broken?"

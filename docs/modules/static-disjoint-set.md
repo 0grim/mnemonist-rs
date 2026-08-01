@@ -180,18 +180,38 @@ was proven to do that (see below).
 ### Fuzz
 
 ```
-module=static-disjoint-set seed=42       cases=16666 ops=2837506 wall=120.0s divergences=0
-module=static-disjoint-set seed=20260731 cases=8179  ops=1394965 wall=60.0s  divergences=0
+module=static-disjoint-set seed=42       cases=4683 ops=1403272 wall=120.1s divergences=0
+module=static-disjoint-set seed=20260731 cases=2301 ops=700097  wall=60.0s  divergences=0
 ```
 
-Two campaigns, two seeds, **4.23 M operations, zero divergences** — comfortably past gate 9's
-60-second floor. Recorded in `fuzz/log.txt`, which also carries the grammar and its one exclusion.
-Reproduce exactly with
-`target/release/difffuzz --module static-disjoint-set --seed 42 --cases 16666`.
+Two campaigns, two seeds, **2.10 M operations across 6,984 distinct programs, zero divergences** —
+comfortably past gate 9's 60-second floor. Recorded in `fuzz/log.txt`, which also carries the
+grammar and its one exclusion. Reproduce exactly with
+`target/release/difffuzz --module static-disjoint-set --seed 42 --cases 4683`.
 
-Throughput is ~23,600 op/s including a full `mapping()` + `compile()` comparison after every single
+**These numbers replace an earlier pair that overstated the coverage, and the correction matters
+more than the numbers.** The first run of this gate logged `cases=16666` / `ops=2837506`. The op
+count was real and every comparison in it was real, but the *diversity* was not: proptest's
+`TestRunner` counts successes for its whole lifetime and loops `while successes < config.cases`, so
+the campaign driver's reuse of one runner meant every batch after the first executed no new cases
+at all. What it did still execute was the persisted regression corpus, replayed before the (empty)
+main loop and counted as cases. So "16,666 cases" was 32 genuinely new programs plus two saved
+seeds re-run about 8,300 times each; the rest of the two minutes was the driver spinning.
+
+Measured decisively before the fix: with the corpus file removed, a 120-second campaign dropped
+from 16,666 cases to **32**. Fixed in `3120085` (a fresh runner per batch, seeded from
+`(seed, batch)`), pinned by `every_batch_generates_new_cases`, and disclosed in `fuzz/log.txt`
+above the superseded lines, which are kept rather than deleted. The op counts fell because the
+repeated corpus programs were short and cheap; the coverage rose by two orders of magnitude.
+
+It was found while porting `sparse-set`, whose corpus did not exist yet — so instead of quietly
+repeating two programs the driver spun visibly and a 20-second run reported 32 cases. This belongs
+on the "confident green signal that was empty" list in `planning/NOTES.md`: the number was large,
+the run took the full 120 seconds, and nothing looked wrong.
+
+Throughput is ~11,700 op/s including a full `mapping()` + `compile()` comparison after every single
 op, which is the persistent-oracle decision (D-23) paying off: at one `node` spawn per op the same
-campaign would have taken roughly 33 hours.
+campaign would have taken roughly 16 hours.
 
 * **Op alphabet:** `union(x, y)` (weight 3), `find(x)`, `connected(x, y)`.
 * **Observable state, compared after every op:** `size`, `dimension`, `mapping()`, `compile()`.

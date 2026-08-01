@@ -167,6 +167,17 @@ second `[...c]` → `[]`; `next(); next(); [...c]` → `[3]`. **No custom bridge
 **✅ PARTIALLY VALIDATED:** the *identity* half is free — napi-rs `#[napi(iterator)]` returns `this`
 (measured, see D-06). The *factory* half remains ours: each collection's `Symbol.iterator` must
 construct a new cursor object per call. That is the only side of D-07 needing implementation.
+**✅ BUILT.** `crates/mnemonist-napi/src/cursor.rs` installs it from `#[napi(module_exports)]`,
+driven by a `(class, method)` table, so module N+1 is one row. Deliberately in Rust rather than in
+`tests/bridge/*.js`: the shims are test scaffolding, and an addon that needs the test harness to be
+spreadable is an incomplete addon. Measured through the built addon on Node 24.18.1:
+`[...set]` twice → `[3,6,9]` then `[3,6,9]`; `const it = set.values(); [...it]` twice → `[3,6,9]`
+then `[]`. Both halves, correct, in one object graph.
+
+**Note the coverage gap this closes and the one it does not.** `test/sparse-set.js` reaches the
+cursor only through `obliterator.take(set.values())` and never writes `[...set]`, so the factory
+half has **zero** upstream test coverage despite being the last line of the upstream module. It is
+covered by the fuzzer's `$spread` op instead.
 
 ### D-08 — Hybrid capture: length frozen, elements live
 **Status:** CONFIRMED · **Category:** behavioural · **Divergence:** no
@@ -206,6 +217,19 @@ of bug tests miss and differential fuzzing catches — the event's own thesis. I
 differentiator and the best write-up material available.
 **Verify:** fuzz grammar includes `iter_create → mutate → iter_next` for both element-change and
 shrink. Record whichever branch step 4 takes, with this reasoning.
+
+**✅ LANDED AS OPTION A — no fallback to B was needed, and step 4's worry was misdiagnosed.**
+The awkwardness §3.7 anticipated was `Option<T>` → `undefined`. Measured: napi renders
+`Option::None` as **`null`**, not `undefined`, so `Option` genuinely does not work — but
+`Either<T, Undefined>` yields a real `undefined`, and it is *better* than `Option` would have been
+because it leaves `Option` free to keep its own meaning (`None` is `{done: true}`). Core carries a
+three-state `Step { Item, Gap, Done }`; the bridge maps it in one function.
+
+**And the cost/benefit recorded above was understated.** §3.7 measured Option B as costing zero
+because no upstream test reaches the window. Still true. But `sparse-set` reaches it **through the
+public API in two calls** (`new SparseSet(0); s.add(0); Array.from(s)` → `[undefined]`, verified
+against Node), and the differential fuzzer finds the difference in 0.3 s when the port takes
+Option B. See NOTES.md B-9.
 
 ### D-10 — `forEach` five-branch dispatch order is observable
 **Status:** CONFIRMED · **Category:** behavioural · **Divergence:** no
@@ -446,6 +470,69 @@ than implementing it once. Same reasoning as the matched PRNG being *diffed* rat
 ---
 
 ## Licensing & scope
+
+### D-37 — Out-of-range inputs: reproduce where reproducible, raise where not
+**Status:** CONFIRMED · **Category:** behavioural · **Divergence:** partial
+**Upstream:** both modules read and write past the end of typed arrays without validating.
+**Port:** the two modules landed so far take *opposite* approaches, and the difference is upstream's
+behaviour rather than an inconsistency.
+* `StaticDisjointSet` — the bridge raises a `RangeError`. Upstream reads past the array, gets
+  `undefined`, and propagates `NaN` through the parent walk. There is no honest Rust reproduction
+  of `NaN` arithmetic on array indices, so inventing one would be worse than raising.
+* `SparseSet` — reproduced exactly, corruption included. Every step off the end is a well-defined
+  read, a truncating store or a silently dropped store, all of which Rust can express directly
+  (`PointerVec::try_get`/`try_set`).
+**Rationale:** the deciding question is not "is this input valid" but "is upstream's behaviour on
+it expressible". Where it is, reproduce; where it is not, raise and document.
+**Consequence for the fuzzer:** `static-disjoint-set` must exclude out-of-range indices from its
+grammar and say so; `sparse-set` excludes nothing, and roughly one generated member in eight is out
+of range. Both stated in `fuzz/log.txt`.
+
+### D-38 — Cursor state is detached from the borrow it walks
+**Status:** CONFIRMED · **Category:** architecture · **Divergence:** no
+**Upstream:** a JS cursor is an independent object; the collection stays mutable underneath it, and
+that aliasing is precisely what makes the hybrid capture (D-08) observable.
+**Port:** `mnemonist-core` splits the cursor in two. `CursorState<S>` is the closure state alone
+(`i`, `l`, the frozen payload) and takes `&S` per step; `Cursor<'a, S>` is `CursorState` plus a
+borrow, and is the ergonomic `Iterator`-implementing form for Rust callers.
+**Rationale:** the natural Rust shape — `&'a S` inside the cursor — is the wrong one, and two
+callers hit it immediately: the napi bridge, where the cursor is a JS object with its own lifetime
+and `&S` exists only for the duration of one `next()`; and the differential fuzzer, whose instance
+holds the structure and a live cursor in one struct, which is self-referential the moment the cursor
+carries a borrow. The faithful primitive is the detached one; the convenient one is built on it.
+**Constraint this places on later modules:** a `Sequence` impl must express its walk as
+`freeze() -> (Frozen, len)` plus `slot(&Frozen, ordinal)`. That covers every *indexed* walk,
+including reversed (`Stack`) and wrapped (`FixedDeque`) ones, because `Frozen` is an associated
+type. It does **not** cover pointer-chasing walks — `LinkedList`, `Trie` — where the cursor's state
+is a position in a structure rather than an ordinal. Those need a second `Sequence`-like trait or a
+`Frozen` that carries the traversal stack; the `Step`/`CursorState` split above is reusable either
+way, since neither depends on the ordinal being an index.
+
+### D-39 — The `undefined` yield is `Either<T, Undefined>`, never `Option<T>`
+**Status:** CONFIRMED · **Category:** behavioural · **Divergence:** no
+**Upstream:** the shrink window yields `{done: false, value: undefined}`.
+**Port:** `Generator::Yield = Either<u32, Undefined>`; `Either::B(())` is a real `undefined`.
+**Rationale:** DESIGN.md §3.2 flagged the `Option<T>` → `undefined` mapping as unverified and §3.7
+made it the thing that would trigger a fallback to Option B. Measured: napi renders `Option::None`
+as **`null`**, which `assert.deepStrictEqual` distinguishes from `undefined`. `Either` is not a
+workaround but the better shape — it frees `Option<Yield>` to keep its own meaning, where `None` is
+`{done: true}`.
+**Verify:** `crates/mnemonist-napi/src/cursor.rs::yielded`, and the fuzzer's `$next`/`$spread` ops.
+
+### D-40 — Every fuzz batch must generate new cases
+**Status:** CONFIRMED · **Category:** tooling · **Divergence:** no
+**Problem:** proptest's `TestRunner` counts successes for its whole lifetime and loops
+`while successes < config.cases`. Reusing one runner across batches means every batch after the
+first executes nothing — except the persisted regression corpus, which proptest replays before the
+(now empty) main loop and which counts as cases. A 120-second campaign booked 16,666 "cases" that
+were 32 real programs plus two saved seeds repeated ~8,300 times each.
+**Port:** a fresh `TestRunner` per batch, seeded from `(campaign.seed, batch)` so replays stay exact
+while successive batches explore new programs.
+**Verify:** `every_batch_generates_new_cases`, run deliberately with **no** corpus — with nothing to
+replay, the only way past `batch` cases is a batch that really generated.
+**Lesson:** this is the same failure as D-32 one level up. The number was large and the run took the
+full 120 seconds, so nothing looked wrong. Add it to the "confident green signal that was empty"
+list in NOTES.md.
 
 ### D-24 — MIT attribution
 **Status:** CONFIRMED · **Category:** licensing · **Divergence:** no
