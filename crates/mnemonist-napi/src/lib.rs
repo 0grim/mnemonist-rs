@@ -10,6 +10,10 @@
 use napi_derive::napi;
 
 pub mod cursor;
+pub mod default_map;
+pub mod js_key;
+pub mod js_value;
+pub mod map_cursor;
 pub mod sparse_set;
 pub mod static_disjoint_set;
 

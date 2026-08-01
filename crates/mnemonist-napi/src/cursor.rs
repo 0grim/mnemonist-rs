@@ -105,7 +105,9 @@ pub fn yielded<T>(step: Step<T>) -> Option<Either<T, Undefined>> {
 /// One row per upstream `X.prototype[Symbol.iterator] = X.prototype.values`.
 /// Kept as data rather than as code per module so the count of modules and the
 /// count of places to get this wrong stay unrelated.
-const ITERATOR_FACTORIES: &[(&str, &str)] = &[("SparseSet", "values")];
+/// Note that the factory method is not always `values`: `DefaultMap`'s last
+/// line aliases `entries`, so a spread of one yields `[key, value]` pairs.
+const ITERATOR_FACTORIES: &[(&str, &str)] = &[("SparseSet", "values"), ("DefaultMap", "entries")];
 
 /// Wire every collection's `Symbol.iterator` to its cursor factory.
 ///

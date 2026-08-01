@@ -218,10 +218,32 @@ impl<K: Hash + Eq + Clone, V> DefaultMap<K, V> {
     /// `undefined`, which a factory is free to produce.
     ///
     /// The factory runs *before* the insert, exactly as upstream's does, so a
-    /// factory that panics leaves the map untouched — `size` included.
+    /// factory that panics leaves the map untouched — `size` included. For a
+    /// factory that can fail without unwinding, see
+    /// [`try_get_or_insert_with`](DefaultMap::try_get_or_insert_with).
     pub fn get_or_insert_with<F>(&mut self, key: K, factory: F) -> Option<&V>
     where
         F: FnOnce(&K, usize) -> Option<V>,
+    {
+        match self.try_get_or_insert_with(key, |key, size| {
+            Ok::<Option<V>, std::convert::Infallible>(factory(key, size))
+        }) {
+            Ok(value) => value,
+            Err(never) => match never {},
+        }
+    }
+
+    /// [`get_or_insert_with`](DefaultMap::get_or_insert_with) with a factory
+    /// that can fail.
+    ///
+    /// Exists for the bridge, where the factory is a JavaScript function and
+    /// "it threw" is an ordinary outcome rather than a panic. On `Err` the map
+    /// is **left exactly as it was** — no entry, no `size` increment — which is
+    /// what upstream does, because its `this.items.set` and `this.size++` are
+    /// both after the call that threw.
+    pub fn try_get_or_insert_with<F, E>(&mut self, key: K, factory: F) -> Result<Option<&V>, E>
+    where
+        F: FnOnce(&K, usize) -> Result<Option<V>, E>,
     {
         // Resolved to a slot first so the borrow ends before the factory runs.
         let defined = self.items.slot_of(&key).filter(
@@ -234,10 +256,10 @@ impl<K: Hash + Eq + Clone, V> DefaultMap<K, V> {
                 .entry_at(slot)
                 .expect("the slot was just confirmed live");
 
-            return value.as_ref();
+            return Ok(value.as_ref());
         }
 
-        let value = factory(&key, self.size);
+        let value = factory(&key, self.size)?;
 
         // `set`, not a raw append: a stored `undefined` under this key keeps
         // its position and is overwritten, which is what
@@ -247,10 +269,11 @@ impl<K: Hash + Eq + Clone, V> DefaultMap<K, V> {
         self.items.set(key.clone(), value);
         self.size += 1;
 
-        self.items
+        Ok(self
+            .items
             .get(&key)
             .expect("the value was just inserted under this key")
-            .as_ref()
+            .as_ref())
     }
 }
 
@@ -544,6 +567,38 @@ mod tests {
         assert!(map.has(&"a"));
         assert_eq!(map.peek(&"a"), None);
         assert_eq!(map.get_or_insert_with("a", |_, _| Some(1)), Some(&1));
+    }
+
+    /// A throwing factory must leave nothing behind — not the entry, and not
+    /// the `size` increment. Upstream's `set` and `size++` are both after the
+    /// call that threw.
+    #[test]
+    fn a_failing_factory_leaves_the_map_untouched() {
+        let mut map: DefaultMap<&str, u32> = DefaultMap::new();
+        map.set("a", Some(1));
+
+        let outcome: Result<Option<&u32>, &str> =
+            map.try_get_or_insert_with("b", |_, _| Err("boom"));
+
+        assert_eq!(outcome, Err("boom"));
+        assert_eq!(map.size(), 1);
+        assert!(!map.has(&"b"));
+        assert_eq!(walk(&map), vec![("a", Some(1))]);
+    }
+
+    /// …including when the key exists but holds `undefined`, which is the
+    /// path that would otherwise re-run the factory.
+    #[test]
+    fn a_failing_factory_leaves_a_stored_undefined_untouched() {
+        let mut map: DefaultMap<&str, u32> = DefaultMap::new();
+        map.set("a", None);
+
+        let outcome: Result<Option<&u32>, &str> =
+            map.try_get_or_insert_with("a", |_, _| Err("boom"));
+
+        assert_eq!(outcome, Err("boom"));
+        assert_eq!(map.size(), 1, "no drift from a call that threw");
+        assert!(map.has(&"a"));
     }
 
     #[test]
