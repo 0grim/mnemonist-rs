@@ -28,6 +28,7 @@ pub mod static_disjoint_set;
 pub mod statics;
 
 // Appended, never interleaved: this list is a shared registry (CLAUDE.md, Git).
+pub mod bloom_filter;
 pub mod suffix_array;
 
 #[napi]
