@@ -699,3 +699,151 @@ Core spells absence `None` and stores `Option<V>`, which is what makes B-40 expr
 Rust. The bridge cannot use napi's `Option<T>` conversion, which folds `null` into `None` as well —
 `test/lru-cache.js` asserts that a stored `null` round-trips.
 
+
+## T2 — comparator callbacks (resolved by the `heap` / `fixed-reverse-heap` unit)
+
+**Numbering note.** `B-nn` bug IDs are allocated centrally (CLAUDE.md); `D-nn` are not, and three
+agents were working in isolated worktrees when these landed. They are therefore numbered in the
+decade of the `B-70`–`B-79` block this agent was given, so that two agents cannot both claim the
+next free `D-47`. Renumber at merge if the sequence matters more than the collision.
+
+### D-70 — The heap algorithms take a `Store`, not a `&mut Vec<T>`
+**Status:** CONFIRMED · **Category:** architecture · **Divergence:** no
+**Upstream:** `siftDown(compare, heap, startIndex, i)` takes a bare JavaScript array and a
+comparison *callback*. The callback is arbitrary code, invoked from inside the loop, and both the
+heap and the callback are reachable from whatever scope built them — so it can call `heap.push()`
+or `heap.clear()` while the sift is halfway through, and upstream has no defence and no error path
+(B-76).
+**Port:** the algorithms address a `Store` — a JavaScript array as they see one — through `&self`,
+with the borrow released before every comparison. `mnemonist-core`'s `VecStore` is
+`Rc<RefCell<Vec<Option<T>>>>`; the bridge's is a live `napi_ref` to a real JS array.
+**Rationale:** an exclusive `&mut Vec<T>` is exactly the thing a re-entrant call would have to
+violate, so the natural Rust signature makes upstream's behaviour *inexpressible* rather than
+merely awkward. Reproducing it bug-for-bug is the requirement; a `RefCell` panic is not a
+reproduction of "it works and gives this answer".
+**Verify:** `a_comparator_that_grows_the_array_mid_sift_does_not_panic`,
+`a_comparator_that_shrinks_the_array_makes_the_walk_read_undefined`,
+`a_comparator_may_re_enter_and_push`, and four cases in `tests/boundary/heap.js`.
+
+### D-71 — `compare` returns `f64`, not `Ordering`
+**Status:** CONFIRMED · **Category:** behavioural · **Divergence:** no
+**Upstream:** the three tests performed on a comparator's answer are `< 0`, `> 0` and `>= 0`, on
+whatever value came back. `NaN` makes all three false; `0.5` counts as "greater"; a `BigInt` works
+because the relational operators use `ToNumeric` rather than `ToNumber` (B-78).
+**Port:** `Comparator::compare` returns `Result<f64, E>`. The bridge coerces a JS comparator's
+result with `ToNumber`, except for a `BigInt`, whose sign is read directly.
+**Rationale:** `Ordering` has three values and upstream's answer has a continuum; collapsing it
+would quietly *repair* an inconsistent comparator, and an inconsistent comparator is exactly what a
+port is most likely to be handed by a user who has one working against V8's sort.
+**Verify:** `tests/boundary/heap.js` — "should coerce a non-numeric comparator result rather than
+reject it" and "should accept a BigInt comparator result, which ToNumber alone would reject", both
+of which pass unchanged against the pinned upstream source.
+
+### D-72 — `DEFAULT_COMPARATOR` is ported; `<` and `>` are delegated to the engine
+**Status:** CONFIRMED · **Category:** architecture · **Divergence:** no
+**Upstream:** `DEFAULT_COMPARATOR` is two relational operators inside two `if`s.
+**Port:** the `if`s are `mnemonist_core::utils::comparators::default_comparator`. The operators are
+a `Relational` trait: core implements it for the Rust types it stores, and the bridge answers
+number-against-number and string-against-string natively — exactly, including `NaN` and UTF-16 code
+unit order — while anything involving an object, a symbol or a mixed pair goes to a two-line
+`(a, b) => a < b` compiled once and cached.
+**Rationale:** `a < b` on two arbitrary JS values runs `ToPrimitive`, which calls user
+`valueOf`/`toString` and can throw. Re-implementing that in Rust would be a port of V8, not of
+mnemonist, and would be wrong in a way no test in this repo could detect. Delegating is both
+smaller and exact.
+**Verify:** `test/heap.js`'s string heap (`push('hello')`, `push('world')`) and object-comparator
+block go through the native path and the delegated one respectively.
+
+### D-73 — the heaps' `items` is a real JavaScript array, not a materialised `Vec`
+**Status:** CONFIRMED · **Category:** architecture · **Divergence:** no
+**Upstream:** `Heap.heapify(compare, array)` mutates the caller's array **in place**, and
+`test/heap.js` then consumes that same array. `FixedReverseHeap` is parameterised by an
+`ArrayClass`, stores through it (`push(300)` on a `Uint8Array` keeps `44`) and must return
+something satisfying `instanceof Uint8Array`.
+**Port:** `crates/mnemonist-napi/src/js_array.rs` implements `Store` over an owning `napi_ref`,
+reading and writing through real element accesses. Every other bridge in this crate keeps its
+elements in a `Vec`.
+**Rationale:** three independent forcing reasons, any one sufficient — the in-place static, the
+`ArrayClass`, and the fact that a comparison is a JS call regardless, so the boundary was already
+being crossed. It also buys the typed-array `ToUint32`-then-narrow store semantics for free and
+exactly, and it extends the re-entrancy of D-70 to the array as well as to the comparator: a
+getter or a `Proxy` trap runs where upstream's would.
+**Verify:** `test/heap.js` "should be possible to heapify an array";
+`test/fixed-reverse-heap.js` "should return the same type of array as given to the constructor";
+`tests/boundary/heap.js` "should apply typed-array store semantics to pushed values" and "should
+mutate the caller's own array in place".
+
+### D-74 — `MaxHeap` is installed as evaluated JavaScript, prototype sharing included
+**Status:** CONFIRMED · **Category:** behavioural · **Divergence:** no
+**Upstream:** `MaxHeap.prototype = Heap.prototype` — the same object, not a derived one. So
+`new Heap() instanceof MaxHeap` is `true`, `new MaxHeap().constructor.name` is `'Heap'`, and the
+two are indistinguishable at runtime except by behaviour (B-75).
+**Port:** `MaxHeap` is upstream's four lines, evaluated once from the addon's module-export hook —
+the same call D-45 makes for `X.of`, and for the same reason.
+**Rationale:** a second `#[napi]` class would have its own prototype and would silently **fix**
+B-75. Bug-for-bug means the type confusion is reproduced, and the only way to reproduce a shared
+prototype is to share one.
+**Verify:** `tests/boundary/heap.js` — "should make every Heap an instanceof MaxHeap, and vice
+versa", which passes unchanged against upstream.
+
+### D-75 — the raw-array statics live on a separate class and are copied across
+**Status:** CONFIRMED · **Category:** tooling · **Divergence:** no
+**Upstream:** `Heap` carries **both** `Heap.push(compare, heap, item)` and
+`Heap.prototype.push(item)`, and five such name pairs in all (`push`, `pop`, `replace`, `pushpop`,
+`consume`). In JavaScript there is no conflict: a constructor and its prototype are different
+objects.
+**Port:** napi-rs registers a class's statics and its prototype methods through **one name table**,
+so declaring both halves makes the prototype half silently vanish — measured: nine of
+`test/heap.js`'s fourteen cases failed with `heap.push is not a function`. The ten statics are
+therefore declared on a `HeapStatics` class which the addon copies onto `Heap` at load and then
+deletes from its own exports.
+**Rationale:** the alternative is renaming upstream's API, which is not a port.
+**Residual, stated rather than hidden:** `Heap.__max` and `Heap.__maxFrom` survive on the
+constructor. They are `#[napi(factory)]`s, and napi defines a class's own properties
+`configurable: false`, so `delete` is a no-op on them. They are non-enumerable and are the bridge's
+only addition to upstream's surface.
+**Verify:** `tests/boundary/heap.js` — "should expose all eight statics next to the prototype
+methods of the same name" and "should keep the bridge's scaffolding off the enumerable surface".
+
+### D-76 — the `Infinity` sentinel is modelled as a value, not as an `Option`
+**Status:** CONFIRMED · **Category:** behavioural · **Divergence:** no
+**Upstream:** `nsmallest`/`nlargest`'s `n === 1` paths use `var min = Infinity` as "nothing seen
+yet" and test `min === Infinity`. The sentinel is a real member of the domain, which produces two
+distinct bugs: an empty source answers `[Infinity]` (B-71), and an element that *is* `Infinity`
+resets the sentinel so the next element replaces it unconditionally (B-72).
+**Port:** a `Sentinel` trait supplies `infinity()` and `is_infinity()` for the slot type, and the
+`Unset` helper is a slot pre-loaded with the sentinel plus that identity test. The obvious
+`Option<Item>` would have fixed both bugs.
+**Rationale:** the port must be wrong in the same two places. A slot type that cannot represent
+`Infinity` (an integer store) answers `is_infinity` false, which is not a papered-over divergence —
+such a store cannot exhibit the bug either.
+**Verify:** `tests/boundary/heap.js` — "should answer with the Infinity sentinel itself for an
+empty source" and "should let a real Infinity element reset the sentinel".
+
+### D-77 — `#.comparator` is not exposed
+**Status:** CONFIRMED · **Category:** behavioural · **Divergence:** **yes**
+**Upstream:** `this.comparator` is a public property holding a function — the user's, or
+`DEFAULT_COMPARATOR`, or the `reverseComparator` wrapper a `MaxHeap` builds.
+**Port:** the bridge stores a `BridgeComparator`, whose `Default` variant is a native comparison
+with no JavaScript function behind it at all, and whose `Reversed` variant is a Rust wrapper rather
+than a closure. There is no JS value that is honestly "the comparator", so none is offered.
+**Rationale:** synthesising a function object to satisfy a getter would be a fabrication — it would
+not be the object the sift actually calls. No upstream assertion reads the property, and the
+differential fuzzer cannot compare a function in any case (`JSON.stringify` of one is `undefined`).
+**Verify:** absence; recorded in `docs/modules/heap.md`.
+
+### D-78 — the fuzz oracle encodes an array hole and an assigned `undefined` alike
+**Status:** CONFIRMED · **Category:** tooling · **Divergence:** no
+**Problem:** `fuzz/oracle.js` encoded arrays with `Array.prototype.map`, which **skips** holes and
+leaves them holes for `JSON.stringify` to render as `null`, while an element explicitly assigned
+`undefined` became `{$undefined}`. `heap` is the first module that produces both — a comparator
+that shrinks the array mid-sift makes the sift read past the end (`undefined`) and write it back,
+while `heap[i] = x` past the end leaves holes behind it.
+**Port:** the oracle now walks arrays by index, so both encode as `{$undefined}`.
+`sparse-map`'s `vals` encoder follows, from `Value::Null` to `{$undefined}`.
+**Rationale:** the two are indistinguishable through every API these structures expose (`a[i]` is
+`undefined` either way), so encoding them differently is a false divergence waiting to happen. The
+change is also strictly more accurate for `sparse-map`, whose holes really do read as `undefined`
+and never as `null`; its own doc already recorded that nothing in that grammar can tell them apart.
+**Verify:** `cargo test -p difffuzz` — all fourteen differential campaigns, `sparse-map` included.
+
