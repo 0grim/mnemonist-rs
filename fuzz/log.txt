@@ -508,3 +508,4 @@
 2026-08-01T10:03:56Z  module=fixed-reverse-heap seed=42 cases=25906 ops=2551774 wall=120.0s divergences=0
 2026-08-01T10:06:24Z  module=fixed-reverse-heap seed=20260801 cases=11913 ops=1158167 wall=60.0s divergences=0
 2026-08-01T10:15:45Z  module=heap seed=31337 cases=11060 ops=1147769 wall=60.0s divergences=0
+2026-08-01T10:24:58Z  module=fixed-reverse-heap seed=31337 cases=13442 ops=1320693 wall=60.0s divergences=0
