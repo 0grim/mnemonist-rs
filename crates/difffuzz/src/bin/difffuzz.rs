@@ -17,13 +17,14 @@
 use std::process::ExitCode;
 use std::time::Duration;
 
-use difffuzz::modules::static_disjoint_set::{StaticDisjointSetSpec, REGRESSIONS};
+use difffuzz::modules::sparse_set::SparseSetSpec;
+use difffuzz::modules::static_disjoint_set::StaticDisjointSetSpec;
 use difffuzz::{Campaign, Report};
 
 const USAGE: &str = "\
 usage: difffuzz --module <name> [--seed N] [--duration SECONDS] [--cases N] [--batch N]
 
-  --module    module to fuzz; currently: static-disjoint-set
+  --module    module to fuzz; currently: static-disjoint-set, sparse-set
   --seed      campaign seed (default 42); with --cases, reproduces exactly
   --duration  wall-clock budget in seconds (default 60)
   --cases     stop after N cases instead of after --duration
@@ -49,11 +50,27 @@ fn main() -> ExitCode {
             .is_none()
             .then(|| Duration::from_secs(options.duration)),
         batch: options.batch,
-        regressions: REGRESSIONS,
+        // Overwritten per module below: each keeps its own regression corpus,
+        // so one module's minimised seed is never replayed against another's
+        // grammar, where it would decode into a different program.
+        regressions: "",
     };
 
     let report = match options.module.as_str() {
-        "static-disjoint-set" => difffuzz::run(&StaticDisjointSetSpec, &campaign),
+        "static-disjoint-set" => difffuzz::run(
+            &StaticDisjointSetSpec,
+            &Campaign {
+                regressions: difffuzz::modules::static_disjoint_set::REGRESSIONS,
+                ..campaign
+            },
+        ),
+        "sparse-set" => difffuzz::run(
+            &SparseSetSpec,
+            &Campaign {
+                regressions: difffuzz::modules::sparse_set::REGRESSIONS,
+                ..campaign
+            },
+        ),
         other => {
             eprintln!("difffuzz: unknown module `{other}`\n\n{USAGE}");
             return ExitCode::from(2);

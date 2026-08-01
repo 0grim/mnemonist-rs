@@ -11,8 +11,27 @@
 
 use std::time::Duration;
 
+use difffuzz::modules::sparse_set::{SparseSetSpec, REGRESSIONS as SPARSE_REGRESSIONS};
 use difffuzz::modules::static_disjoint_set::{StaticDisjointSetSpec, REGRESSIONS};
 use difffuzz::Campaign;
+
+#[test]
+fn sparse_set_matches_upstream() {
+    let campaign = Campaign::cases(0x5A2E, 96, SPARSE_REGRESSIONS);
+
+    let report = difffuzz::run(&SparseSetSpec, &campaign)
+        .expect("oracle must be reachable; `node` is required for differential tests");
+
+    assert!(
+        report.ops > 0,
+        "campaign ran no operations, so it proved nothing: {}",
+        report.log_line()
+    );
+
+    if let Some(divergence) = report.divergence {
+        panic!("{divergence}");
+    }
+}
 
 /// Every batch must generate NEW cases.
 ///

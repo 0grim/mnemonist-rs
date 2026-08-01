@@ -1,0 +1,53 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+#
+# PROVENANCE OF THE ENTRIES BELOW -- read before assuming either recorded a
+# real port defect. Neither did. Both were produced by deliberate
+# falsifications of the fuzzer, in the spirit of DoD gate 6: a fuzzer that has
+# never been seen to fail is just a second green light. Both sabotages were
+# reverted; both seeds are replayed before any novel case on every run.
+#
+# --- A: the two swap stores in `delete` treated as if they behaved alike ---
+#
+# Upstream's delete ends with
+#     index = this.dense[this.size - 1];
+#     this.dense[this.sparse[member]] = index;
+#     this.sparse[index]              = this.sparse[member];
+# and once an out-of-range `add` has pushed `size` past `length`, `index` is
+# `undefined`: the first store still lands (as 0), the second becomes a
+# string-keyed expando and leaves `sparse` untouched. The sabotage was to write
+# `sparse[0]` for the second -- which is what a careful reading of the file as
+# a whole, rather than statement by statement, produces. Found in 1,416 cases
+# (6.6s) and shrunk from 200 ops to seven:
+#
+#     var s = new SparseSet(5);
+#     s.add(0); s.add(1); s.add(2); s.add(4);
+#     s.add(5);            // out of range: dense gets it, sparse does not,
+#     s.add(5);            // size runs to 6 against a length of 5
+#     s.delete(1);         // port sparse [1,1,2,0,3], upstream [0,1,2,0,3]
+#
+cc a22059c1d2499c99a9cec3e3edd8204714dcb04c916d13cc1bd97056b96c21ce # shrinks to Program { ctor: [Number(5)], ops: [Op { name: "add", args: [Number(0)] }, Op { name: "add", args: [Number(1)] }, Op { name: "add", args: [Number(2)] }, Op { name: "add", args: [Number(4)] }, Op { name: "add", args: [Number(5)] }, Op { name: "add", args: [Number(5)] }, Op { name: "delete", args: [Number(1)] }] }
+#
+# --- B: the shrink window collapsed, i.e. DESIGN.md 3.7 Option B ---
+#
+# The sabotage was one line in mnemonist-core/src/cursor: return `Step::Done`
+# where the faithful port returns `Step::Gap`, so a walk that runs off the end
+# of the backing array terminates instead of yielding `undefined`. That is
+# exactly the alternative DESIGN.md 3.7 considered and rejected, and it is the
+# most plausible way this port could have been written. Found in 352 cases
+# (0.3s) and shrunk to two operations:
+#
+#     var s = new SparseSet(0);
+#     s.add(0);            // out of range on a zero-length set: size becomes 1
+#     Array.from(s);       // port [], upstream [undefined]
+#
+# Worth recording precisely because DESIGN.md 3.7 measured Option B as costing
+# "exactly zero" on the 40% axis -- true, no upstream TEST reaches it. This
+# says it is reachable from the public API in two calls, and that the fuzzer
+# sees it.
+#
+cc 8c43169b9fbb9a421d0e2eb1758336c0b183681efb2898bd8ee552dc7464e5d8 # shrinks to Program { ctor: [Number(0)], ops: [Op { name: "add", args: [Number(0)] }, Op { name: "$spread", args: [] }] }

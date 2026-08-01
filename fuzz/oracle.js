@@ -25,18 +25,61 @@
 //   -> {"cmd":"ping"}          <- {"ok":true}
 //   -> {"cmd":"quit"}          (no response; process exits)
 //
+// Cursor lifecycle ops (DESIGN.md 3.4/3.7, D-21). An op name starting with `$`
+// is not a method on the instance; it drives the ONE cursor the oracle keeps
+// alongside it. This is what lets a generated program interleave iteration
+// with mutation, which is the only way D-06/D-08/D-09 are reachable at all.
+//
+//   -> {"cmd":"op","name":"$iter","args":["values"]}
+//   <- {"ok":true,"result":{"$iterator":true},"state":{...}}
+//
+//   -> {"cmd":"op","name":"$next","args":[]}
+//   <- {"ok":true,"result":{"done":false,"value":3},"state":{...}}
+//
+//   -> {"cmd":"op","name":"$spread","args":[]}
+//   <- {"ok":true,"result":[3,6,9],"state":{...}}
+//
+// `$next` normalises the step, because the two sides shape it differently and
+// neither difference is meaningful: obliterator returns `{value: x}` with no
+// `done` key for an item and `{done: true}` with no `value` for the end, while
+// a napi generator always sets both. `{done: <bool>, value: <encoded>}` is
+// what both actually mean.
+//
+// `$spread` is `Array.from(instance)`, which goes through the COLLECTION's
+// Symbol.iterator rather than a stored cursor — the factory half of D-07. It
+// is a separate op precisely because it must construct a fresh cursor every
+// time while `$next` must not.
+//
 // Any thrown error is reported as {"ok":false,"error":"..."} rather than
 // killing the process, so a divergence in error behaviour is comparable data
 // rather than a dead oracle.
 'use strict';
 
+const fs = require('fs');
+const Module = require('module');
 const path = require('path');
 const readline = require('readline');
 
 const UPSTREAM = path.resolve(__dirname, '..', 'bench', 'upstream');
 
+// `bench/upstream/` is vendored source, not an installed package, so it has no
+// `node_modules` of its own — and from `sparse-set.js` onwards the upstream
+// files `require('obliterator/...')` at load time. Point Node's global
+// resolution at the harness's installed dependencies, which `tests/run.sh`
+// creates. Pinning it here rather than in the Rust side keeps the oracle
+// runnable by hand.
+const HARNESS_MODULES = path.resolve(__dirname, '..', 'tests', '.work', 'node_modules');
+
+if (fs.existsSync(HARNESS_MODULES)) {
+  process.env.NODE_PATH = process.env.NODE_PATH
+    ? HARNESS_MODULES + path.delimiter + process.env.NODE_PATH
+    : HARNESS_MODULES;
+  Module._initPaths();
+}
+
 let instance = null;
 let observations = [];
+let cursor = null;
 
 // JSON has no typed arrays, no `undefined`, and no NaN, and all three are
 // observably distinct in JS. Encode them so the Rust side can reproduce the
@@ -78,6 +121,34 @@ function observe() {
   return state;
 }
 
+// The `$` ops. `cursor` is deliberately singular: one stored iterator is
+// enough to express create/step/mutate interleavings, and the Rust side has to
+// mirror whatever this holds.
+function cursorOp(request) {
+  switch (request.name) {
+    case '$iter':
+      // Replaces any previous cursor, so a program can re-open mid-walk.
+      cursor = instance[request.args[0]]();
+      return {$iterator: true};
+
+    case '$next': {
+      // Stepping before `$iter` is legal in the grammar and must be reported
+      // rather than thrown, so that both sides agree on the same non-event.
+      if (cursor === null) return {$noIterator: true};
+
+      const step = cursor.next();
+
+      return {done: step.done === true, value: encode(step.value)};
+    }
+
+    case '$spread':
+      return Array.from(instance).map(encode);
+
+    default:
+      throw new Error('unknown cursor op: ' + request.name);
+  }
+}
+
 function handle(request) {
   switch (request.cmd) {
     case 'ping':
@@ -87,12 +158,15 @@ function handle(request) {
       const Ctor = require(path.join(UPSTREAM, request.module + '.js'));
       instance = new Ctor(...request.ctor);
       observations = request.observe;
+      cursor = null;
       return {ok: true, state: observe()};
     }
 
     case 'op': {
       if (instance === null) throw new Error('op before init');
-      const result = encode(instance[request.name](...request.args));
+      const result = request.name.charAt(0) === '$'
+        ? cursorOp(request)
+        : encode(instance[request.name](...request.args));
       return {ok: true, result: result, state: observe()};
     }
 

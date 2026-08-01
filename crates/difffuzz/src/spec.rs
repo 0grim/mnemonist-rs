@@ -62,7 +62,21 @@ impl Program {
         let mut out = format!("var s = new {constructor}({});\n", ctor.join(", "));
 
         for op in &self.ops {
-            out.push_str(&format!("s.{op};\n"));
+            // The `$` ops are protocol, not methods (see `fuzz/oracle.js`), so
+            // rendering them as `s.$next()` would produce a repro that throws
+            // instead of reproducing. Since the whole value of shrinking is a
+            // case small enough to paste into an upstream issue, they are
+            // rendered as the JS they stand for.
+            match op.name {
+                "$iter" => {
+                    let factory = op.args.first().and_then(Value::as_str).unwrap_or("values");
+
+                    out.push_str(&format!("var it = s.{factory}();\n"));
+                }
+                "$next" => out.push_str("it.next();\n"),
+                "$spread" => out.push_str("Array.from(s);\n"),
+                _ => out.push_str(&format!("s.{op};\n")),
+            }
         }
 
         out

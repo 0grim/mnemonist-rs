@@ -67,6 +67,49 @@
 #   on every item, so path compression is exercised on every step of every
 #   program rather than when the generator happens to pick it.
 #
+# sparse-set
+#   ops          add(m) [weight 5] · delete(m) [2] · has(m) [2] · clear() [1]
+#                $iter("values") [2] · $next() [3] · $spread() [1]
+#   observed     size · length · dense · sparse
+#                after EVERY op, on both sides. The two backing arrays are
+#                public properties upstream, and comparing them slot for slot
+#                is what makes the swap-with-last in delete() and the
+#                truncating stores checkable directly, rather than only
+#                through their eventual effect on iteration order.
+#   ctor lengths 0..=400 — 0 included because `new SparseSet(0)` is legal and
+#                          every member is then out of range; 400 straddles
+#                          256, where getPointerArray switches both arrays to
+#                          16-bit and where a truncating dense store starts
+#                          folding distinct members onto the same value
+#   members      0..length+64, so roughly one in eight is OUT OF RANGE
+#   program len  1..200 ops
+#   EXCLUDED     NOTHING.
+#
+#   The exclusion line is the point of contrast with static-disjoint-set.
+#   There, out-of-range indices had to be excluded because upstream propagates
+#   NaN through arithmetic and the port raises instead. Here every step off the
+#   end of the arrays is a well-defined read, a truncating store or a silently
+#   dropped store, so the port reproduces it and the fuzzer checks it:
+#
+#     has(m >= length)    -> false   (undefined < size is false)
+#     delete(m >= length) -> false   (undefined >= size is ALSO false, so it
+#                                     falls through to dense[undefined] !== m)
+#     add(m >= length)    -> corrupts: dense store truncates, sparse store is
+#                                     dropped, size++ happens anyway
+#
+#   and `size` therefore runs past `length`, which is what makes DESIGN.md
+#   3.7's `undefined` shrink window reachable THROUGH THE PUBLIC API.
+#
+#   NOTE: the `$` ops are protocol, not methods (see fuzz/oracle.js). $iter
+#   opens the one cursor each side holds; $next steps it against whatever the
+#   set has become since, which is the D-08 hybrid capture under test; $spread
+#   is Array.from(set), going through the COLLECTION's Symbol.iterator and so
+#   constructing a fresh cursor each time. $spread is separate from $next on
+#   purpose: the factory half of D-07 is only observable by comparing an op
+#   that must restart against one that must not. This is the first grammar in
+#   the repo that satisfies D-21's iteration-interleaved-with-mutation
+#   requirement; static-disjoint-set had no iterator surface to reach it with.
+#
 # ---------------------------------------------------------------------------
 # THE FUZZER WAS FALSIFIED BEFORE IT WAS TRUSTED.
 #
@@ -79,6 +122,26 @@
 # crates/difffuzz/proptest-regressions/static-disjoint-set.txt with a
 # provenance header, and proptest replays it before any novel case below.
 #
+# sparse-set was falsified twice, one sabotage per half of its grammar, both
+# reverted and both seeds committed with provenance in
+# crates/difffuzz/proptest-regressions/sparse-set.txt:
+#
+#   A. `delete`'s two swap stores treated as if they behaved alike past
+#      capacity, i.e. writing sparse[0] where upstream writes a string-keyed
+#      expando that leaves the array untouched. This is the mistake the port
+#      actually made first. Caught in 1,416 cases (6.6s), shrunk to 7 ops.
+#      It proves the out-of-range half of the grammar is doing work.
+#
+#   B. The shrink window collapsed -- `Step::Gap` returned as `Step::Done`,
+#      which is exactly DESIGN.md 3.7's rejected Option B. Caught in 352 cases
+#      (0.3s), shrunk to TWO operations:
+#          var s = new SparseSet(0); s.add(0); Array.from(s);
+#          port []   upstream [undefined]
+#      It proves the cursor half of the grammar is doing work, and it corrects
+#      a measurement in DESIGN.md 3.7: Option B costs zero on the 40% axis
+#      because no upstream TEST reaches it, but it is reachable from the
+#      public API in two calls and the fuzzer sees it immediately.
+#
 # ---------------------------------------------------------------------------
 # Throughput: ~23,600 op/s including a full mapping()+compile() comparison
 # after every single op. That is the persistent-oracle decision (D-23) paying
@@ -89,3 +152,5 @@
 2026-07-31T21:00:12Z  module=static-disjoint-set seed=20260731 cases=8179 ops=1394965 wall=60.0s divergences=0
 2026-08-01T00:19:00Z  module=static-disjoint-set seed=42 cases=4683 ops=1403272 wall=120.1s divergences=0
 2026-08-01T00:20:00Z  module=static-disjoint-set seed=20260731 cases=2301 ops=700097 wall=60.0s divergences=0
+2026-08-01T00:31:30Z  module=sparse-set seed=42 cases=19006 ops=1961772 wall=120.0s divergences=0
+2026-08-01T00:35:52Z  module=sparse-set seed=20260801 cases=9425 ops=980895 wall=60.0s divergences=0

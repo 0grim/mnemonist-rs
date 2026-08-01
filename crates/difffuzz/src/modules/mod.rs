@@ -4,4 +4,5 @@
 //! shrinking all stay untouched — that is the whole point of the generic
 //! harness (P3: machinery before modules).
 
+pub mod sparse_set;
 pub mod static_disjoint_set;
