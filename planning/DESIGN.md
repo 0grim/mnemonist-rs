@@ -1128,6 +1128,45 @@ where the 40% actually lives, and they are badly back-loaded:
 Those five are ~60% of Wave 1's total test weight. Capability order still constrains
 (`circular-buffer` genuinely needs `fixed-deque`), but within a tier, sort by test lines.
 
+### 7.3 Pipelining — measured from Block C, and the one gate that cannot pipeline
+
+`sparse-set` took **95 minutes wall clock**, of which the port itself was ~14. Measured breakdown:
+cursor 5 · port+bridge 9 · **fuzz-driver bug 34** · gate 9 fourteen · gate 10 eight · doc+scope 6,
+plus ~19 lost to an API failure and recovery. The 34-minute block was a one-time discovery and does
+not recur. What remains is roughly **10 minutes per module of pure machine time** — a fuzz campaign
+is 120s + 60s by design, and gate 10 is 3 warmup + 10 measured, interleaved, per workload.
+
+That machine time is what pipelining recovers. But not all of it:
+
+| Gate | Overlaps? | Why |
+|---|---|---|
+| 1–4, 6, 7 (port, bridge, tests, falsification) | **yes** | CPU-bound but correctness-only; contention costs speed, not validity |
+| 8 (divergence doc) | **yes** | writing |
+| 9 (fuzz) | **yes** | a divergence is a divergence regardless of machine load |
+| **10 (bench)** | **NO** | **a benchmark under load is not a slow benchmark, it is a wrong one** |
+
+**Gate 10 must run on an idle machine, and this is measured rather than assumed.** A run taken
+while the machine was saturated inflated *both* sides 2–3×, and upstream's own p99 swung 102 → 135
+between two otherwise-clean runs. Interleaving protects the A/B comparison from drift; it does not
+make a contended measurement publishable.
+
+#### The pipeline
+
+1. **Port + fuzz + document** modules through gate 9. These may overlap — multiple agents, or an
+   agent porting module N+1 while N's fuzz campaign runs.
+2. **Batch gate 10.** When a few modules are pending, stop everything and run one serial benchmark
+   pass over all of them on a quiet machine.
+3. **`scope.txt` entries land after their benchmark**, never before. The done marker keeps meaning
+   all ten gates.
+
+This deliberately leaves units *complete except gate 10* for a while. That is a controlled
+deferral, not a P1 violation, precisely because `scope.txt` is what P0 defines as done — a module
+pending benchmark is visibly not in scope, and `tests/verify.sh` will say so.
+
+**Batching is also better measurement, not just faster.** One quiet pass over several modules
+shares a single warm, idle machine state, so cross-module numbers become comparable in a way
+that per-module runs scattered across hours never were.
+
 ### Checkpoints (each is a real GO/NO-GO)
 
 - **CP1 — FFI viability. Expected ~H17, hard deadline H20.** Both pilots green through the full
