@@ -280,12 +280,16 @@ pub fn multi_match_aware_substrings(
     substrings
 }
 
-/// One added value: either a plain string or (upstream also accepts) an
-/// array-like of characters — `test/passjoin-index.js` only ever adds
-/// plain strings, so only that form is modelled; see "What upstream does
-/// not test" in the module doc.
-pub struct PassjoinIndex<F> {
-    levenshtein: F,
+/// Upstream's `PassjoinIndex`.
+///
+/// Unlike `symspell`, the distance function is not stored here at all — it
+/// is a parameter of [`PassjoinIndex::try_search`], not a field, exactly as
+/// `crate::structures::bk_tree::BkTree` takes its `distance` per-call rather
+/// than at construction. This keeps the whole struct free of a JS-callback
+/// type parameter (`add`, `clear`, `values`, `for_each` never need one) and
+/// lets the bridge's callback be genuinely fallible (a JS `levenshtein` that
+/// throws), which a stored `Fn(&str, &str) -> i64` could not express.
+pub struct PassjoinIndex {
     k: i64,
     size: usize,
     strings: Vec<String>,
@@ -303,25 +307,21 @@ pub struct PassjoinIndex<F> {
     inverted_indices: HashMap<i64, HashMap<(String, i64), Vec<usize>>>,
 }
 
-impl<F> PassjoinIndex<F>
-where
-    F: Fn(&str, &str) -> i64,
-{
+impl PassjoinIndex {
     /// `new PassjoinIndex(levenshtein, k)`. The `levenshtein` type check
-    /// upstream performs belongs to the bridge (a Rust closure is already
-    /// known to be callable); only `k`'s validity is core's concern.
+    /// upstream performs, and the function itself, both belong to the
+    /// bridge — see the struct docs; only `k`'s validity is core's concern.
     ///
     /// # Errors
     ///
     /// [`Error::InvalidK`] for `k < 1` (`NaN` and negative numbers included,
     /// upstream's own guard being `typeof k !== 'number' || k < 1`).
-    pub fn new(levenshtein: F, k: i64) -> Result<Self, Error> {
+    pub fn new(k: i64) -> Result<Self, Error> {
         if k < 1 {
             return Err(Error::InvalidK);
         }
 
         Ok(Self {
-            levenshtein,
             k,
             size: 0,
             strings: Vec::new(),
@@ -363,8 +363,32 @@ where
     }
 
     /// `#.search(query)` — every added string within Levenshtein distance
-    /// `k` of `query`, as a set (upstream returns a JS `Set`).
-    pub fn search(&self, query: &str) -> HashSet<String> {
+    /// `k` of `query`, as a set (upstream returns a JS `Set`), computed with
+    /// an infallible `levenshtein`. The convenience form of
+    /// [`PassjoinIndex::try_search`] for a native Rust metric that cannot
+    /// throw.
+    pub fn search(
+        &self,
+        query: &str,
+        mut levenshtein: impl FnMut(&str, &str) -> i64,
+    ) -> HashSet<String> {
+        let result: Result<HashSet<String>, std::convert::Infallible> =
+            self.try_search(query, |a, b| Ok(levenshtein(a, b)));
+
+        result.expect("an infallible levenshtein cannot fail")
+    }
+
+    /// The general form of `#.search`: `levenshtein(query, candidate)` may
+    /// fail (a JS distance function that throws), and the search stops and
+    /// propagates the first such error rather than swallowing it.
+    ///
+    /// Only ever calls `levenshtein` on a candidate the inverted index
+    /// itself surfaced — see the module docs' "two-part correctness
+    /// argument" for why that is sound.
+    pub fn try_search<F, E>(&self, query: &str, mut levenshtein: F) -> Result<HashSet<String>, E>
+    where
+        F: FnMut(&str, &str) -> Result<i64, E>,
+    {
         let chars: Vec<char> = query.chars().collect();
         let s = chars.len() as i64;
         let k = self.k;
@@ -396,9 +420,19 @@ where
                     for &candidate_index in candidate_indices {
                         let candidate = &self.strings[candidate_index];
 
-                        if (s <= k && l <= k)
-                            || (!matches.contains(candidate)
-                                && (self.levenshtein)(query, candidate) <= k)
+                        // Both arms insert the same candidate -- kept as two
+                        // arms rather than one merged condition because they
+                        // are upstream's own two `||` operands
+                        // (`s <= k && l <= k || (!M.has(c) && levenshtein(...)
+                        // <= k)`), and only the second one calls
+                        // `levenshtein` at all. Collapsing them would still
+                        // short-circuit correctly, but would make it easy to
+                        // lose that distinction in a future edit.
+                        #[allow(clippy::if_same_then_else)]
+                        if s <= k && l <= k {
+                            matches.insert(candidate.clone());
+                        } else if !matches.contains(candidate)
+                            && levenshtein(query, candidate)? <= k
                         {
                             matches.insert(candidate.clone());
                         }
@@ -407,7 +441,7 @@ where
             }
         }
 
-        matches
+        Ok(matches)
     }
 
     /// `#.forEach(callback)`.
@@ -576,7 +610,7 @@ mod tests {
 
     #[test]
     fn constructor_rejects_invalid_k() {
-        match PassjoinIndex::new(|_: &str, _: &str| 0, -45) {
+        match PassjoinIndex::new(-45) {
             Err(Error::InvalidK) => {}
             Ok(_) => panic!("expected Err(Error::InvalidK), got Ok"),
         }
@@ -584,9 +618,9 @@ mod tests {
 
     #[test]
     fn reproduces_the_upstream_add_and_search_walkthrough() {
-        let mut k1 = PassjoinIndex::new(leven, 1).unwrap();
-        let mut k2 = PassjoinIndex::new(leven, 2).unwrap();
-        let mut k3 = PassjoinIndex::new(leven, 3).unwrap();
+        let mut k1 = PassjoinIndex::new(1).unwrap();
+        let mut k2 = PassjoinIndex::new(2).unwrap();
+        let mut k3 = PassjoinIndex::new(3).unwrap();
 
         for &string in STRINGS {
             k1.add(string);
@@ -597,35 +631,38 @@ mod tests {
         assert_eq!(k1.size(), STRINGS.len());
         assert_eq!(k1.k(), 1);
 
-        assert_eq!(k1.search("paul"), set(&["paul", "paule"]));
-        assert_eq!(k1.search("paulet"), set(&["paule"]));
-        assert_eq!(k1.search("a"), set(&["", "a", "b", "pa", "ab"]));
+        assert_eq!(k1.search("paul", leven), set(&["paul", "paule"]));
+        assert_eq!(k1.search("paulet", leven), set(&["paule"]));
+        assert_eq!(k1.search("a", leven), set(&["", "a", "b", "pa", "ab"]));
 
-        assert_eq!(k2.search("benjiman"), set(&["benjamin", "benjomon"]));
+        assert_eq!(k2.search("benjiman", leven), set(&["benjamin", "benjomon"]));
 
-        assert_eq!(k3.search("benja"), set(&["benjamin", "benja"]));
+        assert_eq!(k3.search("benja", leven), set(&["benjamin", "benja"]));
         assert_eq!(
-            k3.search("pa"),
+            k3.search("pa", leven),
             set(&["", "a", "b", "pa", "ab", "paul", "paule"])
         );
     }
 
     #[test]
     fn reproduces_the_upstream_sanity_walkthrough() {
-        let mut index = PassjoinIndex::new(leven, 1).unwrap();
+        let mut index = PassjoinIndex::new(1).unwrap();
 
         index.add("agility's");
         index.add("ability's");
         index.add("failed");
         index.add("flailed");
 
-        assert_eq!(index.search("agility's"), set(&["agility's", "ability's"]));
-        assert_eq!(index.search("failed"), set(&["failed", "flailed"]));
+        assert_eq!(
+            index.search("agility's", leven),
+            set(&["agility's", "ability's"])
+        );
+        assert_eq!(index.search("failed", leven), set(&["failed", "flailed"]));
     }
 
     #[test]
     fn for_each_and_values_walk_in_insertion_order() {
-        let mut index = PassjoinIndex::new(leven, 1).unwrap();
+        let mut index = PassjoinIndex::new(1).unwrap();
         index.add("a");
         index.add("ab");
         index.add("abc");
@@ -646,7 +683,7 @@ mod tests {
 
     #[test]
     fn clear_resets_the_index() {
-        let mut index = PassjoinIndex::new(leven, 1).unwrap();
+        let mut index = PassjoinIndex::new(1).unwrap();
         index.add("a");
         index.add("ab");
         index.add("abc");
@@ -654,6 +691,24 @@ mod tests {
 
         assert_eq!(index.size(), 0);
         assert!(index.values().is_empty());
-        assert_eq!(index.search("abc"), HashSet::new());
+        assert_eq!(index.search("abc", leven), HashSet::new());
+    }
+
+    /// [`PassjoinIndex::try_search`] propagates a failing distance function's
+    /// error rather than swallowing it — the fallible path the bridge needs
+    /// for a JS `levenshtein` that throws.
+    #[test]
+    fn try_search_propagates_a_failing_distance_function() {
+        let mut index = PassjoinIndex::new(1).unwrap();
+        index.add("paul");
+        index.add("pear");
+
+        // A query long enough, and both entries long enough, that the
+        // `s <= k && l <= k` shortcut cannot apply and the fallible
+        // distance function must actually run.
+        let result: Result<HashSet<String>, &'static str> =
+            index.try_search("pearl", |_, _| Err("distance function threw"));
+
+        assert_eq!(result, Err("distance function threw"));
     }
 }

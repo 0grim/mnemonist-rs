@@ -171,6 +171,16 @@ impl MultiArray {
         self.capacity.is_some()
     }
 
+    /// The fixed-mode storage's typed-array width, for the bridge to render
+    /// `get`/`containers`/`associations` as the right JS typed array.
+    /// `None` in dynamic mode, where a container is a plain `Array`.
+    pub fn width(&self) -> Option<PointerWidth> {
+        match &self.storage {
+            Storage::Dynamic(_) => None,
+            Storage::Fixed(values) => Some(values.width()),
+        }
+    }
+
     fn ensure_dimension(&mut self, dimension: usize) {
         if dimension > self.tails.len() {
             self.tails.resize(dimension, 0);

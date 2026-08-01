@@ -106,6 +106,12 @@ pub mod fixed_critbit_tree_map;
 pub mod kd_tree;
 pub mod vp_tree;
 
+// Appended at the end, never inserted: this file is a shared registry
+// (CLAUDE.md, Git) and a new line anywhere else is a merge conflict.
+pub mod multi_array;
+pub mod passjoin_index;
+pub mod symspell;
+
 #[napi]
 pub fn ping() -> &'static str {
     "pong"
