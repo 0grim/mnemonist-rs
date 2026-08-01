@@ -29,6 +29,7 @@ pub mod statics;
 // Appended rather than filed alphabetically: this list is edited from several
 // worktrees at once, and a conflict boundary that lands inside it has already
 // broken three merges. New modules go on the end.
+pub mod set;
 pub mod sort;
 
 #[napi]
