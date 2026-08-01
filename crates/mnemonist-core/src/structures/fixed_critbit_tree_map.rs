@@ -254,8 +254,17 @@ pub struct FixedCritBitTreeMap<V> {
     /// `this.rights`: `capacity - 1` slots.
     rights: BoundedSlots<Ptr>,
     /// `this.offset`: the next internal node index, an unbounded counter —
-    /// upstream's own `this.offset++`, never compared against anything.
+    /// upstream's own `this.offset++`, never compared against anything, and
+    /// never reset by `clear` (see that method's doc comment).
     next_internal: usize,
+    /// `this.size`. A real counter, **not** `self.keys.len()` — the two
+    /// coincide until the first `clear`, which resets this to `0` while
+    /// leaving `keys`/`values` at whatever length they had reached (see
+    /// `clear`'s doc comment). Every external-node index in `set` is this
+    /// counter's value, exactly as upstream's own `this.size++` is, so a
+    /// `set` after a `clear` *overwrites* low indices in `keys`/`values`
+    /// rather than appending past whatever was already there.
+    size: usize,
     root: Ptr,
 }
 
@@ -274,6 +283,7 @@ impl<V> FixedCritBitTreeMap<V> {
             lefts: BoundedSlots::new(capacity - 1),
             rights: BoundedSlots::new(capacity - 1),
             next_internal: 0,
+            size: 0,
             root: EMPTY,
         })
     }
@@ -283,10 +293,44 @@ impl<V> FixedCritBitTreeMap<V> {
         self.capacity
     }
 
-    /// `this.size` — upstream's own `this.size++` is literally
-    /// `this.keys`'s next free index, so this is that count directly.
+    /// `this.size`.
     pub fn size(&self) -> usize {
-        self.keys.len()
+        self.size
+    }
+
+    /// Store a key/value pair at an external-node index that is upstream's
+    /// own `this.size++` at the time it was read — either overwriting an
+    /// index still within `keys`'s current length (the index a `set` right
+    /// after a `clear` reuses) or extending it by exactly one (every other
+    /// case), matching a plain JS `Array` assignment's own grow-or-overwrite
+    /// behaviour at `this.keys[pointer] = key`.
+    fn store_external(&mut self, index: usize, key: Vec<u8>, value: V) {
+        match index.cmp(&self.keys.len()) {
+            std::cmp::Ordering::Less => {
+                self.keys[index] = key;
+                self.values[index] = value;
+            }
+            std::cmp::Ordering::Equal => {
+                self.keys.push(key);
+                self.values.push(value);
+            }
+            std::cmp::Ordering::Greater => unreachable!(
+                "size is always keys.len() or less: every index comes from `self.size`, \
+                 incremented one at a time"
+            ),
+        }
+    }
+
+    /// Upstream's `root` property — a raw pointer, not a nested object the
+    /// way `critbit_tree_map::CritBitTreeMap::root` is: `fixed-critbit-
+    /// tree-map.js` never builds `InternalNode`/`ExternalNode` objects at
+    /// all, so `this.root` really is just the plain number it looks like.
+    /// Exposed for the differential fuzz spec's `root` observation, which
+    /// therefore doubles as an exact check that this port's internal node
+    /// indices are allocated in the same order upstream's `this.offset++`/
+    /// `this.size++` counters would.
+    pub fn root(&self) -> i64 {
+        self.root
     }
 
     /// Upstream's `clear`. The TODO in the real source
@@ -296,14 +340,15 @@ impl<V> FixedCritBitTreeMap<V> {
     /// were, unreachable from the fresh empty `root` but not wiped.
     pub fn clear(&mut self) {
         self.root = EMPTY;
-        // Upstream's own `clear` does not reset `size` via a separate
-        // counter (there is none — see `size`'s doc comment) — it is
-        // `this.keys.length`, but upstream's `clear` never truncates
-        // `this.keys` either. Reproduced here by simply not touching
-        // `self.keys`/`self.values`: a `clear`-then-`set` would keep
-        // growing them exactly as upstream's own arrays do, not restart
-        // from index 0. This is the one place `size()` and "number of
-        // *live* entries" observably part ways, matching upstream.
+        self.size = 0;
+        // `keys`/`values`/`lefts`/`rights`/`critbits`/`next_internal` are
+        // all left exactly as they were -- upstream's `clear` touches only
+        // `root` and `size`. So a `set` right after a `clear` starts
+        // reusing external indices from `0` again (see `store_external`),
+        // silently overwriting whatever was stored there before, while
+        // `next_internal` keeps counting up from wherever it had reached.
+        // `keys.len()`/`values.len()` therefore stay exactly where they
+        // were too: nothing here ever shrinks them.
     }
 
     /// Every stored value, mutably. Exists for the bridge, matching
@@ -324,9 +369,20 @@ impl<V> FixedCritBitTreeMap<V> {
     pub fn set(&mut self, key: impl Into<Vec<u8>>, value: V) -> Result<Option<V>, Error> {
         let key = key.into();
 
-        if self.keys.is_empty() {
-            self.keys.push(key);
-            self.values.push(value);
+        // `this.size === 0` upstream -- NOT `self.keys.is_empty()`. `clear`
+        // resets `size` but never truncates `keys`/`values` (see `clear`'s
+        // doc comment), so after a `clear` this branch must still fire even
+        // though `keys` already holds old entries; using `keys.is_empty()`
+        // was a bug in an EARLIER draft of this port (not an upstream one),
+        // caught by this module's own differential-fuzz campaign within its
+        // first handful of generated programs: a `clear`-then-`set` fell
+        // through to the walk below with `pointer == EMPTY`, which nothing
+        // there guarded against, and panicked computing `external_index`
+        // from it. See `docs/modules/fixed-critbit-tree-map.md`'s
+        // falsification section and the test below.
+        if self.size == 0 {
+            self.store_external(0, key, value);
+            self.size = 1;
             self.root = external_ptr(0);
 
             return Ok(None);
@@ -362,10 +418,9 @@ impl<V> FixedCritBitTreeMap<V> {
                     // Upstream's own bugged branch: writes to slot `0`, not
                     // to `internal_index` -- see the module docs, part 2.
                     // Measured unreachable, kept for fidelity regardless.
-                    let new_external = self.keys.len();
-
-                    self.keys.push(key);
-                    self.values.push(value);
+                    let new_external = self.size;
+                    self.size += 1;
+                    self.store_external(new_external, key, value);
 
                     let slots = if go_right {
                         &mut self.rights
@@ -395,9 +450,9 @@ impl<V> FixedCritBitTreeMap<V> {
                 let mask = mask_for(a_byte, b_byte);
                 let new_goes_left = !get_direction(&key, byte_index, mask);
 
-                let new_external = self.keys.len();
-                self.keys.push(key);
-                self.values.push(value);
+                let new_external = self.size;
+                self.size += 1;
+                self.store_external(new_external, key, value);
 
                 let internal_index = self.next_internal;
                 self.next_internal += 1;
@@ -734,6 +789,40 @@ mod tests {
         let mut seen = Vec::new();
         tree.for_each(|_, _| seen.push(()));
         assert!(seen.is_empty());
+    }
+
+    /// A port bug (not upstream's), caught by this module's own
+    /// differential fuzzer: a `set` right after a `clear` used to panic.
+    /// `clear` resets `size` to `0` but never truncates `keys`/`values`
+    /// (matching upstream, which does the identical thing), so the very
+    /// next `set` must use
+    /// `self.size == 0`, not `self.keys.is_empty()`, to notice the tree is
+    /// logically empty again -- the first differential-fuzz campaign for
+    /// this module found the wrong check within its first handful of
+    /// generated programs: `pointer == EMPTY` fell through to the walk
+    /// loop's external-node branch unguarded and computed an
+    /// out-of-bounds index from it.
+    #[test]
+    fn a_set_right_after_a_clear_reuses_index_zero_instead_of_panicking() {
+        let mut tree: FixedCritBitTreeMap<i32> = FixedCritBitTreeMap::new(4).unwrap();
+        tree.set(key("a"), 1).unwrap();
+        tree.set(key("b"), 2).unwrap();
+
+        tree.clear();
+        assert_eq!(tree.size(), 0);
+
+        assert_eq!(tree.set(key("c"), 3), Ok(None));
+        assert_eq!(tree.size(), 1);
+        assert_eq!(tree.get(b"c"), Some(&3));
+        assert!(!tree.has(b"a"));
+        assert!(!tree.has(b"b"));
+
+        // A second, different key exercises the walk loop (not just the
+        // "tree is empty" fast path) immediately after the reused slot.
+        assert_eq!(tree.set(key("d"), 4), Ok(None));
+        assert_eq!(tree.size(), 2);
+        assert_eq!(tree.get(b"c"), Some(&3));
+        assert_eq!(tree.get(b"d"), Some(&4));
     }
 
     /// Deep critical-bit positions within capacity: the same shape as

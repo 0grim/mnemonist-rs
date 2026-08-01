@@ -30,17 +30,95 @@
 //! docs.
 
 use std::cell::RefCell;
+use std::ptr;
 
-use mnemonist_core::structures::critbit_tree_map::CritBitTreeMap as CoreMap;
+use mnemonist_core::structures::critbit_tree_map::{CritBitTreeMap as CoreMap, RootNode};
 use napi::bindgen_prelude::*;
+use napi::sys;
 use napi_derive::napi;
 
+use crate::foreach::check;
 use crate::js_slot::read_utf16;
 use crate::js_value::{release_slot, Loaned, Received, Retained};
 
 /// A stored value slot. `None` is `undefined` — a stored key can hold it,
 /// and `has`/`get`'s absence check does not care which this is.
 type Value = Option<Retained>;
+
+/// Rebuild upstream's `root`: `null` for [`RootNode::Empty`],
+/// `{critbit, left, right}` for an internal node, `{key, value}` for an
+/// external one — see `RootNode`'s docs for why the packed `critbit`
+/// integer, not this port's own internal representation, is what gets
+/// compared.
+fn build_root(
+    env: &Env,
+    node: &RootNode<'_, Value>,
+    render_value: &dyn Fn(&Value) -> Result<sys::napi_value>,
+) -> Result<sys::napi_value> {
+    match node {
+        RootNode::Empty => {
+            let mut value = ptr::null_mut();
+            check(
+                unsafe { sys::napi_get_null(env.raw(), &mut value) },
+                "napi_get_null",
+            )?;
+
+            Ok(value)
+        }
+        RootNode::External { key, value } => {
+            let mut object = ptr::null_mut();
+            check(
+                unsafe { sys::napi_create_object(env.raw(), &mut object) },
+                "napi_create_object",
+            )?;
+
+            let key_units: Vec<u16> = key.iter().map(|&byte| byte as u16).collect();
+            let key_string = env.create_string_utf16(&key_units)?;
+            set_named(env, object, "key", key_string.raw())?;
+
+            let rendered = render_value(value)?;
+            set_named(env, object, "value", rendered)?;
+
+            Ok(object)
+        }
+        RootNode::Internal {
+            critbit,
+            left,
+            right,
+        } => {
+            let mut object = ptr::null_mut();
+            check(
+                unsafe { sys::napi_create_object(env.raw(), &mut object) },
+                "napi_create_object",
+            )?;
+
+            let critbit_value = env.create_double(f64::from(*critbit))?;
+            set_named(env, object, "critbit", critbit_value.raw())?;
+
+            let left_value = build_root(env, left, render_value)?;
+            set_named(env, object, "left", left_value)?;
+
+            let right_value = build_root(env, right, render_value)?;
+            set_named(env, object, "right", right_value)?;
+
+            Ok(object)
+        }
+    }
+}
+
+fn set_named(
+    env: &Env,
+    object: sys::napi_value,
+    name: &'static str,
+    value: sys::napi_value,
+) -> Result<()> {
+    let key = std::ffi::CString::new(name).expect("field names have no interior NUL");
+
+    check(
+        unsafe { sys::napi_set_named_property(env.raw(), object, key.as_ptr(), value) },
+        "napi_set_named_property",
+    )
+}
 
 /// Truncate each UTF-16 code unit of a JS string key to its low 8 bits. See
 /// the module docs, part 1.
@@ -83,6 +161,22 @@ impl JsCritBitTreeMap {
     #[napi(getter)]
     pub fn size(&self) -> u32 {
         self.inner.borrow().size() as u32
+    }
+
+    /// Upstream's `root` — rebuilt fresh on every read, matching upstream's
+    /// own plain-object shape exactly (`{critbit, left, right}` /
+    /// `{key, value}`). See [`build_root`] and
+    /// `mnemonist_core::structures::critbit_tree_map::RootNode`'s docs.
+    #[napi(getter)]
+    pub fn root(&self, env: Env) -> Result<Unknown<'_>> {
+        let inner = self.inner.borrow();
+        let raw = build_root(&env, &inner.root(), &|value: &Value| {
+            // SAFETY: produces a handle in `env`'s current scope.
+            unsafe { ToNapiValue::to_napi_value(env.raw(), loan(Some(value))) }
+        })?;
+
+        // SAFETY: `raw` was just built in this call, in this scope.
+        Ok(unsafe { Unknown::from_raw_unchecked(env.raw(), raw) })
     }
 
     #[napi]

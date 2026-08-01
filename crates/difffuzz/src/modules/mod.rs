@@ -78,3 +78,10 @@ pub mod fibonacci_heap;
 pub mod default_weak_map;
 pub mod inverted_index;
 pub mod linked_list;
+
+// Appended at the end, never inserted: this file is a shared registry
+// (CLAUDE.md, Git) and a new line anywhere else is a merge conflict.
+// `fixed_critbit_tree_map` shares `critbit_tree_map`'s prefix pool -- see
+// that module's docs -- so `critbit_tree_map` is listed first.
+pub mod critbit_tree_map;
+pub mod fixed_critbit_tree_map;

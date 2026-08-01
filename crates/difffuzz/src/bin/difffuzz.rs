@@ -77,6 +77,10 @@ use difffuzz::modules::fibonacci_heap::FibonacciHeapSpec;
 use difffuzz::modules::default_weak_map::DefaultWeakMapSpec;
 use difffuzz::modules::inverted_index::InvertedIndexSpec;
 use difffuzz::modules::linked_list::LinkedListSpec;
+// Appended at the end, never inserted (CLAUDE.md, Git): a new line anywhere
+// else is a merge conflict.
+use difffuzz::modules::critbit_tree_map::CritBitTreeMapSpec;
+use difffuzz::modules::fixed_critbit_tree_map::FixedCritBitTreeMapSpec;
 
 const USAGE: &str = "\
 usage: difffuzz --module <name> [--seed N] [--duration SECONDS] [--cases N] [--batch N]
@@ -422,6 +426,20 @@ fn main() -> ExitCode {
             &InvertedIndexSpec,
             &Campaign {
                 regressions: difffuzz::modules::inverted_index::REGRESSIONS,
+                ..campaign
+            },
+        ),
+        "critbit-tree-map" => difffuzz::run(
+            &CritBitTreeMapSpec,
+            &Campaign {
+                regressions: difffuzz::modules::critbit_tree_map::REGRESSIONS,
+                ..campaign
+            },
+        ),
+        "fixed-critbit-tree-map" => difffuzz::run(
+            &FixedCritBitTreeMapSpec,
+            &Campaign {
+                regressions: difffuzz::modules::fixed_critbit_tree_map::REGRESSIONS,
                 ..campaign
             },
         ),

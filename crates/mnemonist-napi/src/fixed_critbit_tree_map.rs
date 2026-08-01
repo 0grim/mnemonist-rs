@@ -110,6 +110,15 @@ impl JsFixedCritBitTreeMap {
         self.inner.borrow().size() as u32
     }
 
+    /// Upstream's `root` — a raw pointer, exposed verbatim. See
+    /// `mnemonist_core::structures::fixed_critbit_tree_map::FixedCritBitTreeMap::root`'s
+    /// doc comment for why this needs no reconstruction the way the
+    /// unbounded variant's `root` does.
+    #[napi(getter)]
+    pub fn root(&self) -> i64 {
+        self.inner.borrow().root()
+    }
+
     /// Upstream's `clear`: resets `root`, and (see the core module's docs)
     /// leaves every backing array untouched — including every value it
     /// still holds a reference to. So nothing is released here; a value

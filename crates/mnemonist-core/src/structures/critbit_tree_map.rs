@@ -151,6 +151,35 @@ struct Internal {
     right: Ptr,
 }
 
+/// A read-only view of one node, matching upstream's own raw shape exactly:
+/// `{critbit, left, right}` for an `InternalNode`, `{key, value}` for an
+/// `ExternalNode`, or [`RootNode::Empty`] for `null` (an empty tree or an
+/// absent child — upstream never distinguishes the two, and neither does
+/// this).
+///
+/// Exists for the bridge's `root` getter and the differential fuzz spec's
+/// `root` observation — upstream's `root` is a real, argument-free property,
+/// so it is the one place a *structural* comparison is possible through the
+/// oracle's generic property-read protocol (see `fuzz/oracle.js`'s own
+/// docs); every other public method needs at least one argument. `critbit`
+/// is reassembled into upstream's own packed `(byteIndex << 8) | mask`
+/// integer — not this port's internal `(byte_index, mask)` tuple — because
+/// that packed value is exactly what upstream's real `InternalNode.critbit`
+/// holds, and reproducing it here is what makes the comparison catch a
+/// critical-bit computation bug rather than merely a `root`-rendering one.
+pub enum RootNode<'a, V> {
+    Empty,
+    Internal {
+        critbit: u32,
+        left: Box<RootNode<'a, V>>,
+        right: Box<RootNode<'a, V>>,
+    },
+    External {
+        key: &'a [u8],
+        value: &'a V,
+    },
+}
+
 /// A crit-bit tree map from byte-string keys to arbitrary values.
 ///
 /// See the module docs for the arena representation and the reasoning behind
@@ -213,6 +242,37 @@ impl<V> CritBitTreeMap<V> {
     /// with no separate reachability walk needed.
     pub fn values_mut(&mut self) -> impl Iterator<Item = &mut V> {
         self.values.iter_mut().filter_map(Option::as_mut)
+    }
+
+    /// Upstream's `root` property. See [`RootNode`]'s docs.
+    pub fn root(&self) -> RootNode<'_, V> {
+        self.node_at(self.root)
+    }
+
+    fn node_at(&self, pointer: Ptr) -> RootNode<'_, V> {
+        if pointer == EMPTY {
+            return RootNode::Empty;
+        }
+
+        if pointer > 0 {
+            let node = &self.internals[(pointer - 1) as usize];
+            let critbit = ((node.byte_index as u32) << 8) | node.mask as u32;
+
+            RootNode::Internal {
+                critbit,
+                left: Box::new(self.node_at(node.left)),
+                right: Box::new(self.node_at(node.right)),
+            }
+        } else {
+            let index = (-pointer - 1) as usize;
+
+            RootNode::External {
+                key: &self.keys[index],
+                value: self.values[index]
+                    .as_ref()
+                    .expect("a reachable external node always holds a value"),
+            }
+        }
     }
 
     /// Upstream's `set`. Returns the value displaced, if the key already
