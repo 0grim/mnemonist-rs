@@ -20,7 +20,7 @@ that option deliberately, including from ourselves.
 
 The tests run **unmodified** against the Rust build through a thin napi bridge: `tests/run.sh`
 assembles a work tree, publishes the compiled addon as a resolvable package, and points mocha at the
-original files. **680 upstream specs pass.**
+original files. **688 upstream specs pass.**
 
 ### What a "unit" is
 
@@ -55,7 +55,7 @@ and is the honest picture.
 
 ## 3. Native tests, and why they are not enough
 
-**721 Rust tests** cover the ported structures directly — including boundary cases upstream never
+**744 Rust tests** cover the ported structures directly — including boundary cases upstream never
 reaches, which are catalogued per module under *What upstream does NOT test*.
 
 They are necessary and insufficient for one structural reason: **they were written by whoever wrote
@@ -70,7 +70,7 @@ produces a matching test and a green light. That is what the next instrument exi
 implementation and **real upstream JavaScript running in Node**, and compares observable state after
 every operation. Divergences are minimised by proptest's shrinker and persisted as regression seeds.
 
-**108 logged campaigns · 38 modules · 117.3M operations · zero divergences.** Every campaign line
+**112 logged campaigns · 40 modules · 121.5M operations · zero divergences.** Every campaign line
 lives in `fuzz/log.txt` with its seed, so any of them can be replayed exactly.
 
 Three design points that decide whether such a harness means anything:
@@ -114,7 +114,7 @@ the sabotage should break **before** running it, confirm red, revert, confirm gr
 Naming the target first is the whole point. A sabotage chosen after seeing what breaks is a
 description of the tests, not a test of them.
 
-The gate has caught itself twice, and both results were kept rather than replaced with an easier
+The gate has caught itself three times, and every result was kept rather than replaced with an easier
 target:
 
 - **`_utils` named three sabotages; two stayed green.** Relaxing the k-way tie-break and reversing
@@ -129,7 +129,23 @@ other argument for the fuzzer is that it covers more of the same ground; this is
 assertions cannot express at all.
 
 **A falsification that stays green is not automatically a failed gate.** It can be a true statement
-about which instrument covers what. The failure mode is staying green and nobody asking why.
+about which instrument covers what. The failure mode is staying green and nobody asking why — so
+each case was investigated to a cause, and the causes turned out to be three genuinely different
+things:
+
+| cause | example | what it tells you |
+|---|---|---|
+| The assertions **cannot express** the defect | `fibonacci-heap`'s `push` tie-break — the values it reorders are equal, so no expected-value check can see it | the fuzzer is not redundant with the suite |
+| The sabotage is in a **layer the instrument does not drive** | `default-weak-map`'s bridge `get`; `difffuzz` compares core, so the bridge is outside its loop | a blind spot no grammar can close (§7) |
+| The sabotage is a **symmetry the observable surface cannot distinguish** | `fixed-critbit-tree-map`'s `msb8`, whose corruption is a self-consistent left–right *mirror*: the same wrong direction function drives insert and lookup, so `get`/`has`/`set`/`size` all still agree | a property of the structure, not of the harness |
+
+The third is the subtlest and only surfaced because the result was investigated instead of accepted.
+The mirror is observationally identical through every channel the grammar exposes; the one channel
+that would catch it is `forEach`'s visitation order, which is absent because neither crit-bit class
+implements `Symbol.iterator` and so has no generic spread operation to hook. The native Rust test
+covers that channel, and it failed exactly as named.
+
+Both instruments told the truth about what they cover.
 
 ---
 
