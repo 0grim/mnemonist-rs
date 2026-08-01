@@ -79,6 +79,16 @@ test flaked under agent contention during the last batch. Run it when nothing el
   `allow_nan` flag stays `false` **for that function only**, so its campaign is green over a region
   excluding a known disagreement. Closing it means porting nothing new — it is a real gap in our
   own code, and it is the one caveat left on `_utils`.
+- **Bug Catcher prize — a named submission deliverable, not a by-product.** Admins: claim it in the
+  submission form with *clear repro steps, what the original does wrong, and how your port handles
+  it*, reviewed at judging. We hold **69 candidates, 57 verified against Node 24.18.1**, and the
+  `NOTES.md` entry shape already carries repro + why-the-suite-misses-it + how-we-handle-it. Three
+  jobs: (1) **verify or demote the 7 unverified** — one disprovable claim discredits the other 68,
+  an asymmetry that makes silence cheaper than a maybe; (2) **rank them**, since 69 undifferentiated
+  entries will not be read — the admins single out bugs *"surfaced when the original tests disagree
+  with correct behavior"*, so a defect whose upstream test **asserts** the wrong result outranks one
+  the tests merely miss; (3) lift the best into a submission-ready `BUGS.md` — no judge will open a
+  2,000-line working log.
 - **Unregistered divergences — do this before assembling `DECISIONS.md`.** At least four module
   docs (`bk-tree`, `default-weak-map`, `fuzzy-map`, `utils-bitwise`) record divergences in their
   *Deliberate divergences* table numbered `—` rather than `D-nnn`, so they exist **only** in the
