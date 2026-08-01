@@ -121,6 +121,36 @@ pub trait Sequence {
     /// should mean "the source cannot supply this slot any more", never "this
     /// walk is over" — the frozen length already decides that.
     fn slot(&self, frozen: &Self::Frozen, ordinal: usize) -> Option<Self::Item>;
+
+    /// Where the walk ends **as of this step**, in ordinals.
+    ///
+    /// Defaults to the frozen length, which is the `if (i >= l)` of
+    /// [`Iterator.fromSequence`](self) and of `Stack.prototype.values`, and is
+    /// what every source built before this method existed relies on.
+    ///
+    /// It is a method rather than the stored length because upstream is **not
+    /// consistent about freezing it**, and the inconsistency is observable.
+    /// `Stack.prototype.values` captures `l = items.length` once; the
+    /// structurally identical `Queue.prototype.values` writes
+    ///
+    /// ```js
+    /// var items = this.items, i = this.offset;
+    /// return new Iterator(function () {
+    ///   if (i >= items.length) return {done: true};   // re-read EVERY step
+    ///   ...
+    /// });
+    /// ```
+    ///
+    /// so a queue that grows while a cursor sits at its end **resumes**, and
+    /// obliterator's `Iterator` never latches `done`, so nothing stops it.
+    /// Collapsing the two into one frozen length would silently terminate that
+    /// walk. Overriding this is how a source says "my end is live".
+    ///
+    /// `frozen_len` is the length [`freeze`](Sequence::freeze) returned, passed
+    /// back so an override can still reach it.
+    fn limit(&self, _frozen: &Self::Frozen, frozen_len: usize) -> usize {
+        frozen_len
+    }
 }
 
 /// Everything an in-flight walk consists of, with no borrow of the source.
@@ -180,9 +210,14 @@ where
     /// dropping the borrow — so the two callers above each hold exactly one
     /// source and pass it back unchanged.
     pub fn step(&mut self, source: &S) -> Step<S::Item> {
-        // The frozen length, exactly as upstream's `if (i >= l)`. Asking the
-        // source for its current length here would be the whole divergence.
-        if self.ordinal >= self.len {
+        // Upstream's `if (i >= l)`. `l` is the frozen length for every source
+        // that does not say otherwise; [`Sequence::limit`] is the say-otherwise,
+        // and it exists because `Queue.prototype.values` re-reads the length on
+        // every step where `Stack.prototype.values` freezes it. Note what is
+        // still absent: nothing latches, so a source whose limit grows back
+        // resumes — which is what obliterator's `Iterator` does, having no
+        // `done` flag of its own.
+        if self.ordinal >= source.limit(&self.frozen, self.len) {
             return Step::Done;
         }
 
@@ -206,6 +241,10 @@ where
     }
 
     /// Steps remaining before [`Step::Done`], gaps included.
+    ///
+    /// Measured against the **frozen** length, so a source that overrides
+    /// [`Sequence::limit`] can outlive or undershoot this figure. It is a hint,
+    /// which is all [`Iterator::size_hint`] promises.
     pub fn remaining(&self) -> usize {
         self.len.saturating_sub(self.ordinal)
     }
@@ -562,6 +601,81 @@ mod tests {
         fn slot(&self, _frozen: &(), ordinal: usize) -> Option<u32> {
             self.0.get(ordinal).copied()
         }
+    }
+
+    /// A source whose end is read fresh on every step — the
+    /// `Queue.prototype.values` shape, where `if (i >= items.length)` re-reads
+    /// the array instead of a captured `l`.
+    struct LiveEnd {
+        items: RefCell<Vec<u32>>,
+    }
+
+    impl Sequence for LiveEnd {
+        type Item = u32;
+        type Frozen = ();
+
+        fn freeze(&self) -> ((), usize) {
+            ((), self.items.borrow().len())
+        }
+
+        fn slot(&self, _frozen: &(), ordinal: usize) -> Option<u32> {
+            self.items.borrow().get(ordinal).copied()
+        }
+
+        fn limit(&self, _frozen: &(), _frozen_len: usize) -> usize {
+            self.items.borrow().len()
+        }
+    }
+
+    /// Growth IS visible when the limit is live — the mirror image of
+    /// `growth_during_iteration_is_not_visible`, and the reason `limit` is a
+    /// method rather than the stored length.
+    #[test]
+    fn a_live_limit_sees_growth_that_a_frozen_one_does_not() {
+        let source = LiveEnd {
+            items: RefCell::new(vec![1, 2]),
+        };
+        let mut cursor = Cursor::new(&source);
+
+        assert_eq!(cursor.frozen_len(), 2);
+        assert_eq!(cursor.step(), Step::Item(1));
+
+        source.items.borrow_mut().extend_from_slice(&[3, 4]);
+
+        assert_eq!(cursor.by_ref().collect::<Vec<_>>(), vec![2, 3, 4]);
+    }
+
+    /// And nothing latches: a walk that has reported `Done` resumes if the
+    /// source grows back, exactly as obliterator's flag-free `Iterator` does.
+    #[test]
+    fn a_live_limit_resumes_after_reporting_done() {
+        let source = LiveEnd {
+            items: RefCell::new(vec![1]),
+        };
+        let mut cursor = Cursor::new(&source);
+
+        assert_eq!(cursor.step(), Step::Item(1));
+        assert_eq!(cursor.step(), Step::Done);
+
+        source.items.borrow_mut().push(2);
+
+        assert_eq!(cursor.step(), Step::Item(2));
+        assert_eq!(cursor.step(), Step::Done);
+    }
+
+    /// A live limit that shrinks ends the walk rather than opening a gap: the
+    /// gap only exists *inside* the limit, and the limit moved.
+    #[test]
+    fn a_live_limit_that_shrinks_ends_the_walk_without_a_gap() {
+        let source = LiveEnd {
+            items: RefCell::new(vec![1, 2, 3]),
+        };
+        let mut cursor = Cursor::new(&source);
+
+        assert_eq!(cursor.step(), Step::Item(1));
+        source.items.borrow_mut().truncate(1);
+
+        assert_eq!(cursor.step(), Step::Done);
     }
 
     #[test]
