@@ -159,6 +159,30 @@ impl Oracle {
         Self::take(&mut response, "state")
     }
 
+    /// As [`Oracle::init`], for a module whose real entry point is a static
+    /// method on the upstream constructor rather than the constructor itself
+    /// — `kd-tree`'s `.from`/`.fromAxes`, whose raw `new KDTree(dimensions,
+    /// build)` takes an already-built internal shape nothing else produces.
+    /// See [`crate::ModuleSpec::static_factory`] and `fuzz/oracle.js`'s
+    /// `staticFactory` handling.
+    pub fn init_via_factory(
+        &mut self,
+        module: &str,
+        factory: &str,
+        ctor: &[Value],
+        observe: &[&'static str],
+    ) -> Result<Value, OracleError> {
+        let mut response = self.request(&json!({
+            "cmd": "init",
+            "module": module,
+            "ctor": ctor,
+            "observe": observe,
+            "staticFactory": factory,
+        }))?;
+
+        Self::take(&mut response, "state")
+    }
+
     /// Apply one operation and read back its result plus the observable state.
     pub fn apply(&mut self, name: &str, args: &[Value]) -> Result<Observation, OracleError> {
         let mut response = self.request(&json!({

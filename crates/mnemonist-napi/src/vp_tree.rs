@@ -129,9 +129,11 @@ impl JsVpTree {
     pub fn nearest_neighbors(&self, env: Env, k: u32, query: Unknown) -> Result<Vec<JsNeighbor>> {
         let query_slot = JsSlot::new(&env, &query)?;
 
-        let neighbors = self.inner.try_nearest_neighbors(k as usize, &query_slot, |a, b| {
-            call_distance(&env, &self.distance, a, b)
-        })?;
+        let neighbors = self
+            .inner
+            .try_nearest_neighbors(k as usize, &query_slot, |a, b| {
+                call_distance(&env, &self.distance, a, b)
+            })?;
 
         Ok(neighbors.into_iter().map(JsNeighbor::from).collect())
     }

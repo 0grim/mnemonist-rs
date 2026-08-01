@@ -81,6 +81,10 @@ use difffuzz::modules::linked_list::LinkedListSpec;
 // else is a merge conflict.
 use difffuzz::modules::critbit_tree_map::CritBitTreeMapSpec;
 use difffuzz::modules::fixed_critbit_tree_map::FixedCritBitTreeMapSpec;
+// Appended at the end, never inserted: this file is a shared registry
+// (CLAUDE.md, Git) and a new line anywhere else is a merge conflict.
+use difffuzz::modules::kd_tree::KdTreeSpec;
+use difffuzz::modules::vp_tree::VpTreeSpec;
 
 const USAGE: &str = "\
 usage: difffuzz --module <name> [--seed N] [--duration SECONDS] [--cases N] [--batch N]
@@ -440,6 +444,20 @@ fn main() -> ExitCode {
             &FixedCritBitTreeMapSpec,
             &Campaign {
                 regressions: difffuzz::modules::fixed_critbit_tree_map::REGRESSIONS,
+                ..campaign
+            },
+        ),
+        "vp-tree" => difffuzz::run(
+            &VpTreeSpec,
+            &Campaign {
+                regressions: difffuzz::modules::vp_tree::REGRESSIONS,
+                ..campaign
+            },
+        ),
+        "kd-tree" => difffuzz::run(
+            &KdTreeSpec,
+            &Campaign {
+                regressions: difffuzz::modules::kd_tree::REGRESSIONS,
                 ..campaign
             },
         ),

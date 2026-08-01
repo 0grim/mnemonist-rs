@@ -412,6 +412,20 @@ pub trait ModuleSpec {
     fn functions(&self) -> &'static [&'static str] {
         &[]
     }
+
+    /// Name of a static method on the upstream constructor to call instead of
+    /// `new Ctor(...)`, for a module whose real entry point is not its own
+    /// raw constructor.
+    ///
+    /// `None` — the default — is every other module: `new Ctor(...)` is the
+    /// entry point the original suite itself uses. `kd-tree` is the one
+    /// exception so far: `function KDTree(dimensions, build)` takes an
+    /// already-built internal shape only `.from`/`.fromAxes` themselves ever
+    /// produce, so its `ModuleSpec` names `"from"` here instead. See
+    /// `fuzz/oracle.js`'s `staticFactory` handling in its `init` case.
+    fn static_factory(&self) -> Option<&'static str> {
+        None
+    }
 }
 
 /// A concrete disagreement between the port and upstream.
@@ -545,9 +559,12 @@ pub fn check_program<S: ModuleSpec>(
     oracle: &mut crate::Oracle,
     program: &Program,
 ) -> Result<u64, CheckFailure> {
-    let upstream_state = match spec.functions() {
-        [] => oracle.init(spec.module(), &program.ctor, spec.observations())?,
-        files => oracle.init_functions(spec.module(), files, spec.observations())?,
+    let upstream_state = match (spec.functions(), spec.static_factory()) {
+        ([], None) => oracle.init(spec.module(), &program.ctor, spec.observations())?,
+        ([], Some(factory)) => {
+            oracle.init_via_factory(spec.module(), factory, &program.ctor, spec.observations())?
+        }
+        (files, _) => oracle.init_functions(spec.module(), files, spec.observations())?,
     };
 
     let mut instance = spec.construct(&program.ctor);

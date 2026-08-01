@@ -85,3 +85,8 @@ pub mod linked_list;
 // that module's docs -- so `critbit_tree_map` is listed first.
 pub mod critbit_tree_map;
 pub mod fixed_critbit_tree_map;
+
+// Appended at the end, never inserted: this file is a shared registry
+// (CLAUDE.md, Git) and a new line anywhere else is a merge conflict.
+pub mod kd_tree;
+pub mod vp_tree;

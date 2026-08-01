@@ -38,7 +38,11 @@ fn typed_from_pointer_vec(values: &PointerVec) -> Either3<Uint8Array, Uint16Arra
 /// off the caller's iterable via `foreach::collect` (each row is one
 /// top-level element) and then indexed directly -- upstream's own
 /// `reshapeIntoAxes` does exactly this once `iterables.toArray` has run.
-fn rows_from_iterable(env: &Env, iterable: Unknown, dimensions: usize) -> Result<Vec<(JsSlot, Vec<f64>)>> {
+fn rows_from_iterable(
+    env: &Env,
+    iterable: Unknown,
+    dimensions: usize,
+) -> Result<Vec<(JsSlot, Vec<f64>)>> {
     let row_slots = foreach::collect(env, iterable)?;
     let mut rows = Vec::with_capacity(row_slots.len());
 
