@@ -10,6 +10,8 @@
 use napi_derive::napi;
 
 pub mod cursor;
+pub mod foreach;
+pub mod js_slot;
 pub mod sparse_set;
 pub mod static_disjoint_set;
 
