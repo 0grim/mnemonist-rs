@@ -322,6 +322,124 @@ impl PointerVec {
     }
 }
 
+/// The eight typed-array element widths `getNumberType`/`getMinimalRepresentation`
+/// choose between.
+///
+/// Upstream returns the constructor itself (`Uint8Array` and friends); the
+/// napi bridge maps this enum back to the real global constructor, as
+/// [`get_pointer_array`]'s width already does for [`PointerWidth`].
+///
+/// `F32` exists only to complete the priority table [`get_minimal_representation`]
+/// walks -- upstream's own `TYPE_PRIORITY` dictionary has a `Float32Array`
+/// slot between `Int32Array` and `Float64Array`, but [`get_number_type`] can
+/// never produce it: every non-integral or out-of-`i32`-range value falls
+/// straight through to `Float64Array`. So the slot is dead code upstream too,
+/// not a gap this port introduces.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NumberType {
+    U8,
+    I8,
+    U16,
+    I16,
+    U32,
+    I32,
+    F32,
+    F64,
+}
+
+/// `TYPE_PRIORITY`'s values, in the same order upstream lists them.
+fn priority(kind: NumberType) -> u8 {
+    match kind {
+        NumberType::U8 => 1,
+        NumberType::I8 => 2,
+        NumberType::U16 => 3,
+        NumberType::I16 => 4,
+        NumberType::U32 => 5,
+        NumberType::I32 => 6,
+        NumberType::F32 => 7,
+        NumberType::F64 => 8,
+    }
+}
+
+/// The narrowest typed-array element able to represent `value` exactly.
+///
+/// `getNumberType(value)`. `value === (value | 0)` is JavaScript's ToInt32
+/// round-trip check -- true exactly when `value` is already a 32-bit integer
+/// -- reused here as [`crate::utils::bitwise::to_int32`], the same conversion
+/// `utils/bitwise.js` is built on. `Math.sign(value) === -1` reduces to "the
+/// round-tripped integer is negative": `to_int32` never produces a negative
+/// zero (there is no such `i32`), so `-0` takes the non-negative branch here
+/// exactly as `Math.sign(-0) === -0 !== -1` does upstream.
+pub fn get_number_type(value: f64) -> NumberType {
+    let truncated = super::bitwise::to_int32(value);
+
+    if value != f64::from(truncated) {
+        return NumberType::F64;
+    }
+
+    if truncated < 0 {
+        if truncated >= -128 {
+            NumberType::I8
+        } else if truncated >= -32_768 {
+            NumberType::I16
+        } else {
+            NumberType::I32
+        }
+    } else if truncated <= 255 {
+        NumberType::U8
+    } else if truncated <= 65_535 {
+        NumberType::U16
+    } else {
+        NumberType::U32
+    }
+}
+
+/// The narrowest typed-array element able to represent every value in
+/// `values`.
+///
+/// `getMinimalRepresentation(array)` -- upstream's optional second `getter`
+/// argument is not ported: `test/_utils.js` never supplies one, and every
+/// call site in the modules ported so far passes a plain array of numbers
+/// (D-style simplification noted in the module docs, same policy as
+/// [`indices`]: helpers land as callers reach them).
+///
+/// Returns `None` for an empty slice, matching upstream's `null` (its own
+/// `maxType` starts `null` and the loop that would set it never runs).
+pub fn get_minimal_representation(values: &[f64]) -> Option<NumberType> {
+    let mut max_type = None;
+    let mut max_priority = 0u8;
+
+    for &value in values {
+        let kind = get_number_type(value);
+        let rank = priority(kind);
+
+        if rank > max_priority {
+            max_priority = rank;
+            max_type = Some(kind);
+        }
+    }
+
+    max_type
+}
+
+/// Concatenate byte/typed arrays into one, in argument order.
+///
+/// `exports.concat`. Upstream allocates the result with
+/// `new (arguments[0].constructor)(length)`, i.e. the same typed-array class
+/// as its first argument; a Rust caller already knows `T` is uniform across
+/// every slice, so there is no analogous "which constructor" question here --
+/// the bridge picks the JS output class from the first argument's real type.
+pub fn concat<T: Clone>(arrays: &[&[T]]) -> Vec<T> {
+    let total: usize = arrays.iter().map(|a| a.len()).sum();
+    let mut out = Vec::with_capacity(total);
+
+    for array in arrays {
+        out.extend_from_slice(array);
+    }
+
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -530,5 +648,95 @@ mod tests {
         assert!(widest.try_set(0, u32::MAX));
         assert_eq!(widest.try_get(0), Some(u32::MAX));
         assert!(!widest.try_set(1, 1));
+    }
+
+    // ----------------------------------------------------------- NumberType
+
+    /// The one case `test/_utils.js` pins for `getMinimalRepresentation`,
+    /// transcribed: three arrays of numbers, each expected to settle on a
+    /// specific typed-array class.
+    #[test]
+    fn get_minimal_representation_matches_the_upstream_suites_own_cases() {
+        assert_eq!(
+            get_minimal_representation(&[1.0, 2.0, 3.0, 4.0, 5.0]),
+            Some(NumberType::U8)
+        );
+        assert_eq!(
+            get_minimal_representation(&[1.0, 2.0, -3.0, 4.0, 5.0]),
+            Some(NumberType::I8)
+        );
+        assert_eq!(
+            get_minimal_representation(&[1.0, 3.0, 4.0, 3.4]),
+            Some(NumberType::F64)
+        );
+    }
+
+    #[test]
+    fn get_minimal_representation_of_empty_is_none() {
+        assert_eq!(get_minimal_representation(&[]), None);
+    }
+
+    /// `getNumberType` at every boundary the upstream priority table
+    /// distinguishes, unsigned and signed.
+    #[test]
+    fn get_number_type_selects_every_boundary() {
+        assert_eq!(get_number_type(0.0), NumberType::U8);
+        assert_eq!(get_number_type(255.0), NumberType::U8);
+        assert_eq!(get_number_type(256.0), NumberType::U16);
+        assert_eq!(get_number_type(65_535.0), NumberType::U16);
+        assert_eq!(get_number_type(65_536.0), NumberType::U32);
+        // `Uint32Array` tops out at `i32::MAX`, not `u32::MAX`: `value | 0`
+        // (ToInt32) wraps anything from 2^31 up into a negative `i32`, which
+        // breaks the `value === (value | 0)` round trip and sends it to
+        // `Float64Array` instead -- verified against Node 24.18.1
+        // (`getNumberType(2147483648).name === 'Float64Array'`).
+        assert_eq!(get_number_type(2_147_483_647.0), NumberType::U32);
+        assert_eq!(get_number_type(2_147_483_648.0), NumberType::F64);
+        assert_eq!(get_number_type(4_294_967_295.0), NumberType::F64);
+
+        assert_eq!(get_number_type(-1.0), NumberType::I8);
+        assert_eq!(get_number_type(-128.0), NumberType::I8);
+        assert_eq!(get_number_type(-129.0), NumberType::I16);
+        assert_eq!(get_number_type(-32_768.0), NumberType::I16);
+        assert_eq!(get_number_type(-32_769.0), NumberType::I32);
+        assert_eq!(get_number_type(-2_147_483_648.0), NumberType::I32);
+        // Symmetrically, one below `i32::MIN` also breaks the round trip.
+        assert_eq!(get_number_type(-2_147_483_649.0), NumberType::F64);
+
+        assert_eq!(get_number_type(3.4), NumberType::F64);
+        assert_eq!(get_number_type(f64::NAN), NumberType::F64);
+        assert_eq!(get_number_type(1e21), NumberType::F64);
+    }
+
+    /// `Math.sign(-0) === -0`, not `-1` -- so `-0` takes the non-negative
+    /// branch, exactly as a plain `0` does. Verified against the ToInt32
+    /// round trip: `to_int32(-0.0)` is the plain (non-negative) `i32` `0`.
+    #[test]
+    fn negative_zero_takes_the_non_negative_branch() {
+        assert_eq!(get_number_type(-0.0), NumberType::U8);
+    }
+
+    // --------------------------------------------------------------- concat
+
+    /// `test/_utils.js`'s own `#.concat` case, transcribed.
+    #[test]
+    fn concat_matches_the_upstream_suites_own_case() {
+        let a: [u8; 3] = [1, 2, 3];
+        let b: [u8; 2] = [4, 5];
+        let c: [u8; 3] = [5, 5, 6];
+
+        let ab: [&[u8]; 2] = [&a, &b];
+        let abc: [&[u8]; 3] = [&a, &b, &c];
+        let ba: [&[u8]; 2] = [&b, &a];
+
+        assert_eq!(concat(&ab), vec![1, 2, 3, 4, 5]);
+        assert_eq!(concat(&abc), vec![1, 2, 3, 4, 5, 5, 5, 6]);
+        assert_eq!(concat(&ba), vec![4, 5, 1, 2, 3]);
+    }
+
+    #[test]
+    fn concat_of_nothing_is_empty() {
+        let empty: [&[u8]; 0] = [];
+        assert_eq!(concat(&empty), Vec::<u8>::new());
     }
 }
