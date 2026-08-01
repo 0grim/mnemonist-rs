@@ -57,6 +57,11 @@ use difffuzz::modules::fuzzy_map::FuzzyMapSpec;
 use difffuzz::modules::lru_cache::{
     LruCacheSpec, LruCacheWithDeleteSpec, LruMapSpec, LruMapWithDeleteSpec,
 };
+// Appended at the end, never inserted (CLAUDE.md, Git): a new line anywhere
+// else is a merge conflict.
+use difffuzz::modules::fuzzy_multi_map::FuzzyMultiMapSpec;
+use difffuzz::modules::multi_map::MultiMapSpec;
+use difffuzz::modules::multi_set::MultiSetSpec;
 
 const USAGE: &str = "\
 usage: difffuzz --module <name> [--seed N] [--duration SECONDS] [--cases N] [--batch N]
@@ -68,7 +73,9 @@ usage: difffuzz --module <name> [--seed N] [--duration SECONDS] [--cases N] [--b
               generalized-suffix-array, bloom-filter, vector,
               static-interval-tree, heap, fixed-reverse-heap
               generalized-suffix-array, bloom-filter, bi-map, fuzzy-map,
-              bk-tree, heap, fixed-reverse-heap
+              bk-tree, heap, fixed-reverse-heap, lru-cache,
+              lru-cache-with-delete, lru-map, lru-map-with-delete,
+              multi-map, multi-set, fuzzy-multi-map
   --seed      campaign seed (default 42); with --cases, reproduces exactly
   --duration  wall-clock budget in seconds (default 60)
   --cases     stop after N cases instead of after --duration
@@ -316,6 +323,29 @@ fn main() -> ExitCode {
             &LruMapWithDeleteSpec,
             &Campaign {
                 regressions: difffuzz::modules::lru_cache::MAP_WITH_DELETE_REGRESSIONS,
+                ..campaign
+            },
+        ),
+        // Appended at the END of the match, never between two existing arms
+        // (CLAUDE.md, Git).
+        "multi-map" => difffuzz::run(
+            &MultiMapSpec,
+            &Campaign {
+                regressions: difffuzz::modules::multi_map::REGRESSIONS,
+                ..campaign
+            },
+        ),
+        "multi-set" => difffuzz::run(
+            &MultiSetSpec,
+            &Campaign {
+                regressions: difffuzz::modules::multi_set::REGRESSIONS,
+                ..campaign
+            },
+        ),
+        "fuzzy-multi-map" => difffuzz::run(
+            &FuzzyMultiMapSpec,
+            &Campaign {
+                regressions: difffuzz::modules::fuzzy_multi_map::REGRESSIONS,
                 ..campaign
             },
         ),

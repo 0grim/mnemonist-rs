@@ -52,3 +52,9 @@ pub mod heap;
 // Appended at the end, never inserted: this file is edited by several agents
 // at once and a new line at the end can never land inside another one's hunk.
 pub mod lru_cache;
+
+// Appended at the end, never inserted (CLAUDE.md, Git): a new line anywhere
+// else is a merge conflict.
+pub mod fuzzy_multi_map;
+pub mod multi_map;
+pub mod multi_set;
