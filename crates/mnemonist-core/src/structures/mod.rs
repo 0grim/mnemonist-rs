@@ -50,3 +50,10 @@ pub mod heap;
 // (CLAUDE.md, Git) and a new line anywhere else is a merge conflict.
 pub mod trie;
 pub mod trie_map;
+// Appended at the end, never inserted: this file is edited by several agents
+// at once and a new line anywhere else is a merge conflict (CLAUDE.md, Git).
+pub mod multi_map;
+pub mod multi_set;
+
+// Appended at the end, never inserted (CLAUDE.md, Git).
+pub mod fuzzy_multi_map;

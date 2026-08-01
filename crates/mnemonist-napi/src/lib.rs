@@ -78,6 +78,13 @@ pub mod typed_arrays;
 // (CLAUDE.md, Git) and a new line anywhere else is a merge conflict.
 pub mod trie;
 pub mod trie_map;
+// Appended at the end, never inserted (CLAUDE.md, Git): a line anywhere else
+// is a merge conflict inside this shared registry.
+pub mod multi_map;
+pub mod multi_set;
+
+// Appended at the end, never inserted (CLAUDE.md, Git).
+pub mod fuzzy_multi_map;
 
 #[napi]
 pub fn ping() -> &'static str {

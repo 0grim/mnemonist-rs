@@ -1453,3 +1453,129 @@ is deliberately built over a small **letter** alphabet (never digits) for exactl
 a divergence here is never silently manufactured into a false positive.
 **Verify:** `crates/mnemonist-core/src/structures/trie_map.rs`'s module docs; the fuzz spec's own
 alphabet, documented in `crates/difffuzz/src/modules/trie_map.rs`.
+## multi-map, multi-set, fuzzy-multi-map (D-160 .. D-169)
+
+Same numbering caveat as D-89..D-93/D-100..D-103 above: only a bug-ID range (B-160..B-179) was
+allocated to this agent, so D-160..D-169 are chosen to mirror it rather than continuing the
+sequential D numbering. Full write-ups in `docs/modules/multi-map.md`, `multi-set.md`,
+`fuzzy-multi-map.md`.
+
+### D-160 — any `MultiMap` container beyond exactly `Array`/`Set` is treated as `Array`, and rendered as one
+**Status:** CONFIRMED · **Category:** scope · **Divergence:** yes
+**Upstream:** `this.Container === Set` is the *only* branch upstream's write path takes; every other
+constructor (the default `Array`, a `Vector` subclass, a caller's own class) takes the identical
+`container.push(value); this.size++;` line.
+**Port:** the bridge resolves `Container` to `List`-kind for anything that is not exactly the
+global `Set` by identity, and `get`/`containers`/`associations` always materialise a plain `Array`
+for a `List`-kind bucket — never a `Vector` or other custom class instance.
+**Rationale:** `test/multi-map.js`'s one non-`Array`/`Set` case (`Vector.Uint8Vector`) only ever
+asserts `Array.from(map.get(key))` against the pushed numbers, never `instanceof Vector` or a
+`Vector`-specific method on the returned container. A caller relying on either would see a plain
+array instead; nothing in the original suite can tell the difference.
+**Verify:** `docs/modules/multi-map.md`, "What upstream does NOT test" and its own divergence table.
+
+### D-161 — `MultiMap`'s `Set`-kind membership is a linear scan against a supplied equality, not `Hash`/`Eq`
+**Status:** CONFIRMED · **Category:** architecture · **Divergence:** no (a performance cost, not a behavioural one)
+**Problem:** `fuzzy-multi-map`'s own values can be arbitrary JS objects, whose `Set` membership is
+SameValueZero-by-identity for an object and needs `napi_strict_equals`, which needs an `Env` — no
+compile-time `Hash + Eq` bound on a generic `V` can express that.
+**Port:** `MultiMap<K, V>::set_with`/`remove_with` take the equivalence relation as a fallible
+callback (`Fn(&V, &V) -> Result<bool, E>`) and scan the bucket linearly; `set`/`remove` are
+convenience wrappers for a `V: PartialEq` that can never fail.
+**Rationale:** the same move `crate::utils::comparators::Comparator` makes for a JavaScript
+comparator callback, applied to a JavaScript equality callback. Buckets in every observed test and
+fuzz case are small, so the linear scan's cost is not observable.
+**Verify:** `crates/mnemonist-core/src/structures/multi_map.rs`'s own module docs.
+
+### D-162 — `MultiMap`'s flattened `values`/`entries`/`forEach` cursor snapshots a bucket instead of reading it live
+**Status:** CONFIRMED · **Category:** architecture · **Divergence:** yes, in one stated case
+**Upstream:** obtains, per key, either a genuinely live `Set` iterator or an `Array`-index walk with
+the length frozen at entry — so a mutation to the *very bucket currently being walked* can, in
+principle, be visible (a `Set`) or invisible-past-the-captured-length (an `Array`).
+**Port:** `FlattenedCursor` clones a bucket's contents once, when the outer step reaches that key,
+and walks the clone — correctly reproducing the *outer* map's liveness (a key deleted ahead of the
+cursor is skipped) but not a mutation to the same bucket mid-inner-walk.
+**Rationale:** every case in `test/multi-map.js` is reproduced exactly; the one gap is untested by
+the original suite and stated rather than silently accepted.
+**Verify:** `crates/mnemonist-core/src/structures/multi_map.rs`'s own module docs;
+`docs/modules/multi-map.md`'s divergence table.
+
+### D-163 — `multi-set`'s `dimension` is a tracked counter, not derived from `items.len()`
+**Status:** CONFIRMED · **Category:** architecture · **Divergence:** no (this is what makes B-161/B-162 reproduce, not what causes them)
+**Problem:** `multi-map`'s equivalent simplification (derive `dimension` from the map's own length)
+would be *wrong* here: B-161 (`#.delete` on an absent item) and B-162 (`#.edit` merging into an
+existing key) both make upstream's own `dimension` counter diverge from the real distinct-key count.
+**Port:** `MultiSet` stores `dimension: i64` (not `usize` — B-161 can drive it negative) and updates
+it exactly where upstream's source does, including the two places upstream does not.
+**Rationale:** a derived counter would silently *fix* both defects instead of reproducing them —
+the same trap `docs/modules/bi-map.md`'s B-120 already taught this project once.
+**Verify:** `crates/mnemonist-core/src/structures/multi_set.rs`'s module docs; NOTES.md B-161/B-162.
+
+### D-164 — `multi-set`'s `add`/`remove` return-value inconsistency is not modelled at the bridge
+**Status:** CONFIRMED · **Category:** scope · **Divergence:** yes, on an untested surface
+**Upstream:** `add`/`remove` return `this` on their normal path but `undefined` on the sign-flip
+delegation branch (`add(x, -3)` returns whatever `remove(x, 3)` returns, which is unconditionally
+`undefined`; symmetrically for `remove(x, -3)` returning `this`).
+**Port:** `mnemonist_napi::multi_set`'s bridge always returns `this` for chaining, regardless of
+sign.
+**Rationale:** `test/multi-set.js` never checks either method's return value. The differential fuzz
+spec, which *does* compare raw return values against upstream, models the real asymmetry exactly —
+it had to, and finding that requirement (via a red campaign on the first generated case) is what
+confirmed the asymmetry empirically rather than only by reading.
+**Verify:** `crates/difffuzz/src/modules/multi_set.rs`'s `apply` doc comment;
+`docs/modules/multi-set.md`'s divergence table.
+
+### D-165 — `multi-set` counts are `f64`, including `ceil(multiplicity)` repeats for a fractional one
+**Status:** CONFIRMED · **Category:** behavioural · **Divergence:** no — this is upstream's own behaviour, stated rather than assumed
+**Upstream:** `typeof count !== 'number'` is the only guard; a fractional count is legal and left
+as-is, and `values()`/`forEach`'s repeat loop (`for (i = 0; i < multiplicity; i++)`) yields
+`ceil(multiplicity)` iterations for a non-integer bound (`2 < 2.5` is still true at `i = 2`).
+**Port:** `MultiSet<K>` stores counts as `f64` throughout, and `RepeatCursor` compares its integer
+step counter against the raw `f64` limit with `<`, exactly as upstream's loop does.
+**Rationale:** modelling counts as anything narrower than `f64` would need to either reject
+fractional input upstream accepts or round it to something upstream never produces.
+**Verify:** `crates/mnemonist-core/src/structures/multi_set.rs`'s module docs.
+
+### D-166 — `multi-set`'s `#.edit(a, a)` doubles then deletes, in upstream's own execution order
+**Status:** CONFIRMED · **Category:** behavioural · **Divergence:** no
+**Upstream:** `edit`'s body is `set(b, am + bm)` before `delete(a)`, unconditionally — when
+`a === b`, this doubles the multiplicity and then deletes the (now sole) entry outright.
+**Port:** `MultiSet::edit` preserves this exact order with no special case for `a === b`.
+**Rationale:** untested upstream; nothing here should special-case a shape the source itself does
+not guard against.
+**Verify:** `crates/mnemonist-core/src/structures/multi_set.rs`'s `edit` doc comment.
+
+### D-167 — `fuzzy-multi-map`'s `Set`-kind object-identity dedup is not fuzzable through the differential protocol
+**Status:** CONFIRMED · **Category:** scope · **Divergence:** no
+**Problem:** the differential fuzzer compares `mnemonist-core` against upstream JS; `same_value_zero`
+(object-identity dedup via `napi_strict_equals`) is entirely a bridge concern, one layer outside that
+comparison. The core-level campaign drives `FuzzyMultiMap<String, String>` through the infallible
+`set_with` convenience path (plain `PartialEq`), which has no notion of JS object identity.
+**Rationale:** covered instead by `test/fuzzy-multi-map.js` itself and by a bridge-level native test
+(`mnemonist_napi::fuzzy_multi_map`'s `set_kind_deduplicates_by_the_supplied_equality`), and by gate
+6's falsification, which targets exactly this path since the fuzzer cannot.
+**Verify:** `docs/modules/fuzzy-multi-map.md`'s "What we test in addition" and gate-6 write-up.
+
+### D-168 — `fuzzy-multi-map`'s `.from` argument-count boolean-shift is reproduced by shape, not by counting real arguments
+**Status:** CONFIRMED · **Category:** scope · **Divergence:** no
+**Upstream:** `if (arguments.length === 3) { if (typeof Container === 'boolean') { useSet =
+Container; Container = Array; } }` — `test/fuzzy-multi-map.js`'s own third `.from` call depends on
+this to reach `useSet` at all.
+**Port:** napi has no `arguments.length` equivalent; the bridge instead checks "the third parameter
+is present, the fourth is absent, and the third is a JS boolean".
+**Rationale:** indistinguishable from upstream's own check for every call the original suite makes;
+the only constructible disagreement (an explicit `undefined` fourth argument alongside a boolean
+third) is not exercised by any test.
+**Verify:** `crates/mnemonist-napi/src/fuzzy_multi_map.rs`'s `from` doc comment.
+
+### D-169 — `fuzzy-multi-map` bucket values are `Rc<RefCell<Retained>>`, not a bare `Retained`
+**Status:** CONFIRMED · **Category:** architecture · **Divergence:** yes, in one stated case
+**Problem:** `MultiMap`'s flattened cursor clones a bucket's contents to snapshot it (D-162); a bare
+`Retained` owns exactly one `napi_ref` and cannot be cloned without either failing to compile or
+double-freeing.
+**Port:** `Rc` clones cheaply (a refcount bump, never a second `napi_ref`); `RefCell` gives
+`release` (which needs `&mut self`) a way in through a shared handle.
+**Rationale:** the one stated consequence: a `values()`/`entries()`-style iterator kept open across
+a `clear()` observes the now-released, inert value if read afterwards. Untested by
+`test/fuzzy-multi-map.js`.
+**Verify:** `crates/mnemonist-napi/src/fuzzy_multi_map.rs`'s own module docs.

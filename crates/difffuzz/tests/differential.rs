@@ -62,6 +62,12 @@ use difffuzz::modules::vector::{VectorSpec, REGRESSIONS as VECTOR_REGRESSIONS};
 use difffuzz::modules::bi_map::{BiMapSpec, REGRESSIONS as BI_MAP_REGRESSIONS};
 use difffuzz::modules::bk_tree::{BkTreeSpec, REGRESSIONS as BK_TREE_REGRESSIONS};
 use difffuzz::modules::fuzzy_map::{FuzzyMapSpec, REGRESSIONS as FUZZY_MAP_REGRESSIONS};
+// Appended at the end of the import run, never inserted (CLAUDE.md, Git).
+use difffuzz::modules::fuzzy_multi_map::{
+    FuzzyMultiMapSpec, REGRESSIONS as FUZZY_MULTI_MAP_REGRESSIONS,
+};
+use difffuzz::modules::multi_map::{MultiMapSpec, REGRESSIONS as MULTI_MAP_REGRESSIONS};
+use difffuzz::modules::multi_set::{MultiSetSpec, REGRESSIONS as MULTI_SET_REGRESSIONS};
 
 #[test]
 fn bit_set_matches_upstream() {
@@ -771,6 +777,78 @@ fn lru_map_with_delete_matches_upstream() {
     let campaign = Campaign::cases(0x1_20129, 96, MAP_WITH_DELETE_REGRESSIONS);
 
     let report = difffuzz::run(&LruMapWithDeleteSpec, &campaign)
+        .expect("oracle must be reachable; `node` is required for differential tests");
+
+    assert!(
+        report.ops > 0,
+        "campaign ran no operations, so it proved nothing: {}",
+        report.log_line()
+    );
+
+    if let Some(divergence) = report.divergence {
+        panic!("{divergence}");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Appended at the end of the file, never inserted: several agents edit this
+// file at once and a new test after the last one cannot land inside another
+// agent's hunk (CLAUDE.md, Git).
+// ---------------------------------------------------------------------------
+
+/// `multi-map` — a three-key pool shared by `set`/`remove`, so a bucket
+/// accumulates several values and drains back to zero constantly. See the
+/// spec's module docs for what is deliberately out of this grammar (cursor
+/// lifecycle ops).
+#[test]
+fn multi_map_matches_upstream() {
+    let campaign = Campaign::cases(0x1_20130, 96, MULTI_MAP_REGRESSIONS);
+
+    let report = difffuzz::run(&MultiMapSpec, &campaign)
+        .expect("oracle must be reachable; `node` is required for differential tests");
+
+    assert!(
+        report.ops > 0,
+        "campaign ran no operations, so it proved nothing: {}",
+        report.log_line()
+    );
+
+    if let Some(divergence) = report.divergence {
+        panic!("{divergence}");
+    }
+}
+
+/// `multi-set` — a three-item pool over `add`/`remove`/`set`/`edit`/`delete`,
+/// small counts including zero and negative (the sign-flip delegation), and
+/// a bounded `top`. See the spec's module docs for B-161/B-162's coverage
+/// here.
+#[test]
+fn multi_set_matches_upstream() {
+    let campaign = Campaign::cases(0x1_20131, 96, MULTI_SET_REGRESSIONS);
+
+    let report = difffuzz::run(&MultiSetSpec, &campaign)
+        .expect("oracle must be reachable; `node` is required for differential tests");
+
+    assert!(
+        report.ops > 0,
+        "campaign ran no operations, so it proved nothing: {}",
+        report.log_line()
+    );
+
+    if let Some(divergence) = report.divergence {
+        panic!("{divergence}");
+    }
+}
+
+/// `fuzzy-multi-map` — `fuzzyLower` collapses `'Hello'`/`'HELLO'`/`'World'`
+/// onto two hashed keys, so `add`ing all three is exactly the "one key,
+/// several values" case this campaign exists to hit. See the spec's module
+/// docs for why `Set`-kind object-identity dedup is out of scope here.
+#[test]
+fn fuzzy_multi_map_matches_upstream() {
+    let campaign = Campaign::cases(0x1_20132, 96, FUZZY_MULTI_MAP_REGRESSIONS);
+
+    let report = difffuzz::run(&FuzzyMultiMapSpec, &campaign)
         .expect("oracle must be reachable; `node` is required for differential tests");
 
     assert!(

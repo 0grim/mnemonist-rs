@@ -965,3 +965,9 @@
 2026-08-01T15:06:20Z  module=trie-map seed=20260801 cases=6351 ops=628731 wall=60.0s divergences=0
 2026-08-01T15:07:29Z  module=trie seed=42 cases=6498 ops=652034 wall=60.0s divergences=0
 2026-08-01T15:08:38Z  module=trie seed=20260801 cases=6141 ops=612873 wall=60.0s divergences=0
+2026-08-01T14:52:59Z  module=multi-map seed=42 cases=8404 ops=838808 wall=90.0s divergences=0
+2026-08-01T14:54:05Z  module=multi-map seed=20260801 cases=6221 ops=618991 wall=60.0s divergences=0
+2026-08-01T14:55:45Z  module=multi-set seed=42 cases=10229 ops=1016185 wall=90.0s divergences=0
+2026-08-01T14:56:52Z  module=multi-set seed=20260801 cases=6787 ops=674368 wall=60.0s divergences=0
+2026-08-01T14:58:29Z  module=fuzzy-multi-map seed=42 cases=9562 ops=964655 wall=90.0s divergences=0
+2026-08-01T14:59:39Z  module=fuzzy-multi-map seed=20260801 cases=6276 ops=629178 wall=60.0s divergences=0

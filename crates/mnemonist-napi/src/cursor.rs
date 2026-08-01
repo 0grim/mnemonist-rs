@@ -260,6 +260,14 @@ const ITERATOR_FACTORIES: &[(&str, &str)] = &[
     // pair a key with.
     ("TrieMap", "entries"),
     ("Trie", "keys"),
+    // Appended at the end, never inserted (CLAUDE.md, Git): a new row
+    // anywhere else is a merge conflict inside an array literal.
+    // `MultiMap`'s last line aliases `entries`, matching `[...map]` yielding
+    // `[key, value]` pairs; `MultiSet`'s aliases `values`.
+    ("MultiMap", "entries"),
+    ("MultiSet", "values"),
+    // Appended at the end, never inserted (CLAUDE.md, Git).
+    ("FuzzyMultiMap", "values"),
 ];
 
 /// Wire every collection's `Symbol.iterator` to its cursor factory.
