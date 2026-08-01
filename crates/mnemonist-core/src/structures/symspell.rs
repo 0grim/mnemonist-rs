@@ -139,10 +139,20 @@ impl Entry {
         }
     }
 
-    fn as_full(&self) -> Option<&DictItem> {
+    /// Upstream's local `item = createDictionaryItem(item)` promotion, as
+    /// read during `lookup` — never persisted back to the dictionary (that
+    /// only happens in `add`), so a `Compact` entry is read here exactly as
+    /// if it had been promoted: one suggestion (the encoded index) and a
+    /// `count` of `0`. Skipping this for `Compact` entries (an earlier draft
+    /// of this port did, via a `None`-returning `as_full`) silently dropped
+    /// every suggestion reachable only through a delete-form nothing else
+    /// had reached yet — caught by the very first differential-fuzz
+    /// campaign run for this module: `add("jello")` then `search("hello")`
+    /// at `maxDistance: 1` found nothing, where upstream finds `jello`.
+    fn suggestions(&self) -> std::borrow::Cow<'_, [usize]> {
         match self {
-            Self::Compact(_) => None,
-            Self::Full(item) => Some(item),
+            Self::Compact(seed) => std::borrow::Cow::Owned(vec![*seed]),
+            Self::Full(item) => std::borrow::Cow::Borrowed(&item.suggestions),
         }
     }
 }
@@ -497,8 +507,13 @@ fn lookup(
                 }
             }
 
-            if let Some(full) = entry.as_full() {
-                for &index in &full.suggestions {
+            {
+                // `entry.suggestions()` reproduces upstream's local
+                // `item = createDictionaryItem(item)` promotion for a
+                // `Compact` entry (never persisted) -- see the method docs.
+                let entry_suggestions = entry.suggestions();
+
+                for &index in entry_suggestions.as_ref() {
                     let suggestion = &words[index];
 
                     if suggestion_set.contains(suggestion) {
@@ -739,6 +754,29 @@ mod tests {
 
         assert!(terms.iter().any(|t| t == "Hell"));
         assert!(terms.iter().any(|t| t == "Hello"));
+    }
+
+    /// The differential fuzzer's own first divergence, minimised: a
+    /// `Compact` dictionary entry (`"jello"`'s length-1 delete `"ello"` was
+    /// never reached by a second word) must still contribute its one
+    /// suggestion during `lookup`, exactly as upstream's local
+    /// `createDictionaryItem(item)` promotion does. Verified against real
+    /// upstream `symspell.js` on Node 24.18.1: `search("hello")` after
+    /// `add("jello")` at `{maxDistance: 1, verbosity: 0}` returns
+    /// `[{"term":"jello","distance":1,"count":1}]`.
+    #[test]
+    fn a_compact_dictionary_entry_still_contributes_its_suggestion() {
+        let mut index = SymSpell::new(1.0, 0).unwrap();
+        index.add("jello");
+
+        assert_eq!(
+            index.search("hello"),
+            vec![Suggestion {
+                term: "jello".to_owned(),
+                distance: 1,
+                count: 1,
+            }]
+        );
     }
 
     #[test]

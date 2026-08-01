@@ -15,6 +15,27 @@
 //! mode, and only in combination with a truthy `capacity` — see the core
 //! module's docs for exactly which two `(Container, capacity)` combinations
 //! `test/multi-array.js` exercises and which two it does not.
+//!
+//! # `containers`/`associations`/`values`/`entries`/`keys` are real iterators
+//!
+//! Upstream builds a genuine `obliterator/iterator` instance for each of
+//! these — an object whose *shape* (an opaque `{next: fn}`, not an
+//! `Array`) is part of what a caller can observe, even though
+//! `test/multi-array.js` only ever drains one through `take()` (which
+//! accepts either shape and so cannot tell the difference). An earlier
+//! draft of this bridge returned a plain `Vec`/`Array` from all five methods
+//! instead — every original assertion still passed, but the very first
+//! differential-fuzz run caught it directly: `s.containers()` on a fresh,
+//! empty `MultiArray` returned `[]` from the port against `{}` from upstream
+//! (an `Iterator`'s own enumerable properties, which is what `encode()`
+//! reduces an opaque object with no special-cased shape to). Fixed by
+//! building a real `#[napi(iterator)]` generator for each, over a snapshot
+//! taken at creation — matching upstream's frozen-`l`/live-read hybrid
+//! exactly on every input either can reach, since nothing here can shrink
+//! `dimension` or a bucket's length once created (only `push`/`set` ever
+//! run, and `clear` is not part of upstream's own surface for this module).
+
+use std::vec::IntoIter;
 
 use mnemonist_core::structures::multi_array::{CapacityExceeded, MultiArray as CoreMultiArray};
 use mnemonist_core::utils::typed_arrays::PointerWidth;
@@ -260,46 +281,112 @@ impl JsMultiArray {
         }
     }
 
+    /// A fresh iterator over every bucket, `get`'s order — see the module
+    /// docs for why this is a real generator and not a plain array.
     #[napi]
-    pub fn containers(&self) -> Vec<RenderedBucket> {
-        self.inner
+    pub fn containers(&self) -> JsMultiArrayContainers {
+        let values: Vec<RenderedBucket> = self
+            .inner
             .containers()
             .into_iter()
             .map(|values| self.rendered(values))
-            .collect()
-    }
+            .collect();
 
-    #[napi]
-    pub fn associations(&self) -> Vec<Association> {
-        self.inner
-            .associations()
-            .into_iter()
-            .map(|(index, values)| Association(index as u32, self.rendered(values)))
-            .collect()
-    }
-
-    /// `#.values(index)` — global insertion order with no argument, or one
-    /// bucket's reverse-insertion order with an index. See the core module
-    /// docs for why the two orders differ.
-    #[napi]
-    pub fn values(&self, index: Option<f64>) -> Vec<f64> {
-        match index {
-            Some(index) => self.inner.values_at(count(index)),
-            None => self.inner.values(),
+        JsMultiArrayContainers {
+            values: values.into_iter(),
         }
     }
 
+    /// A fresh iterator over `[index, container]`, `get`'s order.
     #[napi]
-    pub fn entries(&self) -> Vec<Entry> {
-        self.inner
+    pub fn associations(&self) -> JsMultiArrayAssociations {
+        let values: Vec<Association> = self
+            .inner
+            .associations()
+            .into_iter()
+            .map(|(index, values)| Association(index as u32, self.rendered(values)))
+            .collect();
+
+        JsMultiArrayAssociations {
+            values: values.into_iter(),
+        }
+    }
+
+    /// `#.values(index)` — a fresh iterator over global insertion order with
+    /// no argument, or one bucket's reverse-insertion order with an index.
+    /// See the core module docs for why the two orders differ.
+    #[napi]
+    pub fn values(&self, index: Option<f64>) -> JsMultiArrayValues {
+        let values = match index {
+            Some(index) => self.inner.values_at(count(index)),
+            None => self.inner.values(),
+        };
+
+        JsMultiArrayValues {
+            values: values.into_iter(),
+        }
+    }
+
+    /// A fresh iterator over `[index, value]`.
+    #[napi]
+    pub fn entries(&self) -> JsMultiArrayEntries {
+        let values: Vec<Entry> = self
+            .inner
             .entries()
             .into_iter()
             .map(|(index, value)| Entry(index as u32, value))
-            .collect()
+            .collect();
+
+        JsMultiArrayEntries {
+            values: values.into_iter(),
+        }
     }
 
+    /// A fresh iterator over `0..dimension`.
     #[napi]
-    pub fn keys(&self) -> Vec<u32> {
-        self.inner.keys().into_iter().map(|k| k as u32).collect()
+    pub fn keys(&self) -> JsMultiArrayKeys {
+        let values: Vec<u32> = self.inner.keys().into_iter().map(|k| k as u32).collect();
+
+        JsMultiArrayKeys {
+            values: values.into_iter(),
+        }
     }
 }
+
+macro_rules! snapshot_iterator {
+    ($name:ident, $yield:ty, $js_name:literal) => {
+        #[napi(iterator, js_name = $js_name)]
+        pub struct $name {
+            values: IntoIter<$yield>,
+        }
+
+        impl Generator for $name {
+            type Yield = $yield;
+            type Next = ();
+            type Return = ();
+
+            fn next(&mut self, _value: Option<()>) -> Option<$yield> {
+                self.values.next()
+            }
+
+            /// A native `Iterator` has no `.return` method.
+            fn complete(&mut self, _value: Option<()>) -> Option<$yield> {
+                None
+            }
+        }
+    };
+}
+
+snapshot_iterator!(
+    JsMultiArrayContainers,
+    RenderedBucket,
+    "MultiArrayContainers"
+);
+snapshot_iterator!(
+    JsMultiArrayAssociations,
+    Association,
+    "MultiArrayAssociations"
+);
+snapshot_iterator!(JsMultiArrayValues, f64, "MultiArrayValues");
+snapshot_iterator!(JsMultiArrayEntries, Entry, "MultiArrayEntries");
+snapshot_iterator!(JsMultiArrayKeys, u32, "MultiArrayKeys");

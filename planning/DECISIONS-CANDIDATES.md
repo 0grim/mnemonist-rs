@@ -2110,3 +2110,74 @@ is where the tree's real *shape* — as opposed to the caller's own input echoed
 lives.
 **Verify:** `crates/mnemonist-napi/src/kd_tree.rs`; `crates/difffuzz/src/modules/kd_tree.rs`'s
 `observations()`.
+
+### D-450 — `MultiArray` models only two `(Container, capacity)` combinations, not all four
+**Status:** CONFIRMED · **Category:** scope · **Divergence:** yes (narrower — fewer inputs accepted)
+**Upstream:** `Container` defaults to `Array` regardless of `capacity`, so all four combinations —
+default `Array` unbounded, `Array` + fixed `capacity`, a typed array unbounded, a typed array +
+fixed `capacity` — are syntactically constructible. Two of them break on first use in real upstream
+anyway: a fixed-capacity `Array` still enforces no bound beyond the `size === capacity` guard
+`push`/`set` already share (a preallocated `new Array(capacity)` is not actually fixed-length), and
+an unbounded typed array has no `.push` method at all (`new Uint8Array().push(x)` throws a
+`TypeError`).
+**Port:** `mnemonist_core::structures::multi_array::MultiArray` models only `Dynamic` (any
+`Container`, no `capacity`) and `Fixed` (`Uint8Array`/`Uint16Array`/`Uint32Array` + a truthy
+`capacity`); `crates/mnemonist-napi/src/multi_array.rs` refuses the other two combinations with a
+message naming the supported set, rather than silently reinterpreting them.
+**Rationale:** `test/multi-array.js` exercises exactly the two modelled combinations and neither of
+the other two, which upstream itself does not support in any useful sense (see above). Same scope
+cut `vector.rs` makes for its own unmodelled `ArrayClass` values.
+**Verify:** `mnemonist_core::structures::multi_array` module docs; `crates/mnemonist-napi/src/multi_array.rs`'s `UNSUPPORTED_FIXED_CONTAINER`.
+
+### D-451 — `symspell`'s internal string indexing is over Unicode scalar values, not UTF-16 code units
+**Status:** CONFIRMED · **Category:** scope · **Divergence:** yes (differs only outside the Basic Multilingual Plane)
+**Upstream:** `.length`/`.substring`/character indexing throughout `symspell.js`'s `edits`,
+`addLowestDistance`, `damerauLevenshtein` and `lookup` all operate on UTF-16 code units, so an
+astral character (outside the BMP) counts as two units and can be split by an index that lands
+inside its surrogate pair.
+**Port:** `crates/mnemonist-core/src/structures/symspell.rs` indexes over Rust `char`s (Unicode
+scalar values) throughout.
+**Rationale:** the two indexing schemes agree exactly for every codepoint in the Basic Multilingual
+Plane — plain ASCII included, the only alphabet `test/symspell.js` and this port's fuzz grammar use
+— and diverge only for astral characters, which neither exercises. Reproducing UTF-16 code-unit
+semantics would mean operating on `Vec<u16>` throughout and converting back to UTF-8 `String` at
+every dictionary-key boundary, for a surface nothing currently reaches.
+**Verify:** `symspell.rs` module docs, "ASCII/BMP scope".
+
+### D-452 — `passjoin-index`'s internal string indexing is over Unicode scalar values, not UTF-16 code units
+**Status:** CONFIRMED · **Category:** scope · **Divergence:** yes (differs only outside the Basic Multilingual Plane)
+**Upstream:** `segments`/`segmentPos`/`multiMatchAwareSubstrings` index `.length`/`.slice` in UTF-16
+code units, same as `symspell.js`.
+**Port:** `crates/mnemonist-core/src/structures/passjoin_index.rs` indexes over Rust `char`s.
+**Rationale:** identical to D-451, for the identical reason — see that entry and the module's own
+"ASCII/BMP scope" docs. Recorded as a separate ID because it is a separate unit's require-closure,
+even though the underlying scope cut is the same class of thing.
+**Verify:** `passjoin_index.rs` module docs, "ASCII/BMP scope".
+
+### D-453 — `PassjoinIndex.prototype.add`/`search` accept only `String`, not upstream's array-like of characters
+**Status:** CONFIRMED · **Category:** scope · **Divergence:** yes (narrower — fewer input shapes accepted)
+**Upstream:** every string operation `passjoin-index.js` performs (`.length`, `.slice`, `+`) works
+identically on a plain array of characters, so `add`/`search` accept either.
+**Port:** `crates/mnemonist-napi/src/passjoin_index.rs` requires a JS `String`; an array argument is
+a type error at the boundary.
+**Rationale:** `test/passjoin-index.js` only ever passes strings. Accepting the array-like form
+would mean threading a second representation through every core helper for a case nothing observes.
+**Verify:** `passjoin_index.rs` (napi) module docs, "`also accepts an array-like of characters` is
+not modelled".
+
+### D-454 — `PassjoinIndex`'s inverted-index key is a `(String, i64)` tuple, not upstream's string concatenation
+**Status:** CONFIRMED · **Category:** internal representation · **Divergence:** narrow, unreached on every tested/fuzzed input
+**Upstream:** `key = segment + i` concatenates the segment index directly onto the segment string,
+so two distinct `(segment, i)` pairs could in principle collide (e.g. segment `"1"` at index `2`
+producing the same key as segment `"12"` at an index whose digits happen to complete it) —
+untested either way, and not observed in any add/search sequence in `test/passjoin-index.js` or this
+port's ~1.7M-operation differential-fuzz campaign.
+**Port:** `mnemonist_core::structures::passjoin_index::PassjoinIndex` keys its inverted index on the
+tuple `(String, i64)` directly, which cannot collide the way string concatenation can.
+**Rationale:** a strictly safer key is not a behavioural difference on any input either side has been
+observed to reach — the port's candidate set can only ever be a superset on the specific
+concatenation-collision inputs upstream's own scheme is ambiguous on, never a subset, so this cannot
+manifest as a missed match. Recorded because CLAUDE.md's guidance for this unit specifically is that
+"our port is more correct than upstream" is the failure mode most likely to hide here, so the one
+place a superset is even theoretically possible is disclosed rather than left implicit.
+**Verify:** `passjoin_index.rs` (core), `PassjoinIndex`'s `inverted_indices` field docs.

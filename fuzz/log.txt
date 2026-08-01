@@ -1063,3 +1063,15 @@
 # non-zero fraction of genuine distance ties. Two seeds, no divergences.
 2026-08-01T21:24:00Z  module=kd-tree seed=42 cases=9713 ops=970441 wall=90.0s divergences=0
 2026-08-01T21:26:00Z  module=kd-tree seed=7 cases=6462 ops=650306 wall=60.0s divergences=0
+#
+# multi-array, symspell, passjoin-index (planning/HANDOFF.md batch 5, B-300-319 range). Each
+# campaign below is clean, but not on the first attempt for two of the three units -- both real
+# bugs were caught by these exact campaigns and fixed before the numbers below were logged; see
+# docs/modules/symspell.md and docs/modules/multi-array.md, "Bugs this found", for what a quick
+# --duration 8-15s smoke run surfaced in each case before this pair of full campaigns ran clean.
+2026-08-01T23:05:00Z  module=multi-array seed=42 cases=8583 ops=834584 wall=60.0s divergences=0
+2026-08-01T23:06:00Z  module=multi-array seed=20260802 cases=8567 ops=836499 wall=60.0s divergences=0
+2026-08-01T23:07:00Z  module=symspell seed=42 cases=7942 ops=791368 wall=60.0s divergences=0
+2026-08-01T23:08:00Z  module=symspell seed=20260802 cases=7693 ops=771891 wall=60.0s divergences=0
+2026-08-01T23:09:00Z  module=passjoin-index seed=42 cases=8870 ops=888923 wall=60.0s divergences=0
+2026-08-01T23:10:00Z  module=passjoin-index seed=20260802 cases=8857 ops=880275 wall=60.0s divergences=0

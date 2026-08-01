@@ -85,6 +85,11 @@ use difffuzz::modules::fixed_critbit_tree_map::FixedCritBitTreeMapSpec;
 // (CLAUDE.md, Git) and a new line anywhere else is a merge conflict.
 use difffuzz::modules::kd_tree::KdTreeSpec;
 use difffuzz::modules::vp_tree::VpTreeSpec;
+// Appended at the end, never inserted: this file is a shared registry
+// (CLAUDE.md, Git) and a new line anywhere else is a merge conflict.
+use difffuzz::modules::multi_array::MultiArraySpec;
+use difffuzz::modules::passjoin_index::PassjoinIndexSpec;
+use difffuzz::modules::symspell::SymSpellSpec;
 
 const USAGE: &str = "\
 usage: difffuzz --module <name> [--seed N] [--duration SECONDS] [--cases N] [--batch N]
@@ -101,6 +106,8 @@ usage: difffuzz --module <name> [--seed N] [--duration SECONDS] [--cases N] [--b
               lru-cache-with-delete, lru-map, lru-map-with-delete,
               multi-map, multi-set, fuzzy-multi-map, fibonacci-heap,
               linked-list, default-weak-map, inverted-index
+              critbit-tree-map, fixed-critbit-tree-map, kd-tree, vp-tree,
+              multi-array, symspell, passjoin-index
   --seed      campaign seed (default 42); with --cases, reproduces exactly
   --duration  wall-clock budget in seconds (default 60)
   --cases     stop after N cases instead of after --duration
@@ -458,6 +465,29 @@ fn main() -> ExitCode {
             &KdTreeSpec,
             &Campaign {
                 regressions: difffuzz::modules::kd_tree::REGRESSIONS,
+                ..campaign
+            },
+        ),
+        // Appended at the END of the module arms, never between them: a merge
+        // conflict boundary inside a match arm has broken this tree before.
+        "multi-array" => difffuzz::run(
+            &MultiArraySpec,
+            &Campaign {
+                regressions: difffuzz::modules::multi_array::REGRESSIONS,
+                ..campaign
+            },
+        ),
+        "symspell" => difffuzz::run(
+            &SymSpellSpec,
+            &Campaign {
+                regressions: difffuzz::modules::symspell::REGRESSIONS,
+                ..campaign
+            },
+        ),
+        "passjoin-index" => difffuzz::run(
+            &PassjoinIndexSpec,
+            &Campaign {
+                regressions: difffuzz::modules::passjoin_index::REGRESSIONS,
                 ..campaign
             },
         ),
