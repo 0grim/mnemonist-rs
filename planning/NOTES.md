@@ -1708,3 +1708,109 @@ also masked two further defects that only surfaced once the protocols were recon
 
 *Write-up beat: the cost of parallelism is not the merge, it is the convergent design you then have
 to reconcile — and the reconciliation is where the interesting bugs were hiding.*
+
+## lru-cache family (`lru-cache`, `lru-map`, `lru-cache-with-delete`, `lru-map-with-delete`)
+
+Allocated range B-140..B-159. Full write-ups also live in `docs/modules/lru-cache.md`; this is the
+capture-log version, filed here because that file's own note said the previous agent died before
+writing one up.
+
+### B-140 — `setpop` silently drops the eviction report when the evicted key is JS-falsy
+
+`status: VERIFIED against Node 24.18.1` · `lru-cache.js`, `lru-map.js`, and both `-with-delete`
+siblings via prototype copy · found by the differential fuzzer's very first campaign against this
+grammar, before any campaign for this unit had been logged
+
+```js
+// setpop, the eviction branch:
+if (oldKey) {
+  return {evicted: true, key: oldKey, value: oldValue};
+}
+else {
+  return null;
+}
+```
+
+`if (oldKey)` is JS truthiness, not "was something evicted". Evict a key that happens to be falsy —
+`0`, `""`, `false`, `NaN`, `null`, `undefined` — and `setpop` reports `null`, indistinguishable from
+"nothing was evicted or overwritten", even though the entry really was displaced:
+
+```js
+var cache = new LRUCache(3);
+cache.set(0, 'a'); cache.set(1, 'b'); cache.set(-1, 'c');   // full, size === capacity
+cache.setpop('d', 'e');   // evicts key 0 -- returns null, not {evicted:true, key:0, value:'a'}
+```
+
+`test/lru-cache.js`'s three `setpop` blocks all evict/overwrite a plain non-empty string, so gate 4
+never touches this path. The port's own core (`LruCache::set_pop`) has no notion of JS truthiness at
+all and reports every eviction correctly regardless of the key — which is *more correct than
+upstream* and therefore a defect per CLAUDE.md's bug-for-bug mandate. Reproduced at the bridge via
+`is_js_truthy` (`crates/mnemonist-napi/src/lru_cache.rs`), gating the `Evicted` arm of all four
+bridges' `setpop`; mirrored in the fuzz spec's own `FuzzKey::is_js_truthy` so campaigns compare
+against the now-correctly-buggy behaviour rather than manufacturing a false divergence out of a bug
+that is supposed to be there. Found on the third generated case: the key pool includes four
+JS-falsy raw values out of ten, deliberately, for exactly this reason.
+
+### B-141 — reserved, unused
+
+No second upstream defect surfaced during this unit's reading or its ~6.37M fuzzed operations
+beyond B-140 and B-142 below. Recorded so a future agent extending this range does not assume B-141
+was skipped by mistake.
+
+### B-142 — `lru-map.js`'s own `.from` names the wrong module in its error message
+
+`status: VERIFIED against Node 24.18.1` · `lru-map.js:241` · found by reading
+
+```js
+throw new Error('mnemonist/lru-cache.from: could not guess iterable length. ...');
+```
+
+A copy-paste artefact: `lru-cache.js`'s own `.from` has the identical line with the *correct*
+module name, and both `-with-delete` siblings (`lru-cache-with-delete.js`, `lru-map-with-delete.js`)
+get their own name right too — confirmed by grepping all four upstream files for the exact string.
+So this is specific to one file, not systemic. Reproduced verbatim in `mnemonist_napi::lru_map`'s
+`CANNOT_GUESS` constant. Not independently fuzzable: it fires during `Cache.from`'s argument-arity
+resolution, before any instance exists, which is an `init`-time failure in the oracle protocol
+(`fuzz/oracle.js`) rather than an op comparison the harness can shrink toward.
+
+### Two port defects, not upstream's, both found and fixed before this unit's logged campaigns
+
+Recorded here per CLAUDE.md ("do not overclaim causation" cuts the other way too — these are not
+upstream bugs and get no B-number), and in full in `docs/modules/lru-cache.md`'s "Bugs this found".
+
+**1 — `LruCache::unlink` (used by `delete`/`remove`) nulled `this.K[pointer]`/`this.V[pointer]`,
+which upstream never does.** A walk left open across a delete of a not-yet-visited pointer hit the
+walk's own liveness invariant, now falsified, and **panicked**. Found by reading, before any fuzz
+campaign for this unit ran — the shape (a hole-bearing `-with-delete` variant, an open walk, an
+interleaved mutation) is exactly what this unit's brief named as the interesting territory, so it
+was checked directly with a scratch probe before the fuzz grammar even existed. Fixed by leaving
+both slots stale, matching upstream's own (never-nulled) arrays, and by changing `remove` to clone
+the value it returns instead of taking it (which independently zeroed the slot a second way).
+
+**2 — `forEach` in both the fuzz spec and the napi bridge advanced its pointer before the callback
+ran, where upstream's own loop advances after.** Reused the `Sequence`/`CursorState` machinery built
+for the lazy `keys`/`values`/`entries` iterators — correct for them, because their closures advance
+before ever returning control to the caller, which is NOT how `forEach`'s callback-then-advance loop
+body works. Found by the differential fuzzer's first campaign against this grammar: a `$forEach`
+program that promotes an entry mid-walk disagreed on the third callback invocation. Fixed by
+`ForEachWalk` (`mnemonist_core::structures::lru_cache`), which splits "read" from "advance" into two
+calls so the caller's mutation always lands between them. `test/lru-cache.js`'s own `forEach` block
+never mutates from inside its callback, so gate 4 could not have found this either.
+
+**Both defects are pinned**: three Rust unit tests for the first
+(`crates/mnemonist-core/src/structures/lru_cache.rs`), and a checked-in proptest regression seed
+with a provenance header for the second (`crates/difffuzz/proptest-regressions/lru-cache.txt`).
+
+### Falsification (gate 6) — breaking recency-on-`get`, not storage
+
+For an LRU the sharp target is the recency bookkeeping, not the store, so the sabotage was
+`LruCache::get` with its `splay_on_top` call commented out — reads still return the right value,
+they just stop promoting anything. Named before running: the last assertion of
+`reproduces_the_upstream_walkthrough` (`entries(&cache)` after `cache.get("four")`), and the
+equivalent line in `test/lru-cache.js`.
+
+**All three instruments caught it, independently:** the named Rust assertion went red exactly where
+predicted; the original suite dropped from 88 passing to 72 passing / 16 failing; and the
+differential fuzzer found a divergence in 74 operations and 0.4 seconds, minimised to nine ops,
+disagreeing on `head`/`tail` immediately after a `get`. Reverted; confirmed green at all three again.
+Nothing here was found to be blind.

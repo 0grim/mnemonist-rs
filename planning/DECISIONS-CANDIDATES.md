@@ -1163,3 +1163,83 @@ letting the temporary outlive the call.
 **Verify:** `tests/boundary/heap.js` — "should not hold a RefCell borrow across the JS its own
 peek() runs", and "should not run ANY user JavaScript from clear()", which asserts the cause rather
 than the symptom.
+
+### D-89 — `delete`/`remove` leave `this.K[pointer]`/`this.V[pointer]` stale, never nulled
+**Status:** CONFIRMED · **Category:** behavioural · **Divergence:** no
+**Upstream:** `LRUCacheWithDelete.prototype.delete`/`.remove` only splice the linked list and record
+the freed pointer in `this.deleted`; neither ever touches `this.K[pointer]` or `this.V[pointer]`.
+Confirmed against `~/upstream-mnemonist/lru-cache-with-delete.js`.
+**Port:** an earlier version of `LruCache::unlink` set both slots to `None`. A
+`keys()`/`values()`/`entries()`/`forEach` walk whose frozen bound had not yet reached a pointer,
+when a `delete` (or an interleaved op, for the lazy iterators) unlinked exactly that pointer, then
+hit `Sequence::slot`'s `.expect("a pointer reachable from head within size steps is always live")`
+— now false — and **panicked**. Fixed by not nulling either slot in `unlink`, and by changing
+`remove` to `.clone()` the value it returns (requiring `V: Clone` on that one method only) instead
+of `.take()`-ing it, which independently zeroed the slot a second way.
+**Rationale:** a port that defensively clears a slot upstream leaves alone is not "safer", it is a
+different, undocumented contract — and here it turned a silent stale read into a hard crash for a
+pattern (an open walk, a delete underneath it) upstream itself does not guard against either. See
+`docs/modules/lru-cache.md`'s "Bugs this found".
+**Verify:** `crates/mnemonist-core/src/structures/lru_cache.rs` — three unit tests, including one
+confirming that a freed pointer *reused* before a stale walk reaches it correctly surfaces the new
+occupant (upstream's own algorithm cannot tell "stale" from "reused" apart either).
+
+### D-90 — `forEach` is `ForEachWalk`, not `Sequence`/`CursorState`
+**Status:** CONFIRMED · **Category:** architecture · **Divergence:** no
+**Upstream:** `forEach`'s loop body calls the callback and only THEN reads
+`pointer = forward[pointer]` — one statement later, not before. `keys`/`values`/`entries`'s own
+lazy-iterator closures do the opposite: they advance their internal pointer, THEN return control to
+whatever called `.next()`.
+**Port:** the fuzz spec's `$forEach` handling and the napi bridge's `for_each_entries` both used to
+open an `Entries` walk via `Sequence`/`CursorState`, which advances eagerly — correct for the three
+lazy iterators, wrong for `forEach`. A callback that promotes (splays to the front) the very pointer
+the walk is about to visit next observed a stale successor, because the walk had already captured
+the old `forward[pointer]` before the callback ran.
+**Rationale:** one generic walk cannot serve two different timings; `ForEachWalk` (`current()`/
+`advance()` as two separate calls) is the shape that lets the caller's mutation land between them,
+matching upstream's loop body statement for statement.
+**Verify:** `crates/difffuzz/proptest-regressions/lru-cache.txt`'s checked-in seed (provenance
+header explains what it found); `docs/modules/lru-cache.md`'s "Bugs this found".
+
+### D-91 — the object-backed pair's index key is restricted to what `JsKey` classifies
+**Status:** CONFIRMED · **Category:** scope · **Divergence:** yes
+**Upstream:** `this.items[key] = pointer` runs `key` through JS's full `ToPropertyKey`, which
+coerces an object argument via `toString`/`valueOf`/`Symbol.toPrimitive`.
+**Port:** `property_key_of` (`mnemonist_napi::lru_cache`) only handles the five primitive shapes
+`JsKey` already classifies (`undefined`, `null`, booleans, numbers, strings); an object key is
+rejected before it gets there.
+**Rationale:** `JsKey` was built for the `Map`-backed pair (and for `default-map`), and no test in
+`test/lru-cache.js` ever supplies an object key to either family. Implementing the general
+`ToPropertyKey` object-coercion path for territory nothing exercises would be unverifiable scope.
+**Verify:** `docs/modules/lru-cache.md`, "What upstream does NOT test", gap 5.
+
+### D-92 — the fuzz grammar never narrows a stored key through an `ArrayClass`
+**Status:** CONFIRMED · **Category:** scope · **Divergence:** no (a coverage gap, not a behavioural one)
+**Problem:** `mnemonist_core::structures::lru_cache::LruCache::insert_new` re-derives an evicted
+entry's index key from its *stored* `K` via `to_index`, which can disagree with the index key it was
+originally inserted under when a `Keys` array class narrows the stored value (documented in that
+module's own docs and pinned by a Rust unit test). The four fuzz specs' `to_index` and `index_of`
+are the literal same function, because no `ArrayClass` is ever generated — so this gap is
+*unreachable by the fuzz grammar, by construction*, not merely untested by luck.
+**Rationale:** modelling `ArrayClass` narrowing in the fuzzer would require generating a second
+constructor argument shape this family's grammar does not otherwise need, for one gap already pinned
+by a targeted Rust unit test. Stated rather than left to be assumed found.
+**Verify:** `crates/mnemonist-core/src/structures/lru_cache.rs`'s
+`eviction_re_derives_the_index_key_from_the_stored_key_and_can_leave_it_stale`.
+
+### D-93 — the `Map`-backed pair's fuzz spec omits `items` from `observations()`
+**Status:** CONFIRMED · **Category:** tooling · **Divergence:** no
+**Problem:** upstream's `this.items` for `lru-map`/`lru-map-with-delete` is a real `Map`, which
+`fuzz/oracle.js`'s `encode` renders as an ORDER-SENSITIVE list (`{"$map": [...]}`).
+`mnemonist_core`'s own index is a plain `std::collections::HashMap`, whose iteration order has no
+relationship to insertion order and would drift from a real `Map`'s on nearly every operation.
+**Port:** the `lru-map`/`lru-map-with-delete` fuzz specs compare `capacity`/`size`/`head`/`tail`
+only; the object-backed pair's `items` (a plain object, encoded as an order-INDEPENDENT JSON object)
+is compared in full.
+**Rationale:** comparing the `Map`-backed `items` in full would manufacture a divergence out of an
+implementation detail — which HashMap the Rust standard library happens to iterate in what order —
+rather than finding one. This is exactly the same judgement call `mnemonist_napi::lru_map`'s real
+bridge already made for the identical reason (its own `items` getter returns `{size: N}, not a full
+`Map` proxy).
+**Verify:** `crates/difffuzz/src/modules/lru_cache.rs`'s module docs, "`items`, and the one
+observation deliberately left out".
