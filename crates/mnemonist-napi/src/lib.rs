@@ -68,6 +68,13 @@ pub mod bi_map;
 pub mod bk_tree;
 pub mod fuzzy_map;
 
+// Appended at the end, never inserted: this file is a shared registry edited
+// by several agents at once (CLAUDE.md, Git).
+pub mod binary_search;
+pub mod hash_tables;
+pub mod merge;
+pub mod typed_arrays;
+
 #[napi]
 pub fn ping() -> &'static str {
     "pong"
