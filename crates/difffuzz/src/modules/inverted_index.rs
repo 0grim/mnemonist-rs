@@ -45,11 +45,27 @@
 //! same reasoning as `default-map`'s `items`).
 
 use mnemonist_core::map::MapCursor;
-use mnemonist_core::structures::inverted_index::{DocumentsCursor, InvertedIndex};
+use mnemonist_core::structures::inverted_index::{DocumentsCursor, InvertedIndex, TokensCursor};
 use proptest::prelude::*;
 use serde_json::{json, Value};
 
 use crate::spec::{for_each_strategy, ModuleSpec, Op};
+
+/// Walk the index's current `mapping` in first-seen order, applying `visit`
+/// to each `(token, postings)` pair — used by [`InvertedIndexSpec::observe`]
+/// and the grammar self-check, neither of which needs a persistent cursor
+/// (both always want the WHOLE map, right now).
+fn for_each_mapping_entry(
+    index: &InvertedIndex<Vec<String>, String>,
+    mut visit: impl FnMut(&str, &[usize]),
+) {
+    let mapping = index.mapping();
+    let mut cursor = MapCursor::open();
+
+    while let Some((token, postings)) = cursor.step(&mapping) {
+        visit(token, postings);
+    }
+}
 
 pub const REGRESSIONS: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -85,9 +101,11 @@ fn decode_tokens(value: &Value) -> Vec<String> {
 }
 
 /// One of the two cursor shapes this module has -- see the module docs.
+/// Both are self-contained (each captures its own `Rc` clone of the array/map
+/// object it walks), so neither needs the `Instance`'s own `index` to step.
 enum FuzzCursor {
-    Documents(DocumentsCursor),
-    Tokens(MapCursor),
+    Documents(DocumentsCursor<Vec<String>>),
+    Tokens(TokensCursor<String>),
 }
 
 pub struct Instance {
@@ -177,15 +195,13 @@ impl ModuleSpec for InvertedIndexSpec {
             }
             "$next" => match instance.cursor.as_mut() {
                 None => json!({"$noIterator": true}),
-                Some(FuzzCursor::Documents(cursor)) => match cursor.step(instance.index.items()) {
+                Some(FuzzCursor::Documents(cursor)) => match cursor.step() {
                     None => json!({"done": true, "value": {"$undefined": true}}),
                     Some(doc) => json!({"done": false, "value": doc}),
                 },
-                Some(FuzzCursor::Tokens(cursor)) => match cursor.step(instance.index.mapping()) {
+                Some(FuzzCursor::Tokens(cursor)) => match cursor.step() {
                     None => json!({"done": true, "value": {"$undefined": true}}),
-                    Some((token, _postings)) => {
-                        json!({"done": false, "value": token})
-                    }
+                    Some(token) => json!({"done": false, "value": token}),
                 },
             },
             // `Array.from(instance)` — the collection's `Symbol.iterator`,
@@ -195,7 +211,7 @@ impl ModuleSpec for InvertedIndexSpec {
                 let mut cursor = instance.index.documents();
                 let mut docs = Vec::new();
 
-                while let Some(doc) = cursor.step(instance.index.items()) {
+                while let Some(doc) = cursor.step() {
                     docs.push(json!(doc));
                 }
 
@@ -207,7 +223,7 @@ impl ModuleSpec for InvertedIndexSpec {
                 let mut cursor = instance.index.for_each();
                 let mut seen = Vec::new();
 
-                while let Some(doc) = cursor.step(instance.index.items()) {
+                while let Some(doc) = cursor.step() {
                     seen.push(json!(doc));
                 }
 
@@ -226,11 +242,9 @@ impl ModuleSpec for InvertedIndexSpec {
             .collect();
 
         let mut mapping_entries = Vec::new();
-        let mut cursor = MapCursor::open();
-
-        while let Some((token, postings)) = cursor.step(instance.index.mapping()) {
+        for_each_mapping_entry(&instance.index, |token, postings| {
             mapping_entries.push(json!([token, postings]));
-        }
+        });
 
         json!({
             "size": instance.index.size(),
@@ -285,13 +299,12 @@ mod tests {
                 total_docs += 1;
             }
 
-            let mut cursor = MapCursor::open();
-            while let Some((_token, postings)) = cursor.step(instance.index.mapping()) {
+            for_each_mapping_entry(&instance.index, |_token, postings| {
                 total_postings += 1;
                 if postings.len() > 1 {
                     multi_doc_postings += 1;
                 }
-            }
+            });
         }
 
         assert!(

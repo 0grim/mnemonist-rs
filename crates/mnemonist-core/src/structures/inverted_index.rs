@@ -31,11 +31,11 @@
 //! delete-free map that upstream itself does not have either (`mapping` is a
 //! bare `new Map()`, the general-purpose one).
 //!
-//! # `documents()` is the OTHER cursor shape this project has, `values()` over a frozen length
+//! # `documents()`: a frozen length, over a captured ARRAY OBJECT — not a re-read of `self.items`
 //!
 //! ```js
 //! InvertedIndex.prototype.documents = function() {
-//!   var documents = this.items, l = documents.length, i = 0;
+//!   var documents = this.items, l = documents.length, i = 0;   // captures the ARRAY, once
 //!   return new Iterator(function() {
 //!     if (i >= l) return {done: true};
 //!     var value = documents[i++];
@@ -44,19 +44,58 @@
 //! };
 //! ```
 //!
-//! This is [`crate::cursor::Sequence`]'s exact shape — a length frozen at
-//! creation, elements read live — except for one simplification that is
-//! sound *because* of what this module's public API actually allows:
-//! `this.items` only ever grows (there is no `delete`/`remove` anywhere in
-//! `inverted-index.js`), so an index below the frozen length can **never**
-//! fail to resolve. [`crate::cursor::Step::Gap`] cannot happen here, so
-//! [`DocumentsCursor`] is a small dedicated cursor rather than a
+//! `var documents = this.items` captures a reference to the array *object*
+//! upstream's `clear` is about to rebind, not a promise to keep re-reading
+//! `this.items`. `InvertedIndex.prototype.clear` is `this.items = [];` — a
+//! **new** array, exactly like `Queue`/`Stack`'s own `this.items = []` — so
+//! an open `documents()` cursor is invisible to a `clear()` that happens
+//! after it opens: it goes on reading the *old*, now-orphaned array, which
+//! `clear` never touches. Confirmed against Node 24.18.1: opening a cursor,
+//! calling `clear()`, then calling `.next()` again still yields the
+//! pre-clear documents. A first cut of this port re-read `self.items`
+//! (a plain `Vec`) on every step instead of capturing the array object,
+//! which is indistinguishable right up until a `clear()` happens between two
+//! steps of an open cursor — where it panics on an out-of-bounds index
+//! instead of reading the detached array, because the *live* `Vec` had
+//! genuinely shrunk to zero under a frozen length that assumed it never
+//! would. Found by `crates/difffuzz/src/modules/inverted_index.rs`'s very
+//! first campaign. Fixed by making [`InvertedIndex::items`] an
+//! `Rc<RefCell<Vec<Doc>>>` — the exact shape `crate::structures::queue`'s
+//! own `Items<T>` already uses for the identical reason — and having
+//! [`DocumentsCursor`] capture a clone of that `Rc` at
+//! [`InvertedIndex::documents`]/[`InvertedIndex::for_each`] time, so `clear`
+//! rebinding the field never touches what an open cursor already holds.
+//!
+//! Once the array is captured this way, the frozen-length half of
+//! [`crate::cursor::Sequence`] is still sound: `this.items` never shrinks
+//! *in place* (there is no `delete`/`remove` anywhere in
+//! `inverted-index.js`; `clear` rebinds rather than truncates), so an index
+//! below the frozen length, against the array actually captured, can
+//! **never** fail to resolve. [`crate::cursor::Step::Gap`] cannot happen
+//! here, so [`DocumentsCursor`] is a small dedicated cursor rather than a
 //! `Sequence` impl that would have to invent a `Gap` branch nothing can ever
 //! reach — the same judgement call `default_map.rs`'s module docs make for
-//! `MapCursor` not being `Sequence`, applied in the other direction: this one
-//! *would* fit `Sequence`, but doing so would force `Doc: Clone` (`Sequence::
-//! Item` is returned by value) for a structure that never needs to hand back
-//! anything but a borrow.
+//! `MapCursor` not being `Sequence`. It does need `Doc: Clone`, though,
+//! exactly as `Queue`/`Stack`'s cursors do: a `Ref` into the captured
+//! `RefCell` cannot outlive the borrow that produced it, so a step hands
+//! back an owned clone rather than a reference into the array.
+//!
+//! # `tokens()` needs the identical fix, for the identical reason
+//!
+//! `InvertedIndex.prototype.clear` is
+//! `this.items = []; this.mapping = new Map(); this.size = 0; this.dimension = 0;`
+//! — `mapping` is REBOUND too, unlike `default-map`'s own `clear`, which
+//! calls `this.items.clear()` on the SAME `Map` (see `default_map.rs`'s
+//! module docs; that difference is exactly why `OrderedMap::clear` mutates
+//! in place — it is right for `default-map` and every other T3 module, and
+//! would have been wrong here). Confirmed against Node 24.18.1: a `tokens()`
+//! cursor opened before `clear()` goes on yielding the pre-clear tokens
+//! after it, same as `documents()`. So [`InvertedIndex::mapping`] is also an
+//! `Rc<RefCell<_>>` ([`Mapping`]), `clear` rebinds it, and
+//! [`InvertedIndex::tokens`] hands back a dedicated [`TokensCursor`] that
+//! captures the `Rc` the same way [`DocumentsCursor`] captures `items` —
+//! `crate::map::MapCursor` itself is reused for the actual walk, but it is
+//! no longer handed a live `&OrderedMap` by the caller every step.
 //!
 //! # B-240 — `forEach` never calls its callback, regardless of how many documents are stored
 //!
@@ -67,11 +106,26 @@
 //! against it is a no-op by construction rather than a hand-written empty
 //! callback list standing in for the same effect through a different route.
 
+use std::cell::RefCell;
 use std::collections::HashSet;
 use std::hash::Hash;
+use std::rc::Rc;
 
 use crate::map::{MapCursor, OrderedMap};
 use crate::utils::merge::intersection_unique_two;
+
+/// The shared backing store: the Rust half of `this.items`. `Rc<RefCell<_>>`
+/// rather than a bare `Vec` so that `clear` can **rebind** it — upstream's
+/// `this.items = [];` — while an already-open [`DocumentsCursor`] keeps the
+/// `Rc` clone it captured and goes on reading the old, now-detached array.
+/// See the module docs.
+type Items<Doc> = Rc<RefCell<Vec<Doc>>>;
+
+/// The Rust half of `this.mapping`, for the identical reason [`Items`]
+/// exists: `clear` rebinds `this.mapping = new Map()` too, and an
+/// already-open [`TokensCursor`] must keep reading the old, now-detached
+/// map. See the module docs.
+type Mapping<Tok> = Rc<RefCell<OrderedMap<Tok, Vec<usize>>>>;
 
 /// Upstream's `InvertedIndex`.
 ///
@@ -80,8 +134,8 @@ use crate::utils::merge::intersection_unique_two;
 /// because tokens are `OrderedMap` keys and because a document's own tokens
 /// are deduplicated against each other on `add` (upstream's `new Set()`).
 pub struct InvertedIndex<Doc, Tok> {
-    items: Vec<Doc>,
-    mapping: OrderedMap<Tok, Vec<usize>>,
+    items: Items<Doc>,
+    mapping: Mapping<Tok>,
     size: usize,
 }
 
@@ -94,16 +148,19 @@ impl<Doc, Tok> Default for InvertedIndex<Doc, Tok> {
 impl<Doc, Tok> InvertedIndex<Doc, Tok> {
     pub fn new() -> Self {
         Self {
-            items: Vec::new(),
-            mapping: OrderedMap::new(),
+            items: Rc::new(RefCell::new(Vec::new())),
+            mapping: Rc::new(RefCell::new(OrderedMap::new())),
             size: 0,
         }
     }
 
-    /// Upstream's `clear`.
+    /// Upstream's `clear` — `this.items = []; this.mapping = new Map();`
+    /// REBINDS both rather than truncating either in place, which is what
+    /// detaches an already-open `documents()`/`tokens()`/`forEach` cursor
+    /// from them. See the module docs.
     pub fn clear(&mut self) {
-        self.items.clear();
-        self.mapping.clear();
+        self.items = Rc::new(RefCell::new(Vec::new()));
+        self.mapping = Rc::new(RefCell::new(OrderedMap::new()));
         self.size = 0;
     }
 
@@ -121,24 +178,27 @@ impl<Doc, Tok> InvertedIndex<Doc, Tok> {
     /// read straight off `mapping.len()` is exactly equivalent and cannot
     /// drift the way `DefaultMap.size` does (B-40).
     pub fn dimension(&self) -> usize {
-        self.mapping.len()
+        self.mapping.borrow().len()
     }
 
-    /// The stored documents, in insertion order — upstream's `this.items`.
-    pub fn items(&self) -> &[Doc] {
-        &self.items
+    /// The stored documents, in insertion order — upstream's `this.items`,
+    /// as it is **right now** (not any cursor's captured snapshot of it).
+    pub fn items(&self) -> std::cell::Ref<'_, Vec<Doc>> {
+        self.items.borrow()
     }
 
-    /// The token → posting-list index — upstream's `this.mapping`.
-    pub fn mapping(&self) -> &OrderedMap<Tok, Vec<usize>> {
-        &self.mapping
+    /// The token → posting-list index — upstream's `this.mapping`, as it is
+    /// **right now** (not any cursor's captured snapshot of it).
+    pub fn mapping(&self) -> std::cell::Ref<'_, OrderedMap<Tok, Vec<usize>>> {
+        self.mapping.borrow()
     }
 
     /// A cursor over the stored documents — upstream's `documents()`. See
-    /// the module docs for why this is [`DocumentsCursor`] rather than
-    /// [`crate::cursor::Sequence`].
-    pub fn documents(&self) -> DocumentsCursor {
-        DocumentsCursor::open(self.items.len())
+    /// the module docs for why this captures the array object (an `Rc`
+    /// clone) rather than freezing only a length against a re-read of
+    /// `self.items`.
+    pub fn documents(&self) -> DocumentsCursor<Doc> {
+        DocumentsCursor::open(Rc::clone(&self.items))
     }
 
     /// Upstream's `forEach`.
@@ -185,18 +245,18 @@ impl<Doc, Tok> InvertedIndex<Doc, Tok> {
     /// frozen at length **zero** unconditionally, so stepping it always
     /// yields `None` immediately: the loop bound really is zero here, not a
     /// value merely rendered as if it were.
-    pub fn for_each(&self) -> DocumentsCursor {
-        DocumentsCursor::open(0)
+    pub fn for_each(&self) -> DocumentsCursor<Doc> {
+        DocumentsCursor::open_at_zero(Rc::clone(&self.items))
     }
 }
 
 impl<Doc, Tok: Hash + Eq + Clone> InvertedIndex<Doc, Tok> {
     /// A cursor over the distinct tokens seen, in the order they were first
-    /// added — upstream's `tokens()`, `this.mapping.keys()`. Step against
-    /// [`InvertedIndex::mapping`] with [`MapCursor::step`] and project out
-    /// the key half.
-    pub fn tokens(&self) -> MapCursor {
-        MapCursor::open()
+    /// added — upstream's `tokens()`, `this.mapping.keys()`. Captures the
+    /// `mapping` object the same way [`InvertedIndex::documents`] captures
+    /// `items` — see the module docs on why a live re-read is not enough.
+    pub fn tokens(&self) -> TokensCursor<Tok> {
+        TokensCursor::open(Rc::clone(&self.mapping))
     }
 
     /// Upstream's `add`.
@@ -213,27 +273,28 @@ impl<Doc, Tok: Hash + Eq + Clone> InvertedIndex<Doc, Tok> {
     pub fn add(&mut self, doc: Doc, tokens: Vec<Tok>) {
         self.size += 1;
 
-        let key = self.items.len();
-        self.items.push(doc);
+        let key = self.items.borrow().len();
+        self.items.borrow_mut().push(doc);
 
         let mut done: HashSet<Tok> = HashSet::new();
+        let mut mapping = self.mapping.borrow_mut();
 
         for token in tokens {
             if !done.insert(token.clone()) {
                 continue;
             }
 
-            match self.mapping.get_mut(&token) {
+            match mapping.get_mut(&token) {
                 Some(postings) => postings.push(key),
                 None => {
-                    self.mapping.set(token, vec![key]);
+                    mapping.set(token, vec![key]);
                 }
             }
         }
     }
 }
 
-impl<Doc, Tok: Hash + Eq + Clone> InvertedIndex<Doc, Tok> {
+impl<Doc: Clone, Tok: Hash + Eq + Clone> InvertedIndex<Doc, Tok> {
     /// Upstream's `get`: an AND query over the tokenized `query`.
     ///
     /// `query_tokens` is what the bridge's `queryTokenizer(query)` already
@@ -248,12 +309,20 @@ impl<Doc, Tok: Hash + Eq + Clone> InvertedIndex<Doc, Tok> {
     /// intersection_unique_two`] called in the identical left-to-right
     /// order, not the k-way form `mnemonist-core::utils::merge` also
     /// provides (upstream never uses that one here either).
-    pub fn get(&self, query_tokens: &[Tok]) -> Vec<&Doc> {
+    ///
+    /// Returns owned clones rather than borrows: `self.items` is behind a
+    /// `RefCell` (see the module docs on why), so a borrow of it cannot
+    /// outlive this call. `Doc: Clone` is `JsSlot` at the bridge, whose
+    /// clone is a cheap `Rc` bump that preserves the caller-visible identity
+    /// upstream's own reference return has.
+    pub fn get(&self, query_tokens: &[Tok]) -> Vec<Doc> {
         if self.size == 0 || query_tokens.is_empty() {
             return Vec::new();
         }
 
-        let first = match self.mapping.get(&query_tokens[0]) {
+        let mapping = self.mapping.borrow();
+
+        let first = match mapping.get(&query_tokens[0]) {
             Some(postings) if !postings.is_empty() => postings.clone(),
             _ => return Vec::new(),
         };
@@ -261,7 +330,7 @@ impl<Doc, Tok: Hash + Eq + Clone> InvertedIndex<Doc, Tok> {
         let mut results = first;
 
         for token in &query_tokens[1..] {
-            match self.mapping.get(token) {
+            match mapping.get(token) {
                 Some(postings) if !postings.is_empty() => {
                     results = intersection_unique_two(&results, postings);
                 }
@@ -269,7 +338,9 @@ impl<Doc, Tok: Hash + Eq + Clone> InvertedIndex<Doc, Tok> {
             }
         }
 
-        results.iter().map(|&index| &self.items[index]).collect()
+        let items = self.items.borrow();
+
+        results.iter().map(|&index| items[index].clone()).collect()
     }
 }
 
@@ -292,37 +363,99 @@ where
     }
 }
 
-/// A stateful, non-restartable walk over `0..len`, freezing `len` once at
-/// [`DocumentsCursor::open`] and never re-reading it.
+/// A stateful, non-restartable walk over `0..len`, against a CAPTURED array
+/// object — upstream's `var documents = this.items, l = documents.length`.
 ///
-/// See the module docs for why this is a dedicated cursor rather than
+/// See the module docs for why the array itself, not just its length, has
+/// to be captured (an `Rc` clone, so `clear()` rebinding
+/// `InvertedIndex::items` never touches what this cursor already holds),
+/// and for why this is a dedicated cursor rather than
 /// [`crate::cursor::Sequence`]: this walk can never open a
 /// [`crate::cursor::Step::Gap`] (nothing before `len` can ever stop
-/// resolving, because nothing here ever removes a document), so there is no
-/// third state to model, and no need to return owned elements just to fit
-/// the general trait's shape.
-#[derive(Debug, Clone, Copy)]
-pub struct DocumentsCursor {
+/// resolving against the array actually captured, because nothing mutates
+/// that specific array in place once captured), so there is no third state
+/// to model. It does need `Doc: Clone`: a `Ref` into the captured
+/// `RefCell` cannot outlive the borrow that produces it, so a step hands
+/// back an owned clone rather than a reference into the array — the same
+/// trade [`crate::structures::queue::Queue`]'s own cursor makes.
+pub struct DocumentsCursor<Doc> {
+    items: Items<Doc>,
     ordinal: usize,
     len: usize,
 }
 
-impl DocumentsCursor {
-    fn open(len: usize) -> Self {
-        Self { ordinal: 0, len }
+impl<Doc> DocumentsCursor<Doc> {
+    /// Freeze `len` at the array's length right now, and capture the array
+    /// itself — upstream's `var documents = this.items, l = documents.length`.
+    fn open(items: Items<Doc>) -> Self {
+        let len = items.borrow().len();
+
+        Self {
+            items,
+            ordinal: 0,
+            len,
+        }
     }
 
-    /// Advance one step, reading live against `items` — upstream's
-    /// `documents[i++]`.
-    pub fn step<'a, Doc>(&mut self, items: &'a [Doc]) -> Option<&'a Doc> {
+    /// [`InvertedIndex::for_each`]'s cursor: the array is captured (so a
+    /// `clear()` mid-walk still cannot panic this), but the frozen length is
+    /// zero unconditionally — see B-240 in the module docs.
+    fn open_at_zero(items: Items<Doc>) -> Self {
+        Self {
+            items,
+            ordinal: 0,
+            len: 0,
+        }
+    }
+
+    /// Advance one step, reading live against the CAPTURED array — upstream's
+    /// `documents[i++]`, where `documents` is that same captured reference.
+    pub fn step(&mut self) -> Option<Doc>
+    where
+        Doc: Clone,
+    {
         if self.ordinal >= self.len {
             return None;
         }
 
-        let item = &items[self.ordinal];
+        let item = self.items.borrow()[self.ordinal].clone();
         self.ordinal += 1;
 
         Some(item)
+    }
+}
+
+/// A stateful, non-restartable walk over the distinct tokens seen, against a
+/// CAPTURED map object — see the module docs' section on why `tokens()`
+/// needs the identical fix `documents()` does. Wraps
+/// [`crate::map::MapCursor`], the shared `Map`-walk primitive, over an
+/// `Rc` clone of `mapping` rather than a live re-read of
+/// [`InvertedIndex::mapping`].
+pub struct TokensCursor<Tok> {
+    mapping: Mapping<Tok>,
+    state: MapCursor,
+}
+
+impl<Tok> TokensCursor<Tok> {
+    fn open(mapping: Mapping<Tok>) -> Self {
+        Self {
+            mapping,
+            state: MapCursor::open(),
+        }
+    }
+
+    /// Advance one step, reading live against the CAPTURED map. Returns the
+    /// token only (the key half of [`crate::map::MapCursor::step`]'s pair) —
+    /// upstream's `tokens()` is `this.mapping.keys()`, not `.entries()`.
+    pub fn step(&mut self) -> Option<Tok>
+    where
+        Tok: Clone,
+    {
+        let mapping = self.mapping.borrow();
+
+        self.state
+            .step(&mapping)
+            .map(|(token, _postings)| token.clone())
     }
 }
 
@@ -344,11 +477,11 @@ mod tests {
         index
     }
 
-    fn drain_documents(index: &InvertedIndex<String, String>) -> Vec<&String> {
+    fn drain_documents(index: &InvertedIndex<String, String>) -> Vec<String> {
         let mut cursor = index.documents();
         let mut out = Vec::new();
 
-        while let Some(doc) = cursor.step(index.items()) {
+        while let Some(doc) = cursor.step() {
             out.push(doc);
         }
 
@@ -359,8 +492,8 @@ mod tests {
         let mut cursor = index.tokens();
         let mut out = Vec::new();
 
-        while let Some((token, _)) = cursor.step(index.mapping()) {
-            out.push(token.clone());
+        while let Some(token) = cursor.step() {
+            out.push(token);
         }
 
         out
@@ -401,19 +534,15 @@ mod tests {
 
         assert_eq!(
             index.get(&tokenize("c")),
-            vec![
-                &docs[0].to_owned(),
-                &docs[1].to_owned(),
-                &docs[2].to_owned()
-            ]
+            vec![docs[0].to_owned(), docs[1].to_owned(), docs[2].to_owned()]
         );
         assert_eq!(
             index.get(&tokenize("b c")),
-            vec![&docs[0].to_owned(), &docs[1].to_owned()]
+            vec![docs[0].to_owned(), docs[1].to_owned()]
         );
-        assert_eq!(index.get(&tokenize("a b")), vec![&docs[0].to_owned()]);
-        assert_eq!(index.get(&tokenize("a d")), Vec::<&String>::new());
-        assert_eq!(index.get(&tokenize("e")), vec![&docs[2].to_owned()]);
+        assert_eq!(index.get(&tokenize("a b")), vec![docs[0].to_owned()]);
+        assert_eq!(index.get(&tokenize("a d")), Vec::<String>::new());
+        assert_eq!(index.get(&tokenize("e")), vec![docs[2].to_owned()]);
     }
 
     #[test]
@@ -427,7 +556,7 @@ mod tests {
         assert_eq!(via_from.size(), 2);
         assert_eq!(
             via_from.get(&tokenize("b")),
-            vec![&docs[0].to_owned(), &docs[1].to_owned()]
+            vec![docs[0].to_owned(), docs[1].to_owned()]
         );
     }
 
@@ -438,7 +567,7 @@ mod tests {
 
         assert_eq!(
             drain_documents(&index),
-            vec![&"a".to_owned(), &"b".to_owned(), &"c".to_owned()]
+            vec!["a".to_owned(), "b".to_owned(), "c".to_owned()]
         );
     }
 
@@ -462,7 +591,7 @@ mod tests {
 
         let mut cursor = index.for_each();
         assert_eq!(
-            cursor.step(index.items()),
+            cursor.step(),
             None,
             "the loop bound is zero, unconditionally"
         );
@@ -472,7 +601,63 @@ mod tests {
     fn b_240_holds_on_an_empty_index_too() {
         let index: InvertedIndex<String, String> = InvertedIndex::new();
         let mut cursor = index.for_each();
-        assert_eq!(cursor.step(index.items()), None);
+        assert_eq!(cursor.step(), None);
+    }
+
+    // ---- The `clear()`-detaches-a-cursor port defect the fuzzer found -----
+
+    /// The exact shape the differential fuzzer's first campaign panicked on:
+    /// a `documents()` cursor opened before a `clear()`, stepped after it.
+    /// An earlier cut of this module re-read `self.items` (a plain `Vec`)
+    /// against a length frozen from before the clear, and indexed straight
+    /// off the end of the now-empty vector. See the module docs.
+    #[test]
+    fn a_clear_between_two_steps_of_an_open_documents_cursor_does_not_panic_and_finishes_the_old_array(
+    ) {
+        let mut index = index_from(&["a b", "c d"]);
+        let mut cursor = index.documents();
+
+        assert_eq!(cursor.step(), Some(String::from("a b")));
+        index.clear();
+        assert_eq!(
+            cursor.step(),
+            Some(String::from("c d")),
+            "the cursor keeps reading the OLD, now-detached array, matching upstream"
+        );
+        assert_eq!(cursor.step(), None);
+    }
+
+    #[test]
+    fn a_clear_between_two_steps_of_an_open_for_each_walk_does_not_panic() {
+        // `for_each`'s cursor is frozen at length zero regardless (B-240), so
+        // this can never step at all -- but it must not panic either, since
+        // it now captures the array object the same way `documents()` does.
+        let mut index = index_from(&["a"]);
+        let mut cursor = index.for_each();
+
+        index.clear();
+        assert_eq!(cursor.step(), None);
+    }
+
+    /// The identical scenario, for `tokens()` rather than `documents()`:
+    /// upstream's `clear` also rebinds `this.mapping = new Map();`, so an
+    /// open `tokens()` cursor must keep reading the OLD map, not the fresh
+    /// empty one. Verified against Node 24.18.1 before writing this test.
+    #[test]
+    fn a_clear_between_two_steps_of_an_open_tokens_cursor_finishes_the_old_mapping() {
+        let mut index = index_from(&["a b", "c d"]);
+        let mut cursor = index.tokens();
+
+        assert_eq!(cursor.step(), Some(String::from("a")));
+        index.clear();
+        assert_eq!(
+            cursor.step(),
+            Some(String::from("b")),
+            "the cursor keeps reading the OLD, now-detached mapping, matching upstream"
+        );
+        assert_eq!(cursor.step(), Some(String::from("c")));
+        assert_eq!(cursor.step(), Some(String::from("d")));
+        assert_eq!(cursor.step(), None);
     }
 
     // ---- Everything else --------------------------------------------
@@ -480,13 +665,13 @@ mod tests {
     #[test]
     fn a_query_before_any_document_is_added_returns_nothing() {
         let index: InvertedIndex<String, String> = InvertedIndex::new();
-        assert_eq!(index.get(&[String::from("a")]), Vec::<&String>::new());
+        assert_eq!(index.get(&[String::from("a")]), Vec::<String>::new());
     }
 
     #[test]
     fn an_empty_query_returns_nothing() {
         let index = index_from(&["a b"]);
-        assert_eq!(index.get(&[]), Vec::<&String>::new());
+        assert_eq!(index.get(&[]), Vec::<String>::new());
     }
 
     #[test]
@@ -508,8 +693,8 @@ mod tests {
 
         assert_eq!(index.size(), 0);
         assert_eq!(index.dimension(), 0);
-        assert_eq!(index.get(&[String::from("a")]), Vec::<&String>::new());
-        assert_eq!(drain_documents(&index), Vec::<&String>::new());
+        assert_eq!(index.get(&[String::from("a")]), Vec::<String>::new());
+        assert_eq!(drain_documents(&index), Vec::<String>::new());
     }
 
     #[test]
@@ -517,12 +702,12 @@ mod tests {
         let mut index = index_from(&["a"]);
         let mut cursor = index.documents();
 
-        assert!(cursor.step(index.items()).is_some());
-        assert_eq!(cursor.step(index.items()), None);
+        assert!(cursor.step().is_some());
+        assert_eq!(cursor.step(), None);
 
         index.add("b".to_owned(), tokenize("b"));
         assert_eq!(
-            cursor.step(index.items()),
+            cursor.step(),
             None,
             "a cursor that reported done stays done even though items grew"
         );
@@ -533,19 +718,19 @@ mod tests {
         let mut index = index_from(&["a", "b"]);
         let mut cursor = index.documents();
 
-        assert_eq!(cursor.step(index.items()), Some(&"a".to_owned()));
+        assert_eq!(cursor.step(), Some("a".to_owned()));
         index.add("c".to_owned(), tokenize("c"));
         // The frozen length was 2 at `documents()`'s call time, so the
         // append is NOT visible -- this is the frozen-length half of the
         // `Sequence` shape, faithfully reproduced without `Sequence` itself.
-        assert_eq!(cursor.step(index.items()), Some(&"b".to_owned()));
-        assert_eq!(cursor.step(index.items()), None);
+        assert_eq!(cursor.step(), Some("b".to_owned()));
+        assert_eq!(cursor.step(), None);
     }
 
     #[test]
     fn get_only_matches_documents_containing_every_query_token() {
         let index = index_from(&["red car", "red bike", "blue car"]);
 
-        assert_eq!(index.get(&tokenize("red car")), vec![&"red car".to_owned()]);
+        assert_eq!(index.get(&tokenize("red car")), vec!["red car".to_owned()]);
     }
 }

@@ -31,7 +31,9 @@
 
 use std::cell::RefCell;
 
-use mnemonist_core::structures::inverted_index::{DocumentsCursor, InvertedIndex as CoreIndex};
+use mnemonist_core::structures::inverted_index::{
+    DocumentsCursor, InvertedIndex as CoreIndex, TokensCursor,
+};
 use napi::bindgen_prelude::*;
 use napi::sys;
 use napi_derive::napi;
@@ -242,13 +244,7 @@ impl JsInvertedIndex {
         let slot = JsSlot::new(&env, &query)?;
         let tokens = self.tokenize(&env, &self.query_tokenizer, slot)?;
 
-        Ok(self
-            .inner
-            .borrow()
-            .get(&tokens)
-            .into_iter()
-            .cloned()
-            .collect())
+        Ok(self.inner.borrow().get(&tokens))
     }
 
     /// Upstream's `forEach`. See the module docs and NOTES.md B-240: this
@@ -264,16 +260,13 @@ impl JsInvertedIndex {
         scope: Option<Unknown>,
     ) -> Result<()> {
         let index_object = this.object;
-        let mut cursor: DocumentsCursor = self.inner.borrow().for_each();
+        // Self-contained: captures its own `Rc` clone of `items`, so it needs
+        // no borrow of `self.inner` to step -- see the core module's docs on
+        // why `clear()` must not be able to invalidate it.
+        let mut cursor: DocumentsCursor<JsSlot> = self.inner.borrow().for_each();
         let mut position = 0u32;
 
-        let mut step = || {
-            let inner = self.inner.borrow();
-
-            cursor.step(inner.items()).cloned()
-        };
-
-        while let Some(doc) = step() {
+        while let Some(doc) = cursor.step() {
             let arguments = FnArgs::from((doc, position, index_object));
 
             match &scope {
@@ -289,36 +282,28 @@ impl JsInvertedIndex {
 
     /// A fresh cursor over the stored documents — upstream's `documents()`,
     /// and its `Symbol.iterator`.
+    ///
+    /// No `SharedReference` to `self.inner` is needed: `DocumentsCursor`
+    /// captures its own `Rc` clone of `items` at open time (see the core
+    /// module's docs), so the cursor is independent of `JsInvertedIndex`
+    /// once created -- exactly as upstream's own closure, which captures the
+    /// array object rather than `this`, is.
     #[napi]
-    pub fn documents(
-        &self,
-        env: Env,
-        this: Reference<JsInvertedIndex>,
-    ) -> Result<JsInvertedIndexDocuments> {
-        let start = self.inner.borrow().documents();
-        let source = this.share_with(env, |index| Ok(&index.inner))?;
-
-        Ok(JsInvertedIndexDocuments {
-            cursor: CellDocumentsCursor {
-                source,
-                state: start,
-            },
-        })
+    pub fn documents(&self) -> JsInvertedIndexDocuments {
+        JsInvertedIndexDocuments {
+            cursor: self.inner.borrow().documents(),
+        }
     }
 
     /// A fresh cursor over the distinct tokens seen, first-seen order —
-    /// upstream's `tokens()`, `this.mapping.keys()`.
+    /// upstream's `tokens()`, `this.mapping.keys()`. Same independence from
+    /// `self.inner` as [`JsInvertedIndex::documents`], for the identical
+    /// reason.
     #[napi]
-    pub fn tokens(
-        &self,
-        env: Env,
-        this: Reference<JsInvertedIndex>,
-    ) -> Result<JsInvertedIndexTokens> {
-        let source = this.share_with(env, |index| Ok(&index.inner))?;
-
-        Ok(JsInvertedIndexTokens {
-            cursor: crate::map_cursor::CellMapCursor::open(source, |core: &Core| core.mapping()),
-        })
+    pub fn tokens(&self) -> JsInvertedIndexTokens {
+        JsInvertedIndexTokens {
+            cursor: self.inner.borrow().tokens(),
+        }
     }
 
     /// `InvertedIndex.from(iterable, descriptor)`.
@@ -373,29 +358,11 @@ fn undefined_of(env: &Env) -> Result<Unknown<'_>> {
     Ok(unsafe { Unknown::from_raw_unchecked(env.raw(), raw) })
 }
 
-/// The JS half of [`DocumentsCursor`]: core walk state plus a live handle to
-/// a JS-owned parent. A plain `SharedReference` suffices — unlike
-/// `CellListCursor`/`CellMapCursor`, nothing about walking `items` needs
-/// re-entrancy protection, because `mnemonist_core::structures::inverted_index`
-/// has no operation that removes or replaces a document once added.
-struct CellDocumentsCursor<Owner: 'static> {
-    source: SharedReference<Owner, &'static RefCell<Core>>,
-    state: DocumentsCursor,
-}
-
-impl<Owner: 'static> CellDocumentsCursor<Owner> {
-    fn step(&mut self) -> Option<JsSlot> {
-        let inner = self.source.borrow();
-
-        self.state.step(inner.items()).cloned()
-    }
-}
-
 /// The cursor `InvertedIndex.prototype.documents()` hands out, and its
-/// `Symbol.iterator`.
+/// `Symbol.iterator`. Self-contained — see [`JsInvertedIndex::documents`].
 #[napi(iterator, js_name = "InvertedIndexDocuments")]
 pub struct JsInvertedIndexDocuments {
-    cursor: CellDocumentsCursor<JsInvertedIndex>,
+    cursor: DocumentsCursor<JsSlot>,
 }
 
 impl Generator for JsInvertedIndexDocuments {
@@ -413,10 +380,11 @@ impl Generator for JsInvertedIndexDocuments {
 }
 
 /// The cursor `InvertedIndex.prototype.tokens()` hands out —
-/// `this.mapping.keys()`, a real `Map` iterator.
+/// `this.mapping.keys()`, a real `Map` iterator. Self-contained — see
+/// [`JsInvertedIndex::tokens`].
 #[napi(iterator, js_name = "InvertedIndexTokens")]
 pub struct JsInvertedIndexTokens {
-    cursor: crate::map_cursor::CellMapCursor<JsInvertedIndex, Core, JsKey, Vec<usize>>,
+    cursor: TokensCursor<JsKey>,
 }
 
 impl Generator for JsInvertedIndexTokens {
@@ -425,7 +393,7 @@ impl Generator for JsInvertedIndexTokens {
     type Return = ();
 
     fn next(&mut self, _value: Option<()>) -> Option<JsKey> {
-        self.cursor.step(|key, _postings| key.clone())
+        self.cursor.step()
     }
 
     fn complete(&mut self, _value: Option<()>) -> Option<JsKey> {
