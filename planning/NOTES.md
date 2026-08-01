@@ -2282,3 +2282,60 @@ generated case in each instance. `fuzzy-multi-map`'s spec initially rendered `it
 `fuzz/oracle.js`'s generic `encode()` renders it as the nested `{items: {$map}, size, dimension}`
 shape its own enumerable properties are — diverged on case 0 of every run until fixed. Neither
 survived past the first campaign attempt; both are recorded in the fuzz specs' own doc comments.
+
+## fibonacci-heap (B-220..B-239 range)
+
+Full write-up: `docs/modules/fibonacci-heap.md`. `fibonacci-heap.js` (321 LOC) has **no
+`decreaseKey`, no `delete`, no `mark` field, no cut and no cascading cut anywhere in the source or
+its `.d.ts`** — grepped, not assumed. The public surface is `clear`, `push`, `peek`, `pop`,
+`inspect`, `.from`. This matters directly for this unit's fuzz campaign: cascading cuts cannot be
+reached by any grammar, however wide, because there is no operation upstream that could ever
+trigger one. Stated plainly rather than glossed over, per this unit's own brief.
+
+### B-220 — a comparator that `clear()`s the heap during the first `pop`'s `consolidate` leaves
+### `this.size` at `-1`, and the next `pop` then crashes
+
+`status: verified by tracing upstream's own execution model` (deterministic JS integer/falsy
+semantics, no runtime ambiguity to double-check against Node) · `fibonacci-heap.js`'s `pop`.
+
+`pop`'s tail is:
+
+```js
+if (z === z.right) { this.min = null; this.root = null; }
+else { this.min = z.right; consolidate(this); }
+this.size--;
+return z.item;
+```
+
+`this.size--` runs **after** `consolidate`, unlike `heap.js`'s `pop`, which decrements `size`
+*before* its sift (see `docs/modules/heap.md`'s D-70-adjacent note on that method). A comparator
+invoked from inside `consolidate` that calls `heap.clear()` — a legitimate re-entrant call, no more
+exotic than the `pushy`/`popper`/`clearer` factories `heap.js`'s own fuzz grammar already
+uses — sets `this.size = 0` mid-consolidate. The pending `this.size--` then computes `0 - 1`,
+i.e. **`-1`**, a real value JavaScript holds without complaint (there are no unsigned integers).
+
+The second half is the sharper one: `pop`'s own entry guard is `if (!this.size) return undefined;`,
+a **falsy** check, and `-1` is truthy in JavaScript. So the *next* `pop()` call does not see an
+"empty" heap — it proceeds to `var z = this.min;` (`null`, from the `clear()`) and then
+`if (z.child)`, which is `null.child`: a `TypeError: Cannot read properties of null (reading
+'child')`. Upstream crashes on the pop *after* the one that corrupted `size`, not on the corrupting
+one itself.
+
+`test/fibonacci-heap.js` never uses a mutating comparator at all (see "What upstream does NOT
+test" in the module doc), so gate 4 cannot reach this from either half.
+
+**Port:** `size` is `i64`, not `usize`, in `mnemonist_core::structures::fibonacci_heap`'s
+`FibonacciHeap` — matching `multi-set`'s D-163 precedent for the identical class of problem (a
+tracked counter that upstream's own arithmetic can drive to a state a "cleaner" derived value would
+never reach). `-1` is reproduced exactly. The follow-on crash is reproduced as a Rust panic (core
+has no exceptions) rather than a `Result::Err`; pinned by
+`a_pop_after_b_220s_negative_size_panics_matching_upstreams_null_dereference`
+(`#[should_panic]`), immediately below the test that pins the `-1` itself
+(`a_comparator_that_clears_the_heap_mid_pop_does_not_panic`).
+
+Found while writing this unit's own re-entrancy tests (the shape CLAUDE.md's brief for this unit
+named directly: "the comparator ... can mutate the heap mid-operation"), not by the differential
+fuzzer — the fuzz grammar does not generate a program long enough after a `clear()`-capable
+comparator's budget to specifically retrigger a *second* `pop` against the corrupted state; see
+`docs/modules/fibonacci-heap.md`'s "What we test in addition" for why this is stated as a native-
+test-only finding rather than claimed as fuzz coverage it does not have.

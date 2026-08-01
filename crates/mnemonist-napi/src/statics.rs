@@ -147,6 +147,9 @@ pub fn install_variadic_factories(exports: &mut Object, env: &Env) -> Result<()>
     // a merge conflict.
     crate::trie_map::install_trie_statics(exports, env)?;
 
+    // Appended at the end, never inserted, same reason as above.
+    crate::fibonacci_heap::install_fibonacci_heap_statics(exports, env)?;
+
     Ok(())
 }
 
