@@ -1980,3 +1980,65 @@ predicted; the original suite dropped from 88 passing to 72 passing / 16 failing
 differential fuzzer found a divergence in 74 operations and 0.4 seconds, minimised to nine ops,
 disagreeing on `head`/`tail` immediately after a `get`. Reverted; confirmed green at all three again.
 Nothing here was found to be blind.
+
+## multi-map, multi-set, fuzzy-multi-map (B-160..B-179 range)
+
+Full write-ups live in `docs/modules/multi-map.md`, `multi-set.md`, `fuzzy-multi-map.md`; this is
+the capture-log version. All three units' original suites pass unmodified (17 + 26 + 11 blocks, 91 +
+83 + 27 assertions), gate 6 falsified and reverted for each, six 60-90s fuzz campaigns (~4.7M ops,
+zero divergences) plus `grammar_self_check` tests giving direct counts of multi-value-key and
+drain-to-zero states reached.
+
+### B-160 — `multi-set`'s `#.set` on an existing item adds, it does not replace
+
+`status: verified by reading` (deterministic plain JS, no runtime ambiguity to double-check against
+Node) · `multi-set.js`'s `set`. `set.set('hello', 4); set.set('hello', 3);` gives multiplicity `7`,
+not `3` — the `else` branch that would replace only runs for a key not already present as a number;
+an existing one goes through `this.items.set(item, currentCount + count)`. `test/multi-set.js`'s own
+double-`.set` case never calls it twice with two *positive* counts (its second call is negative,
+taking the early delete branch instead), so gate 4 never touches this. Reproduced bug-for-bug.
+
+### B-161 — `multi-set`'s `#.delete` on an absent item corrupts `size` to `NaN` and reports `true`
+
+`status: verified by reading` · `multi-set.js`'s `delete`. The guard `if (count === 0) return
+false;` is meant to catch "item not present", but `this.items.get(item)` on a missing item is
+`undefined`, and `undefined === 0` is `false` in JS — so the guard is **dead code** (no live entry is
+ever exactly `0`; every write path here deletes an item outright instead of leaving a zero). Falls
+through to `this.size -= undefined` (`NaN`), `this.dimension--` unconditionally, a harmless no-op
+`items.delete`, and returns `true` regardless. This is the one that forced `MultiSet::dimension` to
+be a real tracked counter rather than derived from `items.len()` the way `multi-map`'s is — a
+derived counter would have silently *fixed* this bug instead of reproducing it, the same trap the
+bi-map counters (B-120) already taught this project once.
+
+### B-162 — `multi-set`'s `#.edit` never adjusts `dimension`, even when it removes a real key
+
+`status: verified by reading` · `multi-set.js`'s `edit`. When `b` already exists, `edit(a, b)`
+merges `a`'s multiplicity into `b` and deletes `a` — the real distinct-key count drops by one — but
+`this.dimension` is never touched by this method at all. `test/multi-set.js`'s own third `edit` case
+exercises exactly this shape (`set.add('c'); set.edit('b', 'c');`) but only reads `multiplicities()`
+afterwards, never `.dimension`, so gate 4 cannot see the drift. Reproduced bug-for-bug — `edit` does
+not touch the tracked counter either.
+
+### Two resource leaks in this port's own bridge, found and fixed — `fuzzy-multi-map`
+
+Not upstream bugs, no B-numbers; recorded because both were caught by watching stderr during gate 4,
+not by any assertion failing, which is worth remembering next time a suite reports "all green" — see
+`docs/modules/fuzzy-multi-map.md`'s "Bugs this found" for the full write-up. (1) `.from`'s collector
+retained every value up front, then the first draft resolved it back to a live view and re-retained
+it a second time before storing, leaking the first `napi_ref`. Fixed by `store_retained`, which takes
+the already-retained value directly. (2) `MultiMap::set_with` used to drop a `Set`-kind duplicate
+candidate silently on rejection; for a plain `JsKey` (`multi-map`'s own bridge) that's harmless, but
+for `fuzzy-multi-map`'s `Rc<RefCell<Retained>>` items it leaked the freshly-retained handle every
+time a genuine duplicate object was `.set()` a second time. Fixed by changing `set_with`'s return
+type to `Result<Option<V>, E>`, handing the rejected value back so the bridge can release it.
+
+### Two harness bugs in the fuzz specs themselves, found and fixed — `multi-set`, `fuzzy-multi-map`
+
+Also not port or upstream defects. `multi-set`'s spec initially echoed a fixed return value for
+`add`/`remove`/`edit` regardless of upstream's actual per-branch semantics (the sign-flip delegation
+between `add`/`remove`, and `edit`'s early `undefined` when `a` is absent) — caught by the very first
+generated case in each instance. `fuzzy-multi-map`'s spec initially rendered `items` as a flat
+`{$map: ...}`, but upstream's own `this.items` is a `MultiMap` *instance*, not a raw `Map`, so
+`fuzz/oracle.js`'s generic `encode()` renders it as the nested `{items: {$map}, size, dimension}`
+shape its own enumerable properties are — diverged on case 0 of every run until fixed. Neither
+survived past the first campaign attempt; both are recorded in the fuzz specs' own doc comments.
