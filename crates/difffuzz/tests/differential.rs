@@ -39,6 +39,11 @@ use difffuzz::modules::circular_buffer::{
 };
 use difffuzz::modules::fixed_deque::{FixedDequeSpec, REGRESSIONS as FIXED_DEQUE_REGRESSIONS};
 use difffuzz::modules::fixed_stack::{FixedStackSpec, REGRESSIONS as FIXED_STACK_REGRESSIONS};
+// Appended at the end of the import run, never inserted (CLAUDE.md, Git).
+use difffuzz::modules::static_interval_tree::{
+    StaticIntervalTreeSpec, REGRESSIONS as STATIC_INTERVAL_TREE_REGRESSIONS,
+};
+use difffuzz::modules::vector::{VectorSpec, REGRESSIONS as VECTOR_REGRESSIONS};
 
 #[test]
 fn bit_set_matches_upstream() {
@@ -500,6 +505,51 @@ fn bloom_filter_matches_upstream() {
     let campaign = Campaign::cases(0xB100, 96, BLOOM_REGRESSIONS);
 
     let report = difffuzz::run(&BloomFilterSpec, &campaign)
+        .expect("oracle must be reachable; `node` is required for differential tests");
+
+    assert!(
+        report.ops > 0,
+        "campaign ran no operations, so it proved nothing: {}",
+        report.log_line()
+    );
+
+    if let Some(divergence) = report.divergence {
+        panic!("{divergence}");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Appended at the end of the file, never in the middle: a conflict boundary
+// landing inside an existing test has already broken three merges
+// (CLAUDE.md, Git).
+// ---------------------------------------------------------------------------
+
+#[test]
+fn vector_matches_upstream() {
+    let campaign = Campaign::cases(0x7EC70, 96, VECTOR_REGRESSIONS);
+
+    let report = difffuzz::run(&VectorSpec, &campaign)
+        .expect("oracle must be reachable; `node` is required for differential tests");
+
+    assert!(
+        report.ops > 0,
+        "campaign ran no operations, so it proved nothing: {}",
+        report.log_line()
+    );
+
+    if let Some(divergence) = report.divergence {
+        panic!("{divergence}");
+    }
+}
+
+/// The only module in this crate where every op is a query: nothing in the
+/// public API mutates a built tree, so the whole signal is in each op's
+/// result rather than in a changing `observe()`. See the spec's module docs.
+#[test]
+fn static_interval_tree_matches_upstream() {
+    let campaign = Campaign::cases(0x517, 96, STATIC_INTERVAL_TREE_REGRESSIONS);
+
+    let report = difffuzz::run(&StaticIntervalTreeSpec, &campaign)
         .expect("oracle must be reachable; `node` is required for differential tests");
 
     assert!(
