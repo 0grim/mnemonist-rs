@@ -52,3 +52,8 @@ pub mod heap;
 // Appended at the end, never inserted: this file is edited by several agents
 // at once and a new line at the end can never land inside another one's hunk.
 pub mod lru_cache;
+
+// Appended at the end, never inserted: this file is a shared registry edited
+// by several agents at once (CLAUDE.md, Git).
+#[path = "_utils.rs"]
+pub mod utils_unit;

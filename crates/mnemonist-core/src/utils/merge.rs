@@ -163,8 +163,16 @@ pub fn union_unique_two<T: Clone + PartialOrd>(a: &[T], b: &[T]) -> Vec<T> {
     let mut out: Vec<T> = Vec::new();
     let mut a_pointer = 0;
 
+    // Unconditional push -- upstream's own prefix loop has NO dedup check,
+    // unlike the overlap and filling loops below. It relies on the precondition
+    // that `a` is already internally unique; when a caller violates that (an
+    // "awkward value" no test here or upstream reaches), consecutive
+    // duplicates in this prefix survive into the output. A first draft of
+    // this port called `push_unique` here too, which is *more correct* than
+    // upstream and therefore a defect (CLAUDE.md); found by differential
+    // fuzzing, not by reading, on `unionUnique([-5, -5, 0], [-0.5])`.
     while a_pointer < a.len() && a[a_pointer] < *b_start {
-        push_unique(&mut out, a[a_pointer].clone());
+        out.push(a[a_pointer].clone());
         a_pointer += 1;
     }
 
@@ -516,6 +524,28 @@ mod tests {
                 "union_unique_two({a:?}, {b:?})"
             );
         }
+    }
+
+    /// Found by differential fuzzing (seed 42, this unit's first campaign),
+    /// not by reading: upstream's prefix loop in `unionUniqueArrays` has NO
+    /// dedup check, unlike its overlap and filling loops, so an internally
+    /// non-unique first argument leaks a duplicate straight into the output.
+    /// A pre-fuzz draft of this port called the shared `push_unique` helper
+    /// in the prefix loop too -- more correct than upstream, and therefore a
+    /// port defect per CLAUDE.md's bug-for-bug mandate, not an improvement.
+    /// Verified against Node 24.18.1.
+    #[test]
+    fn the_prefix_loop_does_not_deduplicate_an_already_non_unique_input() {
+        assert_eq!(
+            union_unique_two(&[-5, -5, 0], &[0]), // -0.5 is not an i32; 0 exercises the same prefix
+            vec![-5, -5, 0]
+        );
+
+        // The float case actually found by the fuzzer.
+        assert_eq!(
+            union_unique_two(&[-5.0, -5.0, 0.0], &[-0.5]),
+            vec![-5.0, -5.0, -0.5, 0.0]
+        );
     }
 
     #[test]

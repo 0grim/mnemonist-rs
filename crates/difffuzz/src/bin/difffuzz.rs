@@ -57,6 +57,9 @@ use difffuzz::modules::fuzzy_map::FuzzyMapSpec;
 use difffuzz::modules::lru_cache::{
     LruCacheSpec, LruCacheWithDeleteSpec, LruMapSpec, LruMapWithDeleteSpec,
 };
+// Appended at the end, never inserted: this file is a shared registry edited
+// by several agents at once (CLAUDE.md, Git).
+use difffuzz::modules::utils_unit::UtilsSpec;
 
 const USAGE: &str = "\
 usage: difffuzz --module <name> [--seed N] [--duration SECONDS] [--cases N] [--batch N]
@@ -316,6 +319,16 @@ fn main() -> ExitCode {
             &LruMapWithDeleteSpec,
             &Campaign {
                 regressions: difffuzz::modules::lru_cache::MAP_WITH_DELETE_REGRESSIONS,
+                ..campaign
+            },
+        ),
+        // Appended at the END of the match, never between arms: a conflict
+        // boundary landing inside one has already broken three merges
+        // (CLAUDE.md, Git).
+        "_utils" => difffuzz::run(
+            &UtilsSpec,
+            &Campaign {
+                regressions: difffuzz::modules::utils_unit::REGRESSIONS,
                 ..campaign
             },
         ),
