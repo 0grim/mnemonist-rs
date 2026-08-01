@@ -607,6 +607,274 @@ option upstream believes it validates. Reproduced, including the split.
 > Differential fuzzing has not run yet. Expect the best candidates to come from there, not from
 > reading. Add them here with the minimised repro attached.
 
+### T2 — comparator callbacks (`heap`, `fixed-reverse-heap`, `utils/comparators`)
+
+All ten below were found by reading the two files statement by statement and confirming each
+against Node 24.18.1 (`bench/upstream/`, the pinned source). Every one is pinned by an assertion in
+`tests/boundary/heap.js`, which passes unchanged when re-pointed at upstream.
+
+### B-70 — a comparator that throws leaves `size` one behind `items.length`, permanently
+
+`status: verified against Node 24.18.1` · `heap.js` · found by reading, pinned by
+`tests/boundary/heap.js`
+
+`Heap.prototype.push` is
+
+```js
+push(this.comparator, this.items, item);   // heap.push(item) FIRST, then sift
+return ++this.size;                        // never reached if the sift throws
+```
+
+and the raw `push` grows the array *before* it sifts. There is no `try`/`finally` anywhere in
+`heap.js`, so a comparator that throws on its first comparison leaves the element in the array and
+`this.size` uncounted — and nothing ever reconciles them:
+
+```js
+var armed = false;
+var heap = new Heap(function (a, b) { if (armed) throw new Error('boom'); return a < b ? -1 : a > b ? 1 : 0; });
+heap.push(1); armed = true;
+try { heap.push(2); } catch (e) {}
+heap.size          // 1
+heap.items.length  // 2
+heap.pop()         // 1, and size drops to 0 with [2] still in the array
+```
+
+The two quantities disagree forever after. Every later `pop` reports one fewer than it removes, and
+`#.consume` — which drains `items`, not `size` — returns more elements than the heap claims to
+hold. Reproduced exactly; a port that pushed only after a successful sift would be *more* correct
+and therefore wrong.
+
+### B-71 — `nsmallest`/`nlargest` with `n === 1` answer with the `Infinity` sentinel itself
+
+`status: verified against Node 24.18.1` · `heap.js`
+
+Both fast paths open with `var min = Infinity` (respectively `-Infinity`) used as "nothing seen
+yet", and neither checks afterwards whether anything was seen:
+
+```js
+Heap.nsmallest(1, [])                  // [Infinity]
+Heap.nlargest(1, [])                   // [-Infinity]
+Heap.nsmallest(1, new Set())           // [Infinity]
+Heap.nsmallest(1, new Uint8Array(0))   // Uint8Array [0]  ← the sentinel, narrowed
+Heap.nsmallest(2, [])                  // []              ← every other n is fine
+```
+
+The typed-array case is the sharpest: `new iterable.constructor(1)` then `result[0] = Infinity`
+stores `0`, so an empty source answers with a plausible-looking element. Only `n === 1` is
+affected, because every other `n` goes through the bounded-heap path, which has no sentinel.
+
+### B-72 — the same sentinel is a real value, so an `Infinity` element resets it
+
+`status: verified against Node 24.18.1` · `heap.js`
+
+The test is `if (min === Infinity || compare(v, min) < 0)`, and `min` holds a real element after
+the first iteration. So an element that *is* `Infinity` makes the identity test true again and the
+**next** element replaces it unconditionally, whatever the comparator says:
+
+```js
+var descending = function (a, b) { return a < b ? 1 : a > b ? -1 : 0; };
+Heap.nsmallest(descending, 1, [Infinity, 5])   // [5]        — wrong, Infinity is "smallest" here
+Heap.nsmallest(descending, 2, [Infinity, 5])   // [Infinity, 5]  — one n up, the general path disagrees
+Heap.nlargest(descending, 1, [-Infinity, -5])  // [-5]       — the mirror
+```
+
+Two adjacent `n` values give contradictory answers on the same input, which is the tell. Harmless
+under the default comparator, where `Infinity` really is the largest thing; visible the moment a
+custom comparator disagrees with `<`. Note the interaction with B-71: they are the same line, and
+the empty-source case is the degenerate instance of this one.
+
+### B-73 — `FixedReverseHeap`'s capacity guard is `&&` where `||` was meant
+
+`status: verified against Node 24.18.1` · `fixed-reverse-heap.js`
+
+```js
+if (typeof capacity !== 'number' && capacity <= 0)
+  throw new Error('mnemonist/FixedReverseHeap.constructor: capacity should be a number > 0.');
+```
+
+For any number the first half is false and the `&&` short-circuits, so the guard **cannot fire for
+the very inputs it names**. `new FixedReverseHeap(Array, 0)` is accepted and then discards every
+push in silence — `push` returns `0`, `size` stays `0`, `consume()` is `[]`. The only way to reach
+the throw is a non-number that coerces to `<= 0`, e.g. `null`.
+
+Two second-order notes. `new FixedReverseHeap(Array, -1)` *does* throw, but with `Array`'s own
+`RangeError: Invalid array length` — because `this.items = new ArrayClass(capacity)` runs **before**
+either guard. And the message the guard would have produced never appears for any negative number
+at all.
+
+### B-74 — `FixedReverseHeap#clear` leaves `items`, so `peek()` answers a discarded item
+
+`status: verified against Node 24.18.1` · `fixed-reverse-heap.js`
+
+```js
+FixedReverseHeap.prototype.clear = function () { this.size = 0; };
+FixedReverseHeap.prototype.peek  = function () { return this.items[0]; };
+```
+
+`clear` resets the count and nothing else, while `peek` reads the array directly and does not
+consult `size`. So a cleared heap still reports a root:
+
+```js
+var heap = new FixedReverseHeap(Array, 3);
+heap.push(45); heap.push(12); heap.push(46);
+heap.clear();
+heap.size      // 0
+heap.peek()    // 46   ← an item that is no longer in the heap
+heap.consume() // []   ← and consume, which slices to size, agrees it is gone
+```
+
+`consume` and `toArray` both slice to `size`, so the stale contents are invisible to them, which is
+why the bug is latent. Upstream's own test calls `clear()` and then only ever `push`es again.
+
+### B-75 — `MaxHeap.prototype = Heap.prototype`, so `instanceof` cannot tell them apart
+
+`status: verified against Node 24.18.1` · `heap.js`
+
+The line is upstream's, one statement after `MaxHeap`'s body:
+
+```js
+MaxHeap.prototype = Heap.prototype;
+```
+
+which shares the object rather than deriving from it. Consequences, all measured:
+
+```js
+MaxHeap.prototype === Heap.prototype   // true
+new Heap()    instanceof MaxHeap       // true   ← a MIN heap passes a MaxHeap type check
+new MaxHeap() instanceof Heap          // true
+new MaxHeap().constructor.name         // 'Heap'
+```
+
+A `MaxHeap` also inherits `Heap.prototype.constructor`, so anything reconstructing by
+`new x.constructor(...)` silently turns a max heap into a min heap. There is no way to distinguish
+the two at runtime except by behaviour.
+
+### B-76 — nothing stops a comparator from mutating the heap it is comparing
+
+`status: verified against Node 24.18.1` · `heap.js` · not a defect in isolation; recorded because
+it defines the hazard tier T2 exists for
+
+The comparator is an arbitrary callback invoked from inside a sift, and both the heap and the
+comparator are reachable from whatever scope built them. Three distinct shapes, all reproduced:
+
+```js
+// (a) grows the array the sift is walking
+var budget = 2;
+var heap = new Heap(function (a, b) { if (budget-- > 0) heap.push(99); return ascending(a, b); });
+heap.push(5); heap.push(4); heap.push(3);
+heap.items   // [3, 4, 99, 99, 5]   size 5
+
+// (b) shrinks it, so the walk reads past its own frozen endIndex
+// (c) REBINDS it: heap.clear() installs a new array and the sift finishes into the detached one
+var cleared = false;
+var heap = new Heap(function (a, b) { if (!cleared) { cleared = true; heap.clear(); } return ascending(a, b); });
+heap.push(5); heap.push(4);
+heap.items   // []     the sift's writes went to the old array
+heap.size    // 1      because ++this.size ran on the zero clear had just written
+```
+
+Upstream has no defence and no error path; whatever the array looks like afterwards is the answer.
+The reason this is written down as a bug candidate rather than as a curiosity is that it is a
+*porting constraint*: an implementation whose algorithms take `&mut Vec<T>` cannot express (a) or
+(b) at all, and one that models `items` as a `Vec` rather than as a reference answers (c)
+identically to (b) — which is D-41's collapse, one module further on.
+
+### B-77 — `#.consume` zeroes `size` first, so a throwing comparator strands the items
+
+`status: verified against Node 24.18.1` · `heap.js`
+
+```js
+Heap.prototype.consume = function () {
+  this.size = 0;                                 // FIRST
+  return consume(this.comparator, this.items);   // …then the comparisons
+};
+```
+
+A comparator that throws part-way leaves a heap reporting empty and holding elements:
+
+```js
+heap.push(3); heap.push(1); heap.push(2); armed = true;
+try { heap.consume(); } catch (e) {}
+heap.size    // 0
+heap.items   // [3, 2]
+```
+
+Same family as B-70 and the mirror image of it: there the count lags the array, here it leads.
+
+### B-78 — a comparator's return value is coerced, never checked
+
+`status: verified against Node 24.18.1` · `heap.js`
+
+Upstream never inspects the type of what a comparator returns; it writes `< 0`, `> 0` and `>= 0`
+against it. So anything whose `ToNumber` is `NaN` reports "equal" for every pair and the heap
+degenerates silently rather than raising:
+
+```js
+new Heap(function () { return 'x';  })   // every comparison NaN → toArray() is insertion order
+new Heap(function () { return 0.5;  })   // fractional counts as "greater"
+new Heap(function () { return -1n;  })   // a BigInt WORKS — `-1n < 0` is true
+```
+
+The BigInt case is the interesting one and it is not a rounding error: `ToNumber(-1n)` throws a
+`TypeError`, but the relational operators use `ToNumeric`, which does not. A port that coerced the
+result with `Number()` before comparing would throw where upstream sorts. A comparator returning a
+`Symbol` *does* throw, in both.
+
+### B-79 — a falsy comparator argument takes the default silently
+
+`status: verified against Node 24.18.1` · `heap.js`, `fixed-reverse-heap.js`
+
+```js
+this.comparator = comparator || DEFAULT_COMPARATOR;
+if (typeof this.comparator !== 'function') throw new Error('… should be a function.');
+```
+
+The `||` runs first, so the type check only ever sees a *truthy* non-function. `new Heap(0)`,
+`new Heap('')`, `new Heap(NaN)` and `new Heap(null)` are all accepted as "use the default", while
+`new Heap('test')`, `new Heap({})` and `new Heap([])` throw. `test/heap.js` asserts the second half
+and not the first. Minor, but it is the reason the port cannot implement the guard as a plain
+`Option<Function>`: an explicit falsy argument and an omitted one must behave alike, and an explicit
+truthy non-function must not.
+
+
+
+### Not allocated a `B-` number — `Heap.nsmallest(compare, -Infinity, arrayLike)` never terminates
+
+`status: verified against Node 24.18.1` · `heap.js` · **needs an ID from the orchestrator**
+
+The scan loop in the array-like branch is `for (i = n, l = iterable.length; i < l; i++)` with the
+raw `n`. `-Infinity + 1` is `-Infinity`, so `i` never advances, `i < l` stays true and
+`iterable[-Infinity]` — `undefined` — is read forever. Upstream hangs; the port hangs identically,
+which is bug-for-bug correct and therefore untestable and unfuzzable.
+
+Found while probing the `n`-validation defect the T2 review turned up, by which point this agent's
+allocated range (B-70..B-79) was fully spent. CLAUDE.md says to say so rather than spill past the
+range, so it is recorded here without an ID.
+
+### Sixth entry for the confident-green-signal table — the T2 review
+
+`status: three defects found, all fixed` · not upstream's; ours
+
+The `heap` / `fixed-reverse-heap` unit had **21 upstream assertions, 47 boundary cases, three fuzz
+campaigns and 5 M operations, all green**, while carrying:
+
+1. a `RefCell` borrow held across a call into JavaScript, which **aborted the Node process** with
+   `SIGABRT` when a re-entrant `clear()` reached it — not a catchable error;
+2. `clear()` and `consume()` preserving an array class that upstream discards, i.e. the port being
+   *more* faithful than upstream and therefore wrong;
+3. `n` validated in the bridge before upstream would have validated it, so
+   `Heap.nsmallest(cmp, 2.5, array)` threw where upstream answers `[2, 5]`.
+
+None was reachable by the fuzzer **by construction**: its `VecStore` never calls JavaScript from
+`allocate` (so 1 is structurally impossible there), has a single class (so 2 cannot appear), and
+`nsmallest`/`nlargest` are outside the grammar (so 3 cannot). All three were found by a reviewer
+poking the built addon by hand.
+
+*Same lesson as B-31, and it is now twice: passing your own verification is not the same as being
+correct, and both times the only thing that caught it was a second, independent look. The specific
+generalisation is sharper than "fuzz more" — a differential fuzzer whose oracle-side store cannot
+run user code cannot find a bug that needs user code to run, however many operations it does.*
+
 ---
 
 ## Log
