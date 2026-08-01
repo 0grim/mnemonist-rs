@@ -44,7 +44,44 @@ impl Program {
     /// Render as pasteable JS. The whole value of shrinking is that the result
     /// is small enough to drop straight into an upstream issue, so it is worth
     /// emitting something that runs rather than a `Debug` dump.
-    pub fn render(&self, module: &str) -> String {
+    ///
+    /// `functions` is [`ModuleSpec::functions`]: empty for the ordinary case,
+    /// and a list of upstream files for a free-function unit, which has no
+    /// constructor to render at all.
+    pub fn render(&self, module: &str, functions: &[&'static str]) -> String {
+        if !functions.is_empty() {
+            return self.render_functions(functions);
+        }
+
+        self.render_instance(module)
+    }
+
+    /// A free-function unit: requires instead of a constructor, and calls on
+    /// the merged module object rather than on an instance.
+    ///
+    /// `{"$set": […]}` and `{"$typed": …}` arguments are unwrapped back into
+    /// the JavaScript they stand for, for the same reason `$global` is below:
+    /// a repro that passed a plain object where upstream wants a `Set` would
+    /// not reproduce.
+    fn render_functions(&self, functions: &[&'static str]) -> String {
+        let mut out = String::from("var m = Object.assign({}");
+
+        for file in functions {
+            out.push_str(&format!(", require('./{file}.js')"));
+        }
+
+        out.push_str(");\n");
+
+        for op in &self.ops {
+            let args: Vec<String> = op.args.iter().map(render_argument).collect();
+
+            out.push_str(&format!("m.{}({});\n", op.name, args.join(", ")));
+        }
+
+        out
+    }
+
+    fn render_instance(&self, module: &str) -> String {
         // Module keys are kebab-case upstream filenames; the exported
         // constructor is their PascalCase form.
         let constructor: String = module
@@ -94,6 +131,53 @@ impl Program {
     }
 }
 
+/// One op argument, as the JavaScript it stands for.
+///
+/// JSON cannot carry a `Set`, a typed array, `NaN` or `undefined`, so
+/// `fuzz/oracle.js` transports each in an envelope and rebuilds it on arrival.
+/// A repro that pasted the envelope instead of the value would hand upstream a
+/// plain object and not reproduce — and the envelopes nest, because an array
+/// of numbers is exactly where a `NaN` shows up.
+fn render_argument(argument: &Value) -> String {
+    match argument {
+        Value::Array(items) => {
+            let rendered: Vec<String> = items.iter().map(render_argument).collect();
+
+            format!("[{}]", rendered.join(", "))
+        }
+        Value::Object(fields) => {
+            if let Some(members) = fields.get("$set") {
+                return format!("new Set({})", render_argument(members));
+            }
+
+            if let (Some(Value::String(name)), Some(values)) =
+                (fields.get("$typed"), fields.get("values"))
+            {
+                return format!("new {name}({})", render_argument(values));
+            }
+
+            if fields.contains_key("$nan") {
+                return String::from("NaN");
+            }
+
+            if fields.contains_key("$undefined") {
+                return String::from("undefined");
+            }
+
+            if fields.contains_key("$negativeZero") {
+                return String::from("-0");
+            }
+
+            if let Some(Value::String(name)) = fields.get("$global") {
+                return name.clone();
+            }
+
+            argument.to_string()
+        }
+        other => other.to_string(),
+    }
+}
+
 /// Everything the generic driver needs to fuzz one module.
 ///
 /// Implementations are pure glue: build the Rust instance, apply an op to it,
@@ -139,6 +223,23 @@ pub trait ModuleSpec {
     /// and `compile` both drive path compression — and reproducing that
     /// faithfully is part of the point.
     fn observe(&self, instance: &mut Self::Instance) -> Value;
+
+    /// Upstream files whose exports make up a **free-function** module.
+    ///
+    /// Empty — the default — means the ordinary case: `module()` names one
+    /// file exporting one constructor, and the oracle `new`s it. A non-empty
+    /// list means there is nothing to construct: the oracle merges these
+    /// files' exports and calls the functions on the result. `sort` and `set`
+    /// are the two units shaped that way, and `sort` is why this is a list
+    /// rather than a flag — its require-closure is three files and its key,
+    /// `sort`, is not one of them.
+    ///
+    /// A module in this mode has no observable state, so `observations()` is
+    /// necessarily empty and every op's arguments are compared after the call
+    /// instead; see `fuzz/oracle.js`.
+    fn functions(&self) -> &'static [&'static str] {
+        &[]
+    }
 }
 
 /// A concrete disagreement between the port and upstream.
@@ -154,6 +255,9 @@ pub struct Divergence {
     pub program: Program,
     pub port: Value,
     pub upstream: Value,
+    /// [`ModuleSpec::functions`], carried so the repro can be rendered without
+    /// the spec. Empty for every module that has a constructor.
+    pub functions: &'static [&'static str],
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -185,7 +289,7 @@ impl fmt::Display for Divergence {
         }
 
         writeln!(f, "minimal repro:")?;
-        write!(f, "{}", self.program.render(self.module))
+        write!(f, "{}", self.program.render(self.module, self.functions))
     }
 }
 
@@ -269,7 +373,10 @@ pub fn check_program<S: ModuleSpec>(
     oracle: &mut crate::Oracle,
     program: &Program,
 ) -> Result<u64, CheckFailure> {
-    let upstream_state = oracle.init(spec.module(), &program.ctor, spec.observations())?;
+    let upstream_state = match spec.functions() {
+        [] => oracle.init(spec.module(), &program.ctor, spec.observations())?,
+        files => oracle.init_functions(spec.module(), files, spec.observations())?,
+    };
 
     let mut instance = spec.construct(&program.ctor);
     let port_state = spec.observe(&mut instance);
@@ -282,6 +389,7 @@ pub fn check_program<S: ModuleSpec>(
             program: program.clone(),
             port: port_state,
             upstream: upstream_state,
+            functions: spec.functions(),
         })));
     }
 
@@ -301,6 +409,7 @@ pub fn check_program<S: ModuleSpec>(
                 program: program.clone(),
                 port: port_result,
                 upstream: upstream.result,
+                functions: spec.functions(),
             })));
         }
 
@@ -312,6 +421,7 @@ pub fn check_program<S: ModuleSpec>(
                 program: program.clone(),
                 port: port_state,
                 upstream: upstream.state,
+                functions: spec.functions(),
             })));
         }
     }

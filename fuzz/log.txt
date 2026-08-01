@@ -454,6 +454,78 @@
 #      already run off the end of an empty queue, and it resumes.
 #
 # ---------------------------------------------------------------------------
+# GRAMMARS ADDED LATER go on the END of this block, never in the middle: a
+# conflict boundary landing inside one has already broken three merges.
+#
+# sort  -- THE FIRST FREE-FUNCTION MODULE, and a different shape of campaign
+#   ops          inplaceInsertionSort(array, lo, hi)          [weight 3]
+#                inplaceQuickSort(array, lo, hi)              [3]
+#                inplaceInsertionSortIndices(a, idx, lo, hi)  [3]
+#                inplaceQuickSortIndices(a, idx, lo, hi)      [3]
+#                indices(length)                              [2]
+#   observed     NOTHING, and that is not an omission. sort/insertion.js,
+#                sort/quick.js and utils/typed-arrays.js export bare functions
+#                and hold no state between calls, so `observe` is {} forever.
+#                What is compared instead is the return value AND THE ARGUMENTS
+#                AFTER THE CALL -- every effect of an in-place sort lives in an
+#                argument, and add/subtract-style out-parameters would otherwise
+#                be invisible. fuzz/oracle.js does that echo generically for any
+#                module declaring ModuleSpec::functions(), so no per-function
+#                list of which parameters are out-parameters exists to go stale.
+#   ctor         none. There is nothing to construct.
+#   arrays       0..=24 elements drawn from a pool of 11 values -- small and
+#                repetitive so duplicates are frequent, because duplicates are
+#                the only thing separating a stable sort from an unstable one
+#                and these two disagree about them. The pool includes NaN and
+#                fractions; test/sort.js sorts integers and Math.random().
+#   windows      lo <= hi <= length, generated against the subject's own length
+#                so empty, single-element and full-width windows all occur --
+#                against test/sort.js's six windows of one fixed array.
+#   indices      an independent 0..=24 element Uint8Array or Uint16Array whose
+#                entries are drawn from 0..29, i.e. WIDER than the value array,
+#                so a good share point past its end. Upstream reads undefined
+#                there and every comparison against it is false; that is the
+#                whole reason mnemonist_core::sort compares Option<&T>, and this
+#                is the only place it is checked against the real thing.
+#   lengths      for indices(): 0, 1, 11, 255, 256, 257, 65535, 65536, 65537,
+#                3.5, 255.5, 256.5, -0.5, -1, -3.5, NaN. Both sides of every
+#                width boundary and every input that throws.
+#   program len  1..80 ops. Shorter than elsewhere because each op carries its
+#                own subject rather than accumulating state in a shared one.
+#   EXCLUDED     (a) non-numeric elements, (b) windows past the end. Both are
+#                stated divergences in docs/modules/sort.md -- upstream compares
+#                through valueOf and reads undefined past the end, the port
+#                refuses both -- so generating them would re-report a recorded
+#                decision rather than find anything.
+#                (c) B-80 and B-81, the two re-entrancy bugs, because reaching
+#                them needs an element whose comparison calls back into JS,
+#                which needs an object element, which (a) excludes. Verified by
+#                hand against Node 24.18.1 instead; see docs/modules/sort.md.
+#
+#   FALSIFIED (gate 6, applied to the fuzzer):
+#
+#   sort. `indices` choosing its width from the TRUNCATED length rather than the
+#      raw one -- the obvious reading of upstream, and wrong, because
+#      getPointerArray compares length-1 as a double while the TypedArray
+#      constructor applies ToIndex. Caught in 62 cases (0.3s), shrunk to ONE op:
+#          m.indices(256.5);
+#          port Uint8Array(256)   upstream Uint16Array(256)
+#
+#   sort. `a > b` written as `!(a <= b)` -- identical for every totally ordered
+#      type, the opposite whenever either side is NaN. Caught in 300 cases
+#      (0.4s), shrunk to one op on a two-element array:
+#          m.inplaceInsertionSort([NaN, 0], 0, 2);
+#          port [0, NaN]   upstream [NaN, 0]
+#
+#   Both seeds are committed in proptest-regressions/sort.txt with provenance.
+#
+#   Throughput note: ~3,270 op/s, an order of magnitude below the structure
+#   modules. Not a regression -- an op here ships a whole array in each
+#   direction and allocates a typed array of up to 65,537 elements on both
+#   sides, where a `union(x, y)` ships two integers. The op count is therefore
+#   not comparable across modules and should not be read as one.
+#
+# ---------------------------------------------------------------------------
 # Throughput: ~23,600 op/s including a full mapping()+compile() comparison
 # after every single op. That is the persistent-oracle decision (D-23) paying
 # off: at one `node` spawn per op the 120s campaign would have taken ~33 hours.
@@ -503,3 +575,5 @@
 2026-08-01T02:19:13Z  module=queue seed=20260801 cases=15805 ops=1573126 wall=60.0s divergences=0
 2026-08-01T02:31:44Z  module=default-map seed=42 cases=29525 ops=2939502 wall=120.0s divergences=0
 2026-08-01T02:32:53Z  module=default-map seed=20260801 cases=14492 ops=1432987 wall=60.0s divergences=0
+2026-08-01T09:39:28Z  module=sort seed=42 cases=4898 ops=196041 wall=60.0s divergences=0
+2026-08-01T09:41:24Z  module=sort seed=20260801 cases=5076 ops=204428 wall=60.0s divergences=0

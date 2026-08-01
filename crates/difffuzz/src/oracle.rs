@@ -134,6 +134,31 @@ impl Oracle {
         Self::take(&mut response, "state")
     }
 
+    /// As [`Oracle::init`], for a module that is a set of free functions
+    /// rather than a constructor.
+    ///
+    /// `files` are upstream file stems under `bench/upstream/`; their exports
+    /// are merged into one object on the JS side. A list rather than a name
+    /// because a unit can span several files — `test/sort.js`'s
+    /// require-closure is three of them, and the unit's key, `sort`, is not a
+    /// file. There is no `ctor`, because there is nothing to construct.
+    pub fn init_functions(
+        &mut self,
+        module: &str,
+        files: &[&'static str],
+        observe: &[&'static str],
+    ) -> Result<Value, OracleError> {
+        let mut response = self.request(&json!({
+            "cmd": "init",
+            "module": module,
+            "ctor": [],
+            "observe": observe,
+            "functions": files,
+        }))?;
+
+        Self::take(&mut response, "state")
+    }
+
     /// Apply one operation and read back its result plus the observable state.
     pub fn apply(&mut self, name: &str, args: &[Value]) -> Result<Observation, OracleError> {
         let mut response = self.request(&json!({

@@ -242,7 +242,7 @@ pub fn run_with<S: ModuleSpec>(
                             "proptest reported a failing case that does not reproduce. \
                              The disagreement is not deterministic, which is itself a \
                              finding, and it is NOT being reported as clean. Program:\n{}",
-                            program.render(spec.module())
+                            program.render(spec.module(), spec.functions())
                         )));
                     }
                 };
