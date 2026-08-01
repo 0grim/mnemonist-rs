@@ -527,3 +527,49 @@ verifying.*
 
 Pick after the event based on what the fuzzer actually found. **(2) and (5) are strong regardless
 of outcome; (1) depends on results.**
+
+### B-31 (OUR BUG, not upstream's) — `&self` on a `Freeze` type is `noalias readonly`, and LLVM used it
+
+`status: VERIFIED, sparse-set DESCOPED pending fix` · found by the forEach agent probing its own bridge
+
+A napi method taking `&self` on a type that is `Freeze` (no interior mutability) compiles to a
+`noalias readonly` pointer. LLVM is then entitled to hoist reads across the call — and does. When a
+JS `forEach` callback re-enters Rust and mutates the collection, the port keeps iterating the
+hoisted snapshot while the same object reports its updated state one line later.
+
+Reproduced on `sparse-set`, which was **already in `tests/scope.txt`**:
+
+```js
+const s = new SparseSet(8); [1,2,3,4].forEach(m => s.add(m));
+const seen = []; s.forEach(m => { seen.push(m); s.delete(m); });
+// upstream [1,2]   port [1,2,3,4]
+```
+
+**Fix:** type it honestly — `RefCell<Core>` is not `Freeze`, so the aliasing assumption disappears.
+Already applied in the forEach agent's branch for `stack`/`queue`; `sparse-set`'s bridge on main
+still needs it.
+
+**Structural exposure:** the defect needs JS to re-enter Rust mid-operation, so only bridges with a
+callback-taking method are at risk. `sparse-set` has 8; `static-disjoint-set` has **0** and is
+immune. Check this count before scoping any future module.
+
+#### Why 2.94M fuzz ops missed it — a grammar gap, not bad luck
+
+`sparse-set`'s grammar had `$iter`/`$next`/`$spread` interleaved with mutation, which is exactly
+D-21's requirement, **but no `forEach` op at all** — and certainly not one whose callback mutates.
+The fuzzer could not express the program that breaks it.
+
+*The lesson generalises past this bug: an op alphabet that omits a method omits every bug reachable
+only through it, and a clean campaign then reads as coverage it never had. Every module with a
+callback-taking method needs a mutating-callback op in its grammar.*
+
+#### And a sixth entry for the empty-green-signal table
+
+`sparse-set` sat in `scope.txt` with all ten gates green — original suite passing, 2.94M fuzz ops,
+zero divergences, benchmarks, divergence doc — while carrying a live behavioural divergence. **The
+gates were all true and the conclusion was still wrong**, because the fuzz grammar defined what
+could be found. Found only because a different agent, working on a different module, probed the
+same bridge pattern from a different angle.
+
+*Strongest argument yet for the write-up: passing your own verification is not the same as being
+correct, and the only thing that caught this was a second, independent look.*

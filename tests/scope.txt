@@ -3,4 +3,5 @@
 # Consumers: tests/run.sh spec selection, README scope table, .port-mortem.toml.
 
 static-disjoint-set
-sparse-set
+# sparse-set  -- DESCOPED 2026-08-01: forEach with a mutating callback diverges
+#                (upstream [1,2], port [1,2,3,4]). See B-31. Re-add once fixed and fuzzed.
