@@ -185,9 +185,11 @@ algorithms. Specific to this one:
 module=fixed-reverse-heap seed=42       cases=25906 ops=2551774 wall=120.0s divergences=0
 module=fixed-reverse-heap seed=20260801 cases=11913 ops=1158167 wall=60.0s divergences=0
 module=fixed-reverse-heap seed=31337    cases=13442 ops=1320693 wall=60.0s divergences=0
+module=fixed-reverse-heap seed=42       cases=12879 ops=1273022 wall=60.0s divergences=0  (post-fix)
 ```
 
-Three campaigns, three seeds, **5.03 M operations, zero divergences**. Reproduce with
+Four campaigns, three seeds, **6.30 M operations, zero divergences**. The first three ran against
+the pre-review build; see `docs/modules/heap.md` for why they stand and were re-run anyway. Reproduce with
 `target/release/difffuzz --module fixed-reverse-heap --seed 42 --cases 25906`.
 
 * **Op alphabet:** `push(v)` (weight 7) · `peek()` (2) · `clear()` (2) · `toArray()` (2) ·

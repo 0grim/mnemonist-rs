@@ -303,9 +303,17 @@ below.
 module=heap seed=42       cases=25677 ops=2619243 wall=120.0s divergences=0
 module=heap seed=20260801 cases=12248 ops=1256277 wall=60.0s  divergences=0
 module=heap seed=31337    cases=11060 ops=1147769 wall=60.0s  divergences=0
+module=heap seed=42       cases=12589 ops=1283659 wall=60.0s  divergences=0   (post-fix re-run)
 ```
 
-Three campaigns, three seeds, **5.02 M operations, zero divergences**. Reproduce with
+Four campaigns, three seeds, **6.31 M operations, zero divergences**.
+
+The first three ran against a build carrying the three defects the review found. They are **not**
+withdrawn, and the reason is the interesting part: none of the three was reachable by this grammar
+*by construction* — the core-side store never calls JavaScript from `allocate`, it has a single
+array class, and `nsmallest`/`nlargest` are outside the alphabet — so those campaigns measured
+exactly what they claimed to. Seed 42 was re-run on the fixed build anyway, so the claim does not
+rest on that argument alone. Reproduce with
 `target/release/difffuzz --module heap --seed 42 --cases 25677`.
 
 * **Op alphabet:** `push(v)` (weight 6) · `pop()` (3) · `peek()` (2) · `replace(v)` (2) ·

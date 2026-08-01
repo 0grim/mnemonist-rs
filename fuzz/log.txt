@@ -509,3 +509,14 @@
 2026-08-01T10:06:24Z  module=fixed-reverse-heap seed=20260801 cases=11913 ops=1158167 wall=60.0s divergences=0
 2026-08-01T10:15:45Z  module=heap seed=31337 cases=11060 ops=1147769 wall=60.0s divergences=0
 2026-08-01T10:24:58Z  module=fixed-reverse-heap seed=31337 cases=13442 ops=1320693 wall=60.0s divergences=0
+
+# CORRECTION -- the six heap / fixed-reverse-heap campaigns above ran against a
+# build carrying three defects an independent review later found (NOTES.md, "the
+# T2 review"). They are NOT withdrawn: none of the three was reachable by the
+# fuzz grammar by construction -- the core-side store never calls JavaScript
+# from `allocate`, has a single array class, and `nsmallest`/`nlargest` are
+# outside the alphabet -- so the campaigns measured exactly what they claimed
+# to. They are left uncommented for that reason, and the two lines below re-run
+# seed 42 on the fixed build so the claim does not rest on that argument alone.
+2026-08-01T10:41:06Z  module=heap seed=42 cases=12589 ops=1283659 wall=60.0s divergences=0
+2026-08-01T10:42:18Z  module=fixed-reverse-heap seed=42 cases=12879 ops=1273022 wall=60.0s divergences=0
