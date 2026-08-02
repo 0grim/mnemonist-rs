@@ -64,7 +64,7 @@ grep -E '^(track|source|kickoff_hash)[[:space:]]*=' .port-mortem.toml
 step 2 "Parity proof: upstream tests byte-identical to the kickoff hash"
 echo "\$ sha256sum -c tests/SHA256SUMS --quiet"
 if sha256sum -c tests/SHA256SUMS --quiet; then
-  echo "PASS -- $(wc -l < tests/SHA256SUMS) upstream test files unmodified since kickoff"
+  echo "PASS -- $(ls tests/original/test/*.js | wc -l) upstream test files ($(wc -l < tests/SHA256SUMS) files hashed in total) unmodified since kickoff"
 else
   echo "FAIL -- tests/original/ has diverged from the kickoff hash"
 fi
