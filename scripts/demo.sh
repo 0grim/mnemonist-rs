@@ -81,9 +81,11 @@ done
 if [ -t 1 ] && command -v tput >/dev/null 2>&1 && [ "$(tput colors 2>/dev/null || echo 0)" -ge 8 ]; then
   BOLD=$(tput bold); DIM=$(tput dim); RESET=$(tput sgr0)
   CYAN=$(tput setaf 6); GREEN=$(tput setaf 2); YELLOW=$(tput setaf 3)
+  MAGENTA=$(tput setaf 5); BLUE=$(tput setaf 4)
   INTERACTIVE=1
 else
   BOLD=""; DIM=""; RESET=""; CYAN=""; GREEN=""; YELLOW=""
+  MAGENTA=""; BLUE=""
   INTERACTIVE=0
 fi
 
@@ -188,6 +190,121 @@ run() {
   beat 1.5
 }
 
+# ---- syntax highlighting for source excerpts --------------------------------
+#
+# Three steps print real source (TOML, Rust, JS-inside-a-comment) instead of
+# program output, and a plain two-space indent reads as a grey wall on camera.
+# This is a hand-rolled highlighter: coreutils awk only, no bat/pygmentize/etc,
+# so it is exactly what gets recorded. Every substitution is built additively
+# from the *unhighlighted* source (never by re-scanning text that already has
+# escape codes in it), so a token can never be highlighted twice, and with all
+# colour variables empty (non-TTY, <8 colours) the output is byte-identical to
+# the plain source: no width is added or removed, only ANSI codes that vanish.
+RUST_KEYWORDS="let mut fn pub struct impl enum match if else while for loop in return use mod trait const static self Self as dyn where async await move ref true false Some None Ok Err println"
+JS_KEYWORDS="while for if else function var let const return this new typeof instanceof true false null undefined break continue do switch case default try catch finally throw class extends super import export from as async await yield in of delete void"
+
+# Shared token scanner for Rust and JS: double-quoted strings, numeric
+# literals (with trailing type/suffix letters, so `23i64` stays one token),
+# a caller-supplied keyword list, and a trailing `//` comment. MODE=mixed is
+# for step 8, where most lines are prose with `backtick` code spans and only
+# the indented lines (4+ leading spaces) are an actual code block.
+_CODE_AWK='
+function is_kw(w) { return index(" " KW " ", " " w " ") > 0 }
+function hl_codeline(code,    n, i, c, j, tok, out) {
+  n = length(code); out = ""; i = 1
+  while (i <= n) {
+    c = substr(code, i, 1)
+    if (c == "\"") {
+      j = i + 1
+      while (j <= n && substr(code, j, 1) != "\"") { if (substr(code, j, 1) == "\\") j++; j++ }
+      if (j <= n) j++
+      out = out STR substr(code, i, j - i) RST; i = j
+    } else if (c ~ /[0-9]/) {
+      j = i
+      while (j <= n && substr(code, j, 1) ~ /[0-9A-Za-z_.]/) j++
+      out = out NUM substr(code, i, j - i) RST; i = j
+    } else if (c ~ /[A-Za-z_]/) {
+      j = i
+      while (j <= n && substr(code, j, 1) ~ /[A-Za-z0-9_]/) j++
+      tok = substr(code, i, j - i)
+      out = out (is_kw(tok) ? KWC tok RST : tok); i = j
+    } else { out = out c; i++ }
+  }
+  return out
+}
+function hl_backticks(text,    n, i, c, j, out) {
+  n = length(text); out = ""; i = 1
+  while (i <= n) {
+    c = substr(text, i, 1)
+    if (c == "`") {
+      j = i + 1
+      while (j <= n && substr(text, j, 1) != "`") j++
+      if (j <= n) j++
+      out = out STR substr(text, i, j - i) RST; i = j
+    } else { out = out c; i++ }
+  }
+  return out
+}
+function hl_line(line,    cpos, code, com) {
+  cpos = index(line, "//")
+  if (cpos > 0) { code = substr(line, 1, cpos - 1); com = substr(line, cpos) }
+  else { code = line; com = "" }
+  return hl_codeline(code) (com != "" ? COMC com RST : "")
+}
+{
+  if (MODE == "mixed" && $0 !~ /^    /) print hl_backticks($0)
+  else print hl_line($0)
+}
+'
+hl_rust()   { awk -v KW="$RUST_KEYWORDS" -v STR="$GREEN" -v NUM="$MAGENTA" -v KWC="$BLUE" -v COMC="$DIM" -v RST="$RESET" -v MODE=code   "$_CODE_AWK"; }
+hl_js()     { awk -v KW="$JS_KEYWORDS"   -v STR="$GREEN" -v NUM="$MAGENTA" -v KWC="$BLUE" -v COMC="$DIM" -v RST="$RESET" -v MODE=code   "$_CODE_AWK"; }
+hl_defect() { awk -v KW="$JS_KEYWORDS"   -v STR="$GREEN" -v NUM="$MAGENTA" -v KWC="$BLUE" -v COMC="$DIM" -v RST="$RESET" -v MODE=mixed "$_CODE_AWK"; }
+
+# TOML line-oriented highlighter: whole-line comments, `[section]` headers,
+# and `key = value` pairs with the value coloured by whether it is a quoted
+# string or a bare number. Alignment and blank lines pass through untouched.
+_TOML_AWK='
+{
+  line = $0
+  if (line ~ /^[ \t]*#/) { print COMC line RST; next }
+  if (line ~ /^[ \t]*$/) { print line; next }
+  if (line ~ /^[ \t]*\[[^]]+\][ \t]*$/) { print SEC line RST; next }
+  eq = index(line, "=")
+  if (eq > 0) {
+    key = substr(line, 1, eq - 1)
+    rest = substr(line, eq + 1)
+    cpos = index(rest, "#")
+    if (cpos > 0) { val = substr(rest, 1, cpos - 1); com = substr(rest, cpos) }
+    else { val = rest; com = "" }
+    trimmed = val
+    gsub(/^[ \t]+/, "", trimmed); gsub(/[ \t]+$/, "", trimmed)
+    if (trimmed ~ /^".*"$/) vcol = STR
+    else if (trimmed ~ /^-?[0-9]+(\.[0-9]+)?$/) vcol = NUM
+    else vcol = ""
+    out = KEY key RST "="
+    out = out (vcol != "" ? vcol val RST : val)
+    if (com != "") out = out COMC com RST
+    print out
+  } else print line
+}
+'
+hl_toml() { awk -v KEY="$BLUE" -v STR="$GREEN" -v NUM="$MAGENTA" -v COMC="$DIM" -v SEC="${BOLD}${CYAN}" -v RST="$RESET" "$_TOML_AWK"; }
+
+# Same shape as run(), but pipes the command's output through a highlighter
+# (hl_rust / hl_js / hl_toml / hl_defect, above) before the two-space indent.
+# The echoed `$ ...` line is the real, unmodified command either way.
+run_hl() {
+  if [ "$SKIP" = 1 ]; then return 0; fi
+  local hl="$1" cmd="$2"
+  echo "  ${YELLOW}\$ $cmd${RESET}"
+  echo
+  beat 0.8
+  eval "$cmd" 2>&1 | "$hl" | sed 's/^/  /'
+  echo
+  beat 1.5
+  return 0
+}
+
 note() {
   if [ "$SKIP" = 1 ]; then return 0; fi
   echo "$1" | fold -s -w 72 | sed "s/^/  ${DIM}/;s/\$/${RESET}/"
@@ -220,7 +337,7 @@ screen "What this is"
 say "mnemonist is a JavaScript library of 44 data structures. Forty-three of them are ported here. The one left out is not exported by the library and has no test in its published suite, so nothing in that suite could have checked it."
 say "The deliverable is a standalone Rust crate: no dependencies, no unsafe code, and it builds without Node installed anywhere on the machine."
 say "The original JavaScript test suite is not a dependency of that crate. It is the proof that the crate behaves like the library it replaces. Those tests run unmodified against the Rust build, through a thin bridge that ships to nobody."
-run "grep -E '^(track|source|version|commit)[[:space:]]*=' .port-mortem.toml | head -5"
+run_hl hl_toml "sed -n '/^track/,/^version/p' .port-mortem.toml"
 say "Every upstream test file is ported, and every one passes all ten verification gates."
 run "scripts/status.sh | sed -n '/Coverage/,/repo total/p'"
 
@@ -261,7 +378,7 @@ fi
 # ────────────────────────────────────────────────── 5. the crate, used as a crate
 screen "The crate, used from Rust"
 say "Everything so far has been a test result. This is the library simply being used: an ordinary Rust program that imports the crate and nothing else."
-run "awk '/A Fibonacci heap/,/fibonacci-heap  drained/' crates/mnemonist-core/examples/tour.rs"
+run_hl hl_rust "awk '/A Fibonacci heap/,/fibonacci-heap  drained/' crates/mnemonist-core/examples/tour.rs"
 run "cargo run -q --release --example tour -p mnemonist-core"
 note "Four structures, in crates/mnemonist-core/examples/tour.rs. No bridge, no Node, no dependencies — this is the deliverable, doing its job."
 
@@ -283,7 +400,7 @@ screen "A defect the original suite could not have found"
 say "In the LRU cache, forEach advanced its internal cursor before running the callback. The original advances it afterwards."
 say "That difference is invisible unless a callback modifies the cache while it is being iterated. No test in the original suite does that, so the suite passed either way."
 say "The differential fuzzer found it on its first campaign against that structure. On the third callback, the port saw a stale successor where the original saw the promoted one."
-run "sed -n '/for_each_walk/,/^#     }\$/p' crates/difffuzz/proptest-regressions/lru-cache.txt | sed -E 's/^#[[:space:]]?//'"
+run_hl hl_defect "sed -n '/for_each_walk/,/^#     }\$/p' crates/difffuzz/proptest-regressions/lru-cache.txt | sed -E 's/^#[[:space:]]?//'"
 note "The failing case is checked in beside that note, so the defect is re-run before any new case is generated. Written up in full in docs/modules/lru-cache.md."
 
 # ────────────────────────────────────────────────────── 9. benchmarks, honestly
