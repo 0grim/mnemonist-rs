@@ -146,11 +146,18 @@ Where a behaviour is deliberately wrong it is documented on the item itself and 
 divergence document under `docs/modules/`. Nothing is left to be discovered by surprise.
 
 Everywhere the two did not conflict, the code is ordinary Rust. `clippy --all-targets -D warnings`
-is clean across the workspace, and there are **22 lint suppressions in roughly 67,000 lines**: 17
-`type_complexity`, 4 `too_many_arguments`, 1 `new_without_default`. All three are complaints about
-signature shape or ergonomics. **Not one suppresses a correctness or semantic lint** — no
-`float_cmp`, no `comparison_chain`, no `manual_*`. Whatever fidelity cost here, it was not paid by
-silencing the linter.
+is clean across the workspace, and there are **25 lint suppressions in roughly 71,000 lines**.
+Twenty-four are complaints about signature shape or ergonomics: 18 `type_complexity`, 5
+`too_many_arguments`, 1 `new_without_default`.
+
+The twenty-fifth is worth naming rather than rounding away. `passjoin-index` suppresses
+`if_same_then_else` where two branches share a body but not their guards — the first admits a
+candidate when both segment distances are already within the threshold, the second only after
+calling `levenshtein`. Collapsing them would still be correct and would lose the short-circuit
+distinction, so the branches stay separate and the reason is recorded at the site.
+
+No suppression hides a numeric or comparison lint — no `float_cmp`, no `comparison_chain`, no
+`manual_*`. Whatever fidelity cost here, it was not paid by silencing the linter.
 
 ---
 
