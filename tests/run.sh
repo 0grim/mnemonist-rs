@@ -7,7 +7,7 @@
 # mode) is specified in planning/DESIGN.md 2.3 and lands at D1, once a second
 # module has shown what the generator actually needs to emit.
 #
-# Usage:  tests/run.sh [spec ...]        default: every spec with a shim
+# Usage:  tests/run.sh [spec ... | all]  default/"all": every spec with a shim
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -18,8 +18,11 @@ ADDON="$WORK/node_modules/@port/addon"
 ( cd "$ROOT" && sha256sum -c tests/SHA256SUMS --quiet ) \
   || { echo "FATAL: tests/original/ has been modified. Refusing to run." >&2; exit 2; }
 
-# 2. Build the bridge (cargo is incremental).
-cargo build --release -p mnemonist-napi --manifest-path "$ROOT/Cargo.toml" >/dev/null
+# 2. Build the bridge (cargo is incremental). Skipped when PM_NO_BUILD=1: the
+#    Docker `parity` image has no Rust toolchain -- the compiled .so already
+#    arrived from the `builder` stage (DESIGN.md 12c, amendment 1).
+[ "${PM_NO_BUILD:-}" = 1 ] \
+  || cargo build --release -p mnemonist-napi --manifest-path "$ROOT/Cargo.toml" >/dev/null
 
 # 3. Assemble the work tree, preserving node_modules.
 mkdir -p "$WORK"
@@ -50,9 +53,14 @@ mkdir -p "$ADDON"
 cp "$ROOT/target/release/libmnemonist_napi.so" "$ADDON/addon.node"
 printf '{"name":"@port/addon","main":"addon.node"}' > "$ADDON/package.json"
 
-# 6. Default to every spec we have a shim for.
+# 6. Default to every spec we have a shim for. "all" is accepted as an alias
+#    for the default: every ported module already has a shim (42/42 upstream
+#    test files), so there is currently no repo-wide/in-scope split left to
+#    make -- unlike the scope.txt-filtered selection sketched in DESIGN.md 2.3,
+#    which would matter once a module is deliberately excluded from scope.txt
+#    while its shim still exists. Revisit if that ever happens.
 cd "$WORK"
-if [ "$#" -gt 0 ]; then
+if [ "$#" -gt 0 ] && [ "$1" != "all" ]; then
   SPECS=("$@")
 else
   SPECS=()
