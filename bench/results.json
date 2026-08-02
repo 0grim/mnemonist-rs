@@ -23,7 +23,7 @@
   },
   "baseline_rss_mb": {
     "node": 45.7,
-    "rust": 4.8
+    "rust": 4.9
   },
   "modules": {
     "static-disjoint-set": {
@@ -1442,7 +1442,38 @@
           "regressions": []
         }
       }
+    },
+    "symspell": {
+      "workloads": {
+        "mixed-4e3": {
+          "workload": "200000 mixed add/search (50/50), maxDistance 2, verbosity 2, prefilled to 50% fill ratio over size 4000, xorshift32 seed 42, ops materialised before the timed region",
+          "checksum": 471173,
+          "checksum_note": "identical on both sides: same ops, same answers, upstream bugs included",
+          "structure_note": "structure_rss_delta_mb constructs size 4000 and nothing else, isolating the structure from the op arrays both sides materialise",
+          "port": {
+            "p50_ns_per_op": 4434.601,
+            "p99_ns_per_op": 5972.405,
+            "min_ns_per_op": 3794.198,
+            "rss_total_mb": 36,
+            "rss_delta_mb": 31.1,
+            "structure_rss_delta_mb": 0.1,
+            "startup_ms": 0.6,
+            "samples": 2000
+          },
+          "original": {
+            "p50_ns_per_op": 5901.761,
+            "p99_ns_per_op": 8682.539,
+            "min_ns_per_op": 5095.433,
+            "rss_total_mb": 142.6,
+            "rss_delta_mb": 96.9,
+            "structure_rss_delta_mb": 0.4,
+            "startup_ms": 15.4,
+            "samples": 2000
+          },
+          "regressions": []
+        }
+      }
     }
   },
-  "generated_utc": "2026-08-02T04:28:27.148Z"
+  "generated_utc": "2026-08-02T04:43:38.776Z"
 }

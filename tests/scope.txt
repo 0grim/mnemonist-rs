@@ -94,3 +94,4 @@ fibonacci-heap
 fixed-reverse-heap
 bloom-filter
 linked-list
+symspell

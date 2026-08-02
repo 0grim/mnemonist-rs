@@ -688,6 +688,17 @@ const WORKLOADS = {
       name: 'mixed-1e6', kind: 'mixed', size: 1000000, ops: 1000000,
       label: 'mixed push/shift/walk-20 (50/25/25)'
     }
+  ],
+
+  // `symspell`: a clustered-but-scrambled vocabulary, `size` 4,000 -- see
+  // bench/runner/src/symspell.rs's own module docs for the two rejected
+  // designs (dense collisions, then sequential adjacency) this one fixes.
+  // Measured: 98.4% of `search` calls return at least one suggestion.
+  'symspell': [
+    {
+      name: 'mixed-4e3', kind: 'mixed', size: 4000, ops: 200000,
+      label: 'mixed add/search (50/50), maxDistance 2, verbosity 2, prefilled to 50% fill ratio'
+    }
   ]
 };
 

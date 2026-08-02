@@ -107,7 +107,8 @@ const MODULES = {
   'fibonacci-heap': ['mixed'],
   'fixed-reverse-heap': ['mixed'],
   'bloom-filter': ['mixed'],
-  'linked-list': ['mixed']
+  'linked-list': ['mixed'],
+  'symspell': ['mixed']
 };
 
 const argv = process.argv.slice(2);
@@ -1511,6 +1512,81 @@ function runMixedLinkedList(LinkedList, workload, k) {
   return {batches: batches, checksum: checksum, set: list};
 }
 
+// Twin of bench/runner/src/symspell.rs. See that file's own module docs for
+// the two rejected vocabulary designs (dense collisions, then sequential
+// adjacency) this one fixes with a scrambled suffix.
+const SYMSPELL_PREFIX = 'qu';
+const SYMSPELL_ALPHABET = 'abcdefghijklmnopqrstuvwxyz';
+const SYMSPELL_SUFFIX_LEN = 6;
+
+// `Math.imul` is JS's exact twin of Rust's `u32::wrapping_mul`: both truncate
+// to a 32-bit result, so the same golden-ratio constant scrambles identically
+// on both sides.
+function symspellScramble(value) {
+  return Math.imul(value, 0x9e3779b1) >>> 0;
+}
+
+function symspellWordFor(value) {
+  let remaining = symspellScramble(value);
+  let suffix = '';
+
+  for (let i = 0; i < SYMSPELL_SUFFIX_LEN; i++) {
+    suffix += SYMSPELL_ALPHABET[remaining % 26];
+    remaining = Math.floor(remaining / 26);
+  }
+
+  return SYMSPELL_PREFIX + suffix;
+}
+
+// A one-character perturbation of symspellWordFor(value)'s suffix -- a
+// guaranteed edit-distance-1 relationship to one specific dictionary entry.
+function symspellQueryFor(value) {
+  const word = symspellWordFor(value);
+  const position = SYMSPELL_PREFIX.length + (value % SYMSPELL_SUFFIX_LEN);
+  const currentIndex = SYMSPELL_ALPHABET.indexOf(word[position]);
+  const nextChar = SYMSPELL_ALPHABET[(currentIndex + 1) % SYMSPELL_ALPHABET.length];
+
+  return word.slice(0, position) + nextChar + word.slice(position + 1);
+}
+
+// Twin of bench/runner/src/symspell.rs. Dictionary prefilled to half the
+// domain (untimed), then 50% add / 50% search, position-weighted checksum
+// over (distance + 1).
+function runMixedSymSpell(SymSpell, workload, k) {
+  const domain = Math.max(workload.size, 1);
+  const dict = new SymSpell();
+  const prefill = Math.floor(domain / 2);
+
+  for (let i = 0; i < prefill; i++) dict.add(symspellWordFor(i));
+
+  const ops = workload.kind.length;
+  const batches = [];
+  let checksum = 0;
+
+  for (let start = 0; start < ops; start += k) {
+    const end = Math.min(start + k, ops);
+    const clock = process.hrtime.bigint();
+
+    for (let i = start; i < end; i++) {
+      const member = workload.a[i] % domain;
+
+      if (workload.kind[i] < 2) {
+        dict.add(symspellWordFor(member));
+      } else {
+        const suggestions = dict.search(symspellQueryFor(member));
+
+        for (let position = 0; position < suggestions.length; position++) {
+          checksum += (position + 1) * (suggestions[position].distance + 1);
+        }
+      }
+    }
+
+    batches.push(Number(process.hrtime.bigint() - clock));
+  }
+
+  return {batches: batches, checksum: checksum, set: dict};
+}
+
 // Dispatch table, twin of harness.rs::MODULES's `mixed` field. Replaces what
 // was a two-armed ternary before five more modules made that the wrong shape.
 const MIXED_RUNNERS = {
@@ -1554,7 +1630,8 @@ const MIXED_RUNNERS = {
   'fibonacci-heap': runMixedFibonacciHeap,
   'fixed-reverse-heap': runMixedFixedReverseHeap,
   'bloom-filter': runMixedBloomFilter,
-  'linked-list': runMixedLinkedList
+  'linked-list': runMixedLinkedList,
+  'symspell': runMixedSymSpell
 };
 
 // Twin of harness.rs::MODULES's `structure` field: build the structure at
@@ -1844,6 +1921,15 @@ const STRUCTURE_BUILDERS = {
     for (let i = 0; i < size; i++) list.push(i);
 
     return list.last();
+  },
+  // Twin of bench/runner/src/symspell.rs::build_structure: "size" means
+  // "prefilled with `size` words".
+  'symspell': function (SymSpell, size) {
+    const dict = new SymSpell();
+
+    for (let i = 0; i < size; i++) dict.add(symspellWordFor(i));
+
+    return dict.size;
   }
 };
 

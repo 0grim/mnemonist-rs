@@ -325,6 +325,13 @@ pub const MODULES: &[ModuleEntry] = &[
         drain: None,
         structure: crate::linked_list::build_structure,
     },
+    ModuleEntry {
+        name: "symspell",
+        kinds: &["mixed"],
+        mixed: Some(crate::symspell::run_mixed),
+        drain: None,
+        structure: crate::symspell::build_structure,
+    },
 ];
 
 pub fn find(name: &str) -> Option<&'static ModuleEntry> {
