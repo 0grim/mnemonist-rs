@@ -352,8 +352,31 @@ by naming the assertion it must break rather than by picking the scariest-lookin
 
 ### Bench
 
-**Not run.** Gate 10 requires an idle machine (DESIGN.md §7.3) and this unit was ported while other
-agents were working; a contended run inflated both sides 2–3× here once already. `bench/results.json`
-has no `fixed-stack` entry and `tests/scope.txt` does not list this unit, which is the honest state
-rather than an oversight. Gate 10 is batched into the quiet serial pass; the unit is complete
-through gates 1–9.
+`bench/results.json` → `modules["fixed-stack"]`. Methodology: `bench/methodology.md`.
+Host: AMD Ryzen 5 7600X, 12 threads, WSL2, Node 24.18.1, rustc 1.97.1, quiet serial pass.
+Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 10,000 samples/side.
+
+**`mixed-1e6`** — 1e6 mixed `push`/`peek`/`pop` (50/25/25), capacity 10,000 against 1e6 ops (a
+100:1 ratio, chosen so the stack fills within the first ~2% of the run and spends the rest
+oscillating at or near capacity rather than reaching it once at the very end), xorshift32 seed 42.
+
+`push` is **guarded** by `size < capacity` in the timed loop on both sides, so it never calls the
+fallible path: upstream's `push` on a full stack `throw`s a `new Error`, and V8's `Error`
+construction captures a stack trace — genuinely expensive, and not representative of the structure
+at all. An unguarded 50%-push mix at a small, reached capacity would have spent most of the run
+throwing and catching on the JS side while the port merely matched an `Err`, the same shape of
+mistake as `bit-set`'s `rank` (see that module's own bench doc). The refusal path itself is the
+differential fuzzer's job, not this benchmark's.
+
+| metric | port | upstream | |
+|---|---|---|---|
+| p50 ns/op | **4.2** | 7.1 | 1.7× faster |
+| p99 ns/op | **5.5** | 11.7 | 2.1× faster |
+| min ns/op | **3.8** | 6.7 | 1.8× faster |
+| RSS delta MB | **6.2** | 19.1 | |
+| structure-only RSS delta MB | **0.1** | 0.4 | |
+| startup ms | **0.6** | 16.3 | 28× (reported separately; not throughput) |
+
+No regressions. The margin here is close to `stack`'s own (which has no capacity bound at all),
+consistent with the guard doing its job: this is measuring push/peek/pop at saturation, not the
+cost of a refused push.

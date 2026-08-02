@@ -270,3 +270,31 @@ pre-fix bridges, green after.
 One deliberate narrowing, mirrored on both sides: a selected callback argument that is `undefined`
 skips the mutation. Feeding it back in reaches upstream's `NaN`-indexed swap, which `usize` cannot
 express and the core does not model. Fully disclosed in `fuzz/log.txt`.
+
+### Bench
+
+`bench/results.json` → `modules["queue"]`. Methodology: `bench/methodology.md`.
+Host: AMD Ryzen 5 7600X, 12 threads, WSL2, Node 24.18.1, rustc 1.97.1, quiet serial pass.
+Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 10,000 samples/side.
+
+**`mixed-1e6`** — 1e6 mixed `enqueue`/`peek`/`dequeue` (50/25/25), value magnitude 1e6, xorshift32
+seed 42 — `stack`'s exact shape with FIFO names, which its own bench doc explains.
+
+| metric | port | upstream | |
+|---|---|---|---|
+| p50 ns/op | **4.7** | 8.5 | 1.8× faster |
+| p99 ns/op | **7.6** | 94.2 | 12.4× faster |
+| min ns/op | **4.3** | 6.4 | 1.5× faster |
+| RSS delta MB | **10.1** | 62.7 | |
+| structure-only RSS delta MB | **1.3** | 9.7 | |
+| startup ms | **0.6** | 16.1 | 27× (reported separately; not throughput) |
+
+**No regressions.** The p99 gap here (12.4×) is the widest of any module in this batch, and it is
+plausibly the *compaction* upstream's queue performs — `this.items = this.items.slice(this.offset)`
+rebuilds the whole array once the dead prefix reaches half its length, which is a real allocation
+and copy on the JS side landing inside whichever 1000-op batch it falls in. The port's own
+compaction (`Queue::dequeue`, same policy) does the same rebuild, so this is not "the port skips the
+work" — both sides pay it — but a `Vec<f64>` rebuild inside one process is considerably cheaper than
+whatever V8 does to reshape a JS `Array` and keep its elements packed. **Unconfirmed**: not isolated
+by profiling; stated as the mechanism most consistent with the shape of the gap (a fixed-K batch
+occasionally landing on a compaction), not as a proven cause.

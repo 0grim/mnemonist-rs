@@ -8,6 +8,21 @@ heap
 lru-cache
 trie
 vector
+# Appended for the sequence-backed Gate 10 batch (2026-08-02): all eleven were
+# already shim/test/doc/fuzz-complete per scripts/status.sh and needed only
+# the benchmark. See bench/results.json and each docs/modules/<unit>.md's own
+# "### Bench" section for figures.
+stack
+queue
+fixed-stack
+fixed-deque
+circular-buffer
+hashed-array-tree
+sparse-map
+sparse-queue-set
+bit-vector
+suffix-array
+sort
 # sparse-set  -- DESCOPED 2026-08-01: forEach with a mutating callback diverges
 #                (upstream [1,2], port [1,2,3,4]). See B-31. Re-add once fixed and fuzzed.
 #
@@ -18,3 +33,15 @@ vector
 #                measured it. Benchmarks need an idle machine (DESIGN.md 7.3), so the
 #                figure has to come from the quiet serial pass, not from a run taken
 #                while agents are working. Re-add after that pass, not before.
+#
+#                2026-08-02: the quiet pass happened (bench/runner/src/sparse_set.rs
+#                ::run_mixed_refcell, `--refcell-probe`). The isolated borrow-flag cost
+#                is NOT distinguishable from run-to-run noise at this workload's size:
+#                three repeated probes at size 1e6 gave RefCell p50 anywhere from 3%
+#                below to 2% above the plain figure, and a measured=30 run had the
+#                RefCell variant faster. This is a real measurement, not an absence of
+#                one -- but it answers "is the borrow check the dominant bridge cost?"
+#                with "not detectably, on its own, at this size", not with a number to
+#                publish as a regression. Still descoped: that call is the orchestrator's,
+#                not this agent's, and the probe is deliberately not gate-10 evidence (no
+#                upstream JS analogue exists to compare a bare RefCell against).

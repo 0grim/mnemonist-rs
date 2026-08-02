@@ -341,3 +341,35 @@ pre-fix bridges, green after.
 One deliberate narrowing, mirrored on both sides: a selected callback argument that is `undefined`
 skips the mutation. Feeding it back in reaches upstream's `NaN`-indexed swap, which `usize` cannot
 express and the core does not model. Fully disclosed in `fuzz/log.txt`.
+
+### Bench
+
+`bench/results.json` → `modules["stack"]`. Methodology: `bench/methodology.md`.
+Host: AMD Ryzen 5 7600X, 12 threads, WSL2, Node 24.18.1, rustc 1.97.1, quiet serial pass.
+Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 10,000 samples/side.
+
+**`mixed-1e6`** — 1e6 mixed `push`/`peek`/`pop` (50/25/25), value magnitude 1e6, xorshift32 seed 42.
+`peek` stands in for `vector`'s `get`, since a stack exposes no random access — otherwise the same
+shape `vector`'s own bench uses, chosen for the same reason: the throughput floor other members of
+this batch can be read against.
+
+| metric | port | upstream | |
+|---|---|---|---|
+| p50 ns/op | **4.6** | 7.3 | 1.6× faster |
+| p99 ns/op | **6.8** | 30.3 | 4.5× faster |
+| min ns/op | **4.2** | 5.2 | 1.2× faster |
+| RSS delta MB | **7.9** | 44.9 | |
+| structure-only RSS delta MB | **1.3** | 9.9 | |
+| startup ms | **0.6** | 15.7 | 26× (reported separately; not throughput) |
+
+**No regressions on any metric.** `Stack`'s backing is `Rc<RefCell<Vec<f64>>>` (D-06/D-07's
+array-rebinding requirement — see the module docs), so every `push`/`pop` pays a refcount bump and a
+borrow-flag check, the same mechanism `heap.md`'s bench found a regression from. It does not show up
+here: unlike `heap`, there is no `Comparator` trait call riding alongside it, and V8's own `Array`
+push/pop is not free either — it must handle the JS `Array`'s own bookkeeping (length, potential
+hidden-class transitions) on every call. The `RefCell` check is real but small enough, relative to
+what V8 pays for the same operation, that it does not flip the result. Unconfirmed which side of that
+comparison dominates by how much: not isolated by profiling here, only that the direction is
+consistent with "a `RefCell` alone is a small cost" — see the dedicated `--refcell-probe` measurement
+in `docs/modules/sparse-set.md`, which measured that mechanism in isolation and found it
+indistinguishable from run-to-run noise at this workload's size.

@@ -297,7 +297,37 @@ Note which blocks *stayed* green, because it is the useful part: all six `quick`
 and a falsification that had targeted a shared helper would have gone red everywhere and told us
 less.
 
-**Bench.** Not run. Gate 10 is batched into a quiet serial pass on an idle machine (DESIGN.md §7.3);
-this unit was developed alongside three other agents, and a contended run inflated both sides 2–3×
-here before. `sort` is therefore **not** in `tests/scope.txt`, and `tests/verify.sh` reporting it as
-out of scope is the expected state until that pass runs.
+**Bench.** `bench/results.json` → `modules["sort"]`. Methodology: `bench/methodology.md`.
+Host: AMD Ryzen 5 7600X, 12 threads, WSL2, Node 24.18.1, rustc 1.97.1, quiet serial pass.
+Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, 500 samples/side.
+
+`sort` has no instance and no per-element op stream, so there is nothing for a K = 1000 batch to
+mean here — an "op" is "sort one freshly-generated array", not one comparison. This reuses the
+`drain` shape instead: one measured sample per **sort**, the same convention `sparse-set`'s
+iteration walk uses for an operation that is not a stream of cheap calls. `inplaceQuickSort` was
+chosen over `inplaceInsertionSort` as the representative default — the general-purpose sort most
+callers of this module actually use.
+
+**`sort-2e4x50`** — quicksort of a freshly-generated 20,000-element random array (values 0..1e6),
+50 passes, xorshift32 seed 42. Every pass sorts *fresh* data, generated once for all 50 passes
+before any timing and never re-sorted: upstream's fixed-pivot quicksort's worst case is
+already-sorted input, and re-sorting the previous pass's (now-sorted) output would have silently
+turned an O(n log n) benchmark into an O(n²) one on every pass after the first — the same shape of
+mistake `bit-set`'s `rank` was. The checksum is **position-weighted** (`Σ (index+1) × value`) rather
+than a sum, because a sum cannot distinguish a correctly sorted array from an unsorted one of the
+same multiset; weighting by final index makes it sensitive to quicksort's own (non-stable)
+tie-breaking, so checksum agreement is evidence both sides ran the identical statement-by-statement
+algorithm B-81's docs describe, not merely that both produced *a* sorted array.
+
+| metric | port | upstream | |
+|---|---|---|---|
+| p50 ns/element | **31.9** | 78.4 | 2.5× faster |
+| p99 ns/element | **41.8** | 99.7 | 2.4× faster |
+| min ns/element | **30.6** | 75.8 | 2.5× faster |
+| RSS delta MB | **1.4** | 41.0 | |
+| startup ms | **0.6** | 16.2 | 27× (reported separately; not throughput) |
+
+No regressions. `structure_rss_delta_mb` (port 0.1 MB, upstream 5.8 MB) is a different kind of
+number here from the other ten modules': there is no persistent structure left after the call
+returns, so it measures the transient footprint of allocating and sorting one 20,000-element array
+— read it as "memory to hold and sort `size` elements", not "size of the sort structure".

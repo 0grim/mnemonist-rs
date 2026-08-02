@@ -246,7 +246,25 @@ which both reach `unshift` on a deque whose `start` is zero. Reverted; **confirm
 
 ### Bench
 
-**Not run.** Gate 10 requires an idle machine (DESIGN.md §7.3) and this unit was ported while other
-agents were working. `bench/results.json` has no `fixed-deque` entry and `tests/scope.txt` does not
-list this unit, which is the honest state rather than an oversight. Gate 10 is batched into the
-quiet serial pass; the unit is complete through gates 1–9.
+`bench/results.json` → `modules["fixed-deque"]`. Methodology: `bench/methodology.md`.
+Host: AMD Ryzen 5 7600X, 12 threads, WSL2, Node 24.18.1, rustc 1.97.1, quiet serial pass.
+Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 10,000 samples/side.
+
+**`mixed-1e6`** — 1e6 mixed `push`/`peekLast`/`pop` (50/25/25), back-end operations only (mirroring
+`fixed-stack`'s shape rather than adding `unshift`/`shift`, which exercise the same ring arithmetic
+from the other end), capacity 10,000 against 1e6 ops, guarded the same way `fixed-stack`'s `push`
+is — see that module's bench doc for why an unguarded push into a full structure would benchmark
+V8's `Error` construction rather than the ring.
+
+| metric | port | upstream | |
+|---|---|---|---|
+| p50 ns/op | **4.6** | 7.5 | 1.6× faster |
+| p99 ns/op | **5.9** | 13.4 | 2.3× faster |
+| min ns/op | **4.1** | 7.0 | 1.7× faster |
+| RSS delta MB | **6.2** | 19.3 | |
+| structure-only RSS delta MB | **0.1** | 0.2 | |
+| startup ms | **0.6** | 16.7 | 28× (reported separately; not throughput) |
+
+No regressions, and the numbers track `fixed-stack`'s closely — expected, since the timed op mix
+touches the same three primitives at the same shape and the ring's extra geometry (`start`,
+wrap-once arithmetic) is a few integer operations per call, not a different asymptotic cost.

@@ -92,6 +92,91 @@ pub const MODULES: &[ModuleEntry] = &[
         drain: None,
         structure: crate::vector::build_structure,
     },
+    // Appended for the sequence-backed batch, never inserted: adding a module
+    // is "one line in harness.rs" per this file's own docs, and a conflict
+    // boundary landing mid-array is exactly the split-block risk CLAUDE.md
+    // warns about. `main.rs` does not change for any of these eleven.
+    ModuleEntry {
+        name: "stack",
+        kinds: &["mixed"],
+        mixed: Some(crate::stack::run_mixed),
+        drain: None,
+        structure: crate::stack::build_structure,
+    },
+    ModuleEntry {
+        name: "queue",
+        kinds: &["mixed"],
+        mixed: Some(crate::queue::run_mixed),
+        drain: None,
+        structure: crate::queue::build_structure,
+    },
+    ModuleEntry {
+        name: "fixed-stack",
+        kinds: &["mixed"],
+        mixed: Some(crate::fixed_stack::run_mixed),
+        drain: None,
+        structure: crate::fixed_stack::build_structure,
+    },
+    ModuleEntry {
+        name: "fixed-deque",
+        kinds: &["mixed"],
+        mixed: Some(crate::fixed_deque::run_mixed),
+        drain: None,
+        structure: crate::fixed_deque::build_structure,
+    },
+    ModuleEntry {
+        name: "circular-buffer",
+        kinds: &["mixed"],
+        mixed: Some(crate::circular_buffer::run_mixed),
+        drain: None,
+        structure: crate::circular_buffer::build_structure,
+    },
+    ModuleEntry {
+        name: "hashed-array-tree",
+        kinds: &["mixed"],
+        mixed: Some(crate::hashed_array_tree::run_mixed),
+        drain: None,
+        structure: crate::hashed_array_tree::build_structure,
+    },
+    ModuleEntry {
+        name: "sparse-map",
+        kinds: &["mixed"],
+        mixed: Some(crate::sparse_map::run_mixed),
+        drain: None,
+        structure: crate::sparse_map::build_structure,
+    },
+    ModuleEntry {
+        name: "sparse-queue-set",
+        kinds: &["mixed"],
+        mixed: Some(crate::sparse_queue_set::run_mixed),
+        drain: None,
+        structure: crate::sparse_queue_set::build_structure,
+    },
+    ModuleEntry {
+        name: "bit-vector",
+        kinds: &["mixed"],
+        mixed: Some(crate::bit_vector::run_mixed),
+        drain: None,
+        structure: crate::bit_vector::build_structure,
+    },
+    // `suffix-array` and `sort` have no per-element op stream (see each
+    // file's own module docs), so both reuse the `drain` kind rather than
+    // `mixed` -- one measured sample per construction/sort, exactly the
+    // convention `sparse-set`'s iteration walk already established.
+    ModuleEntry {
+        name: "suffix-array",
+        kinds: &["drain"],
+        mixed: None,
+        drain: Some(crate::suffix_array::run_drain),
+        structure: crate::suffix_array::build_structure,
+    },
+    ModuleEntry {
+        name: "sort",
+        kinds: &["drain"],
+        mixed: None,
+        drain: Some(crate::sort::run_drain),
+        structure: crate::sort::build_structure,
+    },
 ];
 
 pub fn find(name: &str) -> Option<&'static ModuleEntry> {

@@ -256,8 +256,26 @@ wrong, and it is a one-token change.
 
 ### Bench
 
-**Not run.** Gate 10 is deliberately outstanding for this module: benchmarks need an idle machine,
-and this unit was ported alongside two others in parallel worktrees, where a contended run has
-already been measured on this project to inflate both sides 2–3× (NOTES.md, H+5). It is batched into
-a separate quiet pass, and `hashed-array-tree` is therefore **not** in `tests/scope.txt` yet — by
-DESIGN.md §1.1 it is not done until it is. Gates 1–9 are green.
+`bench/results.json` → `modules["hashed-array-tree"]`. Methodology: `bench/methodology.md`.
+Host: AMD Ryzen 5 7600X, 12 threads, WSL2, Node 24.18.1, rustc 1.97.1, quiet serial pass.
+Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 10,000 samples/side.
+
+**`mixed-1e6`** — 1e6 mixed `push`/`get`/`pop` (50/25/25), `vector`'s exact shape (`get` at a
+uniformly random *existing* index, modulo the current length; `size` only bounds pushed-value
+magnitude, since a fresh tree starts at length 0, capacity 0, and grows one block at a time),
+xorshift32 seed 42, `Uint32Array` blocks at the default 1024-element block size.
+
+| metric | port | upstream | |
+|---|---|---|---|
+| p50 ns/op | **5.5** | 8.6 | 1.6× faster |
+| p99 ns/op | **10.0** | 26.4 | 2.6× faster |
+| min ns/op | **4.8** | 8.0 | 1.7× faster |
+| RSS delta MB | **7.0** | 23.6 | |
+| structure-only RSS delta MB | **1.3** | 9.6 | |
+| startup ms | **0.6** | 16.4 | 27× (reported separately; not throughput) |
+
+No regressions. `pop`'s upstream defect (B-11, reading the *last allocated* block rather than the
+block the popped index actually falls in) is reproduced bug-for-bug and contributes to the checksum
+exactly as everything else does — the checksum matching on both sides is itself evidence the port
+takes the same wrong branch upstream does, at the same block boundaries, not merely that both sides
+returned *a* number.

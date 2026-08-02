@@ -244,7 +244,28 @@ being that assertion with `actual` `[4, 2, 3]` against `expected` `[2, 3, 4]`. R
 
 ### Bench
 
-**Not run.** Gate 10 requires an idle machine (DESIGN.md §7.3) and this unit was ported while other
-agents were working. `bench/results.json` has no `circular-buffer` entry and `tests/scope.txt` does
-not list this unit, which is the honest state rather than an oversight. Gate 10 is batched into the
-quiet serial pass; the unit is complete through gates 1–9.
+`bench/results.json` → `modules["circular-buffer"]`. Methodology: `bench/methodology.md`.
+Host: AMD Ryzen 5 7600X, 12 threads, WSL2, Node 24.18.1, rustc 1.97.1, quiet serial pass.
+Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 10,000 samples/side.
+
+**`mixed-1e6`** — 1e6 mixed `push`/`peekLast`/`pop` (50/25/25), capacity 10,000 against 1e6 ops,
+same shape as `fixed-stack`/`fixed-deque`. **No guard here**: this is the one fixed-capacity module
+where `push` cannot fail — overwriting the oldest element when full is its whole reason to exist —
+so unlike its two siblings the timed loop calls `push` unconditionally, and the benchmark spends its
+saturated majority actually exercising the overwrite path rather than a guarded no-op.
+
+| metric | port | upstream | |
+|---|---|---|---|
+| p50 ns/op | **4.9** | 6.2 | 1.3× faster |
+| p99 ns/op | **8.5** | 10.4 | 1.2× faster |
+| min ns/op | **4.3** | 5.8 | 1.3× faster |
+| RSS delta MB | **6.1** | 21.0 | |
+| structure-only RSS delta MB | **0.1** | 0.3 | |
+| startup ms | **0.6** | 16.1 | 27× (reported separately; not throughput) |
+
+No regressions, though the margin is the **narrowest of the three fixed-capacity modules** — p50
+1.3× here against 1.7–2.1× for the guarded pair. Plausible mechanism, not confirmed: every push here
+does real work (the overwrite-and-advance branch) rather than sometimes taking a guarded early exit,
+so both sides are doing strictly more per call than `fixed-stack`/`fixed-deque` see once saturated,
+and V8's overwrite path (a plain indexed store, no capacity exception ever reachable) has less
+distance to close.

@@ -9,10 +9,7 @@ So the unit is one file, and it is the smallest closure in the queue.
 Port: `crates/mnemonist-core/src/structures/suffix_array.rs` ·
 bridge `crates/mnemonist-napi/src/suffix_array.rs` · shim `tests/bridge/suffix-array.js`
 
-Gates 1–9 green. **Gate 10 (benchmark) deliberately not run**: five agents were working this tree,
-and DESIGN.md §7.3 batches benchmarks into a quiet serial pass because a contended run inflated both
-sides 2–3× here. `tests/scope.txt` is therefore untouched, and `tests/verify.sh` correctly reports
-this unit as not-in-scope. That is the intended end state, not an omission.
+All ten gates green (`tests/scope.txt`).
 
 ---
 
@@ -255,6 +252,39 @@ Both minimised seeds are committed under `crates/difffuzz/proptest-regressions/`
 blocks, because an unlabelled `cc` line reads as "a real port defect was found here", which is the
 opposite of what happened.
 
-**Gate 10 — not run, on purpose.** See the header. Benchmarks belong to the quiet serial pass; a
-number measured while five agents compile is worthless, and publishing one would be exactly the
-"do not overclaim about performance" failure CLAUDE.md warns about.
+**Gate 10.** `bench/results.json` → `modules["suffix-array"]`. Methodology: `bench/methodology.md`.
+Host: AMD Ryzen 5 7600X, 12 threads, WSL2, Node 24.18.1, rustc 1.97.1, quiet serial pass.
+Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, 500 samples/side.
+
+Like `sort`, there is no incremental API here — a suffix array is built once from a whole sequence
+and then only read — so this reuses the `drain` shape: one measured sample per **construction**.
+
+**`build-2e4x50`** — DC3 construction over a freshly-generated 20,000-character random text, 50
+passes, xorshift32 seed 42. A **four-symbol alphabet** (`A`–`D` by code point), chosen because real
+suffix-array workloads skew toward small alphabets (genomic text is the textbook case) and because a
+large alphabet would make every suffix comparison resolve in one step — the easy case, not the one
+the algorithm exists for. A fresh text is drawn for every pass so the recursive case (repeated
+triples) is exercised rather than avoided, which is exactly the condition B-91 needs to fire. The
+checksum is **position-weighted** (`Σ (index+1) × array[index]`), the same reasoning as `sort`'s:
+`array()`'s positions are a permutation of `0..size` regardless of whether the order is right, so a
+plain sum cannot tell a correct construction from a B-90/B-91-shaped wrong one apart — checksum
+agreement here is evidence the port reproduces both defects bug-for-bug, at the same recursion
+depths, not merely that both sides produced *a* permutation of the same numbers.
+
+| metric | port | upstream | |
+|---|---|---|---|
+| p50 ns/char | **69.1** | 514.1 | 7.4× faster |
+| p99 ns/char | **91.4** | 632.7 | 6.9× faster |
+| min ns/char | **66.7** | 469.4 | 7.0× faster |
+| RSS delta MB | **1.2** | 200.1 | |
+| startup ms | **0.6** | 15.9 | 26× (reported separately; not throughput) |
+
+No regressions — the widest margin in this whole batch, on both throughput and RSS. Plausible
+mechanism, unconfirmed: DC3's recursion allocates several intermediate arrays per level (the
+reduced string, the rank arrays, the merge buffers), and upstream's `Sparse`-shaped reads (this
+module's own docs: `undefined` past a hole or the array's end, load-bearing for B-90/B-91) mean
+several of those upstream arrays are plain `Array`s rather than typed arrays, carrying V8's general
+object-array overhead through every recursive level. The port's own `Sparse` type
+(`Vec<Option<i64>>`) is a flatter allocation with none of that indirection. Not isolated by
+profiling; stated as the mechanism most consistent with the RSS gap (200 MB against 1.2 MB) being
+so much larger here than in any other module in this batch.

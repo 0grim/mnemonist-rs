@@ -408,6 +408,50 @@ fixed-size samples would bury that fixed cost in whichever sample happened to co
 still means nanoseconds per element. Both sides derive it independently and the driver's checksum
 gate would fail if they disagreed.
 
+### The RefCell borrow-flag cost (B-31) — why this unit stays descoped
+
+Everything above links `mnemonist-core::SparseSet` directly, never through N-API — correct per
+DESIGN.md §5.1 for comparing the port against upstream, but it also means none of it goes anywhere
+near the thing `tests/scope.txt` names as the reason this module is still out of scope: the napi
+bridge (`crates/mnemonist-napi/src/sparse_set.rs`) holds its `CoreSet` in a `RefCell` and calls
+`.borrow()` (for `has`) or `.borrow_mut()` (for `add`/`delete`) on every single access, and nobody
+had measured what that borrow-flag check costs in isolation.
+
+`bench/runner/src/sparse_set.rs::run_mixed_refcell` closes that gap without going through napi
+either: the identical mixed workload, over the identical `SparseSet`, wrapped in a bare `RefCell`
+and accessed through `.borrow()`/`.borrow_mut()` exactly as the bridge does. It reproduces the
+*mechanism* the bridge adds without reproducing the bridge itself, so it stays inside the
+"never through N-API" rule while finally putting a number on the one thing that rule has always
+kept invisible. Run with `bench-runner --refcell-probe --size <N> --warmup 3 --measured <M>`; it
+is deliberately not part of `harness::MODULES` and never writes to `bench/results.json` — there is
+no upstream JS analogue of "a bare Rust `RefCell`" to publish a `regressions` array against.
+
+At size 1e6 (this module's own `mixed-1e6` domain), three repeated probes of 10 measured passes
+each gave:
+
+| probe | plain p50 ns/op | RefCell-wrapped p50 ns/op | delta |
+|---|---|---|---|
+| 1 | 9.278 | 9.317 | +0.4% |
+| 2 | 9.218 | 9.368 | +1.6% |
+| 3 | 9.248 | 9.147 | −1.1% |
+
+A fourth probe at 30 measured passes (30,000 samples/side) gave 9.157 plain against **8.886**
+RefCell-wrapped — the wrapped variant faster. At size 4e6 the sign flips between repeated probes
+too (+18%, then −4.8%, then −2.3%). **The isolated borrow-flag check is not distinguishable from
+this host's own run-to-run noise** at either size: methodology.md already documents up to ~32%
+p99 swings between clean runs on this machine, and the p50 deltas above sit well inside that band
+in both directions.
+
+This is a real measurement, not an absence of one, and it answers a real question: whether the
+`RefCell` alone is a *dominant* driver of any bridge-path slowdown. On this evidence, no — not
+detectably, on its own, at these sizes. What is **not** measured here, and is not claimed, is the
+full cost of going through napi: argument marshalling, `Result`-to-`Error` conversion, and the
+FFI call boundary itself are all real costs this probe never touches, because touching them means
+going through N-API, which would poison the comparison this whole harness exists to keep clean.
+Re-scoping `sparse-set` is the orchestrator's call per `tests/scope.txt`'s own note, not this
+probe's to make; this section exists so that call can be made from a real number instead of an
+assumption.
+
 ### `$forEach` — the op that was missing (added 2026-08-01, B-31)
 
 `sparse-set`'s grammar had no `forEach` op at all. That omission is what let B-31 — a `forEach`

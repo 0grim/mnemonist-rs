@@ -334,3 +334,36 @@ pre-fix bridges, green after.
 One deliberate narrowing, mirrored on both sides: a selected callback argument that is `undefined`
 skips the mutation. Feeding it back in reaches upstream's `NaN`-indexed swap, which `usize` cannot
 express and the core does not model. Fully disclosed in `fuzz/log.txt`.
+
+### Bench
+
+`bench/results.json` → `modules["bit-vector"]`. Methodology: `bench/methodology.md`.
+Host: AMD Ryzen 5 7600X, 12 threads, WSL2, Node 24.18.1, rustc 1.97.1, quiet serial pass.
+Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 10,000 samples/side.
+
+**`mixed-1e6`** — 1e6 mixed `push`/`get`/`pop` (50/25/25), `vector`/`hashed-array-tree`'s shape
+(this module grows under `push`, unlike `bit-set`'s fixed domain, so there is no capacity parameter
+to set), xorshift32 seed 42. `rank`/`select` excluded for the reason recorded in `bit-set`'s own
+bench doc: neither has an index behind it, so a single call is O(i / 32) words, and a
+uniform-weighted mix would put a domain-scaling cost next to three genuinely O(1) ops.
+
+| metric | port | upstream | |
+|---|---|---|---|
+| p50 ns/op | 8.1 | **8.3** | tie |
+| p99 ns/op | **12.9** | 14.5 | 1.1× faster |
+| min ns/op | **7.5** | 7.8 | tie |
+| RSS delta MB | **6.1** | 17.8 | |
+| structure-only RSS delta MB | **1.3** | 9.8 | |
+| startup ms | **0.6** | 16.4 | 27× (reported separately; not throughput) |
+
+**No regressions, but the narrowest margin of the eleven mixed workloads in this batch** — p50 and
+min are effectively ties (within 3%, well inside the noise band methodology.md documents: up to
+~32% p99 swings between clean runs on this host). A probe at 4e6 domain (single measured pass, not
+committed as a second workload row) confirmed the same picture rather than revealing a boundary:
+port still ahead on p50/p99/min at that scale, by a similar small margin, with the *sign* of the
+gap flipping between individual passes at both sizes — this is noise, not a trend. `push`/`pop`/
+`get` here are all single-word bit operations once the vector is allocated, the same shape
+`bit-set`'s zero-overhead bit ops have, which is plausibly why this is the one growable module in
+the batch that comes closest to parity rather than winning decisively like `vector`/
+`hashed-array-tree` do. Unconfirmed: not isolated by profiling, offered as the mechanism most
+consistent with the numbers.
