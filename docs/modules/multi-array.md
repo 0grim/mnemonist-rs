@@ -183,9 +183,39 @@ bucket on average by the run's end**, matching `multi-map`'s own ratio, xorshift
 p99 here would have hidden a real p50 regression; reporting only p50 would have hidden that the
 port's tail is *better* than upstream's, which is the more usual pattern for a GC'd runtime doing
 frequent small allocations (`get` allocates a fresh array/`Vec` on every call, tail-to-head, and
-does so on both sides). **Unconfirmed cause of the p50 gap:** `MultiArray::get` walks the pointer
-chain and materialises a `Vec<f64>` on every call, one bounds-checked array write per step; upstream
-does the same walk over a plain `Array`, whose access V8 can speculate on more aggressively once the
-shape is monomorphic. That is a plausible account of where the p50 gap comes from, not a confirmed
-one — it has not been checked against a metric (e.g. isolating `get` from `set`/`multiplicity` in a
-narrower probe) that would let it be falsified.
+does so on both sides). `MultiArray::get` walks the pointer chain and materialises a `Vec<f64>` on
+every call, one bounds-checked array write per step; upstream does the same walk over a plain
+`Array`, whose access V8 can speculate on more aggressively once the shape is monomorphic. That was
+a plausible account of where the p50 gap comes from, not originally a confirmed one.
+
+**Confirmed 2026-08-02** — partially, with a real number attached rather than left as "plausible".
+`bench/runner/examples/multi_array_alloc_probe.rs` builds a 20,000-index array with 25 values/bucket
+(this workload's own steady-state ratio) and, with an allocation-counting global allocator, isolates
+`get` from `multiplicity` (an O(1) read with no walk and no allocation) over 250,000 calls of each:
+
+| variant | ns/call | allocations/call |
+|---|---|---|
+| `get(index)` (walk + materialise) | 50.96 | **1.000** |
+| `multiplicity(index)` (O(1), no walk) | 0.82 | 0.000 |
+| bare `Vec::with_capacity(25)` + fill, no walk | 34.88 | 1.000 |
+
+`get` allocates exactly once per call, confirmed by counting rather than by reading the source — the
+compiler does not elide it. The gap between `get` and `multiplicity` (50.14 ns/call) splits roughly
+70/30 between the allocation itself (the bare-allocation baseline, 34.88 ns/call, with no chain walk
+at all) and the pointer-chain walk (the remaining ≈15 ns/call). **Verdict: confirmed as a real,
+measured cause — not shown to be the sole one.** The published p50 gap is 23.8 ns/op averaged over
+*all* three ops in the mix; `get` is 25% of the mix, so fully explaining the whole-workload gap from
+`get` alone would need roughly 4× that, ≈95 ns of `get`-specific excess cost. The measured 50.14
+ns/call accounts for a bit over half of that back-of-envelope figure — a real, substantial
+contribution, but the arithmetic does not support calling it the entire explanation, and no probe was
+run against `set` to check whether it also carries part of the gap. Recorded as confirmed-but-partial
+rather than confirmed-and-complete, per this project's rule against overclaiming causation.
+
+**Fix not attempted.** `get`'s allocation is not incidental: it exists to match upstream's own
+`#.get(index)` contract, which returns a fresh JS `Array` — a non-allocating alternative would have
+to be an *additional* method (e.g. a walk that writes into a caller-supplied buffer or yields an
+iterator), not a replacement for `get`, since the benchmark and the upstream test suite both need
+`get`'s existing return type. Adding one is a `crates/mnemonist-core` change and would need multi-
+array's fuzz campaign and bench figures re-run before it could stand (this project's rule on changing
+core) — out of scope for this investigation's "strictly secondary" fix budget. Recorded as a proposal
+for later, not applied.

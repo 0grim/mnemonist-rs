@@ -179,6 +179,152 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
+    // Diagnostics for the four modules `docs/modules/*.md` records as
+    // regressed against upstream with an *unconfirmed* cause -- these test
+    // each recorded hypothesis against a counterfactual variant of the same
+    // workload, same shape as `--refcell-probe` above. None has an `original`
+    // side (there is no upstream JS analogue of "the port minus one Rust
+    // abstraction layer"), so none writes to `bench/results.json` and none is
+    // part of `harness::MODULES`.
+    if flags.contains(&"--heap-probe") {
+        let size = match size_flag(&flags) {
+            Ok(size) => size,
+            Err(message) => return fail(&message),
+        };
+        let ops = number(&flags, "--ops", DEFAULT_OPS);
+        let seed = match u32_flag(&flags, "--seed", DEFAULT_SEED) {
+            Ok(seed) => seed,
+            Err(message) => return fail(&message),
+        };
+        let warmup = number(&flags, "--warmup", 3);
+        let measured = number(&flags, "--measured", 10);
+
+        let generated = workload::generate(size, ops, seed);
+
+        let wrapped = run_repeated(heap::run_mixed, &generated, warmup, measured);
+        let bare = run_repeated(heap::run_mixed_bare, &generated, warmup, measured);
+
+        if wrapped.checksum != bare.checksum {
+            return fail(
+                "wrapped and bare heap runs computed different checksums; \
+                 the probe is not measuring the same workload on both sides",
+            );
+        }
+
+        println!(
+            "{}",
+            json!({
+                "mode": "heap-probe",
+                "module": "heap",
+                "size": size,
+                "ops": ops,
+                "seed": seed,
+                "warmup": warmup,
+                "measured": measured,
+                "checksum": wrapped.checksum,
+                "wrapped_refcell_comparator": wrapped.summary(),
+                "bare_vec": bare.summary(),
+            })
+        );
+
+        return ExitCode::SUCCESS;
+    }
+
+    if flags.contains(&"--bit-set-probe") {
+        let size = match size_flag(&flags) {
+            Ok(size) => size,
+            Err(message) => return fail(&message),
+        };
+        let ops = number(&flags, "--ops", DEFAULT_OPS);
+        let seed = match u32_flag(&flags, "--seed", DEFAULT_SEED) {
+            Ok(seed) => seed,
+            Err(message) => return fail(&message),
+        };
+        let warmup = number(&flags, "--warmup", 3);
+        let measured = number(&flags, "--measured", 10);
+
+        let generated = workload::generate(size, ops, seed);
+
+        let wrapped = run_repeated(bit_set::run_mixed, &generated, warmup, measured);
+        let bare = run_repeated(bit_set::run_mixed_bare, &generated, warmup, measured);
+        let bare_to_int32 = run_repeated(
+            bit_set::run_mixed_bare_to_int32,
+            &generated,
+            warmup,
+            measured,
+        );
+
+        if wrapped.checksum != bare.checksum || wrapped.checksum != bare_to_int32.checksum {
+            return fail(
+                "wrapped and bare bit-set runs computed different checksums; \
+                 the probe is not measuring the same workload on both sides",
+            );
+        }
+
+        println!(
+            "{}",
+            json!({
+                "mode": "bit-set-probe",
+                "module": "bit-set",
+                "size": size,
+                "ops": ops,
+                "seed": seed,
+                "warmup": warmup,
+                "measured": measured,
+                "checksum": wrapped.checksum,
+                "wrapped_words_refcell": wrapped.summary(),
+                "bare_vec_u32": bare.summary(),
+                "bare_vec_u32_with_to_int32": bare_to_int32.summary(),
+            })
+        );
+
+        return ExitCode::SUCCESS;
+    }
+
+    if flags.contains(&"--default-map-probe") {
+        let size = match size_flag(&flags) {
+            Ok(size) => size,
+            Err(message) => return fail(&message),
+        };
+        let ops = number(&flags, "--ops", DEFAULT_OPS);
+        let seed = match u32_flag(&flags, "--seed", DEFAULT_SEED) {
+            Ok(seed) => seed,
+            Err(message) => return fail(&message),
+        };
+        let warmup = number(&flags, "--warmup", 3);
+        let measured = number(&flags, "--measured", 10);
+
+        let generated = workload::generate(size, ops, seed);
+
+        let peek = run_repeated(default_map::run_probe_peek, &generated, warmup, measured);
+        let hit = run_repeated(default_map::run_probe_hit, &generated, warmup, measured);
+
+        if peek.checksum != hit.checksum {
+            return fail(
+                "peek and get-or-insert-with-hit runs computed different checksums; \
+                 the probe is not measuring the same workload on both sides",
+            );
+        }
+
+        println!(
+            "{}",
+            json!({
+                "mode": "default-map-probe",
+                "module": "default-map",
+                "size": size,
+                "ops": ops,
+                "seed": seed,
+                "warmup": warmup,
+                "measured": measured,
+                "checksum": peek.checksum,
+                "peek_single_lookup": peek.summary(),
+                "get_or_insert_with_hit": hit.summary(),
+            })
+        );
+
+        return ExitCode::SUCCESS;
+    }
+
     if flags.contains(&"--baseline") {
         // The RSS baseline (§5.2 Problem 3). Node carries ~40 MB of V8 before
         // any data structure exists, and reporting that as a data-structure

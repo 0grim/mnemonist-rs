@@ -82,3 +82,84 @@ pub fn build_structure(size: u32) {
     std::hint::black_box(&map);
     std::hint::black_box(map.has(&(size - 1)));
 }
+
+/// Isolates `get_or_insert_with`'s **hit path** — `OrderedMap::slot_of` then
+/// `OrderedMap::entry_at` (`DefaultMap::try_get_or_insert_with`) — against a
+/// single-hash-lookup baseline, to test this module's own bench doc's
+/// "unconfirmed" hypothesis that the hit path costs two hash lookups rather
+/// than one. Every key is prefilled before the timed region and every op here
+/// reads one back, so the factory never runs and no insert ever happens: both
+/// [`run_probe_peek`] and [`run_probe_hit`] below measure a pure read.
+///
+/// Reading `OrderedMap::entry_at` (`crates/mnemonist-core/src/map/mod.rs`)
+/// shows it is `self.slots.get(slot)` — a plain `Vec` index, not a second
+/// `HashMap::get` — so the two hash lookups the doc hypothesises should not
+/// exist by construction; [`peek`](DefaultMap::peek), which is exactly one
+/// `OrderedMap::get` (one hash lookup, one slot read), is the baseline this
+/// probe checks that reading against. Not part of `harness::MODULES` — no
+/// upstream JS analogue of "call peek instead of get-or-insert" to publish a
+/// `regressions` array against. Call with `--default-map-probe`.
+pub fn run_probe_peek(workload: &Workload, k: usize) -> (Vec<u64>, u64) {
+    let mut map: DefaultMap<u32, u32> = DefaultMap::new();
+
+    for i in 0..workload.size {
+        map.set(i, Some(i));
+    }
+
+    let ops = workload.len();
+    let mut batches = Vec::with_capacity(ops.div_ceil(k));
+    let mut checksum: u64 = 0;
+
+    for start in (0..ops).step_by(k) {
+        let end = (start + k).min(ops);
+        let clock = std::time::Instant::now();
+
+        for i in start..end {
+            // `workload.a[i]` is already drawn `below(workload.size)`, so
+            // every key here was prefilled above -- this is a hit, always.
+            let key = workload.a[i];
+            checksum += u64::from(*map.peek(&key).expect("every key was prefilled"));
+        }
+
+        batches.push(clock.elapsed().as_nanos() as u64);
+    }
+
+    std::hint::black_box(&map);
+
+    (batches, checksum)
+}
+
+/// The `get_or_insert_with` half of the same comparison — see
+/// [`run_probe_peek`]. The factory is `unreachable!()`: every key was
+/// prefilled above, so this exercises only the hit path
+/// (`slot_of` + `entry_at`), never the miss path (factory + `set`).
+pub fn run_probe_hit(workload: &Workload, k: usize) -> (Vec<u64>, u64) {
+    let mut map: DefaultMap<u32, u32> = DefaultMap::new();
+
+    for i in 0..workload.size {
+        map.set(i, Some(i));
+    }
+
+    let ops = workload.len();
+    let mut batches = Vec::with_capacity(ops.div_ceil(k));
+    let mut checksum: u64 = 0;
+
+    for start in (0..ops).step_by(k) {
+        let end = (start + k).min(ops);
+        let clock = std::time::Instant::now();
+
+        for i in start..end {
+            let key = workload.a[i];
+            let value = map.get_or_insert_with(key, |_, _| {
+                unreachable!("every key was prefilled; the probe's hit path never inserts")
+            });
+            checksum += u64::from(*value.expect("every key was prefilled"));
+        }
+
+        batches.push(clock.elapsed().as_nanos() as u64);
+    }
+
+    std::hint::black_box(&map);
+
+    (batches, checksum)
+}

@@ -219,10 +219,38 @@ outcomes of the cross-plane backtrack for real 2-D data, so no second radius par
 here against upstream's 620 ns (the port wins, consistent with the rest of this batch), but
 `k_nearest_neighbors` alone is 6.6 µs/call here against upstream's 2.1 µs — a genuine reversal, and
 disproportionate: this port's own k-NN path costs **20×** its own `nearest_neighbor`, where
-upstream's costs only **3.4×** its own. **Cause: unconfirmed.** `recurse_knn` heap-allocates a
-fresh 3-element `Vec<f64>` per node visited into `FixedReverseHeap`'s backing store — a plausible
-mechanism (V8's generational GC can bump-allocate the equivalent short-lived array far more cheaply
-than repeated small `malloc`s), consistent with where the two sides' costs diverge, but not
-confirmed with a profiler or allocation count, so it is labelled a hypothesis rather than a finding
-— see `bench/runner/src/kd_tree.rs`'s own module docs for the full account. RSS and startup still
-favour the port. Checksum `723901217380`, identical on both sides.
+upstream's costs only **3.4×** its own. `recurse_knn` heap-allocates a fresh 3-element `Vec<f64>`
+per node visited into `FixedReverseHeap`'s backing store — a plausible mechanism (V8's generational
+GC can bump-allocate the equivalent short-lived array far more cheaply than repeated small
+`malloc`s), consistent with where the two sides' costs diverge, but originally not confirmed with a
+profiler or allocation count, so it was labelled a hypothesis rather than a finding.
+
+**Confirmed 2026-08-02**, with an allocation-counting global allocator (no `perf`/`cargo flamegraph`
+available on this host — see the investigation's own report for the full tool inventory).
+`bench/runner/examples/kd_tree_alloc_probe.rs` builds the same shape of tree (100,000 scattered 2-D
+points) and runs 20,000 calls of each method alone, counting real heap allocations rather than
+reading the source and assuming them:
+
+| method | ns/call | allocations/call | bytes/call |
+|---|---|---|---|
+| `nearest_neighbor` | 362.9 | **0.000** | 0 |
+| `k_nearest_neighbors` | 8071.0 | **499.312** | 12,863 |
+
+Zero allocations for `nearest_neighbor`, essentially one allocation per node visited for
+`k_nearest_neighbors` (≈499 of them per call, each the 3-element `Vec<f64>` `recurse_knn` pushes) —
+the self-ratio this probe measures, 22.2×, reproduces the 20× the original gate-10 run found (a
+different, unmatched PRNG and a smaller call count, so exact agreement was not expected; the same
+order of magnitude is what confirms it). **Verdict: confirmed.** The per-node allocation is real,
+measured directly rather than inferred, and its count tracks the disproportionate cost one-for-one.
+RSS and startup still favour the port. Checksum `723901217380`, identical on both sides for the
+original gate-10 measurement (the allocation probe uses its own smaller, unmatched workload and is
+not itself gate-10 evidence — see the file's own docs for why).
+
+**Fix not attempted.** `FixedReverseHeap`'s backing store is `VecStore<Vec<f64>>` because it is a
+faithful port of upstream's own tuple-array shape (`heap[i]` holding a 3-element JS array); avoiding
+the allocation would mean giving `k_nearest_neighbors` its own fixed-size `[f64; 3]` or a flattened
+`Vec<f64>` backing store instead of going through the general-purpose `Store`/`Comparator` machinery
+`FixedReverseHeap` shares with `Heap`/`FibonacciHeap`. That is a `crates/mnemonist-core` change, and
+per this project's rule, changing it would make this module's fuzz campaign and bench figures stale
+and require re-running both before the change could stand — out of scope for this investigation's
+"strictly secondary" fix budget. Recorded here as a proposal for later, not applied.

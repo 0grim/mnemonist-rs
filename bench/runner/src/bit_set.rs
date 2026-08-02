@@ -72,3 +72,150 @@ pub fn build_structure(size: u32) {
     std::hint::black_box(&set);
     std::hint::black_box(set.get(i64::from(size) - 1));
 }
+
+/// A bare `Vec<u32>` word array, `usize` indices, `set_bit`/`get_bit` inlined
+/// directly at the call site — the counterfactual this module's own bench doc
+/// names as unconfirmed: does the extra call frame through
+/// `Words::set_bit`/`get_bit` (`crates/mnemonist-core/src/structures/bits.rs`)
+/// cost anything once the `Rc<RefCell<Vec<u32>>>` borrow-flag check and the
+/// `i64`-with-real-`ToInt32` split both go away too? This workload never
+/// produces a negative or out-of-range index (`workload.a[i]` is drawn
+/// `below(size)`), so the `usize` shortcut here is faithful to what actually
+/// runs, not a narrower test than the real one.
+struct BareBitSet {
+    words: Vec<u32>,
+}
+
+impl BareBitSet {
+    fn new(length: usize) -> Self {
+        Self {
+            words: vec![0u32; length.div_ceil(32)],
+        }
+    }
+
+    fn set(&mut self, index: usize) {
+        self.words[index / 32] |= 1u32 << (index % 32);
+    }
+
+    fn reset(&mut self, index: usize) {
+        self.words[index / 32] &= !(1u32 << (index % 32));
+    }
+
+    fn get(&self, index: usize) -> u32 {
+        (self.words[index / 32] >> (index % 32)) & 1
+    }
+
+    fn test(&self, index: usize) -> bool {
+        self.get(index) != 0
+    }
+}
+
+/// [`BareBitSet`], but with `index` run through the exact `f64`-based
+/// `ToInt32` conversion `Words::split` uses
+/// (`crates/mnemonist-core/src/structures/bits.rs`,
+/// `crate::utils::bitwise::to_int32`) instead of a plain `usize` cast. Still
+/// no `RefCell`, still `Vec<u32>` rather than `Words`. Exists to split
+/// [`BareBitSet`] vs `BitSet`'s gap into its two candidate causes: the
+/// `RefCell` borrow-flag check this module's doc names, and the
+/// `to_int32`/`rem_euclid` float conversion `split` does on every call, which
+/// the doc does not mention at all.
+struct BareBitSetToInt32 {
+    words: Vec<u32>,
+}
+
+impl BareBitSetToInt32 {
+    fn new(length: usize) -> Self {
+        Self {
+            words: vec![0u32; length.div_ceil(32)],
+        }
+    }
+
+    fn split(index: i64) -> (usize, u32) {
+        let index = mnemonist_core::utils::bitwise::to_int32(index as f64);
+        ((index >> 5) as usize, (index & 0x1f) as u32)
+    }
+
+    fn set(&mut self, index: i64) {
+        let (word, pos) = Self::split(index);
+        self.words[word] |= 1u32 << pos;
+    }
+
+    fn reset(&mut self, index: i64) {
+        let (word, pos) = Self::split(index);
+        self.words[word] &= !(1u32 << pos);
+    }
+
+    fn get(&self, index: i64) -> u32 {
+        let (word, pos) = Self::split(index);
+        (self.words[word] >> pos) & 1
+    }
+
+    fn test(&self, index: i64) -> bool {
+        self.get(index) != 0
+    }
+}
+
+/// The [`BareBitSetToInt32`] counterpart to [`run_mixed`]/[`run_mixed_bare`].
+/// Not part of `harness::MODULES`, same reasoning as the other two.
+pub fn run_mixed_bare_to_int32(workload: &Workload, k: usize) -> (Vec<u64>, u64) {
+    let mut set = BareBitSetToInt32::new(workload.size as usize);
+
+    let ops = workload.len();
+    let mut batches = Vec::with_capacity(ops.div_ceil(k));
+    let mut checksum: u64 = 0;
+
+    for start in (0..ops).step_by(k) {
+        let end = (start + k).min(ops);
+        let clock = std::time::Instant::now();
+
+        for i in start..end {
+            let index = i64::from(workload.a[i]);
+
+            match workload.kind[i] {
+                0 => set.set(index),
+                1 => set.reset(index),
+                2 => checksum += u64::from(set.get(index)),
+                _ => checksum += u64::from(set.test(index)),
+            }
+        }
+
+        batches.push(clock.elapsed().as_nanos() as u64);
+    }
+
+    std::hint::black_box(&set);
+
+    (batches, checksum)
+}
+
+/// The bare counterpart to [`run_mixed`], same op mix and same op stream —
+/// see `main.rs`'s `--bit-set-probe`. Not part of `harness::MODULES`, same
+/// reasoning as `sparse_set.rs::run_mixed_refcell` and `heap.rs::run_mixed_bare`.
+pub fn run_mixed_bare(workload: &Workload, k: usize) -> (Vec<u64>, u64) {
+    let mut set = BareBitSet::new(workload.size as usize);
+
+    let ops = workload.len();
+    let mut batches = Vec::with_capacity(ops.div_ceil(k));
+    let mut checksum: u64 = 0;
+
+    for start in (0..ops).step_by(k) {
+        let end = (start + k).min(ops);
+        let clock = std::time::Instant::now();
+
+        for i in start..end {
+            let index = workload.a[i] as usize;
+
+            match workload.kind[i] {
+                0 => set.set(index),
+                1 => set.reset(index),
+                2 => checksum += u64::from(set.get(index)),
+                _ => checksum += u64::from(set.test(index)),
+            }
+        }
+
+        batches.push(clock.elapsed().as_nanos() as u64);
+    }
+
+    std::hint::black_box(&set);
+
+    (batches, checksum)
+}
