@@ -338,6 +338,107 @@ const WORKLOADS = {
       name: 'mixed-1e6', kind: 'mixed', size: 1000000, ops: 1000000,
       label: 'mixed push/get/pop (50/25/25)'
     }
+  ],
+
+  // The eleven modules added for the sequence-backed Gate 10 batch. Each is
+  // one workload, same reasoning as the first extension past the original
+  // two: a size sweep costs one more single-process pass per module without
+  // a documented signal to justify it, which is the shape of padding a table
+  // rather than reporting one.
+  //
+  // `stack`/`queue`: no capacity distinct from pushed/enqueued length, same
+  // as `vector` -- `size` only bounds magnitude.
+  'stack': [
+    {
+      name: 'mixed-1e6', kind: 'mixed', size: 1000000, ops: 1000000,
+      label: 'mixed push/peek/pop (50/25/25)'
+    }
+  ],
+  'queue': [
+    {
+      name: 'mixed-1e6', kind: 'mixed', size: 1000000, ops: 1000000,
+      label: 'mixed enqueue/peek/dequeue (50/25/25)'
+    }
+  ],
+
+  // `fixed-stack`/`fixed-deque`/`circular-buffer`: `size` IS the capacity.
+  // 10,000 against 1e6 ops is a 100:1 ratio -- the structure fills within the
+  // first ~2% of the run (50% push, guarded by size<capacity for the two that
+  // can refuse) and spends the remaining ~98% oscillating at or near
+  // capacity, which is "reached and sustained" rather than "reached once at
+  // the very end". See each bench/runner/src/*.rs file's own module docs for
+  // why `push` is guarded on the two that can refuse, and why it is not
+  // guarded on `circular-buffer`.
+  'fixed-stack': [
+    {
+      name: 'mixed-1e6', kind: 'mixed', size: 10000, ops: 1000000,
+      label: 'mixed push/peek/pop (50/25/25), capacity reached and held'
+    }
+  ],
+  'fixed-deque': [
+    {
+      name: 'mixed-1e6', kind: 'mixed', size: 10000, ops: 1000000,
+      label: 'mixed push/peekLast/pop (50/25/25), capacity reached and held'
+    }
+  ],
+  'circular-buffer': [
+    {
+      name: 'mixed-1e6', kind: 'mixed', size: 10000, ops: 1000000,
+      label: 'mixed push/peekLast/pop (50/25/25), capacity reached and overwriting'
+    }
+  ],
+
+  // `hashed-array-tree`/`bit-vector`: no capacity distinct from pushed
+  // length, same reasoning as `vector`/`hashed-array-tree` share.
+  'hashed-array-tree': [
+    {
+      name: 'mixed-1e6', kind: 'mixed', size: 1000000, ops: 1000000,
+      label: 'mixed push/get/pop (50/25/25)'
+    }
+  ],
+  'bit-vector': [
+    {
+      name: 'mixed-1e6', kind: 'mixed', size: 1000000, ops: 1000000,
+      label: 'mixed push/get/pop (50/25/25); rank/select excluded, same reason as bit-set'
+    }
+  ],
+
+  // `sparse-map`/`sparse-queue-set`: `size` is the domain, same as
+  // `sparse-set`/`bit-set` -- a fixed-length structure has no separate key
+  // space to rig.
+  'sparse-map': [
+    {
+      name: 'mixed-1e6', kind: 'mixed', size: 1000000, ops: 1000000,
+      label: 'mixed set/get/delete (50/25/25)'
+    }
+  ],
+  'sparse-queue-set': [
+    {
+      name: 'mixed-1e6', kind: 'mixed', size: 1000000, ops: 1000000,
+      label: 'mixed enqueue/has/dequeue (50/25/25)'
+    }
+  ],
+
+  // `sort`/`suffix-array`: functions/one-shot construction, not op streams --
+  // see each file's own bench/runner/src/*.rs module docs. Both reuse the
+  // `drain` kind, one measured sample per sort/construction rather than per
+  // element. 20,000 elements/characters times 50 passes keeps the total work
+  // per measured sample at the same 1e6 order of magnitude as the mixed
+  // workloads above, for a comparable per-workload wall-clock cost -- sanity
+  // checked (DESIGN.md 5.1's own lesson, repeated in bit_set.rs's `rank`
+  // account): a single process invocation at these parameters completes in
+  // well under three seconds on both sides before this was committed to.
+  'sort': [
+    {
+      name: 'sort-2e4x50', kind: 'drain', size: 20000, passes: 50,
+      label: 'quicksort of a freshly-generated random array, one timed sample per sort'
+    }
+  ],
+  'suffix-array': [
+    {
+      name: 'build-2e4x50', kind: 'drain', size: 20000, passes: 50,
+      label: 'DC3 construction over a freshly-generated 4-symbol random text, one timed sample per build'
+    }
   ]
 };
 
@@ -392,13 +493,28 @@ function measure(workload, baselines, startups) {
     original: structureRss('original', workload.size)
   };
 
+  // `sparse-set`'s drain narrative is specific to what it measures (a
+  // prefilled set, walked): "elements yielded", "distinct members" and
+  // "walks" are all its vocabulary, not the shape `sort`/`suffix-array` added
+  // later share (one sort, or one construction, per measured sample -- see
+  // each bench/runner/src/*.rs file's own module docs). Rather than stretch
+  // sparse-set's sentence to cover operations it does not describe, drain
+  // workloads other than sparse-set's own get a description built from
+  // `workload.label` (which already says what is being measured) plus the
+  // mechanical facts every drain shares: total ops, passes, size, seed.
+  const drainWorkload = module_ === 'sparse-set'
+    ? si(meta.ops) + ' elements yielded: ' + workload.label + '. Set of length ' +
+      si(meta.size) + ' prefilled by ' + si(meta.size) +
+      ' random adds (xorshift32 seed ' + meta.seed + '), leaving ' +
+      meta.batch_k + ' distinct members; ' + workload.passes +
+      ' walks per measured pass, one timed sample each'
+    : si(meta.ops) + ' total (' + workload.passes + ' passes × ' + meta.batch_k +
+      ' per pass): ' + workload.label + ', size ' + si(meta.size) +
+      ', xorshift32 seed ' + meta.seed;
+
   const entry = {
     workload: workload.kind === 'drain'
-      ? si(meta.ops) + ' elements yielded: ' + workload.label + '. Set of length ' +
-        si(meta.size) + ' prefilled by ' + si(meta.size) +
-        ' random adds (xorshift32 seed ' + meta.seed + '), leaving ' +
-        meta.batch_k + ' distinct members; ' + workload.passes +
-        ' walks per measured pass, one timed sample each'
+      ? drainWorkload
       : si(meta.ops) + ' ' + workload.label + ' over size ' + si(meta.size) +
         ', xorshift32 seed ' + meta.seed +
         ', ops materialised before the timed region',
