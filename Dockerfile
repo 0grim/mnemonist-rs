@@ -102,10 +102,15 @@ COPY tests/harness-package.json ./tests/.work/package.json
 RUN cd tests/.work && npm install --no-audit --no-fund --silent
 COPY --from=builder /src/target/release/libmnemonist_napi.so ./target/release/
 COPY tests ./tests
-# Correction vs DESIGN.md 12c: that sketch also copies README.md and
-# DECISIONS.md into the image. Neither file exists in this repo yet (they
-# are named as a future, separately-regenerated deliverable in this task's
-# brief), so copying them verbatim would break the build; omitted rather
-# than fabricated.
-COPY .port-mortem.toml ./
+# `tests/boundary/reentrancy.js` walks up from its own directory looking for
+# `bench/upstream/sparse-set.js`, because it compares against the *real*
+# upstream implementation rather than a description of it. Without this the
+# image builds cleanly and then fails at run time with "cannot locate
+# bench/upstream" — which is exactly how it was found: the Dockerfile was
+# authored without a working Docker daemon, so this path could be traced but
+# not executed. Static tracing caught six other COPY bugs and missed this one.
+COPY bench/upstream ./bench/upstream
+# Correction vs DESIGN.md 12c: that sketch also copies DECISIONS.md into the
+# image, which does not exist yet, so it is omitted rather than fabricated.
+COPY README.md .port-mortem.toml ./
 CMD ["./tests/run.sh"]
