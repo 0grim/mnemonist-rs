@@ -29,7 +29,7 @@ Must be filed upstream **during the event** to count for **Bug Catcher (+3, $100
 Status: `unverified` → `verified` → `filed #NNN` / `intentional`.
 
 ### B-1 — `iter`/`forEach` asymmetry on plain objects
-`status: unverified` · `obliterator v2.0.5`
+`status: VERIFIED against Node 24.18.1, by direct execution — Bug Catcher doc, lower-confidence section (plausibly intentional)` · `obliterator v2.0.4`
 `take({a: 1})` **throws** (`iter.js` has no plain-object branch) while `forEach({a: 1}, cb)`
 **iterates the values** (branch 5, `for…in`). Two helpers in the same library disagree about
 whether a plain object is iterable.
@@ -37,7 +37,7 @@ whether a plain object is iterable.
 Worth asking upstream regardless; even "intentional" is a documentation gap.
 
 ### B-2 — `toArray` produces sparse arrays when `guessLength` lies
-`status: unverified` · `mnemonist utils/iterables.js`
+`status: VERIFIED against Node 24.18.1, by direct execution — Bug Catcher doc, full treatment` · `mnemonist utils/iterables.js`
 `toArray` preallocates `new Array(guessLength(target))` then fills with `array[i++] = value`.
 `guessLength` trusts `.length` then `.size` without validating against actual yield count.
 Result on mismatch: **a sparse array with holes**, distinguishable from `undefined` in JS.
@@ -46,28 +46,28 @@ Sharpest case: `toArray({length: 5})` → `forEach` plain-object branch enumerat
 **This is the strongest candidate.** Concrete, reproducible in isolation, clearly unintended.
 
 ### B-3 — `take` with omitted `n`
-`status: unverified` · `obliterator take.js`
+`status: VERIFIED against Node 24.18.1, by direct execution — DEMOTED, not filed. Confirmed the guard is dead code with no observable wrong output: with n omitted, array starts as [] and "array.length = i" at the end is a no-op. No input makes it produce an incorrect result. Not in the Bug Catcher doc.` · `obliterator take.js`
 `l = arguments.length > 1 ? n : Infinity`, then on early exhaustion `if (i !== n) array.length = i`.
 With `n` omitted, `n === undefined`, so `i !== n` is **always** true. Benign today (no-op on a
 growing array) but the guard doesn't express what it appears to intend.
 **Low severity** — code-smell tier, not a behaviour bug. File only if others land.
 
 ### B-4 — `forEach` falsy guard rejects empty string and zero
-`status: unverified` · `obliterator foreach.js`
+`status: VERIFIED against Node 24.18.1, by direct execution — Bug Catcher doc, lower-confidence section (plausibly an intentional input guard)` · `obliterator foreach.js`
 `if (!iterable) throw`. So `forEach('', cb)` **throws** while `forEach('a', cb)` iterates.
 An empty string is a legitimately iterable value that should yield zero times. Same for `0`
 and `false` reaching a numeric path.
 **Arguably intentional** as an input guard, but the empty-string case looks like a genuine miss.
 
 ### B-5 — `toString()` called on arbitrary input during dispatch
-`status: unverified` · `obliterator foreach.js`
+`status: VERIFIED against Node 24.18.1, by direct execution — confirmed the hijack: an object whose toString() returns exactly '[object Arguments]' is routed into the arguments-like branch and its real enumerable properties are never visited (forEach(obj, cb) with obj={a:1,toString(){...}} visits zero times). Bug Catcher doc, lower-confidence section.` · `obliterator foreach.js`
 Branch 1 tests `iterable.toString() === '[object Arguments]'`. This **invokes `toString` on an
 arbitrary user value** during type dispatch — a custom `toString` can throw, or return that exact
 string and hijack the branch.
 **Adversarially interesting**; low real-world impact.
 
 ### B-7 — `StaticDisjointSet.union` compares ranks of the ITEMS, not the ROOTS
-`status: unverified — strong candidate` · `mnemonist static-disjoint-set.js`
+`status: VERIFIED against Node 24.18.1, by direct execution — Bug Catcher doc, full treatment (last of the top-tier entries, included specifically as the one bug in the set that differential fuzzing structurally cannot find, since find() stays correct regardless of which root wins)` · `mnemonist static-disjoint-set.js`
 Union-by-rank requires comparing the ranks of the two **roots**. Upstream reads the ranks of the
 original arguments and then writes to the root:
 ```js
@@ -281,7 +281,7 @@ statement; B-40 is a case where reading for intent gives you a **cleaner** progr
 and the original tests cannot tell the difference.*
 
 ### B-6 — `Stack.values()` captures `items.length`, not `this.size`
-`status: unverified` · `mnemonist stack.js`
+`status: VERIFIED against Node 24.18.1, by direct execution — DEMOTED, not filed. Stack backs storage with a genuine unbounded Array, and push/pop mutate items and size in lockstep on every call; there is no code path in stack.js that can make items.length !== this.size. Real in the source, unreachable in behaviour. Not in the Bug Catcher doc.` · `mnemonist stack.js`
 Other structures capture `this.size`. These coincide for `Stack` today; the inconsistency is latent
 rather than active.
 **Probably not a bug** — log it, don't file it.
