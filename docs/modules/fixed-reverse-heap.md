@@ -251,10 +251,35 @@ with `[8, 4, 1]` against `[1, 4, 8]`. Reverted; **confirmed green again**: `7 pa
 
 ### Bench
 
-**Not run.** Gate 10 is deferred to a serial pass on an idle machine (DESIGN.md §7.3); three other
-agents were working while this unit landed. `fixed-reverse-heap` is therefore **complete except
-gate 10** and is deliberately *not* in `tests/scope.txt`, which `tests/verify.sh` will report — the
-intended state, not an oversight.
+`bench/results.json` → `modules["fixed-reverse-heap"]`. Methodology: `bench/methodology.md`.
+Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 10,000 samples/side.
+
+**`mixed-1e6`** — 1e6 mixed `push`/`peek` (75/25), default numeric comparator, capacity `size / 2`
+rather than a tiny slice of the op count (`fixed-stack`/`fixed-deque`'s own convention): a capacity
+that is a tiny fraction of the value domain fills once and then rarely displaces anything again
+(a fresh draw only beats the current worst with probability `capacity / domain`), while half the
+domain keeps a fresh uniform draw's odds of beating the worst near 50% throughout the run. Measured
+directly with a standalone probe (comparing `peek()` before/after every push once the heap was
+already full): **30,074 displacements over 49,843 full-heap pushes — a 60.3% rate** — confirming
+the sift-down `replace` path is the common case here, not a rare one. xorshift32 seed 42:
+
+| metric | port | upstream | |
+|---|---|---|---|
+| p50 ns/op | **14.50** | 15.07 | 1.04× faster |
+| p99 ns/op | 115.94 | **96.99** | upstream 1.20× faster |
+| min ns/op | 13.075 | **13.055** | essentially tied (<0.2%) |
+| RSS delta MB | **14.0** | 35.7 | |
+| structure-only RSS delta MB | **1.3** | 9.8 | |
+| startup ms | **0.6** | 15.4 | 26× (reported separately; not throughput) |
+
+**A real, reproducible p99 loss: ~1.2× across two independent runs**, re-run specifically because a
+loss this small invites checking it is not a one-off — it held both times, with `min_ns_per_op`
+essentially tied (the two differ by under 0.2%, which the driver's regression check still flags
+mechanically since the rule is `port > original`, not a tolerance band). **Cause: unconfirmed.**
+Both sides do the identical sift-down comparison count per displacement at this workload's 60%
+displacement rate; no profiling was done to isolate why the port's tail is worse specifically at
+p99 rather than uniformly, so no mechanism is asserted. p50 and every RSS/startup figure favour the
+port. Checksum `234148030045`, identical on both sides.
 
 A note for whoever runs it: the natural workload is "keep the *k* smallest of *n*", which is what
 the structure exists for, and it should be run at a *k* small relative to *n* (the eviction path)

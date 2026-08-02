@@ -543,6 +543,177 @@ const WORKLOADS = {
       name: 'union-2e4x50', kind: 'drain', size: 20000, passes: 50,
       label: 'union(A, B) of two 20,000-element sets drawn from a shared domain (real overlap and duplicates by the birthday bound), one timed sample per call'
     }
+  ],
+
+  // The final fourteen units. Appended, not inserted -- same reasoning as
+  // every prior batch.
+  //
+  // `trie-map`: same domain as `trie`'s own workload and the same reasoning
+  // -- `size` is the hex-key domain, kept an order of magnitude below the
+  // flat-structure modules' 1e6 so the prefix-sharing shape (every value
+  // under 0x1000 shares its leading digits with thousands of others) stays
+  // the dominant cost rather than sheer key count.
+  'trie-map': [
+    {
+      name: 'mixed-2e5', kind: 'mixed', size: 200000, ops: 1000000,
+      label: 'mixed set/get/delete (50/25/25) over hex-encoded keys'
+    }
+  ],
+
+  // `critbit-tree-map`: zero-padded 6-digit decimal keys over a 200,000-key
+  // domain -- same order-of-magnitude reasoning as `trie-map`'s own domain,
+  // and the padding is what forces most key pairs to diverge deep in the
+  // key rather than at the first byte; see bench/runner/src/
+  // critbit_tree_map.rs's own module docs for the full account.
+  'critbit-tree-map': [
+    {
+      name: 'mixed-2e5', kind: 'mixed', size: 200000, ops: 1000000,
+      label: 'mixed set/get/delete (50/25/25) over zero-padded decimal keys, forcing deep critical-bit positions'
+    }
+  ],
+
+  // `fixed-critbit-tree-map`: no `delete` (upstream has none), so this is
+  // `fuzzy-map`'s set/get/has shape. `size` is BOTH the capacity and the
+  // full key domain -- load-bearing, not a style choice: upstream's `set`
+  // has no capacity guard, and a distinct key past capacity silently
+  // corrupts the tree and later throws. See bench/runner/src/
+  // fixed_critbit_tree_map.rs's own module docs.
+  'fixed-critbit-tree-map': [
+    {
+      name: 'mixed-2e5', kind: 'mixed', size: 200000, ops: 1000000,
+      label: 'mixed set/get/has (50/25/25) over zero-padded decimal keys, capacity reached and held'
+    }
+  ],
+
+  // `bk-tree`: `size` 300,000 against 1e6 ops, found by sanity-checking two
+  // failure modes first (a too-small domain that goes superlinear via
+  // duplicate-chain growth, a too-large one that collapses the tree to
+  // depth 1) -- see bench/runner/src/bk_tree.rs's own module docs for the
+  // measurements that ruled each out.
+  'bk-tree': [
+    {
+      name: 'mixed-3e5', kind: 'mixed', size: 300000, ops: 1000000,
+      label: 'mixed add/search-small-radius/search-large-radius (50/25/25), metric |a - b|, over a 300,000-item domain'
+    }
+  ],
+
+  // `vp-tree`: no `add` at all -- the tree is built once (untimed) from a
+  // shuffled 0..size, then every op is a query. `size` 50,000, well below
+  // `bk-tree`'s domain: construction sorts by distance from a vantage point
+  // at every level, and that cost was measured to be superlinear even after
+  // fixing the "sequential input" trap (a standalone probe against
+  // upstream's own vp-tree.js confirmed the remainder is a genuine property
+  // of the ported algorithm, not a Rust-only regression) -- see
+  // bench/runner/src/vp_tree.rs's own module docs for the full account.
+  // `ops` 200,000, not this batch's usual 1e6, for the same reason.
+  'vp-tree': [
+    {
+      name: 'mixed-5e4', kind: 'mixed', size: 50000, ops: 200000,
+      label: 'mixed neighbors-small-radius/neighbors-large-radius/nearestNeighbors (40/40/20), metric |a - b|, over a shuffled 50,000-item domain'
+    }
+  ],
+
+  // `kd-tree`: no `add` -- the tree is built once (untimed) from `size`
+  // scattered 2-D points, then every op is a query. Unlike `bk-tree`/
+  // `vp-tree`, a single query shape already exercises both outcomes of the
+  // cross-plane backtrack for genuine 2-D data, so no second radius is
+  // needed -- see bench/runner/src/kd_tree.rs's own module docs.
+  'kd-tree': [
+    {
+      name: 'mixed-1e5', kind: 'mixed', size: 100000, ops: 1000000,
+      label: 'mixed nearestNeighbor/kNearestNeighbors (75/25) over 100,000 scattered 2-D points'
+    }
+  ],
+
+  // `static-interval-tree`: no `add` -- the tree is built once (untimed)
+  // from 100,000 overlapping intervals, then every op is a query. Interval
+  // width is 0.1% of the domain, not the 10% first tried -- see
+  // bench/runner/src/static_interval_tree.rs's own module docs for the
+  // measurement (22 seconds for a 200,000-op pass) that ruled the larger
+  // fraction out.
+  'static-interval-tree': [
+    {
+      name: 'mixed-1e5', kind: 'mixed', size: 100000, ops: 1000000,
+      label: 'mixed intervalsContainingPoint/intervalsOverlappingInterval (50/50) over 100,000 overlapping intervals'
+    }
+  ],
+
+  // `fibonacci-heap`: same shape as `heap`'s own workload -- 50/25/25
+  // push/pop/peek, `size` bounding the pushed range so values stay mostly
+  // distinct. `size`/`ops` are 200,000, not this batch's usual 1e6: a 1e6-op
+  // pass was timed by hand first and upstream took over 2 minutes, dominated
+  // by system time rather than user CPU (heavy memory churn, not algorithmic
+  // cost) -- see bench/runner/src/fibonacci_heap.rs's own module docs. The
+  // load-bearing check is `FibonacciHeap::merges`: measured at 195,920 merges
+  // over 50,000 pops for this exact op mix at 200,000 ops, confirming
+  // consolidation fires repeatedly rather than degenerating to "pop one
+  // thing, link nothing".
+  'fibonacci-heap': [
+    {
+      name: 'mixed-2e5', kind: 'mixed', size: 200000, ops: 200000,
+      label: 'mixed push/pop/peek (50/25/25), default numeric comparator'
+    }
+  ],
+
+  // `fixed-reverse-heap`: capacity is HALF the value domain, not a tiny
+  // slice of the op count -- see bench/runner/src/fixed_reverse_heap.rs's
+  // own module docs for why that is load-bearing (a tiny capacity fills
+  // once and then rarely displaces anything again). Measured: 60.3%
+  // displacement rate over full-heap pushes.
+  'fixed-reverse-heap': [
+    {
+      name: 'mixed-1e6', kind: 'mixed', size: 1000000, ops: 1000000,
+      label: 'mixed push/peek (75/25), capacity = size/2, default numeric comparator'
+    }
+  ],
+
+  // `bloom-filter`: prefilled to a stated 50% fill ratio (untimed), climbing
+  // toward ~1.0 over the run via the `add` stream. Measured: 61.1% hit rate
+  // on the hit pool, 0.028% false-positive rate on the miss pool -- see
+  // bench/runner/src/bloom_filter.rs's own module docs.
+  'bloom-filter': [
+    {
+      name: 'mixed-2e5', kind: 'mixed', size: 200000, ops: 200000,
+      label: 'mixed add/test-hit/test-miss (50/25/25), prefilled to 50% fill ratio'
+    }
+  ],
+
+  // `linked-list`: no capacity distinct from pushed length, same reasoning
+  // as `vector`/`stack` -- `size` only bounds magnitude. `walk` (25%) is the
+  // load-bearing op: it opens a fresh cursor and steps it 20 times from the
+  // head, genuinely chasing node-to-node pointers, unlike push/shift which
+  // only ever touch the two ends the list already holds references to.
+  'linked-list': [
+    {
+      name: 'mixed-1e6', kind: 'mixed', size: 1000000, ops: 1000000,
+      label: 'mixed push/shift/walk-20 (50/25/25)'
+    }
+  ],
+
+  // `symspell`: a clustered-but-scrambled vocabulary, `size` 4,000 -- see
+  // bench/runner/src/symspell.rs's own module docs for the two rejected
+  // designs (dense collisions, then sequential adjacency) this one fixes.
+  // Measured: 98.4% of `search` calls return at least one suggestion.
+  'symspell': [
+    {
+      name: 'mixed-4e3', kind: 'mixed', size: 4000, ops: 200000,
+      label: 'mixed add/search (50/50), maxDistance 2, verbosity 2, prefilled to 50% fill ratio'
+    }
+  ],
+
+  // `passjoin-index`: `add` never deduplicates, so a `with-replacement`
+  // stream sampling a domain far smaller than the op count makes every
+  // re-add of the same word grow every matching segment's candidate list
+  // -- a genuine property, but one whose cost is driven by `ops`, not
+  // `size`, unlike every other module in this batch. `size`/`ops` were
+  // sanity-checked down to 2,000/5,000 after 2,000/20,000 measured at 7.5
+  // seconds for one pass -- see bench/runner/src/passjoin_index.rs's own
+  // module docs.
+  'passjoin-index': [
+    {
+      name: 'mixed-2e3', kind: 'mixed', size: 2000, ops: 5000,
+      label: 'mixed add/search (50/50), k=2, prefilled to 50% fill ratio'
+    }
   ]
 };
 

@@ -295,8 +295,32 @@ instrument this event's whole thesis says should catch what example-based tests 
 
 ### Bench
 
-**Not run.** Gate 10 needs an idle machine (DESIGN.md §7.3) and is batched into a quiet serial pass;
-other agents were working on this repository while this unit landed. `fibonacci-heap` is therefore
-**complete except gate 10** and is deliberately *not* in `tests/scope.txt`, which `tests/verify.sh`
-will report — the intended state, not an oversight, matching `heap`/`fixed-reverse-heap`/`lru-cache`'s
-own precedent.
+`bench/results.json` → `modules["fibonacci-heap"]`. Methodology: `bench/methodology.md`.
+Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 2,000 samples/side.
+
+**`mixed-2e5`** — 200,000 mixed `push`/`pop`/`peek` (50/25/25), default numeric comparator, `size`
+200,000 (not this batch's usual 1e6 — see below for why). The load-bearing check is
+`FibonacciHeap::merges`, a public counter of `link` calls (two trees becoming one): measured
+directly at **195,920 merges over 50,000 `pop` calls** for this exact op mix — ~3.9 merges per
+`pop`, confirming `consolidate` does real, repeated multi-tree linking rather than degenerating to
+"pop one thing, link nothing" the way a push-only stream would. xorshift32 seed 42:
+
+| metric | port | upstream | |
+|---|---|---|---|
+| p50 ns/op | **1251.72** | 31260.54 | 25× faster |
+| p99 ns/op | **2667.66** | 64227.06 | 24× faster |
+| RSS delta MB | **5.6** | 291.8 | |
+| structure-only RSS delta MB | **0.1** | 6.7 | |
+| startup ms | **0.6** | 15.3 | 26× (reported separately; not throughput) |
+
+**`size`/`ops` are 200,000, not this batch's usual 1e6 — sanity-checked before committing** (the
+`bit_set.rs` `rank` lesson `methodology.md` documents). A 1e6-op pass was timed by hand first: the
+port completed in ~6 seconds, but upstream took **over 2 minutes**, and the profile was the
+give-away — 92 seconds of *system* time against 52 seconds of *user* time, the signature of heavy
+memory churn (V8 GC pressure over a very large, long-lived node graph) rather than of comparator or
+algorithmic cost. At 200,000 ops the same ~20× ratio persists (see the table above) but both sides
+finish in seconds, which is what makes an interleaved, warmed-up A/B/A/B pass practical at all — the
+size reduction changes wall-clock cost, not the workload's shape: the merges-per-pop ratio above is
+unchanged from the 1e6-op measurement (985,004 merges / 250,000 pops there, same ~3.9 ratio).
+
+**No regressions.** Checksum `5003154165`, identical on both sides.

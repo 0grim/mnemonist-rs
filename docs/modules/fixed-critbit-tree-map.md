@@ -210,5 +210,36 @@ red one (the native `forEach`-order test) checking the same underlying defect fr
 
 ### Bench
 
-**Not run.** Gate 10 is deferred to a serial pass on an idle machine (DESIGN.md §7.3); this unit is
-therefore complete except gate 10 and deliberately not added to `tests/scope.txt`.
+`bench/results.json` → `modules["fixed-critbit-tree-map"]`. Methodology: `bench/methodology.md`.
+Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 10,000 samples/side.
+
+**`mixed-2e5`** — 1e6 mixed `set`/`get`/`has` (50/25/25) — `fuzzy-map`'s shape, not `sparse-map`'s:
+upstream has no `delete` at all (see this module's own docs above). `size` 200,000 is **both** the
+capacity and the full key domain, which is load-bearing rather than a style choice: upstream's
+`set` has no capacity guard whatsoever, and a distinct key past capacity silently corrupts the tree
+— the next operation to walk through that corrupted node THROWS. Capping the domain at capacity
+means the tree fills to capacity (every key is drawn from `0..size`, so at most `size` distinct keys
+are ever possible) but can never overflow it — "capacity actually filled" without ever reaching the
+crash this module's own docs describe. Same zero-padded, deep-critical-bit key shape as
+`critbit-tree-map`, reused verbatim. xorshift32 seed 42:
+
+| metric | port | upstream | |
+|---|---|---|---|
+| p50 ns/op | 325.78 | **306.50** | upstream 1.06× faster |
+| p99 ns/op | **527.09** | 822.52 | 1.6× faster |
+| RSS delta MB | **27.0** | 192.5 | |
+| structure-only RSS delta MB | 0.1 | **1.0** | |
+| startup ms | **0.6** | 15.4 | 26× (reported separately; not throughput) |
+
+**One real, reproducible loss: p50, ~1.06–1.08× across two independent runs.** Re-run twice rather
+than published from a single pass — DESIGN.md §5.1's own point about a clean-looking result
+inviting the question of what was left out applies equally to a *loss* that might be noise, and
+this one held in both passes rather than appearing once. **Cause: unconfirmed.** A plausible but
+unverified explanation is `BoundedSlots`' `Option`-returning bounds check on every internal-node
+read (`lefts`/`rights`), which upstream's raw typed-array indexing does not pay for — but this has
+not been checked against a metric that would falsify it (e.g. isolating that one accessor), so it
+is labelled unconfirmed rather than asserted, per CLAUDE.md's rule against overclaiming performance
+causation. p99 and every RSS/startup figure still favour the port; the structure-only RSS row is
+the one place upstream's fixed typed arrays are smaller than the port's own pre-allocated arenas at
+this size. Checksum `15858409098`, identical on both sides — same ops, same answers, including
+reaching capacity without the corruption path ever firing.

@@ -195,5 +195,34 @@ redundant instruments, even when both are written by the same person who wrote t
 
 ### Bench
 
-**Not run.** Gate 10 needs an idle machine and is batched into a separate quiet pass (§7.3); this
-unit is deliberately not in `tests/scope.txt` until then. Gates 1–9 are green.
+`bench/results.json` → `modules["kd-tree"]`. Methodology: `bench/methodology.md`.
+Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 10,000 samples/side.
+
+**`mixed-1e5`** — 1e6 mixed `nearestNeighbor`/`kNearestNeighbors` (75/25) over 100,000 scattered
+2-D points (coordinates from a fixed-seed shuffle, not `0..size` on one axis — construction sorts
+each level's window by raw axis value, the same fixed-pivot quicksort weak spot `vp-tree.rs`
+documents). No `add`: the tree is built once, untimed. A single query shape already exercises both
+outcomes of the cross-plane backtrack for real 2-D data, so no second radius parameter was needed
+(contrast `bk-tree`/`vp-tree`). xorshift32 seed 42:
+
+| metric | port | upstream | |
+|---|---|---|---|
+| p50 ns/op | 2049.08 | **939.76** | upstream 2.2× faster |
+| p99 ns/op | 2536.66 | **1375.66** | upstream 1.8× faster |
+| min ns/op | 1677.52 | **828.60** | upstream 2.0× faster |
+| RSS delta MB | **9.6** | 51.3 | |
+| structure-only RSS delta MB | **0.2** | 6.0 | |
+| startup ms | **0.6** | 15.3 | 26× (reported separately; not throughput) |
+
+**A real, measured loss on p50/p99/min — this batch's sharpest.** Isolated with a standalone probe
+(200,000 calls of each method alone, same tree, both sides): `nearest_neighbor` alone is 331 ns/call
+here against upstream's 620 ns (the port wins, consistent with the rest of this batch), but
+`k_nearest_neighbors` alone is 6.6 µs/call here against upstream's 2.1 µs — a genuine reversal, and
+disproportionate: this port's own k-NN path costs **20×** its own `nearest_neighbor`, where
+upstream's costs only **3.4×** its own. **Cause: unconfirmed.** `recurse_knn` heap-allocates a
+fresh 3-element `Vec<f64>` per node visited into `FixedReverseHeap`'s backing store — a plausible
+mechanism (V8's generational GC can bump-allocate the equivalent short-lived array far more cheaply
+than repeated small `malloc`s), consistent with where the two sides' costs diverge, but not
+confirmed with a profiler or allocation count, so it is labelled a hypothesis rather than a finding
+— see `bench/runner/src/kd_tree.rs`'s own module docs for the full account. RSS and startup still
+favour the port. Checksum `723901217380`, identical on both sides.

@@ -65,6 +65,21 @@ mod multi_array;
 mod multi_map;
 mod multi_set;
 mod set_ops;
+// Appended for the final Gate 10 batch (the last fourteen units), never
+// inserted alphabetically -- same reasoning as the two blocks above.
+mod bk_tree;
+mod bloom_filter;
+mod critbit_tree_map;
+mod fibonacci_heap;
+mod fixed_critbit_tree_map;
+mod fixed_reverse_heap;
+mod kd_tree;
+mod linked_list;
+mod passjoin_index;
+mod static_interval_tree;
+mod symspell;
+mod trie_map;
+mod vp_tree;
 
 use std::process::ExitCode;
 

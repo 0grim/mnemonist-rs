@@ -165,5 +165,31 @@ instruments.
 
 ### Bench
 
-**Not run.** Gate 10 is deferred to a serial pass on an idle machine (DESIGN.md §7.3). `symspell` is
-therefore complete except gate 10, and deliberately not in `tests/scope.txt`.
+`bench/results.json` → `modules["symspell"]`. Methodology: `bench/methodology.md`.
+Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 2,000 samples/side.
+
+**`mixed-4e3`** — 200,000 mixed `add`/`search` (50/50), `maxDistance` 2, `verbosity` 2 (upstream's
+own defaults), dictionary prefilled to a stated 50% fill ratio before timing. A random vocabulary
+defeats this structure entirely: `search` only finds anything by matching deletes of the query
+against deletes of added words, and if nothing is within `maxDistance`, every search returns empty.
+Two vocabulary designs were tried and rejected before this one — both documented in
+`bench/runner/src/symspell.rs`'s own module docs: a 4-letter suffix over a 10-symbol alphabet was
+too *dense* (~413 suggestions per call out of a 4,000-word dictionary, a 200,000-op pass took over
+a minute), and switching to a 6-letter suffix over the full 26-letter alphabet did **not** fix it
+(~542 suggestions per call) — the actual cause was encoding the domain value directly in any fixed
+base, which makes consecutive values one-character-apart neighbours by construction, regardless of
+alphabet size. The fix was a multiplicative scramble (`Math.imul`-matched) before encoding, which
+spreads the domain across the suffix space so only the deliberate one-character query perturbation
+makes a query findable. Measured after the fix: **98.4% of `search` calls return at least one
+suggestion**, averaging 1.40 suggestions per call — genuine, non-degenerate hits. xorshift32 seed 42:
+
+| metric | port | upstream | |
+|---|---|---|---|
+| p50 ns/op | **4434.60** | 5901.76 | 1.3× faster |
+| p99 ns/op | **5972.41** | 8682.54 | 1.5× faster |
+| RSS delta MB | **31.1** | 96.9 | |
+| structure-only RSS delta MB | 0.1 | **0.4** | |
+| startup ms | **0.6** | 15.4 | 26× (reported separately; not throughput) |
+
+**No regressions.** Checksum `471173`, identical on both sides — both sides generated the same
+deletes, found the same candidates, and computed the same edit distances.

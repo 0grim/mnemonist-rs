@@ -197,7 +197,28 @@ Reverted; **confirmed green again**: `static_interval_tree_matches_upstream ... 
 
 ### Bench
 
-**Not run.** Gate 10 is deliberately outstanding: benchmarks need an idle machine, and this unit
-was ported alongside others sharing the machine. It is batched into a separate quiet pass, and
-`static-interval-tree` is therefore **not** in `tests/scope.txt` yet — by DESIGN.md §1.1 it is not
-done until it is. Gates 1–9 are green.
+`bench/results.json` → `modules["static-interval-tree"]`. Methodology: `bench/methodology.md`.
+Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 10,000 samples/side.
+
+**`mixed-1e5`** — 1e6 mixed `intervalsContainingPoint`/`intervalsOverlappingInterval` (50/50) over
+100,000 overlapping intervals, each `(start, start + LENGTH)` with `LENGTH` **0.1%** of the domain
+rather than the 10% first tried: at 10%, average matches per query ran into the thousands, and
+collecting (cloning, position-weighting) that many hits per call made a 200,000-op pass take **22
+seconds** — the same shape as `bit_set.rs`'s `rank` trap. At 0.1%, `intervalsContainingPoint`
+averages ~101 matches per call and `intervalsOverlappingInterval` averages ~202 — both a real,
+meaningful fraction of the 100,000-interval tree pruned around, not 0 and not "the whole set". No
+`add`: the tree is built once (untimed), same shape as `vp-tree`/`kd-tree`; `new` itself sorts by
+start with a proper comparison sort, not the fixed-pivot `inplace_quick_sort_indices` those two
+modules have to guard against, so no input-order trap applies here. Position-weighted checksum,
+since neither query method sorts its own output. xorshift32 seed 42:
+
+| metric | port | upstream | |
+|---|---|---|---|
+| p50 ns/op | **1603.03** | 3477.27 | 2.2× faster |
+| p99 ns/op | **2361.25** | 5558.10 | 2.4× faster |
+| RSS delta MB | **11.1** | 121.0 | |
+| structure-only RSS delta MB | **0.2** | 6.2 | |
+| startup ms | **0.6** | 15.4 | 26× (reported separately; not throughput) |
+
+**No regressions.** Checksum `639629382466648`, identical on both sides — both trees visited and
+pruned the same subtrees for the same queries.

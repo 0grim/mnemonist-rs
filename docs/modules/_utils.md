@@ -234,5 +234,64 @@ that stops holding once a third array can interleave (D-105).
 
 ### Bench
 
-**Not benchmarked.** Gate 10 needs an idle machine (DESIGN.md §7.3) and is batched into a quiet
-serial pass; this unit is not in that pass yet.
+**Excluded, deliberately, and not merely deferred** — considered directly during the final gate-10
+batch (the last fourteen units) and not benchmarked, for a reason specific to what `_utils` actually
+is rather than for lack of an idle machine.
+
+Every other module in this project's gate-10 harness (`bench/runner/src/harness.rs`'s
+`ModuleEntry`) benchmarks **one structure**: either a mixed op-stream against one persistent
+instance, or — for the handful of function-only units already in scope (`sort`, `suffix-array`,
+`set`) — one representative function, called once per timed sample, standing in for that unit
+because the unit genuinely *is* one function (or a tightly related pair, like
+`inplaceQuickSortIndices`/`quickSort`). `_utils` is not that shape: its require-closure is **five
+unrelated files** — `typed-arrays`, `binary-search`, `hash-tables`, `merge`, `iterables` — with no
+shared instance, no shared complexity class, and (per DESIGN.md §1.1's own unit definition) they
+are one gate-10 unit only because one upstream test file, `test/_utils.js`, happens to require all
+five.
+
+Two shapes were considered and both rejected:
+
+1. **Pick one function to stand in for all five**, the way `set`'s bench picked `union` out of
+   `set.js`'s fourteen free functions. That precedent works because `set.js` is fourteen operations
+   over the *same* kind of value (native `Set`s) — any one of them says something representative
+   about the file. `_utils`'s five files share nothing: a k-way `merge` call, a `linearProbing.set`
+   into a fixed-size table, and a `lowerBound` binary search are different algorithms over different
+   data shapes with different complexity classes. Reporting `bench/results.json`'s `_utils` key
+   against, say, `merge` alone would silently omit `binary-search`, `hash-tables`, and `typed-arrays`
+   entirely while a reader has no way to tell that from the key name — the exact "a number nobody
+   can trust" failure mode DESIGN.md §5.1 warns about, just at the level of *which function ran* rather
+   than *which parameter was chosen*.
+2. **One workload per file, several rows under one `_utils` module entry.** `bench/drive.js`'s
+   `WORKLOADS` table already supports several named rows per module (`static-disjoint-set`'s
+   `mixed-1e6`/`mixed-4e6` is exactly this). What it cannot support is what those five rows would
+   need: `harness.rs`'s `ModuleEntry` wires exactly one Rust `MixedFn` *or* one `DrainFn` per module
+   name, so every row for a given module calls the *same* function at different parameters — the
+   registry has no notion of "row N calls a different underlying function than row N+1." Five
+   genuinely different operations would need five different module *names* (`utils-merge`,
+   `utils-binary-search`, …), which would then not be `_utils` in `results.json` at all, contradicting
+   `tests/verify.sh`'s gate 10 check (`modules["_utils"].workloads`) and DESIGN.md's own one-unit
+   framing for this require-closure.
+
+Two of the five files also carry reasons of their own not to force into any bench shape, echoing
+this unit's own fuzz-grammar exclusions above: **`iterables`** has no core-side pure function at
+all (`docs/modules/utils-iterables.md`) — there is nothing to *put* in a Rust `run_mixed`, only a
+bridge-side JS-value concern, the same reason it was excluded from the differential fuzz grammar.
+**The `WithComparator` binary-search variants** take a JavaScript comparator called from inside the
+search loop — timing them honestly would mean rendering an equivalent closure per call, real
+re-entrant-callback machinery this unit was scoped to avoid at the fuzz-grammar level for the exact
+same reason (see "Fuzz" above).
+
+`typed-arrays`' three functions (`getPointerArray`, `getMinimalRepresentation`, `concat`) and
+`hash-tables`' `linearProbing` are more benchmarkable in isolation — each is a single, pure,
+non-comparator function over a plain array — but benchmarking them alone while `merge` and
+`binary-search` sit out would be exactly the first rejected shape above with extra steps: a `_utils`
+key that quietly represents 40% of the unit's own surface. Nothing here rules out a **future,
+separate** gate-10 extension that gives each of `typed-arrays`/`binary-search`/`hash-tables`/`merge`
+its own module name (sidestepping objection 2 by not calling itself `_utils` at all); that is a
+harness change this batch's scope did not include, stated here so the next agent does not have to
+rediscover the reasoning.
+
+`_utils` is consequently **not** added to `tests/scope.txt` by this pass — consistent with
+`default-weak-map`'s own precedent (`docs/modules/default-weak-map.md`'s "### Bench"): a stated
+exclusion, backed by a structural reason specific to the module, rather than a number nobody could
+trust.

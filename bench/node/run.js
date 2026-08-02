@@ -94,7 +94,22 @@ const MODULES = {
   'inverted-index': ['mixed'],
   // No `mixed` kind: see bench/runner/src/set_ops.rs for why this reuses
   // `drain`'s one-sample-per-call shape instead.
-  'set': ['drain']
+  'set': ['drain'],
+  // Appended for the final Gate 10 batch (the last fourteen units), never
+  // inserted: twin of harness.rs::MODULES.
+  'trie-map': ['mixed'],
+  'critbit-tree-map': ['mixed'],
+  'fixed-critbit-tree-map': ['mixed'],
+  'bk-tree': ['mixed'],
+  'vp-tree': ['mixed'],
+  'kd-tree': ['mixed'],
+  'static-interval-tree': ['mixed'],
+  'fibonacci-heap': ['mixed'],
+  'fixed-reverse-heap': ['mixed'],
+  'bloom-filter': ['mixed'],
+  'linked-list': ['mixed'],
+  'symspell': ['mixed'],
+  'passjoin-index': ['mixed']
 };
 
 const argv = process.argv.slice(2);
@@ -994,6 +1009,682 @@ function runMixedInvertedIndex(InvertedIndex, workload, k) {
   return {batches: batches, checksum: checksum, set: index};
 }
 
+// Twin of bench/runner/src/trie_map.rs. Same hex-key generator and prefix-
+// sharing shape as `runMixedTrie`, reused rather than re-derived. 50% `set`
+// (mutating), 25% `get` (pure read, contributing the stored value), 25%
+// `delete` (mutating, contributing upstream's own plain boolean return --
+// see trie_map.rs's module docs for why the Rust side matches that shape
+// rather than checksumming the displaced value core's richer API exposes).
+function runMixedTrieMap(TrieMap, workload, k) {
+  const trie = new TrieMap();
+  const ops = workload.kind.length;
+  const batches = [];
+  let checksum = 0;
+
+  for (let start = 0; start < ops; start += k) {
+    const end = Math.min(start + k, ops);
+    const clock = process.hrtime.bigint();
+
+    for (let i = start; i < end; i++) {
+      const word = workload.a[i].toString(16);
+      const op = workload.kind[i];
+
+      if (op === 0 || op === 1) {
+        trie.set(word, workload.a[i]);
+      } else if (op === 2) {
+        const value = trie.get(word);
+        checksum += value === undefined ? 0 : value;
+      } else {
+        checksum += trie.delete(word) ? 1 : 0;
+      }
+    }
+
+    batches.push(Number(process.hrtime.bigint() - clock));
+  }
+
+  return {batches: batches, checksum: checksum, set: trie};
+}
+
+// Twin of bench/runner/src/critbit_tree_map.rs::key. Zero-padded to six
+// decimal digits, not bare `String(value)` -- see that file's own module
+// docs for why fixed width is what makes most pairs diverge deep in the key
+// rather than at byte 0.
+function critbitKey(value) {
+  return String(value).padStart(6, '0');
+}
+
+// Twin of bench/runner/src/critbit_tree_map.rs. 50% `set` (mutating), 25%
+// `get` (pure read), 25% `delete` (mutating, upstream's own plain boolean).
+function runMixedCritbitTreeMap(CritBitTreeMap, workload, k) {
+  const map = new CritBitTreeMap();
+  const ops = workload.kind.length;
+  const batches = [];
+  let checksum = 0;
+
+  for (let start = 0; start < ops; start += k) {
+    const end = Math.min(start + k, ops);
+    const clock = process.hrtime.bigint();
+
+    for (let i = start; i < end; i++) {
+      const key = critbitKey(workload.a[i]);
+      const op = workload.kind[i];
+
+      if (op === 0 || op === 1) {
+        map.set(key, workload.a[i]);
+      } else if (op === 2) {
+        const value = map.get(key);
+        checksum += value === undefined ? 0 : value;
+      } else {
+        checksum += map.delete(key) ? 1 : 0;
+      }
+    }
+
+    batches.push(Number(process.hrtime.bigint() - clock));
+  }
+
+  return {batches: batches, checksum: checksum, set: map};
+}
+
+// Twin of bench/runner/src/fixed_critbit_tree_map.rs. No `delete` (see that
+// file's own module docs -- upstream has none), so this is `fuzzy-map`'s
+// set/get/has shape instead. `workload.size` is BOTH the capacity and the
+// full key domain -- load-bearing, not a style choice: upstream's `set` has
+// no capacity guard at all, and inserting a distinct key past capacity
+// silently corrupts the tree and later THROWS from the walk that next
+// passes through the corrupted node. Capping the domain at capacity is what
+// lets this workload fill the tree without ever reaching that crash.
+function runMixedFixedCritbitTreeMap(FixedCritBitTreeMap, workload, k) {
+  const map = new FixedCritBitTreeMap(workload.size);
+  const ops = workload.kind.length;
+  const batches = [];
+  let checksum = 0;
+
+  for (let start = 0; start < ops; start += k) {
+    const end = Math.min(start + k, ops);
+    const clock = process.hrtime.bigint();
+
+    for (let i = start; i < end; i++) {
+      const key = critbitKey(workload.a[i]);
+      const op = workload.kind[i];
+
+      if (op === 0 || op === 1) {
+        map.set(key, workload.a[i]);
+      } else if (op === 2) {
+        const value = map.get(key);
+        checksum += value === undefined ? 0 : value;
+      } else {
+        checksum += map.has(key) ? 1 : 0;
+      }
+    }
+
+    batches.push(Number(process.hrtime.bigint() - clock));
+  }
+
+  return {batches: batches, checksum: checksum, set: map};
+}
+
+// Twin of bench/runner/src/bk_tree.rs::distance. `|a - b|`, not upstream's
+// own Levenshtein -- a BK-tree is metric-agnostic, and a numeric metric both
+// sides compute identically carries zero risk of a Levenshtein port
+// drifting apart in an edge case. See that file's own module docs for the
+// full account, including the two failure modes (domain too small, domain
+// too large) found and rejected before committing to this workload's
+// parameters.
+function bkDistance(a, b) {
+  return Math.abs(a - b);
+}
+
+// Twin of bench/runner/src/bk_tree.rs. 50% `add` (mutating), 25% `search` at
+// SMALL_RADIUS (mostly pruned), 25% `search` at LARGE_RADIUS (reliably real
+// matches) -- both contributing upstream's own `found.length`.
+function runMixedBkTree(BKTree, workload, k) {
+  const SMALL_RADIUS = 2;
+  const LARGE_RADIUS = 20;
+  const tree = new BKTree(bkDistance);
+  const ops = workload.kind.length;
+  const batches = [];
+  let checksum = 0;
+
+  for (let start = 0; start < ops; start += k) {
+    const end = Math.min(start + k, ops);
+    const clock = process.hrtime.bigint();
+
+    for (let i = start; i < end; i++) {
+      const item = workload.a[i];
+      const op = workload.kind[i];
+
+      if (op === 0 || op === 1) {
+        tree.add(item);
+      } else if (op === 2) {
+        checksum += tree.search(SMALL_RADIUS, item).length;
+      } else {
+        checksum += tree.search(LARGE_RADIUS, item).length;
+      }
+    }
+
+    batches.push(Number(process.hrtime.bigint() - clock));
+  }
+
+  return {batches: batches, checksum: checksum, set: tree};
+}
+
+// Twin of bench/runner/src/vp_tree.rs::shuffled_items. A SEPARATE
+// fixed-seed (1) XorShift32 instance, independent of the workload's own
+// stream -- see that file's own module docs for why an in-order `0..size`
+// domain is quicksort's worst case for VPTree's construction step.
+function vpShuffledItems(size) {
+  const items = new Array(size);
+  for (let i = 0; i < size; i++) items[i] = i;
+
+  const rng = new XorShift32(1);
+
+  for (let i = items.length - 1; i > 0; i--) {
+    const j = rng.next() % (i + 1);
+    const tmp = items[i];
+    items[i] = items[j];
+    items[j] = tmp;
+  }
+
+  return items;
+}
+
+function vpDistance(a, b) {
+  return Math.abs(a - b);
+}
+
+// Twin of bench/runner/src/vp_tree.rs. No mutating op -- the tree is built
+// once (untimed) from a shuffled 0..size, then every op is a query: 40%
+// `neighbors` at SMALL_RADIUS (mostly pruned), 40% at LARGE_RADIUS (real
+// matches, still a small fraction of the tree), 20% `nearestNeighbors(K)`
+// (the heap-based query, its own pruning bound). Position-weighted
+// checksum, not a plain sum -- `nearestNeighbors` pins an exact tie-break
+// order in upstream's own test suite.
+function runMixedVpTree(VPTree, workload, k) {
+  const SMALL_RADIUS = 10;
+  const LARGE_RADIUS = 400;
+  const K = 10;
+  const items = vpShuffledItems(workload.size);
+  const tree = new VPTree(vpDistance, items);
+  const ops = workload.kind.length;
+  const batches = [];
+  let checksum = 0;
+
+  for (let start = 0; start < ops; start += k) {
+    const end = Math.min(start + k, ops);
+    const clock = process.hrtime.bigint();
+
+    for (let i = start; i < end; i++) {
+      const query = workload.a[i];
+      const op = workload.kind[i];
+
+      let hits;
+      if (op === 0) {
+        hits = tree.neighbors(SMALL_RADIUS, query);
+      } else if (op === 1 || op === 2) {
+        hits = tree.neighbors(LARGE_RADIUS, query);
+      } else {
+        hits = tree.nearestNeighbors(K, query);
+      }
+
+      for (let position = 0; position < hits.length; position++) {
+        checksum += (position + 1) * hits[position].item;
+      }
+    }
+
+    batches.push(Number(process.hrtime.bigint() - clock));
+  }
+
+  return {batches: batches, checksum: checksum, set: tree};
+}
+
+// Twin of bench/runner/src/kd_tree.rs::scattered_points. Two independent
+// coordinates per point from a fixed-seed (1) XorShift32, same convention
+// vp-tree's own shuffle uses -- an unsorted, uncorrelated domain matters
+// here too (construction sorts each level's window by one axis's raw
+// value).
+function kdScatteredPoints(size) {
+  const rng = new XorShift32(1);
+  const axes = [new Array(size), new Array(size)];
+  const labels = new Array(size);
+  const domain = Math.max(size, 1);
+
+  for (let i = 0; i < size; i++) {
+    axes[0][i] = rng.below(domain);
+    axes[1][i] = rng.below(domain);
+    labels[i] = i;
+  }
+
+  return {axes: axes, labels: labels};
+}
+
+// Twin of bench/runner/src/kd_tree.rs. No mutating op -- the tree is built
+// once (untimed) from scattered 2-D points, then every op is a query: 75%
+// nearestNeighbor (pure read), 25% kNearestNeighbors(K) (pure read,
+// position-weighted -- the heap pins an exact tie-break order).
+function runMixedKdTree(KDTree, workload, k) {
+  const K = 10;
+  const built = kdScatteredPoints(workload.size);
+  const tree = KDTree.fromAxes(built.axes, built.labels);
+  const domain = Math.max(workload.size, 1);
+  const ops = workload.kind.length;
+  const batches = [];
+  let checksum = 0;
+
+  for (let start = 0; start < ops; start += k) {
+    const end = Math.min(start + k, ops);
+    const clock = process.hrtime.bigint();
+
+    for (let i = start; i < end; i++) {
+      const query = [workload.a[i] % domain, workload.b[i] % domain];
+      const op = workload.kind[i];
+
+      if (op < 3) {
+        const label = tree.nearestNeighbor(query);
+        checksum += label === null ? 0 : label;
+      } else {
+        const hits = tree.kNearestNeighbors(K, query);
+        for (let position = 0; position < hits.length; position++) {
+          checksum += (position + 1) * hits[position];
+        }
+      }
+    }
+
+    batches.push(Number(process.hrtime.bigint() - clock));
+  }
+
+  return {batches: batches, checksum: checksum, set: tree};
+}
+
+// Twin of bench/runner/src/static_interval_tree.rs::overlapping_intervals
+// and LENGTH_FRACTION. 0.1% of the domain, not the 10% first tried -- see
+// that file's own module docs for the measurement (22 seconds for a
+// 200,000-op pass) that ruled the larger fraction out.
+const SIT_LENGTH_FRACTION = 0.001;
+
+function sitOverlappingIntervals(size) {
+  const rng = new XorShift32(1);
+  const domain = Math.max(size, 1);
+  const length = domain * SIT_LENGTH_FRACTION;
+  const intervals = new Array(size);
+
+  for (let i = 0; i < size; i++) {
+    const start = rng.below(domain);
+    intervals[i] = [start, start + length];
+  }
+
+  return intervals;
+}
+
+// Twin of bench/runner/src/static_interval_tree.rs. No mutating op -- the
+// tree is built once (untimed), then every op is a query: 50%
+// intervalsContainingPoint, 50% intervalsOverlappingInterval. Both
+// contribute a position-weighted checksum, since neither query method sorts
+// its output.
+function runMixedStaticIntervalTree(StaticIntervalTree, workload, k) {
+  const domain = Math.max(workload.size, 1);
+  const length = domain * SIT_LENGTH_FRACTION;
+  const intervals = sitOverlappingIntervals(workload.size);
+  const tree = new StaticIntervalTree(intervals);
+  const ops = workload.kind.length;
+  const batches = [];
+  let checksum = 0;
+
+  for (let start = 0; start < ops; start += k) {
+    const end = Math.min(start + k, ops);
+    const clock = process.hrtime.bigint();
+
+    for (let i = start; i < end; i++) {
+      const op = workload.kind[i];
+
+      let hits;
+      if (op < 2) {
+        const point = workload.a[i] % domain;
+        hits = tree.intervalsContainingPoint(point);
+      } else {
+        const queryStart = workload.a[i] % domain;
+        hits = tree.intervalsOverlappingInterval([queryStart, queryStart + length]);
+      }
+
+      for (let position = 0; position < hits.length; position++) {
+        checksum += (position + 1) * (hits[position][0] + 1);
+      }
+    }
+
+    batches.push(Number(process.hrtime.bigint() - clock));
+  }
+
+  return {batches: batches, checksum: checksum, set: tree};
+}
+
+// Twin of bench/runner/src/fibonacci_heap.rs. Same shape as `heap.rs`: 50%
+// push (mutating), 25% pop (mutating and a read -- where consolidation
+// happens), 25% peek (pure read).
+function runMixedFibonacciHeap(FibonacciHeap, workload, k) {
+  const heap = new FibonacciHeap();
+  const ops = workload.kind.length;
+  const batches = [];
+  let checksum = 0;
+
+  for (let start = 0; start < ops; start += k) {
+    const end = Math.min(start + k, ops);
+    const clock = process.hrtime.bigint();
+
+    for (let i = start; i < end; i++) {
+      const value = workload.a[i];
+      const op = workload.kind[i];
+
+      if (op === 0 || op === 1) {
+        heap.push(value);
+      } else if (op === 2) {
+        const popped = heap.pop();
+        checksum += popped === undefined ? 0 : popped;
+      } else {
+        const peeked = heap.peek();
+        checksum += peeked === undefined ? 0 : peeked;
+      }
+    }
+
+    batches.push(Number(process.hrtime.bigint() - clock));
+  }
+
+  return {batches: batches, checksum: checksum, set: heap};
+}
+
+// Twin of bench/runner/src/fixed_reverse_heap.rs. Capacity is HALF the
+// value domain, not a tiny slice of the op count -- see that file's own
+// module docs for why a tiny capacity would fill once and then rarely
+// displace anything again. 75% push (never guarded -- it cannot fail),
+// 25% peek. No `consume`: draining resets size to zero, undoing the
+// "capacity filled" state this workload exists to hold.
+function runMixedFixedReverseHeap(FixedReverseHeap, workload, k) {
+  const capacity = Math.max(Math.floor(workload.size / 2), 1);
+  const heap = new FixedReverseHeap(Float64Array, capacity);
+  const ops = workload.kind.length;
+  const batches = [];
+  let checksum = 0;
+
+  for (let start = 0; start < ops; start += k) {
+    const end = Math.min(start + k, ops);
+    const clock = process.hrtime.bigint();
+
+    for (let i = start; i < end; i++) {
+      const value = workload.a[i];
+      const op = workload.kind[i];
+
+      if (op < 3) {
+        heap.push(value);
+      } else {
+        const peeked = heap.peek();
+        checksum += peeked === undefined ? 0 : peeked;
+      }
+    }
+
+    batches.push(Number(process.hrtime.bigint() - clock));
+  }
+
+  return {batches: batches, checksum: checksum, set: heap};
+}
+
+// Twin of bench/runner/src/bloom_filter.rs. Filter is prefilled to half its
+// stated capacity (untimed) -- see that file's own module docs for why an
+// empty/near-empty filter proves nothing. 50% add (mutating, same 0..size
+// domain the prefill drew from -- fill ratio climbs toward ~1.0 over the
+// run), 25% test on the hit pool (0..size), 25% test on the miss pool
+// (size..2*size, never added).
+function runMixedBloomFilter(BloomFilter, workload, k) {
+  const domain = Math.max(workload.size, 1);
+  const filter = new BloomFilter(domain);
+  const prefill = Math.floor(workload.size / 2);
+
+  for (let i = 0; i < prefill; i++) filter.add(i.toString(16));
+
+  const ops = workload.kind.length;
+  const batches = [];
+  let checksum = 0;
+
+  for (let start = 0; start < ops; start += k) {
+    const end = Math.min(start + k, ops);
+    const clock = process.hrtime.bigint();
+
+    for (let i = start; i < end; i++) {
+      const op = workload.kind[i];
+
+      if (op === 0 || op === 1) {
+        const member = workload.a[i] % domain;
+        filter.add(member.toString(16));
+      } else if (op === 2) {
+        const member = workload.a[i] % domain;
+        checksum += filter.test(member.toString(16)) ? 1 : 0;
+      } else {
+        const member = domain + (workload.a[i] % domain);
+        checksum += filter.test(member.toString(16)) ? 1 : 0;
+      }
+    }
+
+    batches.push(Number(process.hrtime.bigint() - clock));
+  }
+
+  return {batches: batches, checksum: checksum, set: filter};
+}
+
+// Twin of bench/runner/src/linked_list.rs::WALK_STEPS.
+const LINKED_LIST_WALK_STEPS = 20;
+
+// Twin of bench/runner/src/linked_list.rs. 50% push (tail, mutating), 25%
+// shift (head removal, mutating and a read), 25% walk (a fresh cursor from
+// the head, stepped LINKED_LIST_WALK_STEPS times -- the one op that
+// genuinely chases node-to-node pointers rather than touching an end
+// push/shift already hold a reference to).
+function runMixedLinkedList(LinkedList, workload, k) {
+  const list = new LinkedList();
+  const ops = workload.kind.length;
+  const batches = [];
+  let checksum = 0;
+
+  for (let start = 0; start < ops; start += k) {
+    const end = Math.min(start + k, ops);
+    const clock = process.hrtime.bigint();
+
+    for (let i = start; i < end; i++) {
+      const op = workload.kind[i];
+
+      if (op === 0 || op === 1) {
+        list.push(workload.a[i]);
+      } else if (op === 2) {
+        const shifted = list.shift();
+        checksum += shifted === undefined ? 0 : shifted;
+      } else {
+        const iterator = list.values();
+        let last;
+
+        for (let step = 0; step < LINKED_LIST_WALK_STEPS; step++) {
+          const result = iterator.next();
+          if (result.done) break;
+          last = result.value;
+        }
+
+        checksum += last === undefined ? 0 : last;
+      }
+    }
+
+    batches.push(Number(process.hrtime.bigint() - clock));
+  }
+
+  return {batches: batches, checksum: checksum, set: list};
+}
+
+// Twin of bench/runner/src/symspell.rs. See that file's own module docs for
+// the two rejected vocabulary designs (dense collisions, then sequential
+// adjacency) this one fixes with a scrambled suffix.
+const SYMSPELL_PREFIX = 'qu';
+const SYMSPELL_ALPHABET = 'abcdefghijklmnopqrstuvwxyz';
+const SYMSPELL_SUFFIX_LEN = 6;
+
+// `Math.imul` is JS's exact twin of Rust's `u32::wrapping_mul`: both truncate
+// to a 32-bit result, so the same golden-ratio constant scrambles identically
+// on both sides.
+function symspellScramble(value) {
+  return Math.imul(value, 0x9e3779b1) >>> 0;
+}
+
+function symspellWordFor(value) {
+  let remaining = symspellScramble(value);
+  let suffix = '';
+
+  for (let i = 0; i < SYMSPELL_SUFFIX_LEN; i++) {
+    suffix += SYMSPELL_ALPHABET[remaining % 26];
+    remaining = Math.floor(remaining / 26);
+  }
+
+  return SYMSPELL_PREFIX + suffix;
+}
+
+// A one-character perturbation of symspellWordFor(value)'s suffix -- a
+// guaranteed edit-distance-1 relationship to one specific dictionary entry.
+function symspellQueryFor(value) {
+  const word = symspellWordFor(value);
+  const position = SYMSPELL_PREFIX.length + (value % SYMSPELL_SUFFIX_LEN);
+  const currentIndex = SYMSPELL_ALPHABET.indexOf(word[position]);
+  const nextChar = SYMSPELL_ALPHABET[(currentIndex + 1) % SYMSPELL_ALPHABET.length];
+
+  return word.slice(0, position) + nextChar + word.slice(position + 1);
+}
+
+// Twin of bench/runner/src/symspell.rs. Dictionary prefilled to half the
+// domain (untimed), then 50% add / 50% search, position-weighted checksum
+// over (distance + 1).
+function runMixedSymSpell(SymSpell, workload, k) {
+  const domain = Math.max(workload.size, 1);
+  const dict = new SymSpell();
+  const prefill = Math.floor(domain / 2);
+
+  for (let i = 0; i < prefill; i++) dict.add(symspellWordFor(i));
+
+  const ops = workload.kind.length;
+  const batches = [];
+  let checksum = 0;
+
+  for (let start = 0; start < ops; start += k) {
+    const end = Math.min(start + k, ops);
+    const clock = process.hrtime.bigint();
+
+    for (let i = start; i < end; i++) {
+      const member = workload.a[i] % domain;
+
+      if (workload.kind[i] < 2) {
+        dict.add(symspellWordFor(member));
+      } else {
+        const suggestions = dict.search(symspellQueryFor(member));
+
+        for (let position = 0; position < suggestions.length; position++) {
+          checksum += (position + 1) * (suggestions[position].distance + 1);
+        }
+      }
+    }
+
+    batches.push(Number(process.hrtime.bigint() - clock));
+  }
+
+  return {batches: batches, checksum: checksum, set: dict};
+}
+
+// Twin of bench/runner/src/passjoin_index.rs. Same scrambled-vocabulary
+// generator symspell's own twin uses, and the same reasoning for why: see
+// that file's own module docs for the two vocabulary designs it rejected
+// before this one.
+const PASSJOIN_PREFIX = 'qu';
+const PASSJOIN_ALPHABET = 'abcdefghijklmnopqrstuvwxyz';
+const PASSJOIN_SUFFIX_LEN = 6;
+const PASSJOIN_K = 2;
+
+function passjoinScramble(value) {
+  return Math.imul(value, 0x9e3779b1) >>> 0;
+}
+
+function passjoinWordFor(value) {
+  let remaining = passjoinScramble(value);
+  let suffix = '';
+
+  for (let i = 0; i < PASSJOIN_SUFFIX_LEN; i++) {
+    suffix += PASSJOIN_ALPHABET[remaining % 26];
+    remaining = Math.floor(remaining / 26);
+  }
+
+  return PASSJOIN_PREFIX + suffix;
+}
+
+function passjoinQueryFor(value) {
+  const word = passjoinWordFor(value);
+  const position = PASSJOIN_PREFIX.length + (value % PASSJOIN_SUFFIX_LEN);
+  const currentIndex = PASSJOIN_ALPHABET.indexOf(word[position]);
+  const nextChar = PASSJOIN_ALPHABET[(currentIndex + 1) % PASSJOIN_ALPHABET.length];
+
+  return word.slice(0, position) + nextChar + word.slice(position + 1);
+}
+
+// Standard single-row DP Levenshtein distance -- twin of
+// bench/runner/src/passjoin_index.rs::levenshtein in ALGORITHM only, not
+// byte-for-byte: both sides only need to compute the same well-defined
+// mathematical answer, not run identical code (this is not the matched
+// xorshift32 PRNG).
+function passjoinLevenshtein(a, b) {
+  const row = new Array(b.length + 1);
+  for (let j = 0; j <= b.length; j++) row[j] = j;
+
+  for (let i = 0; i < a.length; i++) {
+    let prevDiagonal = row[0];
+    row[0] = i + 1;
+
+    for (let j = 0; j < b.length; j++) {
+      const temp = row[j + 1];
+      row[j + 1] = a[i] === b[j]
+        ? prevDiagonal
+        : 1 + Math.min(prevDiagonal, row[j], row[j + 1]);
+      prevDiagonal = temp;
+    }
+  }
+
+  return row[b.length];
+}
+
+// Twin of bench/runner/src/passjoin_index.rs. Index prefilled to half the
+// domain (untimed), then 50% add / 50% search, position-weighted checksum
+// over matched strings' lengths.
+function runMixedPassjoinIndex(PassjoinIndex, workload, k) {
+  const domain = Math.max(workload.size, 1);
+  const index = new PassjoinIndex(passjoinLevenshtein, PASSJOIN_K);
+  const prefill = Math.floor(domain / 2);
+
+  for (let i = 0; i < prefill; i++) index.add(passjoinWordFor(i));
+
+  const ops = workload.kind.length;
+  const batches = [];
+  let checksum = 0;
+
+  for (let start = 0; start < ops; start += k) {
+    const end = Math.min(start + k, ops);
+    const clock = process.hrtime.bigint();
+
+    for (let i = start; i < end; i++) {
+      const member = workload.a[i] % domain;
+
+      if (workload.kind[i] < 2) {
+        index.add(passjoinWordFor(member));
+      } else {
+        const matches = Array.from(index.search(passjoinQueryFor(member)));
+
+        for (let position = 0; position < matches.length; position++) {
+          checksum += (position + 1) * (matches[position].length + 1);
+        }
+      }
+    }
+
+    batches.push(Number(process.hrtime.bigint() - clock));
+  }
+
+  return {batches: batches, checksum: checksum, set: index};
+}
+
 // Dispatch table, twin of harness.rs::MODULES's `mixed` field. Replaces what
 // was a two-armed ternary before five more modules made that the wrong shape.
 const MIXED_RUNNERS = {
@@ -1024,7 +1715,22 @@ const MIXED_RUNNERS = {
   'multi-array': runMixedMultiArray,
   'fuzzy-map': runMixedFuzzyMap,
   'fuzzy-multi-map': runMixedFuzzyMultiMap,
-  'inverted-index': runMixedInvertedIndex
+  'inverted-index': runMixedInvertedIndex,
+  // Appended for the final Gate 10 batch (the last fourteen units), never
+  // inserted: twin of harness.rs::MODULES.
+  'trie-map': runMixedTrieMap,
+  'critbit-tree-map': runMixedCritbitTreeMap,
+  'fixed-critbit-tree-map': runMixedFixedCritbitTreeMap,
+  'bk-tree': runMixedBkTree,
+  'vp-tree': runMixedVpTree,
+  'kd-tree': runMixedKdTree,
+  'static-interval-tree': runMixedStaticIntervalTree,
+  'fibonacci-heap': runMixedFibonacciHeap,
+  'fixed-reverse-heap': runMixedFixedReverseHeap,
+  'bloom-filter': runMixedBloomFilter,
+  'linked-list': runMixedLinkedList,
+  'symspell': runMixedSymSpell,
+  'passjoin-index': runMixedPassjoinIndex
 };
 
 // Twin of harness.rs::MODULES's `structure` field: build the structure at
@@ -1219,6 +1925,119 @@ const STRUCTURE_BUILDERS = {
     for (let i = 0; i < size; i++) set.add(i);
 
     return set.has(size - 1);
+  },
+  // Appended for the final Gate 10 batch (the last fourteen units), never
+  // inserted: twin of harness.rs::MODULES. Same convention as `trie`: "size"
+  // means "prefilled with `size` distinct hex keys".
+  'trie-map': function (TrieMap, size) {
+    const trie = new TrieMap();
+
+    for (let i = 0; i < size; i++) trie.set(i.toString(16), i);
+
+    return trie.get((size - 1).toString(16));
+  },
+  'critbit-tree-map': function (CritBitTreeMap, size) {
+    const map = new CritBitTreeMap();
+
+    for (let i = 0; i < size; i++) map.set(critbitKey(i), i);
+
+    return map.get(critbitKey(size - 1));
+  },
+  // Capacity IS the domain here too -- see runMixedFixedCritbitTreeMap's own
+  // docs for why that is load-bearing rather than a style choice.
+  'fixed-critbit-tree-map': function (FixedCritBitTreeMap, size) {
+    const map = new FixedCritBitTreeMap(size);
+
+    for (let i = 0; i < size; i++) map.set(critbitKey(i), i);
+
+    return map.get(critbitKey(size - 1));
+  },
+  // Twin of bench/runner/src/bk_tree.rs::build_structure: "size" means
+  // "after `size` `add` calls over the `0..size` domain".
+  'bk-tree': function (BKTree, size) {
+    const tree = new BKTree(bkDistance);
+    const domain = Math.max(size, 1);
+
+    for (let i = 0; i < size; i++) tree.add(i % domain);
+
+    return tree.size;
+  },
+  // Twin of bench/runner/src/vp_tree.rs::build_structure: "size" means
+  // "built from a shuffled 0..size".
+  'vp-tree': function (VPTree, size) {
+    const items = vpShuffledItems(size);
+    const tree = new VPTree(vpDistance, items);
+
+    return tree.size;
+  },
+  // Twin of bench/runner/src/kd_tree.rs::build_structure: "size" means
+  // "built from `size` scattered points".
+  'kd-tree': function (KDTree, size) {
+    const built = kdScatteredPoints(size);
+    const tree = KDTree.fromAxes(built.axes, built.labels);
+
+    return tree.size;
+  },
+  // Twin of bench/runner/src/static_interval_tree.rs::build_structure:
+  // "size" means "built from `size` overlapping intervals".
+  'static-interval-tree': function (StaticIntervalTree, size) {
+    const intervals = sitOverlappingIntervals(size);
+    const tree = new StaticIntervalTree(intervals);
+
+    return tree.size;
+  },
+  'fibonacci-heap': function (FibonacciHeap, size) {
+    const heap = new FibonacciHeap();
+
+    for (let i = 0; i < size; i++) heap.push(i);
+
+    return heap.peek();
+  },
+  // Twin of bench/runner/src/fixed_reverse_heap.rs::build_structure:
+  // capacity size/2, prefilled with `size` pushes.
+  'fixed-reverse-heap': function (FixedReverseHeap, size) {
+    const capacity = Math.max(Math.floor(size / 2), 1);
+    const heap = new FixedReverseHeap(Float64Array, capacity);
+
+    for (let i = 0; i < size; i++) heap.push(i);
+
+    return heap.peek();
+  },
+  // Twin of bench/runner/src/bloom_filter.rs::build_structure: "size" means
+  // "capacity `size`, prefilled with `size` items" -- full, not the
+  // workload's own half-capacity starting point.
+  'bloom-filter': function (BloomFilter, size) {
+    const domain = Math.max(size, 1);
+    const filter = new BloomFilter(domain);
+
+    for (let i = 0; i < size; i++) filter.add(i.toString(16));
+
+    return filter.test((size - 1).toString(16));
+  },
+  'linked-list': function (LinkedList, size) {
+    const list = new LinkedList();
+
+    for (let i = 0; i < size; i++) list.push(i);
+
+    return list.last();
+  },
+  // Twin of bench/runner/src/symspell.rs::build_structure: "size" means
+  // "prefilled with `size` words".
+  'symspell': function (SymSpell, size) {
+    const dict = new SymSpell();
+
+    for (let i = 0; i < size; i++) dict.add(symspellWordFor(i));
+
+    return dict.size;
+  },
+  // Twin of bench/runner/src/passjoin_index.rs::build_structure: "size"
+  // means "prefilled with `size` words".
+  'passjoin-index': function (PassjoinIndex, size) {
+    const index = new PassjoinIndex(passjoinLevenshtein, PASSJOIN_K);
+
+    for (let i = 0; i < size; i++) index.add(passjoinWordFor(i));
+
+    return index.size;
   }
 };
 
