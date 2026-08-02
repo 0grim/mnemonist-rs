@@ -418,11 +418,39 @@ other is a plausible but unverified explanation, not a confirmed one:
   path at all. Ruled out by construction, not by measurement.
 * **`get_or_insert_with` on a hit does two hash lookups, not one** — `slot_of` then `entry_at`
   (`DefaultMap::try_get_or_insert_with`), because the borrow from the first has to end before a
-  factory that might re-enter can run. This is a plausible explanation for a chunk of the p50 gap —
-  `OrderedMap` doing a lookup twice on the 25% of ops that are `get_or_insert_with` is a real,
-  structural cost — but it has not been isolated against a metric that would confirm or falsify it
-  (e.g. a probe comparing this path to a hypothetical single-lookup one), so it is labelled here as
-  **unconfirmed**, not as the cause.
+  factory that might re-enter can run. This was a plausible-sounding explanation for a chunk of the
+  p50 gap, and it is **refuted, 2026-08-02** — by reading `OrderedMap::entry_at`
+  (`crates/mnemonist-core/src/map/mod.rs`) and then by measurement. `entry_at(slot)` is
+  `self.slots.get(slot)` — a plain `Vec` index, not a second `HashMap::get`. There is only ever one
+  hash lookup on the hit path (`slot_of`), the same one lookup [`peek`](DefaultMap::peek) does.
+  `bench/runner/src/default_map.rs::run_probe_peek`/`run_probe_hit` (reachable via
+  `bench-runner --default-map-probe`) time the two directly, over the same prefilled 1,000,000-key
+  map, same keys, no factory ever invoked:
+
+  | variant | p50 ns/call |
+  |---|---|
+  | `peek` (one hash lookup, `OrderedMap::get`) | 118.224 |
+  | `get_or_insert_with` hit path (`slot_of` + `entry_at`) | 117.432 |
+
+  The two are equal within run-to-run noise (0.7% apart) — exactly what "no second hash lookup
+  exists" predicts, and the opposite of what "two hash lookups" predicts. **Verdict: refuted.**
+
+  Both numbers are far higher than a single `u32` hash computation should cost, which points at the
+  actual mechanism: at a 1,000,000-key domain, `OrderedMap`'s internal `HashMap<K, usize>` no longer
+  fits comfortably in cache, and a uniformly-random key (as this workload draws) makes close to every
+  lookup a real DRAM access rather than an L2/L3 hit — consistent with, though not proven to
+  single-handedly cause (this was not isolated further), the earlier observation that `mixed-4e6`'s
+  regression ratio (1.17×) is *smaller* than `mixed-1e6`'s (1.42×): a bigger domain should make a
+  structural per-op cost proportionally *more* visible, not less, but it is exactly what a shared,
+  domain-size-driven memory-latency floor on both sides would produce, since it shrinks the *relative*
+  size of whatever Rust-specific constant sits underneath it. Recorded as a lead for a follow-up
+  investigation, not as a second confirmed finding — the probe above establishes the "no double hash
+  lookup" refutation with a direct measurement; the cache-miss account of the *actual* cost is
+  consistent with the data but was not isolated with its own falsifying metric (e.g. a domain-size
+  sweep instrumented with hardware cache-miss counters, which this host's tooling could not provide).
+
+  **No fix applicable.** There is nothing to fix: the hypothesised second lookup does not exist, and
+  `try_get_or_insert_with`'s hit path is already a single lookup plus an O(1) index.
 
 ### `$forEach` — the op that was missing (added 2026-08-01, B-31)
 
