@@ -65,6 +65,7 @@ Individual checks:
 
 ```bash
 cargo test                       # 799 native tests
+cargo run --release --example tour -p mnemonist-core   # the crate used from Rust
 ./tests/run.sh                   # 733 upstream specs, unmodified, via the bridge
 ./tests/verify.sh                # all ten gates, per unit claimed complete
 sha256sum -c tests/SHA256SUMS    # upstream tests byte-identical to published
