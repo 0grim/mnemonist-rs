@@ -276,12 +276,27 @@ exactly as expected for this sabotage.
 
 ### Bench
 
-**Not run.** Gate 10 is deferred to the batched quiet pass (DESIGN.md §7.3). `linked-list` is
-therefore **complete except gate 10** and correctly absent from `tests/scope.txt` until that pass
-lands.
+`bench/results.json` → `modules["linked-list"]`. Methodology: `bench/methodology.md`.
+Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 10,000 samples/side.
 
-One thing to watch when it does: the arena's never-recycling policy means `push`/`shift` churn
-grows `Vec<Node<T>>` monotonically rather than reusing freed slots, which is a real allocation
-cost upstream's node-per-object model does not incur the same way (though it pays its own cost —
-a fresh heap object per node — that this port's arena avoids). Which effect dominates is a question
-for the measurement, not for this document.
+**`mixed-1e6`** — 1e6 mixed `push`/`shift`/`walk` (50/25/25). `push` (tail) and `shift` (head) are
+both O(1) — they only ever touch the two ends the list already holds pointers to, exactly like a
+plain array-backed deque would, which would leave the one thing a *linked* list does differently
+from a contiguous one — walking node to node by following `next` — completely untested. `walk` (the
+remaining 25%) opens a fresh cursor at the head (upstream's own `values()`, the same generator
+`forEach`/`entries`/`Symbol.iterator` all share) and steps it forward 20 times, genuinely chasing
+pointers rather than answering in O(1). xorshift32 seed 42:
+
+| metric | port | upstream | |
+|---|---|---|---|
+| p50 ns/op | **6.18** | 25.47 | 4.1× faster |
+| p99 ns/op | **10.79** | 55.44 | 5.1× faster |
+| RSS delta MB | **17.9** | 195.8 | |
+| structure-only RSS delta MB | **1.5** | 9.8 | |
+| startup ms | **0.6** | 15.5 | 26× (reported separately; not throughput) |
+
+**No regressions**, and the arena-never-recycles question the earlier draft of this section flagged
+is settled by the RSS row: even though `Vec<Node<T>>` grows monotonically with every `push`
+regardless of later `shift`s (the arena's own docs explain why a shifted slot cannot be freed while
+a cursor might still reference it), the port's RSS delta is still an order of magnitude below
+upstream's own per-node heap objects. Checksum `250135666931`, identical on both sides.

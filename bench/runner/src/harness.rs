@@ -318,6 +318,13 @@ pub const MODULES: &[ModuleEntry] = &[
         drain: None,
         structure: crate::bloom_filter::build_structure,
     },
+    ModuleEntry {
+        name: "linked-list",
+        kinds: &["mixed"],
+        mixed: Some(crate::linked_list::run_mixed),
+        drain: None,
+        structure: crate::linked_list::build_structure,
+    },
 ];
 
 pub fn find(name: &str) -> Option<&'static ModuleEntry> {

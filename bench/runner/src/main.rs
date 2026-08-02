@@ -74,6 +74,7 @@ mod fibonacci_heap;
 mod fixed_critbit_tree_map;
 mod fixed_reverse_heap;
 mod kd_tree;
+mod linked_list;
 mod static_interval_tree;
 mod trie_map;
 mod vp_tree;

@@ -106,7 +106,8 @@ const MODULES = {
   'static-interval-tree': ['mixed'],
   'fibonacci-heap': ['mixed'],
   'fixed-reverse-heap': ['mixed'],
-  'bloom-filter': ['mixed']
+  'bloom-filter': ['mixed'],
+  'linked-list': ['mixed']
 };
 
 const argv = process.argv.slice(2);
@@ -1464,6 +1465,52 @@ function runMixedBloomFilter(BloomFilter, workload, k) {
   return {batches: batches, checksum: checksum, set: filter};
 }
 
+// Twin of bench/runner/src/linked_list.rs::WALK_STEPS.
+const LINKED_LIST_WALK_STEPS = 20;
+
+// Twin of bench/runner/src/linked_list.rs. 50% push (tail, mutating), 25%
+// shift (head removal, mutating and a read), 25% walk (a fresh cursor from
+// the head, stepped LINKED_LIST_WALK_STEPS times -- the one op that
+// genuinely chases node-to-node pointers rather than touching an end
+// push/shift already hold a reference to).
+function runMixedLinkedList(LinkedList, workload, k) {
+  const list = new LinkedList();
+  const ops = workload.kind.length;
+  const batches = [];
+  let checksum = 0;
+
+  for (let start = 0; start < ops; start += k) {
+    const end = Math.min(start + k, ops);
+    const clock = process.hrtime.bigint();
+
+    for (let i = start; i < end; i++) {
+      const op = workload.kind[i];
+
+      if (op === 0 || op === 1) {
+        list.push(workload.a[i]);
+      } else if (op === 2) {
+        const shifted = list.shift();
+        checksum += shifted === undefined ? 0 : shifted;
+      } else {
+        const iterator = list.values();
+        let last;
+
+        for (let step = 0; step < LINKED_LIST_WALK_STEPS; step++) {
+          const result = iterator.next();
+          if (result.done) break;
+          last = result.value;
+        }
+
+        checksum += last === undefined ? 0 : last;
+      }
+    }
+
+    batches.push(Number(process.hrtime.bigint() - clock));
+  }
+
+  return {batches: batches, checksum: checksum, set: list};
+}
+
 // Dispatch table, twin of harness.rs::MODULES's `mixed` field. Replaces what
 // was a two-armed ternary before five more modules made that the wrong shape.
 const MIXED_RUNNERS = {
@@ -1506,7 +1553,8 @@ const MIXED_RUNNERS = {
   'static-interval-tree': runMixedStaticIntervalTree,
   'fibonacci-heap': runMixedFibonacciHeap,
   'fixed-reverse-heap': runMixedFixedReverseHeap,
-  'bloom-filter': runMixedBloomFilter
+  'bloom-filter': runMixedBloomFilter,
+  'linked-list': runMixedLinkedList
 };
 
 // Twin of harness.rs::MODULES's `structure` field: build the structure at
@@ -1789,6 +1837,13 @@ const STRUCTURE_BUILDERS = {
     for (let i = 0; i < size; i++) filter.add(i.toString(16));
 
     return filter.test((size - 1).toString(16));
+  },
+  'linked-list': function (LinkedList, size) {
+    const list = new LinkedList();
+
+    for (let i = 0; i < size; i++) list.push(i);
+
+    return list.last();
   }
 };
 

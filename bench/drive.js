@@ -676,6 +676,18 @@ const WORKLOADS = {
       name: 'mixed-2e5', kind: 'mixed', size: 200000, ops: 200000,
       label: 'mixed add/test-hit/test-miss (50/25/25), prefilled to 50% fill ratio'
     }
+  ],
+
+  // `linked-list`: no capacity distinct from pushed length, same reasoning
+  // as `vector`/`stack` -- `size` only bounds magnitude. `walk` (25%) is the
+  // load-bearing op: it opens a fresh cursor and steps it 20 times from the
+  // head, genuinely chasing node-to-node pointers, unlike push/shift which
+  // only ever touch the two ends the list already holds references to.
+  'linked-list': [
+    {
+      name: 'mixed-1e6', kind: 'mixed', size: 1000000, ops: 1000000,
+      label: 'mixed push/shift/walk-20 (50/25/25)'
+    }
   ]
 };
 
