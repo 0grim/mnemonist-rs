@@ -87,14 +87,14 @@ The fallibility is expressed in Rust's own vocabulary rather than as a special c
 `difffuzz` generates operation sequences, replays them against both `mnemonist-core` and **real
 upstream JavaScript in Node**, and compares state after every operation.
 
-Note what it connects: **core against upstream. The bridge is not in that loop.**
+What it connects: the core against upstream, not the bridge.
 
 That is a deliberate choice — fuzzing through the bridge would test the harness rather than the
-product — but it has a consequence worth stating plainly, because it took three separate
-discoveries to name: **every defect that lives in `mnemonist-napi` is invisible to the fuzzer by
-construction.** Reference retention, borrow discipline, argument marshalling, factory composition.
-Those are found by reading, by boundary tests, and by review, and this project found real ones in
-each of those ways. `docs/METHODOLOGY.md` covers the evidence.
+product — but it has a consequence that took three separate discoveries to name: every defect that
+lives in `mnemonist-napi`, such as reference retention, borrow discipline, argument marshalling, and
+factory composition, is invisible to the fuzzer by construction. Those are found instead by reading,
+by boundary tests, and by review, and this project found real defects each of those three ways.
+`docs/METHODOLOGY.md` covers the evidence.
 
 ---
 
@@ -133,7 +133,7 @@ a price. Six places where the Rust is worse than it would otherwise be:
 
 | Site | What idiom would prefer | Why it is not that |
 |---|---|---|
-| `MultiSet::dimension` | derive it from the collection's length | upstream's counter drifts on a failed delete; a derived value would silently heal a bug we must reproduce |
+| `MultiSet::dimension` | derive it from the collection's length | upstream's counter drifts on a failed delete; a derived value would silently heal a bug the port must reproduce |
 | `FibonacciHeap::size` | `usize` | JavaScript has no unsigned integers, and upstream drives this counter to `-1` under a re-entrant `clear()` |
 | Arena slot reuse | recycle freed slots | never recycling is the analogue of a garbage collector keeping a referenced object alive; by Rust standards it is unbounded growth under churn |
 | `Set`-kind membership | `HashSet` with `Hash + Eq` | JavaScript `Set` semantics are `SameValueZero` over arbitrary values, which has no Rust-expressible hash — so it is a linear scan |
@@ -150,7 +150,8 @@ is clean across the workspace, and there are **25 lint suppressions in roughly 7
 Twenty-four are complaints about signature shape or ergonomics: 18 `type_complexity`, 5
 `too_many_arguments`, 1 `new_without_default`.
 
-The twenty-fifth is worth naming rather than rounding away. `passjoin-index` suppresses
+The twenty-fifth is a different kind of suppression, described individually rather than folded into
+that count. `passjoin-index` suppresses
 `if_same_then_else` where two branches share a body but not their guards — the first admits a
 candidate when both segment distances are already within the threshold, the second only after
 calling `levenshtein`. Collapsing them would still be correct and would lose the short-circuit
