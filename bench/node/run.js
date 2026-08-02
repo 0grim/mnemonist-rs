@@ -64,7 +64,23 @@ const MODULES = {
   'lru-cache': ['mixed'],
   'heap': ['mixed'],
   'trie': ['mixed'],
-  'vector': ['mixed']
+  'vector': ['mixed'],
+  // Appended for the sequence-backed batch, never inserted: twin of
+  // harness.rs::MODULES, which documents why a new module is always an
+  // appended entry rather than a reordered table.
+  'stack': ['mixed'],
+  'queue': ['mixed'],
+  'fixed-stack': ['mixed'],
+  'fixed-deque': ['mixed'],
+  'circular-buffer': ['mixed'],
+  'hashed-array-tree': ['mixed'],
+  'sparse-map': ['mixed'],
+  'sparse-queue-set': ['mixed'],
+  'bit-vector': ['mixed'],
+  // No `mixed` kind: see bench/runner/src/sort.rs and suffix_array.rs for why
+  // both reuse `drain`'s one-sample-per-operation shape instead.
+  'suffix-array': ['drain'],
+  'sort': ['drain']
 };
 
 const argv = process.argv.slice(2);
@@ -370,6 +386,312 @@ function runMixedVector(Vector, workload, k) {
   return {batches: batches, checksum: checksum, set: vector};
 }
 
+// Twin of bench/runner/src/stack.rs. 50% push (mutating growth), 25% peek
+// (pure read), 25% pop (mutating and a read) -- `vector`'s shape, with `peek`
+// standing in for `get` because a stack exposes no random access.
+function runMixedStack(Stack, workload, k) {
+  const stack = new Stack();
+  const ops = workload.kind.length;
+  const batches = [];
+  let checksum = 0;
+
+  for (let start = 0; start < ops; start += k) {
+    const end = Math.min(start + k, ops);
+    const clock = process.hrtime.bigint();
+
+    for (let i = start; i < end; i++) {
+      const op = workload.kind[i];
+
+      if (op === 0 || op === 1) {
+        stack.push(workload.a[i]);
+      } else if (op === 2) {
+        const peeked = stack.peek();
+        checksum += peeked === undefined ? 0 : peeked;
+      } else {
+        const popped = stack.pop();
+        checksum += popped === undefined ? 0 : popped;
+      }
+    }
+
+    batches.push(Number(process.hrtime.bigint() - clock));
+  }
+
+  return {batches: batches, checksum: checksum, set: stack};
+}
+
+// Twin of bench/runner/src/queue.rs. `stack`'s exact shape with FIFO names.
+function runMixedQueue(Queue, workload, k) {
+  const queue = new Queue();
+  const ops = workload.kind.length;
+  const batches = [];
+  let checksum = 0;
+
+  for (let start = 0; start < ops; start += k) {
+    const end = Math.min(start + k, ops);
+    const clock = process.hrtime.bigint();
+
+    for (let i = start; i < end; i++) {
+      const op = workload.kind[i];
+
+      if (op === 0 || op === 1) {
+        queue.enqueue(workload.a[i]);
+      } else if (op === 2) {
+        const peeked = queue.peek();
+        checksum += peeked === undefined ? 0 : peeked;
+      } else {
+        const popped = queue.dequeue();
+        checksum += popped === undefined ? 0 : popped;
+      }
+    }
+
+    batches.push(Number(process.hrtime.bigint() - clock));
+  }
+
+  return {batches: batches, checksum: checksum, set: queue};
+}
+
+// Twin of bench/runner/src/fixed_stack.rs. `workload.size` is the capacity
+// directly. `push` is guarded by `size < capacity` so the timed loop never
+// calls the fallible path -- an unguarded push into a full stack would
+// benchmark V8's `Error` construction (stack-trace capture) rather than the
+// stack; see that file's module docs for the full account.
+function runMixedFixedStack(FixedStack, workload, k) {
+  const stack = new FixedStack(Float64Array, workload.size);
+  const capacity = workload.size;
+  const ops = workload.kind.length;
+  const batches = [];
+  let checksum = 0;
+
+  for (let start = 0; start < ops; start += k) {
+    const end = Math.min(start + k, ops);
+    const clock = process.hrtime.bigint();
+
+    for (let i = start; i < end; i++) {
+      const op = workload.kind[i];
+
+      if (op === 0 || op === 1) {
+        if (stack.size < capacity) stack.push(workload.a[i]);
+      } else if (op === 2) {
+        const peeked = stack.peek();
+        checksum += peeked === undefined ? 0 : peeked;
+      } else {
+        const popped = stack.pop();
+        checksum += popped === undefined ? 0 : popped;
+      }
+    }
+
+    batches.push(Number(process.hrtime.bigint() - clock));
+  }
+
+  return {batches: batches, checksum: checksum, set: stack};
+}
+
+// Twin of bench/runner/src/fixed_deque.rs. Back-end ops only (push/peekLast/
+// pop), mirroring `fixed-stack`'s shape; same capacity guard, same reason.
+function runMixedFixedDeque(FixedDeque, workload, k) {
+  const deque = new FixedDeque(Float64Array, workload.size);
+  const capacity = workload.size;
+  const ops = workload.kind.length;
+  const batches = [];
+  let checksum = 0;
+
+  for (let start = 0; start < ops; start += k) {
+    const end = Math.min(start + k, ops);
+    const clock = process.hrtime.bigint();
+
+    for (let i = start; i < end; i++) {
+      const op = workload.kind[i];
+
+      if (op === 0 || op === 1) {
+        if (deque.size < capacity) deque.push(workload.a[i]);
+      } else if (op === 2) {
+        const peeked = deque.peekLast();
+        checksum += peeked === undefined ? 0 : peeked;
+      } else {
+        const popped = deque.pop();
+        checksum += popped === undefined ? 0 : popped;
+      }
+    }
+
+    batches.push(Number(process.hrtime.bigint() - clock));
+  }
+
+  return {batches: batches, checksum: checksum, set: deque};
+}
+
+// Twin of bench/runner/src/circular_buffer.rs. Same shape as `fixed-deque`,
+// but `push` is never guarded: it cannot fail, which is this module's whole
+// reason to exist.
+function runMixedCircularBuffer(CircularBuffer, workload, k) {
+  const buffer = new CircularBuffer(Float64Array, workload.size);
+  const ops = workload.kind.length;
+  const batches = [];
+  let checksum = 0;
+
+  for (let start = 0; start < ops; start += k) {
+    const end = Math.min(start + k, ops);
+    const clock = process.hrtime.bigint();
+
+    for (let i = start; i < end; i++) {
+      const op = workload.kind[i];
+
+      if (op === 0 || op === 1) {
+        buffer.push(workload.a[i]);
+      } else if (op === 2) {
+        const peeked = buffer.peekLast();
+        checksum += peeked === undefined ? 0 : peeked;
+      } else {
+        const popped = buffer.pop();
+        checksum += popped === undefined ? 0 : popped;
+      }
+    }
+
+    batches.push(Number(process.hrtime.bigint() - clock));
+  }
+
+  return {batches: batches, checksum: checksum, set: buffer};
+}
+
+// Twin of bench/runner/src/hashed_array_tree.rs. `vector`'s shape: 50% push
+// (growth), 25% get at a random existing index (modulo the current length),
+// 25% pop. No options object: the default block size, matching
+// `Options::default()`.
+function runMixedHashedArrayTree(HashedArrayTree, workload, k) {
+  const tree = new HashedArrayTree(Uint32Array);
+  const ops = workload.kind.length;
+  const batches = [];
+  let checksum = 0;
+
+  for (let start = 0; start < ops; start += k) {
+    const end = Math.min(start + k, ops);
+    const clock = process.hrtime.bigint();
+
+    for (let i = start; i < end; i++) {
+      const op = workload.kind[i];
+
+      if (op === 0 || op === 1) {
+        tree.push(workload.a[i]);
+      } else if (op === 2) {
+        const len = tree.length;
+
+        if (len > 0) {
+          const index = workload.a[i] % len;
+          checksum += tree.get(index);
+        }
+      } else {
+        const popped = tree.pop();
+        checksum += popped === undefined ? 0 : popped;
+      }
+    }
+
+    batches.push(Number(process.hrtime.bigint() - clock));
+  }
+
+  return {batches: batches, checksum: checksum, set: tree};
+}
+
+// Twin of bench/runner/src/sparse_map.rs. `sparse-set`'s add/has/delete
+// shape, with `set` taking `workload.b[i]` as the value.
+function runMixedSparseMap(SparseMap, workload, k) {
+  const map = new SparseMap(workload.size);
+  const ops = workload.kind.length;
+  const batches = [];
+  let checksum = 0;
+
+  for (let start = 0; start < ops; start += k) {
+    const end = Math.min(start + k, ops);
+    const clock = process.hrtime.bigint();
+
+    for (let i = start; i < end; i++) {
+      const member = workload.a[i];
+      const op = workload.kind[i];
+
+      if (op === 0 || op === 1) {
+        map.set(member, workload.b[i]);
+      } else if (op === 2) {
+        const value = map.get(member);
+        checksum += value === undefined ? 0 : value;
+      } else {
+        checksum += map.delete(member) ? 1 : 0;
+      }
+    }
+
+    batches.push(Number(process.hrtime.bigint() - clock));
+  }
+
+  return {batches: batches, checksum: checksum, set: map};
+}
+
+// Twin of bench/runner/src/sparse_queue_set.rs. `sparse-set`'s shape with
+// FIFO names; `dequeue` takes no operand.
+function runMixedSparseQueueSet(SparseQueueSet, workload, k) {
+  const queue = new SparseQueueSet(workload.size);
+  const ops = workload.kind.length;
+  const batches = [];
+  let checksum = 0;
+
+  for (let start = 0; start < ops; start += k) {
+    const end = Math.min(start + k, ops);
+    const clock = process.hrtime.bigint();
+
+    for (let i = start; i < end; i++) {
+      const member = workload.a[i];
+      const op = workload.kind[i];
+
+      if (op === 0 || op === 1) {
+        queue.enqueue(member);
+      } else if (op === 2) {
+        checksum += queue.has(member) ? 1 : 0;
+      } else {
+        const dequeued = queue.dequeue();
+        checksum += dequeued === undefined ? 0 : dequeued;
+      }
+    }
+
+    batches.push(Number(process.hrtime.bigint() - clock));
+  }
+
+  return {batches: batches, checksum: checksum, set: queue};
+}
+
+// Twin of bench/runner/src/bit_vector.rs. `vector`/`hashed-array-tree`'s
+// shape: 50% push (growth), 25% get at a random existing index, 25% pop.
+// `rank`/`select` excluded -- see `bit_vector.rs`'s module docs, which
+// inherits `bit-set`'s `rank` lesson.
+function runMixedBitVector(BitVector, workload, k) {
+  const vector = new BitVector(0);
+  const ops = workload.kind.length;
+  const batches = [];
+  let checksum = 0;
+
+  for (let start = 0; start < ops; start += k) {
+    const end = Math.min(start + k, ops);
+    const clock = process.hrtime.bigint();
+
+    for (let i = start; i < end; i++) {
+      const op = workload.kind[i];
+
+      if (op === 0 || op === 1) {
+        vector.push(workload.a[i] % 2 === 1);
+      } else if (op === 2) {
+        const len = vector.length;
+
+        if (len > 0) {
+          const index = workload.a[i] % len;
+          checksum += vector.get(index);
+        }
+      } else {
+        const popped = vector.pop();
+        checksum += popped === undefined ? 0 : popped;
+      }
+    }
+
+    batches.push(Number(process.hrtime.bigint() - clock));
+  }
+
+  return {batches: batches, checksum: checksum, set: vector};
+}
+
 // Dispatch table, twin of harness.rs::MODULES's `mixed` field. Replaces what
 // was a two-armed ternary before five more modules made that the wrong shape.
 const MIXED_RUNNERS = {
@@ -379,7 +701,18 @@ const MIXED_RUNNERS = {
   'lru-cache': runMixedLru,
   'heap': runMixedHeap,
   'trie': runMixedTrie,
-  'vector': runMixedVector
+  'vector': runMixedVector,
+  // Appended for the sequence-backed batch, never inserted (twin of
+  // harness.rs::MODULES).
+  'stack': runMixedStack,
+  'queue': runMixedQueue,
+  'fixed-stack': runMixedFixedStack,
+  'fixed-deque': runMixedFixedDeque,
+  'circular-buffer': runMixedCircularBuffer,
+  'hashed-array-tree': runMixedHashedArrayTree,
+  'sparse-map': runMixedSparseMap,
+  'sparse-queue-set': runMixedSparseQueueSet,
+  'bit-vector': runMixedBitVector
 };
 
 // Twin of harness.rs::MODULES's `structure` field: build the structure at
@@ -427,6 +760,79 @@ const STRUCTURE_BUILDERS = {
     for (let i = 0; i < size; i++) vector.push(i);
 
     return vector.get(vector.length - 1);
+  },
+  // Appended for the sequence-backed batch, never inserted.
+  'stack': function (Stack, size) {
+    const stack = new Stack();
+
+    for (let i = 0; i < size; i++) stack.push(i);
+
+    return stack.peek();
+  },
+  'queue': function (Queue, size) {
+    const queue = new Queue();
+
+    for (let i = 0; i < size; i++) queue.enqueue(i);
+
+    return queue.peek();
+  },
+  'fixed-stack': function (FixedStack, size) {
+    const stack = new FixedStack(Float64Array, size);
+    return stack.peek();
+  },
+  'fixed-deque': function (FixedDeque, size) {
+    const deque = new FixedDeque(Float64Array, size);
+    return deque.peekLast();
+  },
+  'circular-buffer': function (CircularBuffer, size) {
+    const buffer = new CircularBuffer(Float64Array, size);
+    return buffer.peekLast();
+  },
+  'hashed-array-tree': function (HashedArrayTree, size) {
+    const tree = new HashedArrayTree(Uint32Array);
+
+    for (let i = 0; i < size; i++) tree.push(i);
+
+    return tree.get(size - 1);
+  },
+  'sparse-map': function (SparseMap, size) {
+    const map = new SparseMap(size);
+    return map.has(0);
+  },
+  'sparse-queue-set': function (SparseQueueSet, size) {
+    const queue = new SparseQueueSet(size);
+    return queue.has(0);
+  },
+  'bit-vector': function (BitVector, size) {
+    const vector = new BitVector(0);
+
+    for (let i = 0; i < size; i++) vector.push(i % 2 === 1);
+
+    return vector.get(vector.length - 1);
+  },
+  // `sort`/`suffix-array` have no persistent structure -- see each
+  // bench/runner/src/*.rs file's own `build_structure` doc for what this
+  // number means instead (transient footprint of one call, fixed seed 42
+  // regardless of the run's own `--seed`, matching the Rust side).
+  'sort': function (Sort, size) {
+    const rng = new XorShift32(42);
+    const buffer = new Array(size);
+
+    for (let i = 0; i < size; i++) buffer[i] = rng.below(1000000);
+
+    Sort.inplaceQuickSort(buffer, 0, buffer.length);
+
+    return buffer[0];
+  },
+  'suffix-array': function (SuffixArray, size) {
+    const rng = new XorShift32(42);
+    const codes = new Array(size);
+
+    for (let i = 0; i < size; i++) codes[i] = String.fromCharCode(65 + rng.below(4));
+
+    const array = new SuffixArray(codes.join(''));
+
+    return array.array[size - 1];
   }
 };
 
@@ -467,6 +873,86 @@ function runDrain(SparseSet, size, seed, passes) {
 
   return {batches: batches, checksum: checksum, perPass: perPass, set: set};
 }
+
+// Twin of bench/runner/src/sort.rs. `sort` has no instance and no per-element
+// op stream, so it reuses the `drain` shape: one measured sample per SORT,
+// not per element. The whole `size * passes` buffer of random values is drawn
+// from the matched xorshift stream once, before any timing -- re-sorting the
+// PREVIOUS pass's (now-sorted) output would feed upstream's fixed-pivot
+// quicksort its worst case on every pass after the first, silently turning an
+// O(n log n) benchmark into an O(n^2) one. `size` elements are viewed via
+// `subarray`, a zero-copy view, so JS sorts in place exactly as the Rust side
+// does over its own disjoint slice -- no side gets credited for skipping a
+// copy the other one pays for.
+function runDrainSort(Sort, size, seed, passes) {
+  const rng = new XorShift32(seed);
+  const buffer = new Float64Array(size * passes);
+
+  for (let i = 0; i < buffer.length; i++) buffer[i] = rng.below(1000000);
+
+  const batches = [];
+  let checksum = 0;
+
+  for (let pass = 0; pass < passes; pass++) {
+    const chunk = buffer.subarray(pass * size, (pass + 1) * size);
+
+    const clock = process.hrtime.bigint();
+    Sort.inplaceQuickSort(chunk, 0, chunk.length);
+    batches.push(Number(process.hrtime.bigint() - clock));
+
+    // Outside the timed region: a verification read, not part of what the
+    // sort itself costs. Position-weighted rather than a sum, because a sum
+    // cannot tell a correctly sorted array from an unsorted one of the same
+    // multiset -- see sort.rs's own docs on why this checksum is shaped this
+    // way.
+    for (let i = 0; i < chunk.length; i++) checksum += (i + 1) * chunk[i];
+  }
+
+  return {batches: batches, checksum: checksum, perPass: size, set: buffer};
+}
+
+// Twin of bench/runner/src/suffix_array.rs. Same drain shape as `sort`: one
+// measured sample per CONSTRUCTION. A four-symbol alphabet, generated fresh
+// per pass from the matched stream so the recursive case (repeated triples)
+// is exercised rather than avoided -- see that file's own docs on B-91.
+function runDrainSuffixArray(SuffixArray, size, seed, passes) {
+  const rng = new XorShift32(seed);
+  const codes = new Array(size * passes);
+
+  for (let i = 0; i < codes.length; i++) codes[i] = String.fromCharCode(65 + rng.below(4));
+
+  const text = codes.join('');
+  const batches = [];
+  let checksum = 0;
+
+  for (let pass = 0; pass < passes; pass++) {
+    const clock = process.hrtime.bigint();
+
+    // The slice (a copy: JS strings are immutable) is inside the timed
+    // region, matching the Rust side's `.to_vec()` -- both sides pay an
+    // equivalent copy, so this stays symmetric.
+    const slice = text.slice(pass * size, (pass + 1) * size);
+    const array = new SuffixArray(slice);
+
+    batches.push(Number(process.hrtime.bigint() - clock));
+
+    const positions = array.array;
+    for (let i = 0; i < positions.length; i++) checksum += (i + 1) * positions[i];
+  }
+
+  return {batches: batches, checksum: checksum, perPass: size, set: text};
+}
+
+// Dispatch table, twin of harness.rs::MODULES's `drain` field. `sparse-set`
+// was the only drain-shaped module before this batch, so its loop used to be
+// called directly by name; two more modules with genuinely different drain
+// bodies made that the wrong shape, the same lesson `MIXED_RUNNERS` already
+// learned.
+const DRAIN_RUNNERS = {
+  'sparse-set': runDrain,
+  'sort': runDrainSort,
+  'suffix-array': runDrainSuffixArray
+};
 
 // --- CLI --------------------------------------------------------------------
 
@@ -537,18 +1023,27 @@ function main() {
     return;
   }
 
-  if (MODULES[module].indexOf(kind) === -1) {
-    process.stderr.write('run.js: module `' + module + '` has no `' + kind + '` workload\n');
-    process.exitCode = 2;
-    return;
-  }
-
-  const Structure = require(path.join(__dirname, '..', 'upstream', module + '.js'));
+  // `sort` has no `sort.js` at the upstream root -- it is a directory of two
+  // files (`sort/quick.js`, `sort/insertion.js`), unlike every other module
+  // here, which is one file matching its own name. Special-cased rather than
+  // adding a stub `sort.js`, which would mean maintaining a second copy of
+  // something `bench/upstream/` vendors from a pinned upstream commit.
+  const Structure = module === 'sort'
+    ? require(path.join(__dirname, '..', 'upstream', 'sort', 'quick.js'))
+    : require(path.join(__dirname, '..', 'upstream', module + '.js'));
 
   if (argv.includes('--structure')) {
     // Twin of bench-runner --structure: build the structure, touch nothing
     // else, report peak RSS. Isolates the structure from the ~9 MB of
     // materialised workload arrays that dominate the mixed run's RSS delta.
+    //
+    // Deliberately BEFORE the `--kind` check below: `--structure` never
+    // consults `kind` at all, and gating it on the same check meant a
+    // drain-only module (no `mixed` kind: `suffix-array`, `sort`) could never
+    // reach this branch, since the default `--kind` is `mixed` and nothing
+    // here supplies `--kind drain` on its own. Invisible until a module
+    // existed with no `mixed` kind -- every prior module has one. Twin of the
+    // same reordering in bench/runner/src/main.rs.
     const size = sizeArg();
 
     if (size === null) return;
@@ -560,6 +1055,12 @@ function main() {
     process.stdout.write(JSON.stringify({
       side: 'original', mode: 'structure', size: size, rss_kb: peakRssKb()
     }) + '\n');
+    return;
+  }
+
+  if (MODULES[module].indexOf(kind) === -1) {
+    process.stderr.write('run.js: module `' + module + '` has no `' + kind + '` workload\n');
+    process.exitCode = 2;
     return;
   }
 
@@ -624,18 +1125,23 @@ function main() {
 // Twin of `drain()` in bench/runner/src/main.rs. `batch_k` carries
 // members-per-pass rather than a fixed 1000, so the driver's `ns / batch_k`
 // still means nanoseconds per element.
-function drain(SparseSet, module, size, seed, passes, warmup, measured) {
+function drain(Structure, module, size, seed, passes, warmup, measured) {
   if (!Number.isInteger(passes) || passes < 1) {
     process.stderr.write('run.js: `--passes` must be at least 1\n');
     process.exitCode = 2;
     return;
   }
 
+  // Twin of harness.rs::ModuleEntry::drain: a table rather than a single
+  // hardcoded loop, once `sort`/`suffix-array` needed genuinely different
+  // drain bodies from `sparse-set`'s prefill-and-walk.
+  const runDrainFor = DRAIN_RUNNERS[module];
+
   let checksum = 0;
   let perPass = 0;
 
   for (let i = 0; i < warmup; i++) {
-    const pass = runDrain(SparseSet, size, seed, passes);
+    const pass = runDrainFor(Structure, size, seed, passes);
     checksum = pass.checksum;
     perPass = pass.perPass;
   }
@@ -643,7 +1149,7 @@ function drain(SparseSet, module, size, seed, passes, warmup, measured) {
   let batches = [];
 
   for (let i = 0; i < measured; i++) {
-    const pass = runDrain(SparseSet, size, seed, passes);
+    const pass = runDrainFor(Structure, size, seed, passes);
 
     if (warmup > 0 && pass.checksum !== checksum) {
       process.stderr.write('run.js: checksum changed between passes\n');
@@ -657,7 +1163,7 @@ function drain(SparseSet, module, size, seed, passes, warmup, measured) {
   }
 
   if (perPass === 0) {
-    process.stderr.write('run.js: the prefilled set is empty, so there is nothing to drain\n');
+    process.stderr.write('run.js: nothing was produced to drain (empty per-pass count)\n');
     process.exitCode = 2;
     return;
   }
