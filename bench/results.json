@@ -1504,6 +1504,12 @@
           "regressions": []
         }
       }
+    },
+    "default-weak-map": {
+      "excluded": "Keys must be objects and entries are reclaimed at the garbage collector’s discretion. A timing figure would characterise V8’s collector rather than the structure, and a differential measurement depending on when collection occurs would be non-deterministic. Correctness is covered by gates 1-9, including a differential fuzz campaign over the entire observable API surface."
+    },
+    "_utils": {
+      "excluded": "A require-closure of five unrelated pure-function files (typed-arrays, binary-search, hash-tables, iterables, merge) with no shared instance. The benchmark harness keys one workload per module name, so a single entry would misrepresent all five, and splitting them would no longer describe the unit named in the scope manifest. Correctness is covered by gates 1-9."
     }
   },
   "generated_utc": "2026-08-02T04:59:14.643Z"

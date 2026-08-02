@@ -307,3 +307,14 @@ One thing worth recording for if this call is ever revisited: `WeakKey::matches`
 having a hashable identity — see "Deliberate divergences." Whether that cost is even the dominant
 one at any realistic map size is exactly the question a GC-dominated timing could not answer either
 way.
+
+## Gate 10 exemption
+
+This unit carries an explicit benchmark exemption, recorded in `bench/results.json` and enforced
+by `tests/verify.sh`: the gate accepts an exemption only when a reason is present and this section
+exists.
+
+Keys must be objects and entries are reclaimed at the garbage collector’s discretion. A timing figure would characterise V8’s collector rather than the structure, and a differential measurement depending on when collection occurs would be non-deterministic. Correctness is covered by gates 1-9, including a differential fuzz campaign over the entire observable API surface.
+
+The distinction being drawn is between a gate that was not *satisfied* and one that is not
+*applicable*. Gates 1 through 9 apply to this unit in full and all pass.

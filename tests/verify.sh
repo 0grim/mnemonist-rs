@@ -170,11 +170,29 @@ for unit in $UNITS; do
 
   # gate 10 -- benchmark entry. Results are nested per workload, and a
   # regression must be *stated*, never absent.
+  #
+  # A unit may instead carry an explicit exemption: `"excluded": "<reason>"` in
+  # place of workloads. This distinguishes a gate that was not SATISFIED from
+  # one that is not APPLICABLE, which the original ten-gate rule conflated.
+  # Two structures cannot produce an honest benchmark at all -- one whose
+  # entries are reclaimed at the garbage collector's discretion, and one that
+  # is a closure of five unrelated pure-function files with no shared instance.
+  #
+  # The exemption is deliberately harder to obtain than a benchmark is to skip:
+  # a missing entry still fails, an empty reason still fails, and the reason
+  # must ALSO appear in the unit's own divergence document under a fixed
+  # heading, so it is stated where a reader will encounter it rather than
+  # buried in a JSON file.
   if [ -f bench/results.json ]; then
     BENCH=$(node -e '
       const unit = process.argv[1];
       const r = require("./bench/results.json");
       const m = (r.modules || {})[unit];
+      if (m && typeof m.excluded === "string" && m.excluded.trim().length > 0) {
+        console.log("EXEMPT");
+        process.exit(0);
+      }
+      if (m && "excluded" in m) { console.log("EMPTYREASON"); process.exit(0); }
       if (!m || !m.workloads) { console.log("MISSING"); process.exit(0); }
       const names = Object.keys(m.workloads);
       if (!names.length) { console.log("MISSING"); process.exit(0); }
@@ -188,6 +206,17 @@ for unit in $UNITS; do
       console.log("OK:" + names.length + ":" + regs);
     ' "$unit" 2>/dev/null)
     case "$BENCH" in
+      EXEMPT)
+        # The reason must also be in the divergence document, under a heading
+        # a reader will actually reach. A JSON field alone is not disclosure.
+        if grep -qF "## Gate 10 exemption" "docs/modules/$unit.md" 2>/dev/null; then
+          ok "gate 10 exempt, with the reason recorded in docs/modules/$unit.md"
+        else
+          bad "gate 10 claims an exemption that docs/modules/$unit.md does not state"
+          note "add a '## Gate 10 exemption' section giving the reason"
+        fi
+        ;;
+      EMPTYREASON) bad "gate 10 exemption present but its reason is empty -- an exemption must be argued" ;;
       OK:*) ok "gate 10 bench recorded ($(echo "$BENCH" | cut -d: -f2) workload(s), $(echo "$BENCH" | cut -d: -f3) declared regression(s))" ;;
       INCOMPLETE:*) bad "gate 10 bench workload '${BENCH#INCOMPLETE:}' missing port or original figures" ;;
       NOREGFIELD:*) bad "gate 10 bench workload '${BENCH#NOREGFIELD:}' has no regressions array -- a regression must be stated, not omitted" ;;

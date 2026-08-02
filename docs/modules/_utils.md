@@ -295,3 +295,14 @@ rediscover the reasoning.
 `default-weak-map`'s own precedent (`docs/modules/default-weak-map.md`'s "### Bench"): a stated
 exclusion, backed by a structural reason specific to the module, rather than a number nobody could
 trust.
+
+## Gate 10 exemption
+
+This unit carries an explicit benchmark exemption, recorded in `bench/results.json` and enforced
+by `tests/verify.sh`: the gate accepts an exemption only when a reason is present and this section
+exists.
+
+A require-closure of five unrelated pure-function files (typed-arrays, binary-search, hash-tables, iterables, merge) with no shared instance. The benchmark harness keys one workload per module name, so a single entry would misrepresent all five, and splitting them would no longer describe the unit named in the scope manifest. Correctness is covered by gates 1-9.
+
+The distinction being drawn is between a gate that was not *satisfied* and one that is not
+*applicable*. Gates 1 through 9 apply to this unit in full and all pass.

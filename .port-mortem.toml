@@ -2,7 +2,8 @@
 # No schema was published. The three fields named in the brief (track, source, kickoff hash)
 # are top-level; everything else is namespaced.
 
-track        = "G"     # JavaScript -> Rust per the admin FAQ. Confirm before submission.
+track        = "G"     # JavaScript -> Rust. The FAQ and the site disagreed on the
+                       # letter; awaiting confirmation at time of writing.
 source       = "https://github.com/Yomguithereal/mnemonist"
 # sha256 of tests/SHA256SUMS, which itself covers every vendored upstream test file.
 kickoff_hash = "sha256:5e24c557192245b594ca028844a3f685f2e91d9c1daf7f5e88a08576a778e674"
@@ -20,11 +21,11 @@ tests_total     = 525          # measured pre-kickoff, Node 24.18.1, clean clone
 
 [port]
 scope_manifest = "tests/scope.txt"
-modules_ported = 1
+modules_ported = 44
 # Upstream LOC of fully ported modules. utils/typed-arrays.js (187 LOC) is in
 # static-disjoint-set's require-closure but only getPointerArray is reachable
 # from it, so it is not counted here; it will be when test/_utils.js lands.
-loc_in_scope   = 195
+loc_in_scope   = 7920
 
 [verify]
 build           = "docker build -t port-mortem ."
@@ -34,7 +35,7 @@ core_standalone = "docker build -t pm-core --target core . && docker run --rm pm
 hashes          = "sha256sum -c tests/SHA256SUMS"
 
 [results]
-in_scope_passing  = 1
-in_scope_total    = 1
-repo_wide_passing = 1
-repo_wide_total   = 525
+in_scope_passing  = 42
+in_scope_total    = 42
+repo_wide_passing = 733
+repo_wide_total   = 733

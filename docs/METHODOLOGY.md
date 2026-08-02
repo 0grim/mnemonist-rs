@@ -250,6 +250,20 @@ each side. Results are keyed per unit in `bench/results.json`, and **every workl
 explicit `regressions` array** — `tests/verify.sh` fails a unit whose entry omits the field, so a
 slowdown cannot be expressed by silence.
 
+### Exemptions
+
+Two units cannot produce an honest benchmark, and the gate distinguishes a requirement that was not
+*satisfied* from one that is not *applicable*. `default-weak-map` holds entries reclaimed at the
+garbage collector's discretion, so a timing figure would characterise V8 rather than the structure.
+`_utils` is a require-closure of five unrelated pure-function files with no shared instance, and the
+harness keys one workload per module name, so a single entry would misrepresent all five.
+
+Both carry an `excluded` field in `bench/results.json` giving the reason. `tests/verify.sh` accepts
+that only when the reason is non-empty and the unit's divergence document contains a matching
+section, so an exemption cannot be obtained by omission: a missing benchmark entry still fails, as
+does an exemption with an empty reason, or one the documentation does not state. Gates 1 through 9
+apply to both units in full.
+
 Benchmarks require an idle machine, and this is measured rather than assumed. A contended run
 inflated both sides two- to threefold; upstream's own p99 swung 32% between otherwise clean runs; a
 timing-sensitive test flaked under load and passed in isolation. Gate 10 therefore cannot run

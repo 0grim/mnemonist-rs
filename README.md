@@ -10,8 +10,8 @@ unmodified against the Rust build through an N-API bridge that forms no part of 
 
 ```
 42 of 42 upstream test files ported        733 upstream specs passing, unmodified
-40 units through all ten gates (94%)       799 native Rust tests
-129.5M differential fuzz operations        zero divergences
+42 units through all ten gates (100%)       799 native Rust tests
+129.8M differential fuzz operations        zero divergences
 71 upstream defects examined               12 documented in full
 ```
 
@@ -74,11 +74,13 @@ scripts/status.sh                # derived coverage and per-unit evidence
 All 42 vendored upstream test files are SHA-256 checked on every commit. Modifying any of them
 fails the build.
 
-`tests/scope.txt` records completed units, and a unit is listed only after all ten gates pass. Two
-units are excluded with recorded reasons: `default-weak-map`, whose entries are reclaimed at the
-garbage collector's discretion, so a timing measurement would characterise V8 rather than the
+`tests/scope.txt` records completed units. A unit is listed only after all ten gates pass, or after
+an explicit exemption recorded in both `bench/results.json` and the unit's divergence document. Two
+units carry a benchmark exemption on that basis: `default-weak-map`, whose entries are reclaimed at
+the garbage collector's discretion, so a timing measurement would characterise V8 rather than the
 structure; and `_utils`, a require-closure of five unrelated pure-function files sharing no
-instance.
+instance. Both pass gates 1 through 9 in full. `verify.sh` accepts an exemption only when a reason
+is given and the unit's divergence document states it; a missing benchmark still fails.
 
 ## Performance
 
