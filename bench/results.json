@@ -1305,7 +1305,38 @@
           "regressions": []
         }
       }
+    },
+    "fibonacci-heap": {
+      "workloads": {
+        "mixed-2e5": {
+          "workload": "200000 mixed push/pop/peek (50/25/25), default numeric comparator over size 200000, xorshift32 seed 42, ops materialised before the timed region",
+          "checksum": 5003154165,
+          "checksum_note": "identical on both sides: same ops, same answers, upstream bugs included",
+          "structure_note": "structure_rss_delta_mb constructs size 200000 and nothing else, isolating the structure from the op arrays both sides materialise",
+          "port": {
+            "p50_ns_per_op": 1251.721,
+            "p99_ns_per_op": 2667.664,
+            "min_ns_per_op": 74.652,
+            "rss_total_mb": 10.5,
+            "rss_delta_mb": 5.6,
+            "structure_rss_delta_mb": 0.1,
+            "startup_ms": 0.6,
+            "samples": 2000
+          },
+          "original": {
+            "p50_ns_per_op": 31260.543,
+            "p99_ns_per_op": 64227.064,
+            "min_ns_per_op": 324.435,
+            "rss_total_mb": 337.5,
+            "rss_delta_mb": 291.8,
+            "structure_rss_delta_mb": 6.7,
+            "startup_ms": 15.3,
+            "samples": 2000
+          },
+          "regressions": []
+        }
+      }
     }
   },
-  "generated_utc": "2026-08-02T03:54:49.509Z"
+  "generated_utc": "2026-08-02T04:07:18.429Z"
 }

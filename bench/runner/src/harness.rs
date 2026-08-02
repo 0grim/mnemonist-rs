@@ -297,6 +297,13 @@ pub const MODULES: &[ModuleEntry] = &[
         drain: None,
         structure: crate::static_interval_tree::build_structure,
     },
+    ModuleEntry {
+        name: "fibonacci-heap",
+        kinds: &["mixed"],
+        mixed: Some(crate::fibonacci_heap::run_mixed),
+        drain: None,
+        structure: crate::fibonacci_heap::build_structure,
+    },
 ];
 
 pub fn find(name: &str) -> Option<&'static ModuleEntry> {

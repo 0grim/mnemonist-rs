@@ -69,6 +69,7 @@ mod set_ops;
 // inserted alphabetically -- same reasoning as the two blocks above.
 mod bk_tree;
 mod critbit_tree_map;
+mod fibonacci_heap;
 mod fixed_critbit_tree_map;
 mod kd_tree;
 mod static_interval_tree;

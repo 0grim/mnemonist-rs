@@ -636,6 +636,23 @@ const WORKLOADS = {
       name: 'mixed-1e5', kind: 'mixed', size: 100000, ops: 1000000,
       label: 'mixed intervalsContainingPoint/intervalsOverlappingInterval (50/50) over 100,000 overlapping intervals'
     }
+  ],
+
+  // `fibonacci-heap`: same shape as `heap`'s own workload -- 50/25/25
+  // push/pop/peek, `size` bounding the pushed range so values stay mostly
+  // distinct. `size`/`ops` are 200,000, not this batch's usual 1e6: a 1e6-op
+  // pass was timed by hand first and upstream took over 2 minutes, dominated
+  // by system time rather than user CPU (heavy memory churn, not algorithmic
+  // cost) -- see bench/runner/src/fibonacci_heap.rs's own module docs. The
+  // load-bearing check is `FibonacciHeap::merges`: measured at 195,920 merges
+  // over 50,000 pops for this exact op mix at 200,000 ops, confirming
+  // consolidation fires repeatedly rather than degenerating to "pop one
+  // thing, link nothing".
+  'fibonacci-heap': [
+    {
+      name: 'mixed-2e5', kind: 'mixed', size: 200000, ops: 200000,
+      label: 'mixed push/pop/peek (50/25/25), default numeric comparator'
+    }
   ]
 };
 

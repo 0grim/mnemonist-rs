@@ -90,3 +90,4 @@ bk-tree
 vp-tree
 kd-tree
 static-interval-tree
+fibonacci-heap

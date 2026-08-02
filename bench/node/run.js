@@ -103,7 +103,8 @@ const MODULES = {
   'bk-tree': ['mixed'],
   'vp-tree': ['mixed'],
   'kd-tree': ['mixed'],
-  'static-interval-tree': ['mixed']
+  'static-interval-tree': ['mixed'],
+  'fibonacci-heap': ['mixed']
 };
 
 const argv = process.argv.slice(2);
@@ -1350,6 +1351,40 @@ function runMixedStaticIntervalTree(StaticIntervalTree, workload, k) {
   return {batches: batches, checksum: checksum, set: tree};
 }
 
+// Twin of bench/runner/src/fibonacci_heap.rs. Same shape as `heap.rs`: 50%
+// push (mutating), 25% pop (mutating and a read -- where consolidation
+// happens), 25% peek (pure read).
+function runMixedFibonacciHeap(FibonacciHeap, workload, k) {
+  const heap = new FibonacciHeap();
+  const ops = workload.kind.length;
+  const batches = [];
+  let checksum = 0;
+
+  for (let start = 0; start < ops; start += k) {
+    const end = Math.min(start + k, ops);
+    const clock = process.hrtime.bigint();
+
+    for (let i = start; i < end; i++) {
+      const value = workload.a[i];
+      const op = workload.kind[i];
+
+      if (op === 0 || op === 1) {
+        heap.push(value);
+      } else if (op === 2) {
+        const popped = heap.pop();
+        checksum += popped === undefined ? 0 : popped;
+      } else {
+        const peeked = heap.peek();
+        checksum += peeked === undefined ? 0 : peeked;
+      }
+    }
+
+    batches.push(Number(process.hrtime.bigint() - clock));
+  }
+
+  return {batches: batches, checksum: checksum, set: heap};
+}
+
 // Dispatch table, twin of harness.rs::MODULES's `mixed` field. Replaces what
 // was a two-armed ternary before five more modules made that the wrong shape.
 const MIXED_RUNNERS = {
@@ -1389,7 +1424,8 @@ const MIXED_RUNNERS = {
   'bk-tree': runMixedBkTree,
   'vp-tree': runMixedVpTree,
   'kd-tree': runMixedKdTree,
-  'static-interval-tree': runMixedStaticIntervalTree
+  'static-interval-tree': runMixedStaticIntervalTree,
+  'fibonacci-heap': runMixedFibonacciHeap
 };
 
 // Twin of harness.rs::MODULES's `structure` field: build the structure at
@@ -1644,6 +1680,13 @@ const STRUCTURE_BUILDERS = {
     const tree = new StaticIntervalTree(intervals);
 
     return tree.size;
+  },
+  'fibonacci-heap': function (FibonacciHeap, size) {
+    const heap = new FibonacciHeap();
+
+    for (let i = 0; i < size; i++) heap.push(i);
+
+    return heap.peek();
   }
 };
 
