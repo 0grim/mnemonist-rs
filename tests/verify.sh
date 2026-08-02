@@ -69,10 +69,18 @@ cargo clippy --all-targets -- -D warnings >/dev/null 2>&1 \
   && ok "        clippy clean (-D warnings)" \
   || bad "        clippy reports warnings -- run: cargo clippy --all-targets -- -D warnings"
 
-if cargo test >/dev/null 2>&1; then
+# Output is captured rather than discarded: this gate once reported FAILING
+# with no indication of what failed, and `cargo test` run by hand immediately
+# afterwards was green. A gate that says only "FAILING" invites re-running
+# until it passes, which is precisely the habit the Definition of Done exists
+# to prevent -- so when it fails it must say what failed, and the flake has to
+# be visible rather than smoothed over by a second attempt.
+if TEST_OUT=$(cargo test 2>&1); then
   ok "gate 7  Rust native tests pass"
 else
   bad "gate 7  Rust native tests FAILING"
+  note "$(echo "$TEST_OUT" | grep -E '^test .* FAILED|^error|panicked at' | head -5)"
+  note "re-run before assuming a flake; a green second attempt is not a passing gate"
 fi
 
 # ------------------------------------------------------------------ per-unit

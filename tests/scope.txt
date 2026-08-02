@@ -45,3 +45,11 @@ sort
 #                publish as a regression. Still descoped: that call is the orchestrator's,
 #                not this agent's, and the probe is deliberately not gate-10 evidence (no
 #                upstream JS analogue exists to compare a bare RefCell against).
+#                2026-08-02 (orchestrator): RE-SCOPED. The condition this block set
+#                -- "re-add after that pass, not before" -- is met, and met with a
+#                measurement rather than an absence of one. B-31 is fixed, re-fuzzed
+#                with the $forEach op at zero divergences, and the isolated borrow-flag
+#                cost is below this host's run-to-run noise. A cost that cannot be
+#                distinguished from noise is not a cost we can honestly report as a
+#                regression, and gate 10's `regressions` array says so explicitly.
+sparse-set
