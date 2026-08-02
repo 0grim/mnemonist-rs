@@ -595,6 +595,22 @@ const WORKLOADS = {
       name: 'mixed-3e5', kind: 'mixed', size: 300000, ops: 1000000,
       label: 'mixed add/search-small-radius/search-large-radius (50/25/25), metric |a - b|, over a 300,000-item domain'
     }
+  ],
+
+  // `vp-tree`: no `add` at all -- the tree is built once (untimed) from a
+  // shuffled 0..size, then every op is a query. `size` 50,000, well below
+  // `bk-tree`'s domain: construction sorts by distance from a vantage point
+  // at every level, and that cost was measured to be superlinear even after
+  // fixing the "sequential input" trap (a standalone probe against
+  // upstream's own vp-tree.js confirmed the remainder is a genuine property
+  // of the ported algorithm, not a Rust-only regression) -- see
+  // bench/runner/src/vp_tree.rs's own module docs for the full account.
+  // `ops` 200,000, not this batch's usual 1e6, for the same reason.
+  'vp-tree': [
+    {
+      name: 'mixed-5e4', kind: 'mixed', size: 50000, ops: 200000,
+      label: 'mixed neighbors-small-radius/neighbors-large-radius/nearestNeighbors (40/40/20), metric |a - b|, over a shuffled 50,000-item domain'
+    }
   ]
 };
 

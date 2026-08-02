@@ -87,3 +87,4 @@ trie-map
 critbit-tree-map
 fixed-critbit-tree-map
 bk-tree
+vp-tree

@@ -191,5 +191,32 @@ for which of several equally-valid ties comes first.
 
 ### Bench
 
-**Not run.** Gate 10 needs an idle machine and is batched into a separate quiet pass (§7.3); this
-unit is deliberately not in `tests/scope.txt` until then. Gates 1–9 are green.
+`bench/results.json` → `modules["vp-tree"]`. Methodology: `bench/methodology.md`.
+Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 2,000 samples/side.
+
+**`mixed-5e4`** — 200,000 mixed `neighbors`/`nearestNeighbors` over a **shuffled** 50,000-item
+domain, metric `distance(a, b) = |a - b|`. No `add` at all: `VPTree` is built once and never
+mutated, so the tree is constructed (untimed) before the timed batches and every op is a query —
+40% `neighbors` at a radius that mostly prunes, 40% at a radius that reaches real matches (still
+~1.6% of the tree), 20% `nearestNeighbors` (the heap-based query, its own pruning bound). See
+`bench/runner/src/vp_tree.rs`'s own module docs for two things worth reading before trusting this
+number: **the domain is shuffled, not `0..size` in order**, because construction sorts by distance
+from a vantage point using upstream's own fixed-pivot quicksort, and sequential input is that
+algorithm's classic worst case (a 300,000-item sequential build measured over 45 seconds of CPU
+time before this was caught); and **even after shuffling, construction stays measurably
+superlinear** — verified against a standalone probe of `bench/upstream/vp-tree.js` itself, which
+took a comparable ~2 seconds building 80,000 shuffled items, confirming this is a genuine property
+of the ported algorithm over a one-dimensional metric, not a Rust-only regression. `size` was
+reduced from an initial 300,000 to 50,000 for exactly this reason. xorshift32 seed 42:
+
+| metric | port | upstream | |
+|---|---|---|---|
+| p50 ns/op | **17644.13** | 26009.18 | 1.5× faster |
+| p99 ns/op | **20993.05** | 38979.72 | 1.9× faster |
+| RSS delta MB | **0.8** | 85.6 | |
+| structure-only RSS delta MB | **0.1** | 6.0 | |
+| startup ms | **0.6** | 15.5 | 26× (reported separately; not throughput) |
+
+**No regressions.** Checksum `796569334614010`, identical on both sides — a position-weighted sum
+(not a plain one), because `nearestNeighbors` pins an exact tie-break order in upstream's own test
+suite and a plain sum would agree on the same matches while missing a divergence in their order.

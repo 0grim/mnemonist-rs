@@ -71,6 +71,7 @@ mod bk_tree;
 mod critbit_tree_map;
 mod fixed_critbit_tree_map;
 mod trie_map;
+mod vp_tree;
 
 use std::process::ExitCode;
 

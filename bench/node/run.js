@@ -100,7 +100,8 @@ const MODULES = {
   'trie-map': ['mixed'],
   'critbit-tree-map': ['mixed'],
   'fixed-critbit-tree-map': ['mixed'],
-  'bk-tree': ['mixed']
+  'bk-tree': ['mixed'],
+  'vp-tree': ['mixed']
 };
 
 const argv = process.argv.slice(2);
@@ -1159,6 +1160,75 @@ function runMixedBkTree(BKTree, workload, k) {
   return {batches: batches, checksum: checksum, set: tree};
 }
 
+// Twin of bench/runner/src/vp_tree.rs::shuffled_items. A SEPARATE
+// fixed-seed (1) XorShift32 instance, independent of the workload's own
+// stream -- see that file's own module docs for why an in-order `0..size`
+// domain is quicksort's worst case for VPTree's construction step.
+function vpShuffledItems(size) {
+  const items = new Array(size);
+  for (let i = 0; i < size; i++) items[i] = i;
+
+  const rng = new XorShift32(1);
+
+  for (let i = items.length - 1; i > 0; i--) {
+    const j = rng.next() % (i + 1);
+    const tmp = items[i];
+    items[i] = items[j];
+    items[j] = tmp;
+  }
+
+  return items;
+}
+
+function vpDistance(a, b) {
+  return Math.abs(a - b);
+}
+
+// Twin of bench/runner/src/vp_tree.rs. No mutating op -- the tree is built
+// once (untimed) from a shuffled 0..size, then every op is a query: 40%
+// `neighbors` at SMALL_RADIUS (mostly pruned), 40% at LARGE_RADIUS (real
+// matches, still a small fraction of the tree), 20% `nearestNeighbors(K)`
+// (the heap-based query, its own pruning bound). Position-weighted
+// checksum, not a plain sum -- `nearestNeighbors` pins an exact tie-break
+// order in upstream's own test suite.
+function runMixedVpTree(VPTree, workload, k) {
+  const SMALL_RADIUS = 10;
+  const LARGE_RADIUS = 400;
+  const K = 10;
+  const items = vpShuffledItems(workload.size);
+  const tree = new VPTree(vpDistance, items);
+  const ops = workload.kind.length;
+  const batches = [];
+  let checksum = 0;
+
+  for (let start = 0; start < ops; start += k) {
+    const end = Math.min(start + k, ops);
+    const clock = process.hrtime.bigint();
+
+    for (let i = start; i < end; i++) {
+      const query = workload.a[i];
+      const op = workload.kind[i];
+
+      let hits;
+      if (op === 0) {
+        hits = tree.neighbors(SMALL_RADIUS, query);
+      } else if (op === 1 || op === 2) {
+        hits = tree.neighbors(LARGE_RADIUS, query);
+      } else {
+        hits = tree.nearestNeighbors(K, query);
+      }
+
+      for (let position = 0; position < hits.length; position++) {
+        checksum += (position + 1) * hits[position].item;
+      }
+    }
+
+    batches.push(Number(process.hrtime.bigint() - clock));
+  }
+
+  return {batches: batches, checksum: checksum, set: tree};
+}
+
 // Dispatch table, twin of harness.rs::MODULES's `mixed` field. Replaces what
 // was a two-armed ternary before five more modules made that the wrong shape.
 const MIXED_RUNNERS = {
@@ -1195,7 +1265,8 @@ const MIXED_RUNNERS = {
   'trie-map': runMixedTrieMap,
   'critbit-tree-map': runMixedCritbitTreeMap,
   'fixed-critbit-tree-map': runMixedFixedCritbitTreeMap,
-  'bk-tree': runMixedBkTree
+  'bk-tree': runMixedBkTree,
+  'vp-tree': runMixedVpTree
 };
 
 // Twin of harness.rs::MODULES's `structure` field: build the structure at
@@ -1424,6 +1495,14 @@ const STRUCTURE_BUILDERS = {
     const domain = Math.max(size, 1);
 
     for (let i = 0; i < size; i++) tree.add(i % domain);
+
+    return tree.size;
+  },
+  // Twin of bench/runner/src/vp_tree.rs::build_structure: "size" means
+  // "built from a shuffled 0..size".
+  'vp-tree': function (VPTree, size) {
+    const items = vpShuffledItems(size);
+    const tree = new VPTree(vpDistance, items);
 
     return tree.size;
   }

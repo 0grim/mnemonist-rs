@@ -23,7 +23,7 @@
   },
   "baseline_rss_mb": {
     "node": 45.7,
-    "rust": 4.8
+    "rust": 4.9
   },
   "modules": {
     "static-disjoint-set": {
@@ -1193,7 +1193,38 @@
           "regressions": []
         }
       }
+    },
+    "vp-tree": {
+      "workloads": {
+        "mixed-5e4": {
+          "workload": "200000 mixed neighbors-small-radius/neighbors-large-radius/nearestNeighbors (40/40/20), metric |a - b|, over a shuffled 50,000-item domain over size 50000, xorshift32 seed 42, ops materialised before the timed region",
+          "checksum": 796569334614010,
+          "checksum_note": "identical on both sides: same ops, same answers, upstream bugs included",
+          "structure_note": "structure_rss_delta_mb constructs size 50000 and nothing else, isolating the structure from the op arrays both sides materialise",
+          "port": {
+            "p50_ns_per_op": 17644.125,
+            "p99_ns_per_op": 20993.049,
+            "min_ns_per_op": 15403.572,
+            "rss_total_mb": 5.7,
+            "rss_delta_mb": 0.8,
+            "structure_rss_delta_mb": 0.1,
+            "startup_ms": 0.6,
+            "samples": 2000
+          },
+          "original": {
+            "p50_ns_per_op": 26009.183,
+            "p99_ns_per_op": 38979.716,
+            "min_ns_per_op": 20057.108,
+            "rss_total_mb": 131.3,
+            "rss_delta_mb": 85.6,
+            "structure_rss_delta_mb": 6,
+            "startup_ms": 15.5,
+            "samples": 2000
+          },
+          "regressions": []
+        }
+      }
     }
   },
-  "generated_utc": "2026-08-02T02:56:45.479Z"
+  "generated_utc": "2026-08-02T03:16:51.107Z"
 }
