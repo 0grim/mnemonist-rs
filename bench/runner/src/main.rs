@@ -27,9 +27,15 @@
 //! iteration and is the only benchmark that puts the cursor machinery of
 //! DESIGN.md 3.4 on the clock.
 
+mod bit_set;
+mod harness;
+mod heap;
+mod lru_cache;
 mod rss;
 mod sparse_set;
 mod static_disjoint_set;
+mod trie;
+mod vector;
 mod workload;
 mod xorshift;
 
@@ -49,14 +55,8 @@ usage: bench-runner [--module NAME] [--kind mixed|drain] [--warmup N] [--measure
                     [--size N] [--ops N] [--passes N] [--seed N]
        bench-runner --baseline | --noop | --dump-prng N
 
-modules: static-disjoint-set (mixed), sparse-set (mixed, drain)
+modules, and the loops each offers: see harness.rs::MODULES
 ";
-
-/// Modules this binary can benchmark, and which loops each offers.
-const MODULES: &[(&str, &[&str])] = &[
-    ("static-disjoint-set", &["mixed"]),
-    ("sparse-set", &["mixed", "drain"]),
-];
 
 /// Drain passes, when `--passes` is not given. See `sparse_set::run_drain`:
 /// one timed sample per pass, so this is also the sample count per measured
@@ -103,43 +103,30 @@ fn main() -> ExitCode {
     let module = value(&flags, "--module").unwrap_or("static-disjoint-set");
     let kind = value(&flags, "--kind").unwrap_or("mixed");
 
-    match MODULES.iter().find(|(name, _)| *name == module) {
+    let entry = match harness::find(module) {
         None => return fail(&format!("unknown module `{module}`")),
-        Some((_, kinds)) if !kinds.contains(&kind) => {
+        Some(entry) if !entry.kinds.contains(&kind) => {
             return fail(&format!("module `{module}` has no `{kind}` workload"))
         }
-        Some(_) => {}
-    }
+        Some(entry) => entry,
+    };
 
     if flags.contains(&"--structure") {
         // Isolates the structure's own footprint: build it, touch nothing
         // else, report peak RSS. The mixed workload's RSS delta is dominated
         // by the materialised op arrays (~9 MB, identical on both sides),
         // which hides the part of the memory story that is actually about the
-        // port -- and on this module that part is a regression, so hiding it
+        // port -- and on some modules that part is a regression, so hiding it
         // would be exactly the thing DESIGN.md 5.1 warns against.
         let size = match size_flag(&flags) {
             Ok(size) => size,
             Err(message) => return fail(&message),
         };
-        // Touch the structure so nothing can be deferred or elided, mirroring
-        // the Node twin's `set.parents[size - 1]` / `set.dense[size - 1]`.
-        match module {
-            "sparse-set" => {
-                let set = mnemonist_core::structures::sparse_set::SparseSet::new(size as usize)
-                    .expect("benchmark sizes are well inside the pointer limit");
 
-                std::hint::black_box(&set);
-            }
-            _ => {
-                let set = mnemonist_core::structures::static_disjoint_set::StaticDisjointSet::new(
-                    size as usize,
-                )
-                .expect("benchmark sizes are well inside the pointer limit");
-
-                std::hint::black_box(&set);
-            }
-        }
+        // Each module's own `build_structure` constructs and touches it --
+        // see harness.rs for why this is a function pointer per module rather
+        // than a match here.
+        (entry.structure)(size);
 
         println!(
             "{}",
@@ -161,10 +148,31 @@ fn main() -> ExitCode {
     let passes = number(&flags, "--passes", DEFAULT_PASSES);
 
     if kind == "drain" {
-        return drain(module, size, seed, passes, warmup, measured);
+        return drain(entry, module, size, seed, passes, warmup, measured);
     }
 
     let generated = workload::generate(size, ops, seed);
+
+    // A wildcard arm here once silently benchmarked static-disjoint-set's
+    // workload for EVERY unimplemented module and filed the numbers under
+    // whatever name was on the command line. Gate 10 only asserts that an
+    // entry exists with both sides and a regressions array, so a full pass
+    // would have produced 42 green units all measuring one structure.
+    //
+    // Unimplemented modules must therefore fail loudly, not fall through. The
+    // registry in harness.rs makes this structural rather than a match to get
+    // right per module: `entry.kinds` was already checked above, but a module
+    // that lists "mixed" without wiring up `entry.mixed` is still a bug, so it
+    // is still checked here rather than trusted.
+    let run_mixed = match entry.mixed {
+        Some(run) => run,
+        None => {
+            return fail(&format!(
+                "no benchmark workload is implemented for `{module}`; refusing to \
+                 report figures measured against a different structure"
+            ))
+        }
+    };
 
     // Warmup is mandatory for the Node side (V8 JIT) and kept here purely for
     // symmetry: measuring a cold JS run against an optimised Rust one is a
@@ -172,38 +180,15 @@ fn main() -> ExitCode {
     // protocol tuned per runtime.
     let mut checksum = 0;
 
-    // A wildcard arm here silently benchmarked static-disjoint-set's workload
-    // for EVERY unimplemented module and filed the numbers under whatever name
-    // was on the command line. Gate 10 only asserts that an entry exists with
-    // both sides and a regressions array, so a full pass would have produced 42
-    // green units all measuring one structure.
-    //
-    // Unimplemented modules must therefore fail loudly, not fall through. This
-    // is the same rule the fuzz runner already follows for `ops == 0`: refusing
-    // to report is the only honest answer when the measurement did not happen.
-    let run = |workload: &workload::Workload| match module {
-        "sparse-set" => Some(sparse_set::run_mixed(workload, BATCH_K)),
-        "static-disjoint-set" => Some(static_disjoint_set::run_once(workload, BATCH_K)),
-        _ => None,
-    };
-
-    if run(&generated).is_none() {
-        return fail(&format!(
-            "no benchmark workload is implemented for `{module}`; refusing to \
-             report figures measured against a different structure"
-        ));
-    }
-    let run = |workload: &workload::Workload| run(workload).expect("checked above");
-
     for _ in 0..warmup {
-        let (_, sum) = run(&generated);
+        let (_, sum) = run_mixed(&generated, BATCH_K);
         checksum = sum;
     }
 
     let mut batches = Vec::new();
 
     for _ in 0..measured {
-        let (times, sum) = run(&generated);
+        let (times, sum) = run_mixed(&generated, BATCH_K);
 
         if sum != checksum && warmup > 0 {
             return fail("checksum changed between passes; the workload is not deterministic");
@@ -238,6 +223,7 @@ fn main() -> ExitCode {
 /// one, with `batch_k` carrying members-per-pass instead of a fixed 1000, so
 /// the driver's `ns / batch_k` still means nanoseconds per element.
 fn drain(
+    entry: &harness::ModuleEntry,
     module: &str,
     size: u32,
     seed: u32,
@@ -249,11 +235,25 @@ fn drain(
         return fail("`--passes` must be at least 1");
     }
 
+    // Same reasoning as the `mixed` arm above: `entry.kinds` already listed
+    // "drain", so a module without a wired-up `entry.drain` is a bug in the
+    // registry, not a valid "unsupported" state -- but it still fails loudly
+    // rather than being trusted.
+    let run_drain = match entry.drain {
+        Some(run) => run,
+        None => {
+            return fail(&format!(
+                "no drain workload is implemented for `{module}`; refusing to \
+                 report figures measured against a different structure"
+            ))
+        }
+    };
+
     let mut checksum = 0;
     let mut per_pass = 0;
 
     for _ in 0..warmup {
-        let (_, sum, size) = sparse_set::run_drain(size, seed, passes);
+        let (_, sum, size) = run_drain(size, seed, passes);
         checksum = sum;
         per_pass = size;
     }
@@ -261,7 +261,7 @@ fn drain(
     let mut batches = Vec::new();
 
     for _ in 0..measured {
-        let (times, sum, members) = sparse_set::run_drain(size, seed, passes);
+        let (times, sum, members) = run_drain(size, seed, passes);
 
         if sum != checksum && warmup > 0 {
             return fail("checksum changed between passes; the workload is not deterministic");

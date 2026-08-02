@@ -146,5 +146,29 @@ results for every instrument (including this unit's own original-suite failures 
 
 ### Bench
 
-**Not run.** Gate 10 is deferred to a serial pass on an idle machine (DESIGN.md §7.3); this unit is
-therefore complete except gate 10 and deliberately not added to `tests/scope.txt`.
+`bench/results.json` → `modules["trie"]`. Methodology: `bench/methodology.md`.
+Host: AMD Ryzen 5 7600X, 12 threads, WSL2, Node 24.18.1, rustc 1.97.1, quiet serial pass.
+Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 10,000 samples/side.
+
+**`mixed-2e5`** — 1e6 mixed `add`/`has`/`delete` (50/25/25) over a 200,000-value domain, keys the
+lowercase hex encoding of each drawn `u32` (`bench/runner/src/trie.rs`), xorshift32 seed 42. The
+domain is an order of magnitude below the other modules' 1e6 on purpose: every distinct key here is
+a multi-node walk through a per-node hash map, not a flat array index, and an equal domain would
+have made this module by far the slowest wall-clock component of the pass for no representativeness
+gained — 200,000 keys already exercises deep prefix sharing (values under `0x1000` alone number in
+the thousands).
+
+| metric | port | upstream | |
+|---|---|---|---|
+| p50 ns/op | **172.5** | 454.8 | 2.6× faster |
+| p99 ns/op | **265.6** | 792.5 | 3.0× faster |
+| RSS delta MB | **30.7** | 220.5 | |
+| structure-only RSS delta MB | **0.1** | 6.6 | |
+| startup ms | **0.6** | 16.2 | 27× (reported separately; not throughput) |
+
+**A clean win on every metric — no regressions.** This is the allocation-heavy, string-keyed
+profile DESIGN.md §5.1 flagged as genuinely different from the array/typed-array modules, and the
+port's per-node `HashMap<char, Node>` fan-out costs V8 noticeably more than the equivalent plain-
+object node upstream uses, both in time and in the RSS delta (upstream's is 7× the port's here). The
+0.1 MB structure-only delta versus 6.6 MB is the widest such gap measured across all seven modules
+in this pass.

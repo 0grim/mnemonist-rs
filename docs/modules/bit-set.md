@@ -319,3 +319,34 @@ pre-fix bridges, green after.
 One deliberate narrowing, mirrored on both sides: a selected callback argument that is `undefined`
 skips the mutation. Feeding it back in reaches upstream's `NaN`-indexed swap, which `usize` cannot
 express and the core does not model. Fully disclosed in `fuzz/log.txt`.
+
+### Bench
+
+`bench/results.json` → `modules["bit-set"]`. Methodology: `bench/methodology.md`.
+Host: AMD Ryzen 5 7600X, 12 threads, WSL2, Node 24.18.1, rustc 1.97.1, quiet serial pass.
+Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 10,000 samples/side.
+
+**`mixed-1e6`** — 1e6 mixed `set`/`reset`/`get`/`test` (50/25/25) over capacity 1e6, xorshift32
+seed 42. `rank` is deliberately excluded: it has no rank/select index behind it on either side, so
+a single call is O(i / 32) words, and a 25%-weighted mix at this domain made the harness spend ten
+minutes on six of ten reps before it was killed — see `bench/runner/src/bit_set.rs` for the full
+account.
+
+| metric | port | upstream | |
+|---|---|---|---|
+| p50 ns/op | 8.87 | **7.94** | 1.12× slower |
+| p99 ns/op | 16.30 | **14.87** | 1.10× slower |
+| RSS delta MB | **6.1** | 17.6 | |
+| structure-only RSS delta MB | **1.3** | 9.8 | |
+| startup ms | **0.6** | 17.9 | 30× (reported separately; not throughput) |
+
+**This is the module DESIGN.md 5.1 predicted the port should win largest on, and on raw ns/op it
+does not — a real, disclosed regression, not a rounding artefact.** Both p50 and p99 are ~10–12%
+slower than V8's own typed-array path over three independent metrics (p50, p99, min), which rules
+out a single unlucky batch. Unconfirmed explanation, stated as unconfirmed: `BitSet::set`/`reset`/
+`get`/`test` each go through `Words::set_bit`/`get_bit` (`crates/mnemonist-core/src/structures/
+bits.rs`), an extra call frame LLVM may not always inline as aggressively as V8 inlines a monomorphic
+`Uint32Array` element access at this op's simplicity — but no profiling was done to confirm that
+against a metric that would falsify it, so it is recorded as a lead, not a cause. What is confirmed
+is the memory and startup side: the port uses roughly a third of the RSS and starts thirty times
+faster, exactly where a `Vec<u32>` versus a full V8 process should differ.

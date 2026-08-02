@@ -267,6 +267,77 @@ const WORKLOADS = {
       name: 'drain-1e5', kind: 'drain', size: 100000, passes: 100,
       label: 'full iteration of a prefilled set, one timed sample per walk'
     }
+  ],
+
+  // The five modules added for the Gate 10 extension past the first two.
+  // Each is one workload rather than a size sweep -- `static-disjoint-set`'s
+  // second row exists because a boundary was found by probing; nothing here
+  // has (yet) shown the same signal, and adding a second row per module on
+  // spec would cost 5 more single-process passes each without a documented
+  // reason, which is the shape of padding a table rather than reporting one.
+  //
+  // `bit-set`: capacity IS the domain, same as sparse-set/static-disjoint-set
+  // -- a fixed-length structure has no separate "key space" to rig.
+  'bit-set': [
+    {
+      name: 'mixed-1e6', kind: 'mixed', size: 1000000, ops: 1000000,
+      label: 'mixed set/reset/get/test (50/25/25); rank excluded -- see ' +
+        'bench/runner/src/bit_set.rs for why a 25%-weighted rank blew up wall-clock time'
+    }
+  ],
+
+  // `lru-cache`: `size` is the KEY DOMAIN, not the capacity -- capacity is
+  // derived inside bench/runner/src/lru_cache.rs and bench/node/run.js's
+  // `capacityForLru` as a fixed 20% of it. 1e6 keys / 200,000-entry cache is
+  // large enough that the cache is genuinely under eviction pressure for the
+  // whole run rather than filling once and idling; see that file's module
+  // docs for why 100% (capacity == domain) and single-digit-percent
+  // capacities are both the wrong answer, and for the honest limit of what
+  // "hit rate" means under this benchmark's uniform access pattern.
+  'lru-cache': [
+    {
+      name: 'mixed-1e6', kind: 'mixed', size: 1000000, ops: 1000000,
+      label: 'mixed set/get/has (50/25/25), capacity 20% of the 1e6 key domain'
+    }
+  ],
+
+  // `heap`: `size` bounds the numeric range pushed values are drawn from, not
+  // a capacity -- a heap grows under push like `vector`/`trie` do. 1e6 keeps
+  // most pushed values distinct (see bench/runner/src/heap.rs), so ties --
+  // which would let the comparator return early without moving anything --
+  // stay rare.
+  'heap': [
+    {
+      name: 'mixed-1e6', kind: 'mixed', size: 1000000, ops: 1000000,
+      label: 'mixed push/pop/peek (50/25/25), default numeric comparator'
+    }
+  ],
+
+  // `trie`: `size` is the domain the hex-encoded keys are drawn from, kept an
+  // order of magnitude below the other modules' 1e6 on purpose. Every
+  // distinct value here is a multi-node walk with a hash map fan-out per
+  // node, not a flat array index, so an equal domain would make this module
+  // by far the slowest wall-clock component of a Gate 10 pass for a
+  // comparison that does not need the extra size to be representative --
+  // 200,000 keys already exercises deep sharing (values under 0x1000 alone
+  // number in the thousands) without turning one workload into most of the
+  // batch's runtime.
+  'trie': [
+    {
+      name: 'mixed-2e5', kind: 'mixed', size: 200000, ops: 1000000,
+      label: 'mixed add/has/delete (50/25/25) over hex-encoded keys'
+    }
+  ],
+
+  // `vector`: `size` only bounds the magnitude of pushed values -- a growable
+  // array has no capacity distinct from its (self-managed) length, so the
+  // number itself is arbitrary and kept at 1e6 for consistency with the other
+  // modules rather than for any effect on the measurement.
+  'vector': [
+    {
+      name: 'mixed-1e6', kind: 'mixed', size: 1000000, ops: 1000000,
+      label: 'mixed push/get/pop (50/25/25)'
+    }
   ]
 };
 

@@ -59,7 +59,12 @@ const DEFAULT_PASSES = 100;
 
 const MODULES = {
   'static-disjoint-set': ['mixed'],
-  'sparse-set': ['mixed', 'drain']
+  'sparse-set': ['mixed', 'drain'],
+  'bit-set': ['mixed'],
+  'lru-cache': ['mixed'],
+  'heap': ['mixed'],
+  'trie': ['mixed'],
+  'vector': ['mixed']
 };
 
 const argv = process.argv.slice(2);
@@ -176,6 +181,254 @@ function runMixedSparse(SparseSet, workload, k) {
 
   return {batches: batches, checksum: checksum, set: set};
 }
+
+// Twin of bench/runner/src/bit_set.rs. 50% set/reset (mutating), 25% get,
+// 25% test (both pure O(1) reads). `rank` was tried and pulled -- see that
+// file's module docs: it has no rank/select index on either side, so a
+// single call costs O(i / 32) words, and a 25%-weighted mix over a 1e6 domain
+// made the harness spend ten-plus minutes computing six of ten reps instead
+// of measuring a representative bit-set workload.
+function runMixedBitSet(BitSet, workload, k) {
+  const set = new BitSet(workload.size);
+  const ops = workload.kind.length;
+  const batches = [];
+  let checksum = 0;
+
+  for (let start = 0; start < ops; start += k) {
+    const end = Math.min(start + k, ops);
+    const clock = process.hrtime.bigint();
+
+    for (let i = start; i < end; i++) {
+      const index = workload.a[i];
+      const op = workload.kind[i];
+
+      if (op === 0) {
+        set.set(index);
+      } else if (op === 1) {
+        set.reset(index);
+      } else if (op === 2) {
+        checksum += set.get(index);
+      } else {
+        checksum += set.test(index) ? 1 : 0;
+      }
+    }
+
+    batches.push(Number(process.hrtime.bigint() - clock));
+  }
+
+  return {batches: batches, checksum: checksum, set: set};
+}
+
+// Twin of bench/runner/src/lru_cache.rs::capacity_for. Capacity is a fixed
+// fraction (20%) of the key domain `workload.size` provides, never the domain
+// itself -- see that file's module docs for why capacity == domain (a 100%
+// hit rate once warmed) and a tiny fixed capacity are both the wrong answer.
+function capacityForLru(domain) {
+  return Math.max(1, Math.floor(domain / 5));
+}
+
+// Twin of bench/runner/src/lru_cache.rs. 50% set (mutating), 25% get
+// (mutating -- splays to front -- and read), 25% has (pure read).
+function runMixedLru(LRUCache, workload, k) {
+  const cache = new LRUCache(capacityForLru(workload.size));
+  const ops = workload.kind.length;
+  const batches = [];
+  let checksum = 0;
+
+  for (let start = 0; start < ops; start += k) {
+    const end = Math.min(start + k, ops);
+    const clock = process.hrtime.bigint();
+
+    for (let i = start; i < end; i++) {
+      const key = workload.a[i];
+      const op = workload.kind[i];
+
+      if (op === 0 || op === 1) {
+        cache.set(key, key);
+      } else if (op === 2) {
+        const value = cache.get(key);
+        checksum += value === undefined ? 0 : value;
+      } else {
+        checksum += cache.has(key) ? 1 : 0;
+      }
+    }
+
+    batches.push(Number(process.hrtime.bigint() - clock));
+  }
+
+  return {batches: batches, checksum: checksum, set: cache};
+}
+
+// Twin of bench/runner/src/heap.rs. Default (numeric) comparator, matching
+// core's DefaultComparator. 50% push (mutating), 25% pop (mutating and read,
+// the same shape as static-disjoint-set's `find`), 25% peek (pure read).
+// pop/peek on an empty heap return `undefined`, contributing 0 -- no guard
+// needed, since 50% push against 25% pop keeps the heap non-empty almost
+// throughout.
+function runMixedHeap(Heap, workload, k) {
+  const heap = new Heap();
+  const ops = workload.kind.length;
+  const batches = [];
+  let checksum = 0;
+
+  for (let start = 0; start < ops; start += k) {
+    const end = Math.min(start + k, ops);
+    const clock = process.hrtime.bigint();
+
+    for (let i = start; i < end; i++) {
+      const value = workload.a[i];
+      const op = workload.kind[i];
+
+      if (op === 0 || op === 1) {
+        heap.push(value);
+      } else if (op === 2) {
+        const popped = heap.pop();
+        checksum += popped === undefined ? 0 : popped;
+      } else {
+        const peeked = heap.peek();
+        checksum += peeked === undefined ? 0 : peeked;
+      }
+    }
+
+    batches.push(Number(process.hrtime.bigint() - clock));
+  }
+
+  return {batches: batches, checksum: checksum, set: heap};
+}
+
+// Twin of bench/runner/src/trie.rs. Keys are `value.toString(16)` -- lowercase
+// hex, no leading zeros, byte-identical to Rust's `format!("{value:x}")` for
+// the same u32, so no second matched generator is needed and prefix-sharing
+// among nearby values comes for free. Same 50/25/25 add/has/delete shape as
+// sparse-set.
+function runMixedTrie(Trie, workload, k) {
+  const trie = new Trie();
+  const ops = workload.kind.length;
+  const batches = [];
+  let checksum = 0;
+
+  for (let start = 0; start < ops; start += k) {
+    const end = Math.min(start + k, ops);
+    const clock = process.hrtime.bigint();
+
+    for (let i = start; i < end; i++) {
+      const word = workload.a[i].toString(16);
+      const op = workload.kind[i];
+
+      if (op === 0 || op === 1) {
+        trie.add(word);
+      } else if (op === 2) {
+        checksum += trie.has(word) ? 1 : 0;
+      } else {
+        checksum += trie.delete(word) ? 1 : 0;
+      }
+    }
+
+    batches.push(Number(process.hrtime.bigint() - clock));
+  }
+
+  return {batches: batches, checksum: checksum, set: trie};
+}
+
+// Twin of bench/runner/src/vector.rs. 50% push (mutating growth), 25% get at
+// a uniformly random *existing* index (pure read, modulo the current length
+// so it never lands past it), 25% pop (mutating and read). Both sides derive
+// the same push/pop counts from the same matched stream, so the vector's
+// length trajectory -- and what `get`'s modulo lands on -- is identical; the
+// checksum proves it.
+function runMixedVector(Vector, workload, k) {
+  const vector = new Vector(Float64Array, 0);
+  const ops = workload.kind.length;
+  const batches = [];
+  let checksum = 0;
+
+  for (let start = 0; start < ops; start += k) {
+    const end = Math.min(start + k, ops);
+    const clock = process.hrtime.bigint();
+
+    for (let i = start; i < end; i++) {
+      const op = workload.kind[i];
+
+      if (op === 0 || op === 1) {
+        vector.push(workload.a[i]);
+      } else if (op === 2) {
+        const len = vector.length;
+
+        if (len > 0) {
+          const index = workload.a[i] % len;
+          checksum += vector.get(index);
+        }
+      } else {
+        const popped = vector.pop();
+        checksum += popped === undefined ? 0 : popped;
+      }
+    }
+
+    batches.push(Number(process.hrtime.bigint() - clock));
+  }
+
+  return {batches: batches, checksum: checksum, set: vector};
+}
+
+// Dispatch table, twin of harness.rs::MODULES's `mixed` field. Replaces what
+// was a two-armed ternary before five more modules made that the wrong shape.
+const MIXED_RUNNERS = {
+  'static-disjoint-set': runOnce,
+  'sparse-set': runMixedSparse,
+  'bit-set': runMixedBitSet,
+  'lru-cache': runMixedLru,
+  'heap': runMixedHeap,
+  'trie': runMixedTrie,
+  'vector': runMixedVector
+};
+
+// Twin of harness.rs::MODULES's `structure` field: build the structure at
+// `size` and return one element to read, so nothing can be deferred or
+// elided. `bit-set`/`lru-cache` preallocate to a fixed capacity like
+// `sparse-set`/`static-disjoint-set` (bit-set's capacity is `size` directly;
+// lru-cache's is `capacityForLru(size)`, matching runMixedLru). `heap`/
+// `trie`/`vector` have no capacity distinct from occupied size, so "size"
+// means "prefilled with `size` elements" for those three instead -- see each
+// bench/runner/src/*.rs file's own `build_structure` doc for why.
+const STRUCTURE_BUILDERS = {
+  'static-disjoint-set': function (StaticDisjointSet, size) {
+    const set = new StaticDisjointSet(size);
+    return set.parents[size - 1];
+  },
+  'sparse-set': function (SparseSet, size) {
+    const set = new SparseSet(size);
+    return set.dense[size - 1];
+  },
+  'bit-set': function (BitSet, size) {
+    const set = new BitSet(size);
+    return set.get(size - 1);
+  },
+  'lru-cache': function (LRUCache, size) {
+    const cache = new LRUCache(capacityForLru(size));
+    return cache.has(0);
+  },
+  'heap': function (Heap, size) {
+    const heap = new Heap();
+
+    for (let i = 0; i < size; i++) heap.push(i);
+
+    return heap.peek();
+  },
+  'trie': function (Trie, size) {
+    const trie = new Trie();
+
+    for (let i = 0; i < size; i++) trie.add(i.toString(16));
+
+    return trie.has((size - 1).toString(16));
+  },
+  'vector': function (Vector, size) {
+    const vector = new Vector(Float64Array, 0);
+
+    for (let i = 0; i < size; i++) vector.push(i);
+
+    return vector.get(vector.length - 1);
+  }
+};
 
 // Twin of bench/runner/src/sparse_set.rs `prefilled`.
 function prefilled(SparseSet, size, seed) {
@@ -300,10 +553,9 @@ function main() {
 
     if (size === null) return;
 
-    const set = new Structure(size);
-
-    // Read one element so nothing can be deferred or elided.
-    global.__keepAlive = module === 'sparse-set' ? set.dense[size - 1] : set.parents[size - 1];
+    // Twin of harness.rs::ModuleEntry::structure. Reads one element back so
+    // nothing can be deferred or elided.
+    global.__keepAlive = STRUCTURE_BUILDERS[module](Structure, size);
 
     process.stdout.write(JSON.stringify({
       side: 'original', mode: 'structure', size: size, rss_kb: peakRssKb()
@@ -330,9 +582,7 @@ function main() {
 
   // Mandatory, and stated in methodology.md: measuring cold JS against
   // optimised Rust is a dishonest win.
-  const run = module === 'sparse-set'
-    ? function (w) { return runMixedSparse(Structure, w, BATCH_K); }
-    : function (w) { return runOnce(Structure, w, BATCH_K); };
+  const run = function (w) { return MIXED_RUNNERS[module](Structure, w, BATCH_K); };
 
   let checksum = 0;
 

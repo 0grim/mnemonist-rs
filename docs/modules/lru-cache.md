@@ -370,8 +370,33 @@ outcome gate 6 exists to distinguish from "a green light that was never capable 
 
 ### Bench
 
-**Not run.** Gate 10 is deferred to a serial pass on an idle machine (DESIGN.md §7.3): other agents
-were working on this repository while this unit landed, and a contended run has inflated both sides
-2–3× before (see `docs/modules/heap.md`). `lru-cache` is therefore **complete except gate 10** and is
-deliberately *not* in `tests/scope.txt`; `tests/verify.sh` will say so, which is the intended state
-rather than an oversight.
+`bench/results.json` → `modules["lru-cache"]`. Methodology: `bench/methodology.md`.
+Host: AMD Ryzen 5 7600X, 12 threads, WSL2, Node 24.18.1, rustc 1.97.1, quiet serial pass.
+Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 10,000 samples/side.
+
+**`mixed-1e6`** — 1e6 mixed `set`/`get`/`has` (50/25/25) over a 1e6-key domain, capacity 20% of the
+domain (`bench/runner/src/lru_cache.rs::capacity_for`), xorshift32 seed 42:
+
+| metric | port | upstream | |
+|---|---|---|---|
+| p50 ns/op | **32.4** | 58.1 | 1.8× faster |
+| p99 ns/op | **112.9** | 287.7 | 2.5× faster |
+| RSS delta MB | **27.8** | 111.8 | |
+| structure-only RSS delta MB | **1.2** | 9.8 | |
+| startup ms | **0.6** | 17.1 | 28× (reported separately; not throughput) |
+
+**This is the module the brief predicted the port would lose on — "V8's own `Map` is heavily
+optimised" — and on these numbers it does not.** Stated rather than left to stand unexamined: the
+reason is very likely that upstream `lru-cache.js` does not use a `Map` at all. Its index is
+`this.items = {}`, a plain object, and `this.items[key]` on a numeric key runs `ToPropertyKey`
+(numeric-to-string coercion) on every access — `lru-map.js` is the sibling that uses a real `Map`,
+and it is a different file with a different bridge module, not benchmarked here. So this result
+should be read as "a `HashMap<u32, usize>` beating a plain-object property index doing string
+coercion on every op", which is a real and legitimate difference, not as "beating V8's `Map`" in
+general — the latter claim remains unconfirmed and this benchmark cannot support it. `lru-map`
+would be the workload that actually tests it, and is a natural module 8 if this harness is extended
+further.
+
+Caveat carried from the module docs above: access here is uniform xorshift, under which an LRU's
+hit rate converges to roughly `capacity / domain` regardless of eviction quality. Read this table as
+cost-per-operation under continuous churn, not as a hit-rate claim.

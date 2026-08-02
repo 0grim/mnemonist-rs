@@ -9,6 +9,11 @@ Reproduce with:
 ```bash
 bench/run.sh static-disjoint-set        # → bench/results.json
 bench/run.sh sparse-set
+bench/run.sh bit-set
+bench/run.sh lru-cache
+bench/run.sh heap
+bench/run.sh trie
+bench/run.sh vector
 ```
 
 ---
@@ -202,3 +207,42 @@ Recorded per run in `results.json` under `host`. The governor reads
 `unavailable` on WSL2, which exposes no `cpufreq` node — recorded honestly
 rather than guessed, and it does mean frequency scaling is uncontrolled on this
 host. The A/B/A/B interleaving is what limits the damage.
+
+## Extending to more modules — the registry
+
+`bench/runner/src/harness.rs` holds a table of function pointers, one row per
+module: a `mixed` op-stream loop, an optional `drain`-style loop, and a
+`--structure` builder. `bench/runner/src/main.rs` dispatches through the
+table and does not change when a module is added; `bench/node/run.js` mirrors
+the same table shape (`MIXED_RUNNERS`/`STRUCTURE_BUILDERS`). Adding module 9
+onward is: one Rust file implementing `run_mixed`/`build_structure` (a `heap`-
+or `bit-set`-sized file, ~50–90 LOC with docs), one line in `harness.rs`, the
+JS twin of the same loop in `run.js`, and one `WORKLOADS` entry in `drive.js`
+with a stated size/ops/reason. Nothing in the protocol above — matched PRNG,
+K = 1000 batching, 3 warmup + 10 measured, interleaved A/B/A/B, in-process
+RSS, checksum agreement — changes per module; it is what every module file
+plugs into.
+
+This was verified rather than assumed: `static-disjoint-set` and `sparse-set`
+predate the registry, and moving their `--structure` construction out of
+`main.rs`'s old inline `match` into a `build_structure` function in each
+module's own file did not touch either module's timed loop body at all (see
+the `git diff` on those two files — pure appends). Re-measuring both after the
+refactor reproduced the pre-refactor figures within the run-to-run noise this
+document already documents (up to ~32% on p99 between otherwise clean runs);
+none of the movement traces to source changes, because there were none in the
+hot path.
+
+**One parameter mistake, caught and fixed before publishing, is worth
+recording here because it is the shape of the trap §5.1 warns about.**
+`bit-set`'s first draft included `rank` in its op mix at 25% weight. Neither
+upstream nor the port maintains a rank/select index — `rank(i)` sums popcounts
+word by word from the start, so it is O(i / 32), not O(1). At this module's
+1e6 domain a 25%-weighted mix put a quarter of a million O(15,000)-word calls
+into *every measured pass*; the harness was still running after ten minutes
+and six of ten reps before it was killed. `rank` was replaced with `test`
+(also a pure read, but O(1)) — see `bench/runner/src/bit_set.rs` for the full
+account. The lesson generalises: an op whose cost scales with a workload
+parameter (domain size, key length, tree depth) needs that fact checked
+*before* it goes into a uniform-weighted mix, not discovered by a benchmark
+that will not finish.

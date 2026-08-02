@@ -51,3 +51,14 @@ pub fn run_once(workload: &Workload, k: usize) -> (Vec<u64>, u64) {
 
     (batches, checksum)
 }
+
+/// `--structure`: preallocate a `size`-element forest and touch it. Moved
+/// here from `main.rs`'s former inline match verbatim — same construction,
+/// same `black_box` — when the registry in `harness.rs` replaced that match
+/// with a function pointer per module.
+pub fn build_structure(size: u32) {
+    let set = StaticDisjointSet::new(size as usize)
+        .expect("benchmark sizes are well inside the pointer limit");
+
+    std::hint::black_box(&set);
+}

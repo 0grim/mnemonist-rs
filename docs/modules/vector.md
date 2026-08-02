@@ -259,7 +259,36 @@ Reverted; **confirmed green again**: `vector_matches_upstream ... ok`.
 
 ### Bench
 
-**Not run.** Gate 10 is deliberately outstanding: benchmarks need an idle machine, and this unit
-was ported alongside others sharing the machine. It is batched into a separate quiet pass, and
-`vector` is therefore **not** in `tests/scope.txt` yet — by DESIGN.md §1.1 it is not done until it
-is. Gates 1–9 are green.
+`bench/results.json` → `modules["vector"]`. Methodology: `bench/methodology.md`.
+Host: AMD Ryzen 5 7600X, 12 threads, WSL2, Node 24.18.1, rustc 1.97.1, quiet serial pass.
+Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 10,000 samples/side.
+
+**`mixed-1e6`** — 1e6 mixed `push`/`get`/`pop` (50/25/25) growing from `(capacity 0, length 0)`,
+xorshift32 seed 42. `get` always lands on a uniformly random *existing* index (`workload.a[i] %
+current length`), so the upstream `index == length` boundary — an unguarded, presumably-a-bug read
+one past the end, which belongs to the differential fuzzer and not this benchmark — is never
+exercised here.
+
+| metric | port | upstream | |
+|---|---|---|---|
+| p50 ns/op | **7.35** | 9.56 | 1.3× faster |
+| p99 ns/op | **27.9** | 60.5 | 2.2× faster |
+| RSS delta MB | **11.8** | 37.4 | |
+| structure-only RSS delta MB | **1.3** | 9.7 | |
+| startup ms | **0.6** | 16.9 | 28× (reported separately; not throughput) |
+
+**A clean win, and the smallest per-op margin of the five modules added in this pass** — expected,
+since `vector` was picked specifically as the throughput floor: a growable array with the least
+per-op work of anything benchmarked here, so there is the least room for either side's overhead to
+show. The p99 gap (2.2×) is wider than the p50 gap (1.3×), consistent with the growth-policy reallocs
+this workload includes landing inside V8's GC accounting on some batches and not on the port's,
+which never triggers a collector.
+
+**Falsification of the harness itself, run against this module.** A ~5,000-iteration `black_box`
+spin was inserted into every `push` call's timed path (50% of ops), rebuilt, and re-measured:
+`p50_ns_per_op` moved from 6.9 to 486.8 (55×), `p99_ns_per_op` from 22.7 to 719.8 (12×), and
+`regressions` went from empty to three entries — while the untouched Node side stayed at its normal
+~8.8 ns/op. Reverted and re-measured: the checksum (`249930270812`) was identical before sabotage,
+during, and after revert, and the figures returned to the table above within run-to-run noise. The
+harness can detect a regression it did not have before, which is the property gate 6 asks a
+falsification to demonstrate.

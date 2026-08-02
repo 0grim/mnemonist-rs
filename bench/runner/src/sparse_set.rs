@@ -104,3 +104,12 @@ pub fn run_drain(size: u32, seed: u32, passes: usize) -> (Vec<u64>, u64, usize) 
 
     (batches, checksum, per_pass)
 }
+
+/// `--structure`: preallocate a `size`-capacity set and touch it. Moved here
+/// from `main.rs`'s former inline match verbatim, when the registry in
+/// `harness.rs` replaced that match with a function pointer per module.
+pub fn build_structure(size: u32) {
+    let set = SparseSet::new(size as usize).expect("benchmark sizes are inside the limit");
+
+    std::hint::black_box(&set);
+}
