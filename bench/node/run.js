@@ -102,7 +102,8 @@ const MODULES = {
   'fixed-critbit-tree-map': ['mixed'],
   'bk-tree': ['mixed'],
   'vp-tree': ['mixed'],
-  'kd-tree': ['mixed']
+  'kd-tree': ['mixed'],
+  'static-interval-tree': ['mixed']
 };
 
 const argv = process.argv.slice(2);
@@ -1288,6 +1289,67 @@ function runMixedKdTree(KDTree, workload, k) {
   return {batches: batches, checksum: checksum, set: tree};
 }
 
+// Twin of bench/runner/src/static_interval_tree.rs::overlapping_intervals
+// and LENGTH_FRACTION. 0.1% of the domain, not the 10% first tried -- see
+// that file's own module docs for the measurement (22 seconds for a
+// 200,000-op pass) that ruled the larger fraction out.
+const SIT_LENGTH_FRACTION = 0.001;
+
+function sitOverlappingIntervals(size) {
+  const rng = new XorShift32(1);
+  const domain = Math.max(size, 1);
+  const length = domain * SIT_LENGTH_FRACTION;
+  const intervals = new Array(size);
+
+  for (let i = 0; i < size; i++) {
+    const start = rng.below(domain);
+    intervals[i] = [start, start + length];
+  }
+
+  return intervals;
+}
+
+// Twin of bench/runner/src/static_interval_tree.rs. No mutating op -- the
+// tree is built once (untimed), then every op is a query: 50%
+// intervalsContainingPoint, 50% intervalsOverlappingInterval. Both
+// contribute a position-weighted checksum, since neither query method sorts
+// its output.
+function runMixedStaticIntervalTree(StaticIntervalTree, workload, k) {
+  const domain = Math.max(workload.size, 1);
+  const length = domain * SIT_LENGTH_FRACTION;
+  const intervals = sitOverlappingIntervals(workload.size);
+  const tree = new StaticIntervalTree(intervals);
+  const ops = workload.kind.length;
+  const batches = [];
+  let checksum = 0;
+
+  for (let start = 0; start < ops; start += k) {
+    const end = Math.min(start + k, ops);
+    const clock = process.hrtime.bigint();
+
+    for (let i = start; i < end; i++) {
+      const op = workload.kind[i];
+
+      let hits;
+      if (op < 2) {
+        const point = workload.a[i] % domain;
+        hits = tree.intervalsContainingPoint(point);
+      } else {
+        const queryStart = workload.a[i] % domain;
+        hits = tree.intervalsOverlappingInterval([queryStart, queryStart + length]);
+      }
+
+      for (let position = 0; position < hits.length; position++) {
+        checksum += (position + 1) * (hits[position][0] + 1);
+      }
+    }
+
+    batches.push(Number(process.hrtime.bigint() - clock));
+  }
+
+  return {batches: batches, checksum: checksum, set: tree};
+}
+
 // Dispatch table, twin of harness.rs::MODULES's `mixed` field. Replaces what
 // was a two-armed ternary before five more modules made that the wrong shape.
 const MIXED_RUNNERS = {
@@ -1326,7 +1388,8 @@ const MIXED_RUNNERS = {
   'fixed-critbit-tree-map': runMixedFixedCritbitTreeMap,
   'bk-tree': runMixedBkTree,
   'vp-tree': runMixedVpTree,
-  'kd-tree': runMixedKdTree
+  'kd-tree': runMixedKdTree,
+  'static-interval-tree': runMixedStaticIntervalTree
 };
 
 // Twin of harness.rs::MODULES's `structure` field: build the structure at
@@ -1571,6 +1634,14 @@ const STRUCTURE_BUILDERS = {
   'kd-tree': function (KDTree, size) {
     const built = kdScatteredPoints(size);
     const tree = KDTree.fromAxes(built.axes, built.labels);
+
+    return tree.size;
+  },
+  // Twin of bench/runner/src/static_interval_tree.rs::build_structure:
+  // "size" means "built from `size` overlapping intervals".
+  'static-interval-tree': function (StaticIntervalTree, size) {
+    const intervals = sitOverlappingIntervals(size);
+    const tree = new StaticIntervalTree(intervals);
 
     return tree.size;
   }

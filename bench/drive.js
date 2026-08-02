@@ -623,6 +623,19 @@ const WORKLOADS = {
       name: 'mixed-1e5', kind: 'mixed', size: 100000, ops: 1000000,
       label: 'mixed nearestNeighbor/kNearestNeighbors (75/25) over 100,000 scattered 2-D points'
     }
+  ],
+
+  // `static-interval-tree`: no `add` -- the tree is built once (untimed)
+  // from 100,000 overlapping intervals, then every op is a query. Interval
+  // width is 0.1% of the domain, not the 10% first tried -- see
+  // bench/runner/src/static_interval_tree.rs's own module docs for the
+  // measurement (22 seconds for a 200,000-op pass) that ruled the larger
+  // fraction out.
+  'static-interval-tree': [
+    {
+      name: 'mixed-1e5', kind: 'mixed', size: 100000, ops: 1000000,
+      label: 'mixed intervalsContainingPoint/intervalsOverlappingInterval (50/50) over 100,000 overlapping intervals'
+    }
   ]
 };
 

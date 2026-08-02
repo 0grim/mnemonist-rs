@@ -36,13 +36,16 @@
 //!
 //! # Domain
 //!
-//! `size` 100,000 intervals, matching `kd-tree`'s own scale. Measured before
-//! committing: `intervals_containing_point` averages ~10,000 matches per
-//! call (10% of the set, as `LENGTH` = 10% of the domain implies for a
-//! uniformly-covered point), `intervals_overlapping_interval` averages
-//! ~19,000 (two overlapping ranges union to roughly double the single-point
-//! figure) — both a real, substantial fraction of the tree pruned around,
-//! neither degenerate.
+//! `size` 100,000 intervals, matching `kd-tree`'s own scale, `LENGTH` a
+//! *thousandth* of the domain rather than the tenth first tried — see
+//! [`LENGTH_FRACTION`]'s own docs for the measurement that ruled the tenth
+//! out (22 seconds for a 200,000-op pass, the `bit_set.rs` `rank` shape).
+//! Measured at 0.1%: `intervals_containing_point` averages ~101 matches per
+//! call, `intervals_overlapping_interval` averages ~202 (two overlapping
+//! ranges union to roughly double the single-point figure) — both a real,
+//! meaningful fraction of the tree pruned around (not 0, not "the whole
+//! set"), and both cheap enough that the timed loop measures the tree's own
+//! traversal rather than the cost of collecting a huge result vector.
 
 use mnemonist_core::structures::static_interval_tree::StaticIntervalTree;
 

@@ -1274,7 +1274,38 @@
           ]
         }
       }
+    },
+    "static-interval-tree": {
+      "workloads": {
+        "mixed-1e5": {
+          "workload": "1e6 mixed intervalsContainingPoint/intervalsOverlappingInterval (50/50) over 100,000 overlapping intervals over size 100000, xorshift32 seed 42, ops materialised before the timed region",
+          "checksum": 639629382466648,
+          "checksum_note": "identical on both sides: same ops, same answers, upstream bugs included",
+          "structure_note": "structure_rss_delta_mb constructs size 100000 and nothing else, isolating the structure from the op arrays both sides materialise",
+          "port": {
+            "p50_ns_per_op": 1603.027,
+            "p99_ns_per_op": 2361.252,
+            "min_ns_per_op": 1504.8,
+            "rss_total_mb": 16,
+            "rss_delta_mb": 11.1,
+            "structure_rss_delta_mb": 0.2,
+            "startup_ms": 0.6,
+            "samples": 10000
+          },
+          "original": {
+            "p50_ns_per_op": 3477.268,
+            "p99_ns_per_op": 5558.1,
+            "min_ns_per_op": 3251.81,
+            "rss_total_mb": 166.6,
+            "rss_delta_mb": 121,
+            "structure_rss_delta_mb": 6.2,
+            "startup_ms": 15.4,
+            "samples": 10000
+          },
+          "regressions": []
+        }
+      }
     }
   },
-  "generated_utc": "2026-08-02T03:22:55.994Z"
+  "generated_utc": "2026-08-02T03:54:49.509Z"
 }

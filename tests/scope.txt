@@ -89,3 +89,4 @@ fixed-critbit-tree-map
 bk-tree
 vp-tree
 kd-tree
+static-interval-tree
