@@ -2,8 +2,8 @@
 # No schema was published. The three fields named in the brief (track, source, kickoff hash)
 # are top-level; everything else is namespaced.
 
-track        = "G"     # JavaScript -> Rust. The FAQ and the site disagreed on the
-                       # letter; awaiting confirmation at time of writing.
+track        = "G"     # JavaScript -> Rust. Confirmed by the organisers 2026-08-02:
+                       # F = JS->Go, G = JS->Rust; the /2026 page wording was wrong.
 source       = "https://github.com/Yomguithereal/mnemonist"
 # sha256 of tests/SHA256SUMS, which itself covers every vendored upstream test file.
 kickoff_hash = "sha256:5e24c557192245b594ca028844a3f685f2e91d9c1daf7f5e88a08576a778e674"

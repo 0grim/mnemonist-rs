@@ -32,8 +32,21 @@ step() {
   STEP_START=$now
 }
 
+# Resolve a Docker that actually answers, rather than the first one on PATH.
+# On WSL with Docker Desktop installed but its integration disabled, `docker`
+# resolves to a Windows stub that exits non-zero with an advisory message while
+# a working native engine sits at /usr/bin/docker. Taking the first match would
+# make this script narrate a fallback on a machine where the real thing works.
+DOCKER=""
+for candidate in docker /usr/bin/docker; do
+  if command -v "$candidate" >/dev/null 2>&1 && timeout 8 "$candidate" info >/dev/null 2>&1; then
+    DOCKER="$candidate"
+    break
+  fi
+done
+
 docker_usable() {
-  command -v docker >/dev/null 2>&1 && timeout 8 docker info >/dev/null 2>&1
+  [ -n "$DOCKER" ]
 }
 
 # ------------------------------------------------------------- step 1: env
@@ -64,7 +77,7 @@ echo "(empty output above: the working tree matches exactly what was committed a
 step 3 "One-command build"
 if docker_usable; then
   echo "\$ docker build -t port-mortem ."
-  docker build -t port-mortem .
+  "$DOCKER" build -t port-mortem .
 else
   echo "Docker is not usable in this environment (checked: command -v docker && docker info)."
   echo "Falling back to the Rust half of the same build directly -- the Dockerfile builder"
@@ -77,7 +90,7 @@ fi
 step 4 "The FFI-rule rebuttal: mnemonist-core builds and tests with no Node"
 if docker_usable; then
   echo "\$ docker build -t pm-core --target core . && docker run --rm pm-core"
-  docker build -t pm-core --target core . && docker run --rm pm-core
+  "$DOCKER" build -t pm-core --target core . && "$DOCKER" run --rm pm-core
 else
   echo "Docker is not usable here, so the containerized 'no Node in this image' proof cannot"
   echo "run on camera in this environment. Showing the same two assertions the core target"
@@ -135,11 +148,11 @@ echo "Declared, not hidden: gate 10 requires a regressions array on every worklo
 echo "empty one -- a regression has to be stated, never just absent."
 
 # --------------------------------------------------- step 9: scope declaration
-step 9 "Scope: what shipped, and what's still on the roadmap"
+step 9 "Scope: every upstream test file, through every gate"
 echo "\$ scripts/status.sh"
 ./scripts/status.sh | head -9
 echo "..."
-echo "Full unit-by-unit evidence table: scripts/status.sh. What's next: planning/ROADMAP.md."
+echo "Full unit-by-unit evidence table: scripts/status.sh. Method: docs/METHODOLOGY.md."
 
 DEMO_END=$(date +%s)
 echo

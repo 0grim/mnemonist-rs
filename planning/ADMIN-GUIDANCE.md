@@ -99,3 +99,40 @@ reads across directly.
    fixing means the port is not bit-identical on untested inputs.
 2. Is there any limit on how many Bug Catcher claims one entry may submit? We hold 57 verified
    defects and would rather submit a strong ranked subset than bury reviewers.
+
+---
+
+## 3 — What "demo" means, the track letter, and the video
+
+Three further statements from the same channel, recorded 2026-08-02.
+
+**Quoted:**
+
+> "Real demo": no hosted instance required. For a repo port, the demo is a terminal run showing your
+> port working and the original test suite passing unchanged against it. Deployment is optional, not
+> expected.
+
+> JavaScript → Rust is Track G. The FAQ is correct (F = JS→Go, G = JS→Rust). Select G. We'll fix the
+> /2026 page wording later, sorry.
+
+> Demo video (~2–5 min): show your port running, the original test suite passing unchanged against
+> it, and a short walkthrough of what you ported and how you proved equivalence. It's a proof demo,
+> not marketing. Upload to YouTube or Drive (public) and paste the link in the submission form we
+> share in chat soon.
+
+### What we take from it
+
+- **The track ambiguity is resolved: G.** `.port-mortem.toml` carried a "confirm before submission"
+  caveat on this from the start, because the FAQ and the /2026 page disagreed. The caveat is now
+  removed and the value stands as G.
+- **No deployment is needed**, which retires an open question about whether a hosted artifact was
+  expected. `scripts/demo.sh` is exactly the shape asked for: a terminal run.
+- **The video's three required elements** map onto the existing demo script: the port running
+  (steps 3–4), the original suite passing unchanged (steps 2 and 5), and a walkthrough of what was
+  ported and how equivalence was established (steps 6–9). Nothing needs inventing; the script needs
+  rehearsing and narrating.
+- **"A proof demo, not marketing"** matches how the script was already written — it echoes each
+  command before running it, and states on screen when a step falls back rather than skipping
+  silently.
+- **The submission form is not yet available.** The video link, and the Bug Catcher claims from
+  `docs/BUGS.md`, both go into it when it appears.
