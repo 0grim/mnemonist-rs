@@ -40,6 +40,23 @@ echo
 echo "Repo-wide"
 echo "---------"
 
+# Gate 7 runs the differential tests, whose Node oracle requires `obliterator`
+# out of tests/.work/node_modules. That directory is gitignored, so it does not
+# exist on a fresh clone. tests/run.sh installs it -- but that is gate 4, which
+# runs after gate 7 in the loop below.
+#
+# The result on a fresh checkout was gate 7 failing with five "Cannot find
+# module" errors and passing on the second run, which is indistinguishable from
+# a flake and was reported as one five times before being traced. Bootstrapping
+# here makes the first run and every later run behave identically.
+if [ ! -d tests/.work/node_modules/mocha ]; then
+  note "bootstrapping harness dependencies (absent on a fresh clone)"
+  mkdir -p tests/.work
+  cp tests/harness-package.json tests/.work/package.json
+  ( cd tests/.work && npm install --no-audit --no-fund --silent ) >/dev/null 2>&1 \
+    || bad "        harness dependencies could not be installed (npm available?)"
+fi
+
 sha256sum -c tests/SHA256SUMS --quiet 2>/dev/null \
   && ok "gate 5  original test suite unmodified ($(wc -l < tests/SHA256SUMS) files hashed)" \
   || bad "gate 5  tests/original/ HAS BEEN MODIFIED"
