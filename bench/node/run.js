@@ -108,7 +108,8 @@ const MODULES = {
   'fixed-reverse-heap': ['mixed'],
   'bloom-filter': ['mixed'],
   'linked-list': ['mixed'],
-  'symspell': ['mixed']
+  'symspell': ['mixed'],
+  'passjoin-index': ['mixed']
 };
 
 const argv = process.argv.slice(2);
@@ -1587,6 +1588,103 @@ function runMixedSymSpell(SymSpell, workload, k) {
   return {batches: batches, checksum: checksum, set: dict};
 }
 
+// Twin of bench/runner/src/passjoin_index.rs. Same scrambled-vocabulary
+// generator symspell's own twin uses, and the same reasoning for why: see
+// that file's own module docs for the two vocabulary designs it rejected
+// before this one.
+const PASSJOIN_PREFIX = 'qu';
+const PASSJOIN_ALPHABET = 'abcdefghijklmnopqrstuvwxyz';
+const PASSJOIN_SUFFIX_LEN = 6;
+const PASSJOIN_K = 2;
+
+function passjoinScramble(value) {
+  return Math.imul(value, 0x9e3779b1) >>> 0;
+}
+
+function passjoinWordFor(value) {
+  let remaining = passjoinScramble(value);
+  let suffix = '';
+
+  for (let i = 0; i < PASSJOIN_SUFFIX_LEN; i++) {
+    suffix += PASSJOIN_ALPHABET[remaining % 26];
+    remaining = Math.floor(remaining / 26);
+  }
+
+  return PASSJOIN_PREFIX + suffix;
+}
+
+function passjoinQueryFor(value) {
+  const word = passjoinWordFor(value);
+  const position = PASSJOIN_PREFIX.length + (value % PASSJOIN_SUFFIX_LEN);
+  const currentIndex = PASSJOIN_ALPHABET.indexOf(word[position]);
+  const nextChar = PASSJOIN_ALPHABET[(currentIndex + 1) % PASSJOIN_ALPHABET.length];
+
+  return word.slice(0, position) + nextChar + word.slice(position + 1);
+}
+
+// Standard single-row DP Levenshtein distance -- twin of
+// bench/runner/src/passjoin_index.rs::levenshtein in ALGORITHM only, not
+// byte-for-byte: both sides only need to compute the same well-defined
+// mathematical answer, not run identical code (this is not the matched
+// xorshift32 PRNG).
+function passjoinLevenshtein(a, b) {
+  const row = new Array(b.length + 1);
+  for (let j = 0; j <= b.length; j++) row[j] = j;
+
+  for (let i = 0; i < a.length; i++) {
+    let prevDiagonal = row[0];
+    row[0] = i + 1;
+
+    for (let j = 0; j < b.length; j++) {
+      const temp = row[j + 1];
+      row[j + 1] = a[i] === b[j]
+        ? prevDiagonal
+        : 1 + Math.min(prevDiagonal, row[j], row[j + 1]);
+      prevDiagonal = temp;
+    }
+  }
+
+  return row[b.length];
+}
+
+// Twin of bench/runner/src/passjoin_index.rs. Index prefilled to half the
+// domain (untimed), then 50% add / 50% search, position-weighted checksum
+// over matched strings' lengths.
+function runMixedPassjoinIndex(PassjoinIndex, workload, k) {
+  const domain = Math.max(workload.size, 1);
+  const index = new PassjoinIndex(passjoinLevenshtein, PASSJOIN_K);
+  const prefill = Math.floor(domain / 2);
+
+  for (let i = 0; i < prefill; i++) index.add(passjoinWordFor(i));
+
+  const ops = workload.kind.length;
+  const batches = [];
+  let checksum = 0;
+
+  for (let start = 0; start < ops; start += k) {
+    const end = Math.min(start + k, ops);
+    const clock = process.hrtime.bigint();
+
+    for (let i = start; i < end; i++) {
+      const member = workload.a[i] % domain;
+
+      if (workload.kind[i] < 2) {
+        index.add(passjoinWordFor(member));
+      } else {
+        const matches = Array.from(index.search(passjoinQueryFor(member)));
+
+        for (let position = 0; position < matches.length; position++) {
+          checksum += (position + 1) * (matches[position].length + 1);
+        }
+      }
+    }
+
+    batches.push(Number(process.hrtime.bigint() - clock));
+  }
+
+  return {batches: batches, checksum: checksum, set: index};
+}
+
 // Dispatch table, twin of harness.rs::MODULES's `mixed` field. Replaces what
 // was a two-armed ternary before five more modules made that the wrong shape.
 const MIXED_RUNNERS = {
@@ -1631,7 +1729,8 @@ const MIXED_RUNNERS = {
   'fixed-reverse-heap': runMixedFixedReverseHeap,
   'bloom-filter': runMixedBloomFilter,
   'linked-list': runMixedLinkedList,
-  'symspell': runMixedSymSpell
+  'symspell': runMixedSymSpell,
+  'passjoin-index': runMixedPassjoinIndex
 };
 
 // Twin of harness.rs::MODULES's `structure` field: build the structure at
@@ -1930,6 +2029,15 @@ const STRUCTURE_BUILDERS = {
     for (let i = 0; i < size; i++) dict.add(symspellWordFor(i));
 
     return dict.size;
+  },
+  // Twin of bench/runner/src/passjoin_index.rs::build_structure: "size"
+  // means "prefilled with `size` words".
+  'passjoin-index': function (PassjoinIndex, size) {
+    const index = new PassjoinIndex(passjoinLevenshtein, PASSJOIN_K);
+
+    for (let i = 0; i < size; i++) index.add(passjoinWordFor(i));
+
+    return index.size;
   }
 };
 

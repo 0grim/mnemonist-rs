@@ -172,5 +172,35 @@ immediately rather than needing a wider probe.
 
 ### Bench
 
-**Not run.** Gate 10 is deferred to a serial pass on an idle machine (DESIGN.md §7.3).
-`passjoin-index` is therefore complete except gate 10, and deliberately not in `tests/scope.txt`.
+`bench/results.json` → `modules["passjoin-index"]`. Methodology: `bench/methodology.md`.
+Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 50 samples/side.
+
+**`mixed-2e3`** — 5,000 mixed `add`/`search` (50/50), `k` 2, index prefilled to a stated 50% fill
+ratio. Vocabulary reuses `symspell.rs`'s own scrambled-word generator and reasoning: a random or
+naively-clustered vocabulary defeats `search` entirely, either finding nothing or matching most of
+the dictionary — see that file's own module docs for the two designs it measured and rejected.
+
+**`size`/`ops` are 2,000/5,000, much smaller than `symspell`'s — for a different reason than any
+tree module's domain reduction.** `add` never deduplicates (upstream's own behaviour, reproduced
+exactly): every re-add of an already-present word appends another entry to every matching segment's
+candidate list. This batch's `kind % 4` stream draws `add` targets *with replacement* from a domain
+smaller than the op count, so the same word gets re-added repeatedly over a long run, and each
+re-add makes future `search` calls touching that segment slower. Measured directly: at `size` 2,000,
+`ops` 20,000, a single pass took **7.5 seconds**, and the index — which should have stayed near
+2,000 entries — grew past 3,500 from duplicate re-adds alone. At `ops` 5,000 the same shape stays
+honest but fast: the index grows from a 1,000-entry prefill to 3,551 by the run's end, `search`
+still returns a match **74.9%** of the time (avg 0.88 matches/call in that standalone measurement),
+and a full pass completes in under a second. xorshift32 seed 42:
+
+| metric | port | upstream | |
+|---|---|---|---|
+| p50 ns/op | **134209.17** | 297104.77 | 2.2× faster |
+| p99 ns/op | **202164.19** | 452201.37 | 2.2× faster |
+| RSS delta MB | **0.1** | 21.3 | |
+| structure-only RSS delta MB | **0.1** | 0.2 | |
+| startup ms | **0.6** | 15.5 | 26× (reported separately; not throughput) |
+
+**No regressions.** Checksum `22419`, identical on both sides. Only 50 samples/side (`ops` 5,000 at
+K = 1000 batching gives 5 batches × 10 measured reps) — thinner than this batch's usual 2,000+, a
+direct consequence of the same op-count reduction that keeps the pass itself fast; the percentiles
+above should be read with that in mind.

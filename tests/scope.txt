@@ -95,3 +95,4 @@ fixed-reverse-heap
 bloom-filter
 linked-list
 symspell
+passjoin-index

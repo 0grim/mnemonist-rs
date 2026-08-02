@@ -699,6 +699,21 @@ const WORKLOADS = {
       name: 'mixed-4e3', kind: 'mixed', size: 4000, ops: 200000,
       label: 'mixed add/search (50/50), maxDistance 2, verbosity 2, prefilled to 50% fill ratio'
     }
+  ],
+
+  // `passjoin-index`: `add` never deduplicates, so a `with-replacement`
+  // stream sampling a domain far smaller than the op count makes every
+  // re-add of the same word grow every matching segment's candidate list
+  // -- a genuine property, but one whose cost is driven by `ops`, not
+  // `size`, unlike every other module in this batch. `size`/`ops` were
+  // sanity-checked down to 2,000/5,000 after 2,000/20,000 measured at 7.5
+  // seconds for one pass -- see bench/runner/src/passjoin_index.rs's own
+  // module docs.
+  'passjoin-index': [
+    {
+      name: 'mixed-2e3', kind: 'mixed', size: 2000, ops: 5000,
+      label: 'mixed add/search (50/50), k=2, prefilled to 50% fill ratio'
+    }
   ]
 };
 

@@ -332,6 +332,13 @@ pub const MODULES: &[ModuleEntry] = &[
         drain: None,
         structure: crate::symspell::build_structure,
     },
+    ModuleEntry {
+        name: "passjoin-index",
+        kinds: &["mixed"],
+        mixed: Some(crate::passjoin_index::run_mixed),
+        drain: None,
+        structure: crate::passjoin_index::build_structure,
+    },
 ];
 
 pub fn find(name: &str) -> Option<&'static ModuleEntry> {

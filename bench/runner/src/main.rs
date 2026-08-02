@@ -75,6 +75,7 @@ mod fixed_critbit_tree_map;
 mod fixed_reverse_heap;
 mod kd_tree;
 mod linked_list;
+mod passjoin_index;
 mod static_interval_tree;
 mod symspell;
 mod trie_map;

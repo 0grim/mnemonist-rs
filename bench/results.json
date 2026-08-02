@@ -1473,7 +1473,38 @@
           "regressions": []
         }
       }
+    },
+    "passjoin-index": {
+      "workloads": {
+        "mixed-2e3": {
+          "workload": "5000 mixed add/search (50/50), k=2, prefilled to 50% fill ratio over size 2000, xorshift32 seed 42, ops materialised before the timed region",
+          "checksum": 22419,
+          "checksum_note": "identical on both sides: same ops, same answers, upstream bugs included",
+          "structure_note": "structure_rss_delta_mb constructs size 2000 and nothing else, isolating the structure from the op arrays both sides materialise",
+          "port": {
+            "p50_ns_per_op": 134209.173,
+            "p99_ns_per_op": 202164.19,
+            "min_ns_per_op": 73487.699,
+            "rss_total_mb": 5,
+            "rss_delta_mb": 0.1,
+            "structure_rss_delta_mb": 0.1,
+            "startup_ms": 0.6,
+            "samples": 50
+          },
+          "original": {
+            "p50_ns_per_op": 297104.77,
+            "p99_ns_per_op": 452201.373,
+            "min_ns_per_op": 159252.617,
+            "rss_total_mb": 67,
+            "rss_delta_mb": 21.3,
+            "structure_rss_delta_mb": 0.2,
+            "startup_ms": 15.5,
+            "samples": 50
+          },
+          "regressions": []
+        }
+      }
     }
   },
-  "generated_utc": "2026-08-02T04:43:38.776Z"
+  "generated_utc": "2026-08-02T04:59:14.643Z"
 }
