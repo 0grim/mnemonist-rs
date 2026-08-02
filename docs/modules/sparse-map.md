@@ -114,7 +114,7 @@ Everything below is reachable through the public API and never exercised by the 
 
 **Iteration — everything except three immediate drains**
 
-17. **Mutation during iteration is never performed.** The hybrid capture (DESIGN.md §3.4) means an
+17. **Mutation during iteration is never performed.** The hybrid capture means an
     element write mid-walk *is* visible and a length change is *not*; neither half is tested. On
     this module the visible result of a mid-walk `delete` is a **mismatched pair**, which is B-11
     at its sharpest.
@@ -160,7 +160,7 @@ Rust native tests, mapped to the gaps above.
 | `typed_values_truncate_at_their_own_width` | 6, 7 — all three widths, and the independence of the value width from the index width |
 | `a_delete_past_capacity_writes_dense_but_not_sparse` | 16 — B-10 on this module's arrays |
 | `cursors_do_not_restart_but_the_map_can_be_walked_again` | 18, 19 — both levels of D-07, and all three projections |
-| `a_delete_during_iteration_is_visible_and_desynchronises_the_pair` | **17** — B-11 and D-08 in one assertion: the walk yields `(3, 20)`, a key and a value that were never set together |
+| `a_delete_during_iteration_is_visible_and_desynchronises_the_pair` | **17** — B-11 in one assertion: the walk yields `(3, 20)`, a key and a value that were never set together |
 | `a_set_during_iteration_is_not_visible_to_the_cursor` | 17 — the frozen-length half |
 | `picks_one_pointer_width_for_both_index_arrays` | 14 — five lengths across both width boundaries |
 | `rejects_a_length_no_pointer_array_can_index` | 14 (the throw), for both constructors |
@@ -261,14 +261,14 @@ This bridge held a bare core value, so `&self` compiled to a `noalias readonly` 
 entitled to hoist reads across the JS callback — which it did. It now holds `RefCell<Core>`, which
 is not `Freeze`, and every `&mut self` method became `&self` + `borrow_mut()`. The borrow is taken
 per step and released before the callback runs, so a re-entrant callback never meets an outstanding
-borrow. See `planning/NOTES.md` B-31 and `crates/mnemonist-napi/src/cursor.rs`'s `CellCursor`.
+borrow. See B-31, above, and `crates/mnemonist-napi/src/cursor.rs`'s `CellCursor`.
 
 ## Deliberate divergences
 
 | # | Divergence | Why |
 |---|---|---|
 | — | **`delete` does not move the value.** | B-11, reproduced bug-for-bug. Fixing it would be a silent behavioural divergence on in-range input, and `get` after `delete` is observable. Pinned by four native tests and by a committed fuzz seed, so a future "cleanup" fails loudly. |
-| — | **Values are JS numbers (`f64`), not arbitrary JS values.** | The core is generic over the value type; the bridge instantiates it at `f64`. Arbitrary values are DESIGN.md §3.3's T3 tier — a per-slot `Ref` and an `Env` to drop it — and this module does not reach for it. The upstream test file stores only numbers. `map.set(3, 'x')` throws here and works upstream. |
+| — | **Values are JS numbers (`f64`), not arbitrary JS values.** | The core is generic over the value type; the bridge instantiates it at `f64`. Arbitrary values are the T3 tier — a per-slot `Ref` and an `Env` to drop it — and this module does not reach for it. The upstream test file stores only numbers. `map.set(3, 'x')` throws here and works upstream. |
 | — | **Only `Array`, `Uint8Array`, `Uint16Array` and `Uint32Array` are accepted as `Values`.** | `PointerVec` models the three unsigned widths. `Int8Array`, `Float64Array` and the rest are refused with an error naming the gap, rather than silently coerced into the nearest supported width — which would be a wrong answer dressed as a right one. |
 | — | **`Values` is resolved by identity, not by name.** | `strict_equals` against the real `globalThis.Uint8Array`, because `{name: 'Uint8Array'}` is trivial to forge and reading `.name` would accept it. |
 | — | **The constructor branches on "was a second argument passed", not on `arguments.length`.** | napi cannot see `arguments.length`. The two agree on every call except `new SparseMap(x, undefined)`, where upstream sees two arguments and this sees one. Same blind spot as `forEach`'s `scope`, below. The two shapes upstream *throws* on are reproduced: `new SparseMap(Ctor)` reaches `getPointerArray(NaN)` and so throws the pointer-array message verbatim, and `new SparseMap(10, 20)` reaches `new (10)(20)`. |
@@ -381,9 +381,9 @@ differential fuzzer in 3.0 seconds. Both numbers were measured, not reasoned abo
 
 **Not yet run.** Gate 10 is deliberately batched into a separate quiet serial pass — a benchmark
 taken under load is not a slow benchmark, it is a wrong one, and this host has already demonstrated
-a contended run inflating both sides 2–3× (`planning/NOTES.md`, H+5). This module is therefore
+a contended run inflating both sides 2–3×. This module is therefore
 **not** in `tests/scope.txt`: gates 1–9 are green and gate 10 is outstanding, which is exactly what
-`tests/verify.sh` will report. See `planning/DESIGN.md` §7.3.
+`tests/verify.sh` will report.
 
 ### `$forEach` — the op that was missing (added 2026-08-01, B-31)
 
@@ -419,8 +419,8 @@ Host: AMD Ryzen 5 7600X, 12 threads, WSL2, Node 24.18.1, rustc 1.97.1, quiet ser
 Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 10,000 samples/side.
 
 **`mixed-1e6`** — 1e6 mixed `set`/`get`/`delete` (50/25/25) over length 1e6, xorshift32 seed 42,
-`set` taking the workload's second operand as the value (every op already draws three PRNG values
-per DESIGN.md §5.1, so this costs the mixed workload nothing extra). Members drawn in range, same
+`set` taking the workload's second operand as the value (every op already draws three PRNG values,
+so this costs the mixed workload nothing extra). Members drawn in range, same
 reasoning as `sparse-set`'s own mixed workload: the out-of-range corruption path (B-8, inherited)
 belongs to the differential fuzzer.
 

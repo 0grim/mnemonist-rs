@@ -17,7 +17,7 @@ for `crate::cursor` to attach a `Symbol.iterator` to, no export shape a one-line
 and no observable state for the differential fuzzer to compare. Each of those is dealt with below.
 
 It is also the first unit whose upstream surface spans **three files with two different export
-shapes**, which is what DESIGN.md §2.3's Problem 2 was written about.
+shapes**.
 
 ---
 
@@ -184,14 +184,14 @@ numbers only.
 
 ## Deliberate divergences
 
-Three, all recorded in `planning/DECISIONS-CANDIDATES.md`.
+Three, below.
 
 ### D-80 — the port takes numbers, upstream takes anything
 
 `crates/mnemonist-napi/src/sort.rs` reads elements as `f64`. Upstream is duck-typed and compares
 whatever it is given through JavaScript's relational operators, which coerce via
 `valueOf`/`toString`. Supporting that means calling back into JavaScript from inside the sort
-loop — DESIGN.md §3.3's **T2 tier** — which this unit deliberately does not reach for, since
+loop — the **T2 tier** — which this unit deliberately does not reach for, since
 nothing in `test/sort.js` or in mnemonist's own callers passes a non-number.
 
 The refusal is loud: `mnemonist-rs: sort element 3 is not a number… see docs/modules/sort.md.`
@@ -201,9 +201,9 @@ about the direction.** The port is not *fixing* those bugs; it is refusing the o
 observe them. With numeric elements, no user code can run during a comparison, so upstream's shared
 global counter and shared partition stack are never re-entered and a local behaves identically.
 Reproducing the bugs bug-for-bug would require first implementing T2 and then adding shared state
-to reproduce a defect nothing can see — the port would be *less* faithful, not more, and CLAUDE.md's
-"a divergence where our port is more correct is a bug in the port" does not apply to a regime the
-port does not admit.
+to reproduce a defect nothing can see — the port would be *less* faithful, not more, and this
+port's own rule that "a divergence where our port is more correct is a bug in the port" does not
+apply to a regime the port does not admit.
 
 ### D-81 — windows outside `0..=length` are refused
 

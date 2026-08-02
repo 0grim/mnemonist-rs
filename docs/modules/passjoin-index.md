@@ -74,9 +74,9 @@ astral-character input (D-452).
 
 ## Bugs this found
 
-No upstream defect found in this unit. In particular, the partitioning arithmetic — the place
-CLAUDE.md's guidance for this unit specifically calls out as "the failure mode least likely to be
-noticed" if a correct implementation were made to look wrong by an off-by-one — was checked directly
+No upstream defect found in this unit. In particular, the partitioning arithmetic — named as
+"the failure mode least likely to be noticed" if a correct implementation were made to look wrong
+by an off-by-one — was checked directly
 against `test/passjoin-index.js`'s own pinned segment/position/interval/substring examples (all
 passing, see "What we test in addition") and exercised over ~1.77M differential-fuzz operations
 against real upstream on Node 24.18.1 with zero divergences. No case was found where upstream's own
@@ -99,9 +99,6 @@ upstream bug:
    argument" message instead of the upstream-matching `/levenshtein/i` one — caught by
    `test/passjoin-index.js`'s own "should throw if given wrong arguments" block (gate 4), not by
    fuzzing. Fixed by making `k` optional at the bridge and checking `levenshtein` first.
-
-See `planning/NOTES.md`'s "multi-array, symspell, passjoin-index" entry for the fuller account of
-the sibling units' own defects found the same way.
 
 ## Deliberate divergences
 
@@ -126,7 +123,7 @@ Two campaigns, two seeds, **1.77M operations, zero divergences**. Reproduce with
 * **Op alphabet:** `add` (weight 5) and `search` (weight 5) equally weighted; `clear` (weight 1).
 * **Word pool:** fifteen words at controlled edit distances (`"benjamin"/"benjomon"/"benja"/"benjo"`,
   `"paule"/"paul"/"pa"/"pat"`, `"ab"/"a"/"b"/""`, `"failed"/"flailed"/"railed"`) — the
-  controlled-distance construction CLAUDE.md's guidance requires, not random strings that would all
+  controlled-distance construction this fuzz grammar requires, not random strings that would all
   be far apart and return empty candidate sets trivially.
 * **Constructor:** `k` uniform over `1..=3`, the exact range `test/passjoin-index.js` itself uses
   (`k1`/`k2`/`k3`); `levenshtein` is `fuzz/oracle.js`'s `pjLeven` factory, the real `leven` package —
@@ -155,19 +152,19 @@ threshold — both floors (`> 100` non-empty, `> 30` boundary hits) are asserted
 
 **The sabotage:** `multi_match_aware_interval`'s `let o = k - i;` was changed to
 `let o = k - i - 1;` — an off-by-one in the candidate-generation window's width, the exact class of
-defect CLAUDE.md's guidance for this unit calls out as producing "a subtly smaller candidate set
-that still contains most correct answers."
+defect named for this unit as producing "a subtly smaller candidate set that still contains most
+correct answers."
 
 **Confirmed red:** the named assertion failed (`(2, 3)` instead of `(1, 3)`), six of twelve native
 tests failed downstream (including `add`/`search` walkthroughs losing real matches — `{"paul"}`
 instead of `{"paul", "paule"}`), and the real upstream mocha suite failed the identical assertion at
 `test/passjoin-index.js:136` plus the same shrunk-candidate-set failures in `add`/`search`.
 
-**Reverted; confirmed green again:** 12/12 native tests (13 after this session's additions),
+**Reverted; confirmed green again:** 12/12 native tests (13 after this round's additions),
 13/13 upstream `it` blocks.
 
-**Nothing was found to be blind.** The sabotage produced exactly the failure mode CLAUDE.md warns
-is hardest to notice — a smaller, still-plausible candidate set — and both instruments caught it
+**Nothing was found to be blind.** The sabotage produced exactly the failure mode named above as
+hardest to notice — a smaller, still-plausible candidate set — and both instruments caught it
 immediately rather than needing a wider probe.
 
 ### Bench
@@ -183,7 +180,7 @@ the dictionary — see that file's own module docs for the two designs it measur
 **`size`/`ops` are 2,000/5,000, much smaller than `symspell`'s — for a different reason than any
 tree module's domain reduction.** `add` never deduplicates (upstream's own behaviour, reproduced
 exactly): every re-add of an already-present word appends another entry to every matching segment's
-candidate list. This batch's `kind % 4` stream draws `add` targets *with replacement* from a domain
+candidate list. This module's `kind % 4` stream draws `add` targets *with replacement* from a domain
 smaller than the op count, so the same word gets re-added repeatedly over a long run, and each
 re-add makes future `search` calls touching that segment slower. Measured directly: at `size` 2,000,
 `ops` 20,000, a single pass took **7.5 seconds**, and the index — which should have stayed near
@@ -201,6 +198,6 @@ and a full pass completes in under a second. xorshift32 seed 42:
 | startup ms | **0.6** | 15.5 | 26× (reported separately; not throughput) |
 
 **No regressions.** Checksum `22419`, identical on both sides. Only 50 samples/side (`ops` 5,000 at
-K = 1000 batching gives 5 batches × 10 measured reps) — thinner than this batch's usual 2,000+, a
+K = 1000 batching gives 5 batches × 10 measured reps) — thinner than this group's usual 2,000+, a
 direct consequence of the same op-count reduction that keeps the pass itself fast; the percentiles
 above should be read with that in mind.

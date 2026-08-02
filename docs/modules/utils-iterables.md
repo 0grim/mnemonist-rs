@@ -3,12 +3,12 @@
 Upstream: `utils/iterables.js` (93 LOC), on `obliterator/foreach` and `utils/typed-arrays.js` ·
 **no test file of its own.**
 
-Port: `crates/mnemonist-napi/src/iterables.rs` — at the boundary, not in core (DESIGN.md §3.5).
+Port: `crates/mnemonist-napi/src/iterables.rs` — at the boundary, not in core.
 Specs: `tests/boundary/iterables.js`, 19 of them.
 
 ---
 
-## Scope note: this is not a "unit" by DESIGN.md §1.1
+## Scope note: this is not a "unit"
 
 A unit is the require-closure of one upstream *test file*, and `utils/iterables.js` has none — so
 gates 3, 4, 6 and 10 have no target here and this file will never appear in `tests/scope.txt` on
@@ -26,7 +26,7 @@ exist before one assertion in that file runs. That closure is out of scope, so *
 All four functions are JavaScript-value questions. `isArrayLike` asks `Array.isArray ||
 ArrayBuffer.isView`; `guessLength` reads two properties and checks their `typeof`; `toArray`
 preallocates a JS array and drives `obliterator/foreach`; `toArrayWithIndices` picks a typed-array
-constructor. None of that has a Rust meaning, and DESIGN.md §3.5's grep — every call site is inside
+constructor. None of that has a Rust meaning, and the same grep — every call site is inside
 a `.from()` static or an iterable-accepting constructor, operating on the *user-supplied argument*
 — applies to this file as directly as it does to `forEach`.
 

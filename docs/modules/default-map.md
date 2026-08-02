@@ -8,7 +8,7 @@ Port: `crates/mnemonist-core/src/map/mod.rs` (the `Map` itself),
 Bridge: `crates/mnemonist-napi/src/js_key.rs`, `crates/mnemonist-napi/src/js_value.rs`,
 `crates/mnemonist-napi/src/map_cursor.rs`, `crates/mnemonist-napi/src/default_map.rs`.
 
-This is the **pilot for bridge tier T3** (DESIGN.md §3.3, §3.8). T3 is not a family of related
+This is the **pilot for bridge tier T3**. T3 is not a family of related
 structures; it is one capability — *reproduce JavaScript's `Map`* — that eleven modules share,
 because `default-map`, `bi-map`, `fuzzy-map`, `fuzzy-multi-map`, `multi-map`, `multi-set`,
 `lru-map` and `lru-map-with-delete` all keep their state in a `new Map()`. `default-map` was chosen
@@ -256,8 +256,8 @@ was deliberately broken to return its unvalidated hint. Rewritten to delete the 
 the cursor, where compaction shifts every remaining entry left, and then confirmed red against the
 same sabotage. Rewriting it also exposed a real out-of-range index panic: the hint validation read
 `map.slots[hint - 1]` before checking `hint <= slots.len()`, so a hint left past the end of a
-shrunken vector panicked instead of being rejected. This is the same lesson as DESIGN.md §1.1's
-"gate 6 exists because of a real miss", one level down: **a falsification test that cannot fail is
+shrunken vector panicked instead of being rejected. This is the same lesson gate 6 itself carries,
+one level down: **a falsification test that cannot fail is
 just a second green light**, and that applies to the tests as much as to the gate.
 
 **What the fuzzer found in the port: nothing.** Two campaigns, 4.37 M operations, zero divergences.
@@ -273,7 +273,7 @@ This bridge held a bare core value, so `&self` compiled to a `noalias readonly` 
 entitled to hoist reads across the JS callback — which it did. It now holds `RefCell<Core>`, which
 is not `Freeze`, and every `&mut self` method became `&self` + `borrow_mut()`. The borrow is taken
 per step and released before the callback runs, so a re-entrant callback never meets an outstanding
-borrow. See `planning/NOTES.md` B-31 and `crates/mnemonist-napi/src/cursor.rs`'s `CellCursor`.
+borrow. See B-31, above, and `crates/mnemonist-napi/src/cursor.rs`'s `CellCursor`.
 
 ## Deliberate divergences
 
@@ -394,8 +394,8 @@ workload), xorshift32 seed 42:
 | structure-only RSS delta MB | **1.4** | 9.7 | |
 | startup ms | **0.6** | 16.7 | 28× (reported separately; not throughput) |
 
-**This is a loss, on both p50 and p99, stated plainly rather than smoothed into a clean sweep** —
-§5.1 says to expect one and report it. Re-checked at 4x domain (`mixed-4e6`, 4e6 keys, same 1e6 ops)
+**This is a loss, on both p50 and p99, stated plainly rather than smoothed into a clean sweep.**
+Re-checked at 4x domain (`mixed-4e6`, 4e6 keys, same 1e6 ops)
 before trusting a single data point:
 
 | metric | port | upstream | |

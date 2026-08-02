@@ -10,7 +10,7 @@ Port: `crates/mnemonist-core/src/structures/bit_vector.rs` +
 Bridge: `crates/mnemonist-napi/src/bit_vector.rs`, `crates/mnemonist-napi/src/cursor.rs`.
 Shim: `tests/bridge/bit-vector.js`.
 
-The largest module in this batch, and the one with the best test:source ratio of the four. It shares
+The largest of this group of four modules, and the one with the best test:source ratio. It shares
 `bits.rs` with `bit-set` because **upstream copy-pastes seven methods between the two files** — so
 B-17 and B-18 arrive here for free, exactly as they arrived upstream for free. Both were
 re-verified against `BitVector` on Node rather than inferred from `BitSet`.
@@ -164,7 +164,7 @@ is — but `BitVector` can, because capacity outlives length: `new BitVector(); 
 **And the same `length < index` off-by-one as `HashedArrayTree`** (B-16's shape, in a different
 file): `set(length, v)` writes into the capacity region without moving `length`. Measured:
 `new BitVector(5); set(5, 1)` gives `size === 1`, `get(5) === 1`, `test(5) === true`, `rank(5) === 0`
-and iteration over five bits. Two of this batch's four modules have the identical guard bug, written
+and iteration over five bits. Two of this group's four modules have the identical guard bug, written
 independently.
 
 **Inherited verbatim from the copy-paste:** B-17 (`reset`'s missing `>>> 0` driving `size` negative)
@@ -179,7 +179,7 @@ This bridge held a bare core value, so `&self` compiled to a `noalias readonly` 
 entitled to hoist reads across the JS callback — which it did. It now holds `RefCell<Core>`, which
 is not `Freeze`, and every `&mut self` method became `&self` + `borrow_mut()`. The borrow is taken
 per step and released before the callback runs, so a re-entrant callback never meets an outstanding
-borrow. See `planning/NOTES.md` B-31 and `crates/mnemonist-napi/src/cursor.rs`'s `CellCursor`.
+borrow. See B-31, above, and `crates/mnemonist-napi/src/cursor.rs`'s `CellCursor`.
 
 **And the one place the fix could not be applied cleanly — worth reading before copying this
 pattern.** The rule the `RefCell` imposes is that no borrow may be alive across a call that can run
@@ -288,16 +288,16 @@ B-21's halves could have served as the sabotage:
 * "Fixing" `pop` to decrement `size` leaves it **green** too, because no assertion in the file reads
   `size` after a `pop`.
 
-Both would have been sabotages incapable of failing — which is exactly the miss DESIGN.md §1.1 was
-written about. Across this batch of four modules, **five** plausible-looking sabotages were rejected
-on that ground before a usable one was found.
+Both would have been sabotages incapable of failing — which is exactly the failure mode gate 6
+exists to catch. Across this group of four modules, **five** plausible-looking sabotages were
+rejected on that ground before a usable one was found.
 
 ### Bench
 
 **Not run.** Gate 10 is deliberately outstanding: benchmarks need an idle machine, and this unit was
-ported alongside two others in parallel worktrees, where a contended run has already been measured on
-this project to inflate both sides 2–3× (NOTES.md, H+5). It is batched into a separate quiet pass,
-and `bit-vector` is therefore **not** in `tests/scope.txt` yet — by DESIGN.md §1.1 it is not done
+ported alongside two other modules in the same window, where a contended run has already been
+measured on this project to inflate both sides 2–3×. It is batched into a separate quiet pass,
+and `bit-vector` is therefore **not** in `tests/scope.txt` yet — it is not done
 until it is. Gates 1–9 are green.
 
 One thing the eventual benchmark should watch for, recorded now so it is not rationalised later: the
@@ -356,7 +356,7 @@ uniform-weighted mix would put a domain-scaling cost next to three genuinely O(1
 | structure-only RSS delta MB | **1.3** | 9.8 | |
 | startup ms | **0.6** | 16.4 | 27× (reported separately; not throughput) |
 
-**No regressions, but the narrowest margin of the eleven mixed workloads in this batch** — p50 and
+**No regressions, but the narrowest margin of the eleven mixed workloads in this group** — p50 and
 min are effectively ties (within 3%, well inside the noise band methodology.md documents: up to
 ~32% p99 swings between clean runs on this host). A probe at 4e6 domain (single measured pass, not
 committed as a second workload row) confirmed the same picture rather than revealing a boundary:

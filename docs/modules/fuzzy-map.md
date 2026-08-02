@@ -89,7 +89,7 @@ oracle also serves). Every generated program panicked at construction, before a 
 ran — which is why this spec had never actually executed: it was not yet wired into
 `tests/differential.rs`, and the one earlier manual campaign attempt persisted a regression seed
 that, on inspection, was the harness panic rather than a finding. That spurious seed was deleted
-rather than kept. Fixed by matching the prefixed names; see `planning/NOTES.md` for the note and
+rather than kept. Fixed by matching the prefixed names; see
 `crates/difffuzz/src/modules/fuzzy_map.rs`'s history.
 
 ## Deliberate divergences

@@ -160,14 +160,14 @@ Rust native tests, mapped to the gaps above.
 
 **Every expectation in these tests was run against real Node first**, including the 255/256/65536
 boundary trio and the two mutation-during-iteration cases, rather than reasoned about and hoped
-for. That is the method `planning/NOTES.md` settled on at H+2 and it paid again here: B-12's
+for. That is the method settled on early in the project and it paid again here: B-12's
 behaviour at 256 is not something reading the file makes obvious.
 
 The **differential fuzzer** then covers gaps 1–18 continuously, with `start` in the observed state
 so rotation is compared after every operation of every generated program.
 
 **Still untested, stated rather than glossed:** gap 22 (`inspect`, not bridged), gaps 19–21 for
-`forEach` (which lives at the bridge, per DESIGN.md §3.5, and is exercised by the original suite
+`forEach` (which lives at the bridge, and is exercised by the original suite
 through the harness), and non-integer members, which napi's `u32` coercion rejects before any port
 code runs.
 
@@ -233,7 +233,7 @@ while `size` still increments. Three consequences:
 ```js
 var q = new SparseQueueSet(0);
 q.enqueue(0);
-Array.from(q)      // [undefined]        ← the §3.7 shrink window, in two calls
+Array.from(q)      // [undefined]        ← the shrink window, in two calls
 q.dequeue()        // undefined, and sets sparse.undefined = 0 (the B-10 expando)
 q.start            // 1, and it keeps climbing: the wrap check is
                    // `start === capacity`, i.e. `1 === 0`, which is never true
@@ -262,7 +262,7 @@ This bridge held a bare core value, so `&self` compiled to a `noalias readonly` 
 entitled to hoist reads across the JS callback — which it did. It now holds `RefCell<Core>`, which
 is not `Freeze`, and every `&mut self` method became `&self` + `borrow_mut()`. The borrow is taken
 per step and released before the callback runs, so a re-entrant callback never meets an outstanding
-borrow. See `planning/NOTES.md` B-31 and `crates/mnemonist-napi/src/cursor.rs`'s `CellCursor`.
+borrow. See B-31, above, and `crates/mnemonist-napi/src/cursor.rs`'s `CellCursor`.
 
 ## Deliberate divergences
 
@@ -279,7 +279,7 @@ borrow. See `planning/NOTES.md` B-31 and `crates/mnemonist-napi/src/cursor.rs`'s
 | — | **`dequeue` returns `Option<u32>` in core and `Either<u32, Undefined>` at the bridge.** | Upstream's empty-queue return is a bare `return;`. napi renders `Option::None` as `null`, which `assert.strictEqual` distinguishes from `undefined`. |
 | — | **`size`, `capacity` and `start` are read-only getters** where upstream's are writable data properties. | Reproducing the writability would mean accepting arbitrary values into fields that every method's arithmetic trusts. The original suite writes none of the three. |
 | — | **`dense` and `sparse` are not exposed to JS.** | They are public typed arrays upstream and a JS caller can write *through* them; napi can only hand out a copy. Both are exposed in Rust and compared slot for slot by the fuzzer. |
-| — | **`forEach` lives at the bridge, and drives the same `CursorState` the cursor does.** | DESIGN.md §3.5 keeps `forEach` out of the core. Worth recording that **this** `forEach` freezes `c`, `l` and `i` before its loop, where `SparseSet`'s and `SparseMap`'s re-read `this.size` each iteration — so a callback that dequeues does not shorten this loop and would shorten theirs. Driving the shared `CursorState` reproduces that without a second loop to drift from the first. |
+| — | **`forEach` lives at the bridge, and drives the same `CursorState` the cursor does.** | `forEach` is kept out of the core. Worth recording that **this** `forEach` freezes `c`, `l` and `i` before its loop, where `SparseSet`'s and `SparseMap`'s re-read `this.size` each iteration — so a callback that dequeues does not shorten this loop and would shorten theirs. Driving the shared `CursorState` reproduces that without a second loop to drift from the first. |
 | — | **`forEach(cb, undefined)` binds `this` to the queue.** | Upstream keys off `arguments.length > 1`, which napi's typed signature cannot see. The omitted-argument case — the only one the original suite uses — is exact. |
 | — | **`new()` returns `Result`.** | Upstream throws for `capacity > 2³²`. Same treatment as its siblings. |
 | — | **`inspect()` is not ported.** | A Node display convenience with no upstream assertion. |
@@ -384,9 +384,9 @@ fills the ring anyway.
 
 **Not yet run.** Gate 10 is deliberately batched into a separate quiet serial pass — a benchmark
 taken under load is not a slow benchmark, it is a wrong one, and this host has already demonstrated
-a contended run inflating both sides 2–3× (`planning/NOTES.md`, H+5). This module is therefore
+a contended run inflating both sides 2–3×. This module is therefore
 **not** in `tests/scope.txt`: gates 1–9 are green and gate 10 is outstanding, which is exactly what
-`tests/verify.sh` will report. See `planning/DESIGN.md` §7.3.
+`tests/verify.sh` will report.
 
 ### `$forEach` — the op that was missing (added 2026-08-01, B-31)
 

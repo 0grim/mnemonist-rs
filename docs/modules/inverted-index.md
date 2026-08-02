@@ -37,7 +37,7 @@ Characterising the shape of that coverage:
 * **Every document in the suite shares tokens with at least one other document.** The three
   `DOCS` strings (`'The cat eats the mouse.'`, `'The mouse likes cheese.'`, `'Cheese is something
   mouses really like to eat.'`) collide constantly after stemming/stopwords: `mouse`, `cheese`,
-  `eat` each appear in two or more. This is precisely the shape CLAUDE.md's brief for this batch
+  `eat` each appear in two or more. This is precisely the shape this unit's own porting notes
   asked to be reached, and the original suite already reaches it — just narrowly (three documents,
   seven tokens total).
 * **`forEach`'s block asserts the callback's arguments on every invocation, but never counts how
@@ -108,7 +108,7 @@ Characterising the shape of that coverage:
 **The differential fuzzer's `grammar_self_check`** measures, rather than asserts from op weights,
 how often generated documents actually collide on tokens: over 400 generated programs (up to 300
 `add`s each), **58,643 documents added, 1,993 posting lists, 1,985 of them (99.6%) spanning more
-than one document.** This is the direct answer to CLAUDE.md's brief for this unit: the grammar
+than one document.** This is the direct answer to the porting brief for this unit: the grammar
 does not merely prove the index can store words.
 
 **Still untested, stated rather than glossed:** gap 5 (`$spread`/`Array.from` *is* fuzzed — see
@@ -151,7 +151,7 @@ how many happened (gap 3), so it passes identically whether the callback runs ze
 times — gate 4 structurally cannot find this. Reproduced rather than "fixed": a walk that visited
 every document would be the *correct*, useful behaviour, and is exactly what a careful porter
 would write without reading this file line by line — which is precisely why it would be a defect
-under CLAUDE.md's bug-for-bug mandate. `InvertedIndex::for_each` hands back a cursor frozen at
+under this port's bug-for-bug fidelity rule. `InvertedIndex::for_each` hands back a cursor frozen at
 length **zero**, unconditionally, so the loop bound really is zero here, not a value merely
 rendered as if it were. Confirmed by the differential fuzzer's own `$forEach` op, which asserts
 `seen: []` on every single generated case regardless of index size — positive, repeated evidence
@@ -253,7 +253,7 @@ Reproduce with `target/release/difffuzz --module inverted-index --seed 42 --case
 
 **The sabotage:** `InvertedIndex::for_each` changed from `DocumentsCursor::open_at_zero(...)` to
 `DocumentsCursor::open(...)` — i.e., made it actually walk the documents. The *correct*, useful
-behaviour, and therefore a bug per CLAUDE.md's mandate.
+behaviour, and therefore a bug per this port's bug-for-bug fidelity rule.
 
 **Confirmed red, in two of the three places this could be caught:**
 
@@ -288,7 +288,7 @@ single hand-picked assertion.
 Host: AMD Ryzen 5 7600X, 12 threads, WSL2, Node 24.18.1, rustc 1.97.1, quiet serial pass.
 Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 2,000 samples/side.
 
-**`mixed-2e5`** — 200,000 (deliberately smaller than this batch's usual 1e6 — see
+**`mixed-2e5`** — 200,000 (deliberately smaller than this group's usual 1e6 — see
 `bench/runner/src/inverted_index.rs`'s own module docs for the sizing check) mixed
 `add`(2-token doc)/`get`(1-token query)/`get`(2-token AND query) (50/25/25) over a 1,000-word
 vocabulary, identity tokenizer on both sides. **~200 documents per posting list on average by the
@@ -303,7 +303,7 @@ read and a real two-list AND intersection — xorshift32 seed 42:
 | structure-only RSS delta MB | **0.1** | 0.2 | |
 | startup ms | **0.6** | 16.9 | 28× (reported separately; not throughput) |
 
-**No regressions**, and the largest RSS-delta ratio in this batch (upstream's ~118 MB against the
+**No regressions**, and the largest RSS-delta ratio in this group (upstream's ~118 MB against the
 port's ~2 MB) — most of that gap is `add`'s per-document allocation cost: every `add` upstream makes
 allocates a fresh `Set()` for its dedup pass and grows a plain-object-backed `Map`, while the port's
 `add` allocates a `HashSet` scoped to one call and writes into an already-hashed `OrderedMap`. One

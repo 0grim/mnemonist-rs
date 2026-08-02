@@ -167,7 +167,7 @@ the thousands).
 | startup ms | **0.6** | 16.2 | 27× (reported separately; not throughput) |
 
 **A clean win on every metric — no regressions.** This is the allocation-heavy, string-keyed
-profile DESIGN.md §5.1 flagged as genuinely different from the array/typed-array modules, and the
+profile flagged as genuinely different from the array/typed-array modules, and the
 port's per-node `HashMap<char, Node>` fan-out costs V8 noticeably more than the equivalent plain-
 object node upstream uses, both in time and in the RSS delta (upstream's is 7× the port's here). The
 0.1 MB structure-only delta versus 6.6 MB is the widest such gap measured across all seven modules

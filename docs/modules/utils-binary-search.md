@@ -8,13 +8,14 @@ requires them — cannot run.
 
 ---
 
-## Scope note: this is not a "unit" by DESIGN.md §1.1
+## Scope note: this is not a "unit"
 
 A unit is the require-closure of one upstream *test file*. `utils/binary-search.js` has none. The
 only assertions that touch it live in `test/_utils.js`, whose closure is
 `typed-arrays` + `binary-search` + `hash-tables` + `iterables` + `merge` — and `iterables` and
 `merge` are not ported, so **not one of that file's 389 lines can execute today.** A single missing
-sibling makes the whole file fail with zero partial credit; that is the rule §1.1 exists to state.
+sibling makes the whole file fail with zero partial credit; that is the rule this definition exists
+to state.
 
 So this file gets gates **1** (ported), **2** (`forbid(unsafe_code)`, zero deps), **7** (native
 tests) and **8** (this document), exactly as `utils/bitwise` did. It will never appear in
@@ -130,7 +131,7 @@ construct, so the truncation is unreachable and is not reproduced.
 
 **D-43 — out-of-range reads are modelled, not bounds-checked.** `array[i]` past the end is `None`,
 and every comparison against `None` is `false`. That is what JavaScript does. A `debug_assert` or a
-panic here would be *more correct than upstream*, which DESIGN.md's porting rule explicitly calls a
+panic here would be *more correct than upstream*, which this port's own rule explicitly calls a
 bug in the port.
 
 ## Fuzz + bench

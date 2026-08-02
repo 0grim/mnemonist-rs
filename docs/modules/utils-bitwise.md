@@ -7,7 +7,7 @@ reaches these functions directly, and nothing outside the library calls them.
 
 ---
 
-## Scope note: this is not a "unit" by DESIGN.md §1.1
+## Scope note: this is not a "unit"
 
 A unit is the require-closure of one upstream *test file*, and `utils/bitwise.js` has none — so
 gates 3, 4, 6 and 10 have no target here and this file will never appear in `tests/scope.txt` on its

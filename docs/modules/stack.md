@@ -7,8 +7,8 @@ statements**.
 Port: `crates/mnemonist-core/src/structures/stack.rs`, `crates/mnemonist-core/src/cursor/mod.rs`.
 Bridge: `crates/mnemonist-napi/src/stack.rs`, `foreach.rs`, `js_slot.rs`, `statics.rs`, `cursor.rs`.
 
-`stack` is the simplest structure in the library and was chosen for exactly that reason
-(DESIGN.md §7.1): it is the **host for the `obliterator/forEach` boundary coercion**, the primitive
+`stack` is the simplest structure in the library and was chosen for exactly that reason:
+it is the **host for the `obliterator/forEach` boundary coercion**, the primitive
 that gates six further modules and roughly 65% of the remaining test weight. If the five-branch
 dispatch is wrong, it shows up here on 210 lines rather than inside `vector`, which needs four
 primitives at once.
@@ -43,7 +43,7 @@ Characterising the shape of that coverage:
 * **`from` is called with exactly two things: an array literal, and `arguments`.** Both reach
   branch 1 of the dispatch. The other four branches are never touched.
 * **Iteration is always immediate.** Every cursor is created and drained in the same block, with no
-  mutation in between — which DESIGN.md §3.7 had already established for all 24 stored-iterator
+  mutation in between — already established for all 24 stored-iterator
   sites in the suite.
 * **`forEach` is called once**, on a fresh three-element stack, with a callback that does not
   mutate.
@@ -122,7 +122,7 @@ Everything below is reachable through the public API and never exercised by the 
 vendored upstream source in `bench/upstream/` **and** explicitly. The differential half catches
 what we did not think to assert; the explicit half makes a failure say which behaviour broke. This
 file is where gaps 3, 7, 10, 12 and 13 are closed, because they need JavaScript: mutation from
-inside a callback is a compile error in Rust, which is the whole point of DESIGN.md §3.7.
+inside a callback is a compile error in Rust, which is the whole point of the exercise.
 
 `tests/boundary/foreach.js` — **37 specs** for the dispatch itself; see below.
 
@@ -137,7 +137,7 @@ upstream assertion and no Rust equivalent); and `forEach`'s `scope` in its `argu
 anywhere** — mnemonist exercises it only incidentally, through `Stack.from([1, 2, 3])`. It is
 ported into `mnemonist-napi`, not core, because a grep of all 30 importing modules shows every call
 site is `forEach(iterable, cb)` inside a `.from()` static or an iterable-accepting constructor,
-operating on the user-supplied argument (D-03/§3.5).
+operating on the user-supplied argument (D-03).
 
 `tests/boundary/foreach.js` covers all five branches, differentially against the real
 `obliterator/foreach` (a harness devDependency). What that found:
@@ -173,8 +173,8 @@ forEach(5, cb)   // TypeError: Cannot use 'in' operator to search for 'Symbol(Sy
 Confirmed for `5`, `true`, `10n` (which stringifies as `10`) and `Symbol(x)`. The library's own
 "not iterable" guard never fires, and the caller gets a message that reads like a bug in
 obliterator's internals. Reproduced verbatim. Low severity, but it is a real gap in a guard that
-exists — two lines would close it. Cross-ref `NOTES.md` B-30, and B-4/B-5, which are the same
-guard's other blind spots.
+exists — two lines would close it. Cross-ref B-30, above, and two further blind spots in the same
+guard.
 
 **Three defects in this port, all found by differentially probing the *bridge*, and two of them in
 code that was already green.** None is an upstream bug; they are recorded because the way they were
@@ -310,8 +310,8 @@ claim it disproved was withdrawn from two source comments.
 
 ### Bench
 
-**Not run.** Benchmarks need an idle machine and three agents were running concurrently; gate 10 is
-batched into a quiet pass (DESIGN.md §7.3). `stack` is ready for it: the workloads it needs are
+**Not run.** Benchmarks need an idle machine, and this machine was under contention at the time;
+gate 10 is batched into a quiet pass. `stack` is ready for it: the workloads it needs are
 push/pop churn and a full drain, both of which the existing `bench/runner` shape already supports.
 Until that pass lands, this unit is **not** in `tests/scope.txt` and does not claim to be done.
 
@@ -351,7 +351,7 @@ Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 10,0
 **`mixed-1e6`** — 1e6 mixed `push`/`peek`/`pop` (50/25/25), value magnitude 1e6, xorshift32 seed 42.
 `peek` stands in for `vector`'s `get`, since a stack exposes no random access — otherwise the same
 shape `vector`'s own bench uses, chosen for the same reason: the throughput floor other members of
-this batch can be read against.
+this group can be read against.
 
 | metric | port | upstream | |
 |---|---|---|---|

@@ -24,8 +24,8 @@ that happens — no `size`, no iteration, no count, nothing. `DefaultWeakMap` in
 its entire public surface is `clear`, `get`, `peek`, `set`, `has`, `delete` — six methods, each
 about one still-referenced key at a time, none of them "the whole map."
 
-That is not a testing inconvenience worked around here; it is designed around, per this batch's
-brief. Consequences, stated plainly:
+That is not a testing inconvenience worked around here; it is designed around, deliberately.
+Consequences, stated plainly:
 
 * **There is no "whole state" to compare**, ever, for any key that might have been collected.
   `crates/difffuzz/src/modules/default_weak_map.rs`'s `observations()` is empty — deliberately,
@@ -167,7 +167,7 @@ Reproduced rather than corrected: `DefaultWeakMap::peek` flattens "missing" and 
 `undefined`" into one `None`, exactly mirroring `items.get(key)`'s own inability to tell them
 apart, and the bridge's `get` re-runs the factory whenever `peek` misses — never checking `has`
 first, which is the correction a careful porter would reach for and precisely why it would be a
-defect (CLAUDE.md's bug-for-bug mandate). `write_from_factory`/`set` reuse the *matched* entry's
+defect per this port's bug-for-bug fidelity rule. `write_from_factory`/`set` reuse the *matched* entry's
 existing key predicate on a hit rather than allocating a fresh identity, which is what keeps a
 re-triggered factory from leaking a new weak reference on every re-run — a correctness property
 this port needs and upstream gets for free from a single native `WeakMap` slot.
@@ -195,7 +195,7 @@ the original suite's own third block) was isolated. Fixed by having `delete` han
 |---|---|---|
 | D-306 | **Only plain objects are accepted as keys; functions and symbols are rejected**, with a message naming the limit. A real `WeakMap` accepts all three. `test/default-weak-map.js` never constructs a key any way but `{}`. Implementing napi's function/symbol reference paths for a distinction nothing here exercises would be unverifiable scope — the same judgement call `js_key.rs` makes for object keys in the `Map` family, mirrored in the opposite direction: there, object keys are out of scope because nothing tests them; here, they are the *entire point*, and it is function/symbol keys that are out of scope for the identical reason. |
 | D-307 | **A non-object key given to `get` is rejected immediately, before the factory runs — upstream runs the factory first and only fails at the internal `items.set`.** Verified against Node 24.18.1: `get(1)` on a fresh map calls the factory (with whatever side effects it has) and *then* throws `TypeError: Invalid value used as weak map key`. Reproducing that exact order would mean calling this port's typed factory (`FunctionRef<FnArgs<(JsSlot,)>, Received>`) with a value its own signature has no slot for. `peek`/`has`/`delete` all match upstream exactly for a non-object key (a quiet miss, never a throw, because a real `WeakMap.prototype.get`/`.has`/`.delete` don't throw for one either) — only `get`'s *ordering*, on the one path no upstream test reaches, differs. |
-| D-308 | **A collected key's entry is never proactively released.** No finalizer is registered per key to notice the moment of collection; a dead `WeakKey` (one whose `napi_ref` upgrade fails) simply never matches any future candidate again — the correct answer, since a caller could not present that exact object as an argument again either — but its stored *value* stays retained, taking a slot in the linear scan, until the whole `DefaultWeakMap` itself is finalized. Nothing upstream exposes can distinguish this from prompt reclamation (there is no `size`, no iteration), so this is a memory-shape divergence, not a behavioural one — and implementing per-key finalization for a distinction nothing can observe would be exactly the "building machinery no test can reach" CLAUDE.md and `js_key.rs` both warn against. |
+| D-308 | **A collected key's entry is never proactively released.** No finalizer is registered per key to notice the moment of collection; a dead `WeakKey` (one whose `napi_ref` upgrade fails) simply never matches any future candidate again — the correct answer, since a caller could not present that exact object as an argument again either — but its stored *value* stays retained, taking a slot in the linear scan, until the whole `DefaultWeakMap` itself is finalized. Nothing upstream exposes can distinguish this from prompt reclamation (there is no `size`, no iteration), so this is a memory-shape divergence, not a behavioural one — and implementing per-key finalization for a distinction nothing can observe would be exactly the "building machinery no test can reach" `js_key.rs` warns against. |
 | D-309 | **`WeakKey` is a linear scan (O(n)), not a hash table.** `crate::structures::default_weak_map::DefaultWeakMap` takes an identity predicate per call rather than requiring `K: Hash + Eq`, because JS object identity has no Rust-expressible hash — the same conclusion `js_key.rs` reaches and declines to act on for `Map` keys (out of scope there); here it is unavoidable, because identity comparison is the entire reason this structure exists. Correct, not fast, and nothing about a 60-line test file or a `WeakMap`'s own contract asks for anything faster. |
 | D-310 | **`undefined` is spelled `None`**, exactly as in `default-map`, for the identical reason: it is what makes B-242 expressible and testable from pure Rust, and it gets `peek` right for free. |
 | D-311 | **`inspect()` is not ported.** It returns the inner `WeakMap`, which does not exist in this port, and nothing asserts on it. |
@@ -262,8 +262,8 @@ stayed green** (`500 cases, 49416 ops, 0 divergences`) — and this is not a mis
 fact stated up front in this document's own module docs and `default_map.rs`'s: *the differential
 fuzzer compares `mnemonist-core` against upstream JS; the napi bridge is not in that loop at all.*
 A bridge-only composition bug is invisible to it by construction, the same way B-31 was before this
-port started holding core state in a `RefCell`. This is the sharpest illustration this batch has of
-CLAUDE.md's own point: passing every available check is not the same as being correct, and knowing
+port started holding core state in a `RefCell`. This is the sharpest illustration this group has of
+the point that passing every available check is not the same as being correct, and knowing
 *which* check would have to exist to catch a given class of bug is worth more than another green
 campaign.
 
@@ -273,7 +273,7 @@ still passes (`4 passing`).
 ### Bench
 
 **Excluded, deliberately, and not merely deferred.** The quiet serial pass that produced
-`bench/results.json` for the other nine units in this batch (`default-map`, `bi-map`, `multi-map`,
+`bench/results.json` for the other nine units in this group (`default-map`, `bi-map`, `multi-map`,
 `multi-set`, `multi-array`, `fuzzy-map`, `fuzzy-multi-map`, `inverted-index`, `set`) did not attempt
 `default-weak-map`, and this is a stated exclusion rather than an oversight: a benchmark's whole
 premise is that both sides execute the identical, materialised op sequence
@@ -284,9 +284,8 @@ premise at the root.
   eligible for reclamation the instant nothing outside the map references its key, at a time
   JavaScript deliberately gives no way to observe (see "What is and is not observable", above). Any
   timing taken under a workload that creates and drops objects would be measuring **when V8's
-  garbage collector happens to run**, not the structure's own cost — and per DESIGN.md's own
-  standard for what counts as a benchmark, a number that cannot be attributed to the thing under test
-  is not a number worth publishing, however clean it looks.
+  garbage collector happens to run**, not the structure's own cost — and a number that cannot be
+  attributed to the thing under test is not a number worth publishing, however clean it looks.
 * **This module's own core (`crate::structures::default_weak_map::DefaultWeakMap`) is a linear scan
   over `Vec<(K, Option<V>)>` by design** (see the module docs above), so even a same-process,
   no-N-API benchmark would need real distinct "identities" it could construct, hold, and then decide
@@ -297,7 +296,7 @@ premise at the root.
   structure as it is actually used.
 
 This is the same call the correctness work already made about GC timing (see "What is and is not
-observable" above and `planning/NOTES.md`) and recorded rather than working around: a stated
+observable" above) and recorded rather than working around: a stated
 exclusion is worth more than a benchmark result nobody could trust. `default-weak-map` is therefore
 **complete except gate 10**, correctly absent from `tests/scope.txt`, and is expected to *stay*
 absent from it rather than merely waiting for a quiet machine the way the other nine units were.

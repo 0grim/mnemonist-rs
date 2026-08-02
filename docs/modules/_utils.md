@@ -12,7 +12,8 @@ hash_tables,merge}.rs`. Shim: `tests/bridge/_utils.js` (the hub, assembling all 
 shape, same convention `tests/bridge/sort.js` established) plus its five
 `tests/bridge/utils/*.js` leaves. Fuzz spec: `crates/difffuzz/src/modules/_utils.rs`.
 
-DESIGN.md §1.1's own table names this unit specifically: `test/_utils.js`'s require-closure is
+This unit is named specifically as one whose require-closure spans several standing files:
+`test/_utils.js`'s require-closure is
 `typed-arrays` + `binary-search` + `hash-tables` + `iterables` + `merge`, and — despite the
 underscore — this is a real upstream test file, not a helper, so all five must exist before one
 assertion in it can run. Four of the five were already ported as standing infrastructure by earlier
@@ -97,7 +98,7 @@ member at all. Nothing here supplies a malformed, unsorted, or partially-empty i
 ## What we test in addition
 
 * **This unit's own two real bugs**, both found by differential fuzzing inside the first fuzz
-  campaign ever run against this grammar — see "Bugs this found" and NOTES.md's "_utils" section.
+  campaign ever run against this grammar — see "Bugs this found" below.
 * **`crates/mnemonist-core/src/utils/merge.rs`'s native tests** — the upstream suite's own cases,
   transcribed, plus: `NaN` in a union's dedup check (`nan_is_never_deduplicated_by_the_union_dedup_check`),
   ties across k-way arrays that do *not* change the merged multiset
@@ -137,15 +138,14 @@ merge.intersectionUnique([], [1, 2, 3], [4, 5, 6])   // OK -- returns [] before 
 
 `kWayIntersectionUniqueArrays` has no heap at all (a sequential binary-search fold) and returns `[]`
 on the first empty array it scans, before the stale-`l` code path is reachable — structurally
-immune, not merely untested. Reproduced in the port as `KWayError::StaleLengthMismatch` (D-104);
-full write-up NOTES.md B-180.
+immune, not merely untested. Reproduced in the port as `KWayError::StaleLengthMismatch` (D-104).
 
-Two further findings are **port defects, not upstream's**, and get no B-number (CLAUDE.md: "do not
+Two further findings are **port defects, not upstream's**, and get no B-number ("do not
 overclaim causation" cuts the other way too):
 
 1. `union_unique_two`'s prefix loop deduplicated an internally non-unique input where upstream's own
    prefix loop pushes unconditionally (only its overlap and filling loops dedup). Found by
-   differential fuzzing inside the first 300 generated cases; fixed. See NOTES.md, "_utils".
+   differential fuzzing inside the first 300 generated cases; fixed.
 2. The k-way linear scan's tie-break disagreed with `FibonacciHeap`'s own, observably, on both
    `merge`'s element order and `unionUnique`'s deduplication. **Fixed — D-105 is now closed**: see
    "Deliberate divergences" and `docs/modules/fibonacci-heap.md`. The exact case that found this
@@ -158,7 +158,7 @@ overclaim causation" cuts the other way too):
 | # | Divergence | Why |
 |---|---|---|
 | D-104 | **B-180 is reproduced as `Err(KWayError::StaleLengthMismatch)`, not a panic.** | `mnemonist-core` has no exceptions and forbids `unsafe`, so the actual out-of-bounds mechanism cannot be reproduced; the outcome (the k-way call fails, with upstream's message available at the boundary) is. Same convention as D-44 (`hash_tables::TABLE_IS_FULL`). |
-| D-105 | **CLOSED.** Was: the k-way merge/union's tie-break was a linear scan's, not a real `FibonacciHeap`'s. | `fibonacci-heap` is now a ported unit. `k_way_scan` drives a real `FibonacciHeap<usize, KWayKeyComparator, Thrown>` — upstream's own inline comparator closure, translated directly, over array indices with `pointers` read fresh per comparison. The fuzz grammar (`crates/difffuzz/src/modules/_utils.rs`) is widened back to a tie-producing, `NaN`-including pool for `merge`/`unionUnique`; see `planning/DECISIONS-CANDIDATES.md`'s D-105 entry for the full before/after and the two post-closure 60s campaigns. |
+| D-105 | **CLOSED.** Was: the k-way merge/union's tie-break was a linear scan's, not a real `FibonacciHeap`'s. | `fibonacci-heap` is now a ported unit. `k_way_scan` drives a real `FibonacciHeap<usize, KWayKeyComparator, Thrown>` — upstream's own inline comparator closure, translated directly, over array indices with `pointers` read fresh per comparison. The fuzz grammar (`crates/difffuzz/src/modules/_utils.rs`) is widened back to a tie-producing, `NaN`-including pool for `merge`/`unionUnique`. |
 | D-106 | **`intersectionUnique`'s k-way `NaN` handling is a separate, still-open gap.** | `kWayIntersectionUniqueArrays`/`intersection_unique_k` never used a heap — D-105 never applied to it. Upstream seeds its running bounds from JS's `-Infinity`/`Infinity` sentinels; this port seeds from `Option<T>`, so the *first* array scanned always sets the accumulator, `NaN` included, where upstream's sentinel can survive past a `NaN`-headed array. Reachable only once `NaN` participates in a three-or-more-array group; the fuzz grammar's `k_way_arrays_op` takes an `allow_nan` flag that stays `false` for `intersectionUnique` specifically so D-105's widening does not silently paper over this different gap. See `crates/mnemonist-core/src/utils/merge.rs`'s `intersection_unique_k` module docs for the mechanism. |
 | — | **`concat` supports `Uint8Array` only.** | `test/_utils.js`'s own case never constructs anything else; upstream is generic over any typed-array class via `arguments[0].constructor`. Same "helpers land as callers reach them" policy as `indices`. |
 | — | **`getMinimalRepresentation`'s optional `getter` argument is not ported.** | Never supplied by any test in scope; same policy. |
@@ -171,8 +171,8 @@ overclaim causation" cuts the other way too):
 Two 60-second campaigns logged (`fuzz/log.txt`, `module=_utils`), seeds `42` and `20260801`:
 **508,729 + 503,372 = 1,012,101 operations, zero divergences** on the final grammar. The path there
 was not clean on the first attempt, which is the point of fuzzing this unit at all — three real
-findings surfaced inside the first few hundred cases of the very first run, all reported above and
-in NOTES.md rather than smoothed over:
+findings surfaced inside the first few hundred cases of the very first run, all reported above
+rather than smoothed over:
 
 1. B-180 was already known from reading; the campaign's grammar deliberately manufactures it (a
    0-length array alongside two-or-more non-empty ones in a three-to-five-array group) rather than
@@ -205,8 +205,8 @@ convenience:
   upstream never exports a bare top-level function at all — and the oracle's free-function protocol
   dispatches with a single property lookup, `instance[name](...)`. There is no
   `instance.linearProbingSet`, only `instance.linearProbing.set`; extending the oracle to walk a
-  dotted path would be a structural change to a shared file (`fuzz/oracle.js`) that CLAUDE.md
-  reserves for additive edits. Covered instead by `crate::utils::hash_tables`'s own extensive native
+  dotted path would be a structural change to a shared file (`fuzz/oracle.js`) that this project's
+  convention reserves for additive edits only. Covered instead by `crate::utils::hash_tables`'s own extensive native
   tests and the real bridge run.
 
 ### Falsification (gate 6)
@@ -245,9 +245,9 @@ instance, or — for the handful of function-only units already in scope (`sort`
 because the unit genuinely *is* one function (or a tightly related pair, like
 `inplaceQuickSortIndices`/`quickSort`). `_utils` is not that shape: its require-closure is **five
 unrelated files** — `typed-arrays`, `binary-search`, `hash-tables`, `merge`, `iterables` — with no
-shared instance, no shared complexity class, and (per DESIGN.md §1.1's own unit definition) they
-are one gate-10 unit only because one upstream test file, `test/_utils.js`, happens to require all
-five.
+shared instance, no shared complexity class, and (per the unit definition used throughout this
+port) they are one gate-10 unit only because one upstream test file, `test/_utils.js`, happens to
+require all five.
 
 Two shapes were considered and both rejected:
 
@@ -259,7 +259,7 @@ Two shapes were considered and both rejected:
    data shapes with different complexity classes. Reporting `bench/results.json`'s `_utils` key
    against, say, `merge` alone would silently omit `binary-search`, `hash-tables`, and `typed-arrays`
    entirely while a reader has no way to tell that from the key name — the exact "a number nobody
-   can trust" failure mode DESIGN.md §5.1 warns about, just at the level of *which function ran* rather
+   can trust" failure mode described above, just at the level of *which function ran* rather
    than *which parameter was chosen*.
 2. **One workload per file, several rows under one `_utils` module entry.** `bench/drive.js`'s
    `WORKLOADS` table already supports several named rows per module (`static-disjoint-set`'s
@@ -269,8 +269,8 @@ Two shapes were considered and both rejected:
    registry has no notion of "row N calls a different underlying function than row N+1." Five
    genuinely different operations would need five different module *names* (`utils-merge`,
    `utils-binary-search`, …), which would then not be `_utils` in `results.json` at all, contradicting
-   `tests/verify.sh`'s gate 10 check (`modules["_utils"].workloads`) and DESIGN.md's own one-unit
-   framing for this require-closure.
+   `tests/verify.sh`'s gate 10 check (`modules["_utils"].workloads`) and the one-unit
+   framing established for this require-closure.
 
 Two of the five files also carry reasons of their own not to force into any bench shape, echoing
 this unit's own fuzz-grammar exclusions above: **`iterables`** has no core-side pure function at
@@ -288,8 +288,7 @@ non-comparator function over a plain array — but benchmarking them alone while
 key that quietly represents 40% of the unit's own surface. Nothing here rules out a **future,
 separate** gate-10 extension that gives each of `typed-arrays`/`binary-search`/`hash-tables`/`merge`
 its own module name (sidestepping objection 2 by not calling itself `_utils` at all); that is a
-harness change this batch's scope did not include, stated here so the next agent does not have to
-rediscover the reasoning.
+harness change out of scope here, stated so the reasoning does not need to be rediscovered later.
 
 `_utils` is consequently **not** added to `tests/scope.txt` by this pass — consistent with
 `default-weak-map`'s own precedent (`docs/modules/default-weak-map.md`'s "### Bench"): a stated

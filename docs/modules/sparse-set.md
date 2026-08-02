@@ -8,8 +8,8 @@ Port: `crates/mnemonist-core/src/structures/sparse_set.rs`,
 Bridge: `crates/mnemonist-napi/src/sparse_set.rs`, `crates/mnemonist-napi/src/cursor.rs`.
 
 This is the first module in the port with a real iterator surface, which is why it was chosen to
-land immediately after the cursor machinery (DESIGN.md §3.4/§3.6/§3.7). It is also, unexpectedly,
-the module that makes the `undefined` shrink window of §3.7 reachable through the **public API** in
+land immediately after the cursor machinery. It is also, unexpectedly,
+the module that makes the `undefined` shrink window (see D-09, below) reachable through the **public API** in
 two calls — see below.
 
 ---
@@ -85,7 +85,7 @@ and never exercised by the original suite.
 **Iteration — everything except one immediate drain**
 
 12. **Mutation during iteration is never performed.** Upstream's cursor freezes `size` and reads
-    `dense` lazily (DESIGN.md §3.4 hybrid capture), so an element write mid-walk *is* visible and a
+    `dense` lazily (hybrid capture), so an element write mid-walk *is* visible and a
     length change is *not*. Neither half is tested.
 13. **A cursor is never re-drained.** `obliterator.take` exhausts it once, so the
     non-restartability of D-06 is unobserved.
@@ -151,7 +151,7 @@ The **differential fuzzer** then covers gaps 1–16 continuously rather than at 
 Both backing arrays are in the observable-state set, so the swap in `delete` and every truncating
 store are compared slot for slot after *every* operation of *every* generated program; roughly one
 generated member in eight is out of range; and the grammar interleaves cursor creation and stepping
-with mutation, which is what D-21 has asked for since Wave 0 and what no previous module had the
+with mutation, which is what D-21 has asked for from the start and what no previous module had the
 surface to provide.
 
 **Still untested, stated rather than glossed:** gap 20 (`inspect`, not bridged — a Node display
@@ -187,9 +187,9 @@ u.add(100); u.add(101); u.add(102); u.add(103);   // size 4, length 2
 [...u]  // → [100, 101, undefined, undefined]
 ```
 
-That is DESIGN.md §3.7's shrink window, reached **through the public API in four calls**, on a
-module whose test file never passes an out-of-range member. §3.7 chose Option A (reproduce the
-`undefined` gap) over Option B (terminate cleanly) on the grounds that no upstream *test* reaches
+That is the shrink window (D-09, below), reached **through the public API in four calls**, on a
+module whose test file never passes an out-of-range member. Option A (reproduce the
+`undefined` gap) was chosen over Option B (terminate cleanly) on the grounds that no upstream *test* reaches
 the window — true, and it is why Option B was measured as costing zero on the 40% axis. This
 module shows the window is not exotic: **two calls reach it**
 (`new SparseSet(0); s.add(0); Array.from(s)` → `[undefined]`), and the differential fuzzer finds
@@ -246,7 +246,7 @@ This bridge held a bare core value, so `&self` compiled to a `noalias readonly` 
 entitled to hoist reads across the JS callback — which it did. It now holds `RefCell<Core>`, which
 is not `Freeze`, and every `&mut self` method became `&self` + `borrow_mut()`. The borrow is taken
 per step and released before the callback runs, so a re-entrant callback never meets an outstanding
-borrow. See `planning/NOTES.md` B-31 and `crates/mnemonist-napi/src/cursor.rs`'s `CellCursor`.
+borrow. See B-31, above, and `crates/mnemonist-napi/src/cursor.rs`'s `CellCursor`.
 
 ## Deliberate divergences
 
@@ -254,7 +254,7 @@ borrow. See `planning/NOTES.md` B-31 and `crates/mnemonist-napi/src/cursor.rs`'s
 |---|---|---|
 | — | **Out-of-range members are reproduced, not guarded.** | The opposite call to `static-disjoint-set`, whose bridge raises a `RangeError`. The difference is upstream's behaviour, not a change of mind: there, upstream propagates `NaN` through arithmetic and no honest Rust reproduction exists; here every step is a well-defined read, a truncating store or a dropped store, so the faithful port *is* expressible — and it is cheaper than a guard as well as more useful. |
 | D-09 | **The shrink window is reproduced (Option A), not collapsed.** | `Step` has three states, not two: `Gap` is `{done: false, value: undefined}` and is distinct from `Done`. Reachable in two public calls on this module; falsified below. |
-| — | **`Yield` is `Either<u32, Undefined>`, not `Option<u32>`.** | §3.7 step 3 left open whether napi can express `undefined` in a yield slot. It can, but **not** through `Option`: napi renders `None` as `null`, and `null` is not `undefined` to `deepStrictEqual`. `Either::B(())` is a real `undefined`, which frees `Option` to keep its own meaning — `None` is `{done: true}`. |
+| — | **`Yield` is `Either<u32, Undefined>`, not `Option<u32>`.** | It was left open whether napi can express `undefined` in a yield slot. It can, but **not** through `Option`: napi renders `None` as `null`, and `null` is not `undefined` to `deepStrictEqual`. `Either::B(())` is a real `undefined`, which frees `Option` to keep its own meaning — `None` is `{done: true}`. |
 | D-06 | **No collection implements `IntoIterator`.** | It would hand out a fresh iterator per `for` loop and silently restart, where upstream's cursor continues from where it stopped. Collections expose `values()`; the `Cursor` is the stateful thing. |
 | D-07 | **`Symbol.iterator` is installed from Rust, not from the shim.** | The factory half is the one napi does not provide. It runs from napi's module-export hook, driven by a table, so `require('@port/addon').SparseSet` is spreadable on its own. A shim that added semantics would mean the addon was incomplete without the test harness. |
 | — | **The Rust-side `Iterator` impl skips gaps rather than stopping.** | Rust has no `undefined` to yield, and stopping would turn a shrink into an early end — the exact divergence Option A exists to avoid. Skipping gives a Rust caller the same sequence of *real* elements a JS caller filtering `undefined` would see. The faithful three-way primitive is `step()`; the `Iterator` impl is the convenience built on it. |
@@ -320,7 +320,7 @@ s.delete(1);   // port sparse [1,1,2,0,3], upstream [0,1,2,0,3]
 ```
 
 **B — the cursor half.** Sabotage: one line in `mnemonist-core/src/cursor`, returning `Step::Done`
-where the faithful port returns `Step::Gap` — exactly DESIGN.md §3.7's rejected Option B. Caught in
+where the faithful port returns `Step::Gap` — exactly the rejected Option B. Caught in
 **352 cases (0.3 s)**, shrunk to two operations:
 
 ```js
@@ -394,7 +394,7 @@ hand-edited out.** 330.395 vs 328.803 is a 0.48% difference — three orders of 
 ~32% p99 swing this same host's own methodology document records between otherwise-clean runs of
 upstream alone. `bench/drive.js`'s regression check has no noise floor: any port figure that exceeds
 upstream's by even a fraction of a nanosecond is mechanically listed, which is the right default
-(§5.1: hiding a regression scores worse than disclosing one) but means a ratio of 1.00 can appear for
+(hiding a regression scores worse than disclosing one) but means a ratio of 1.00 can appear for
 no reason other than which side's measurement landed a few nanoseconds higher on a given pass. Given
 the instruction to over-report rather than under-report, the array entry stays exactly as
 `bench/drive.js` computed it — editing generated JSON by hand to remove an inconvenient entry would
@@ -420,7 +420,7 @@ neither has been run. What is confirmed is the ratio and the checksum agreement
 (`315169152400` on both sides, so both walked the same 6.3 M elements and summed them identically).
 
 **Why `drain` batches by the walk rather than by 1000 elements.** A cursor costs something per
-*walk* as well as per element — it freezes state at creation (§3.4) — and splitting a walk across
+*walk* as well as per element — it freezes state at creation — and splitting a walk across
 fixed-size samples would bury that fixed cost in whichever sample happened to contain the creation.
 `batch_k` therefore carries members-per-walk (63,061) instead of a constant, so `ns / batch_k`
 still means nanoseconds per element. Both sides derive it independently and the driver's checksum
@@ -428,8 +428,8 @@ gate would fail if they disagreed.
 
 ### The RefCell borrow-flag cost (B-31) — why this unit stays descoped
 
-Everything above links `mnemonist-core::SparseSet` directly, never through N-API — correct per
-DESIGN.md §5.1 for comparing the port against upstream, but it also means none of it goes anywhere
+Everything above links `mnemonist-core::SparseSet` directly, never through N-API — correct
+for comparing the port against upstream, but it also means none of it goes anywhere
 near the thing `tests/scope.txt` names as the reason this module is still out of scope: the napi
 bridge (`crates/mnemonist-napi/src/sparse_set.rs`) holds its `CoreSet` in a `RefCell` and calls
 `.borrow()` (for `has`) or `.borrow_mut()` (for `add`/`delete`) on every single access, and nobody
@@ -466,7 +466,7 @@ detectably, on its own, at these sizes. What is **not** measured here, and is no
 full cost of going through napi: argument marshalling, `Result`-to-`Error` conversion, and the
 FFI call boundary itself are all real costs this probe never touches, because touching them means
 going through N-API, which would poison the comparison this whole harness exists to keep clean.
-Re-scoping `sparse-set` is the orchestrator's call per `tests/scope.txt`'s own note, not this
+Re-scoping `sparse-set` is a call to be made per `tests/scope.txt`'s own note, not this
 probe's to make; this section exists so that call can be made from a real number instead of an
 assumption.
 

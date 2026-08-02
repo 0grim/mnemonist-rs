@@ -200,7 +200,7 @@ This bridge held a bare core value, so `&self` compiled to a `noalias readonly` 
 entitled to hoist reads across the JS callback — which it did. It now holds `RefCell<Core>`, which
 is not `Freeze`, and every `&mut self` method became `&self` + `borrow_mut()`. The borrow is taken
 per step and released before the callback runs, so a re-entrant callback never meets an outstanding
-borrow. See `planning/NOTES.md` B-31 and `crates/mnemonist-napi/src/cursor.rs`'s `CellCursor`.
+borrow. See B-31, above, and `crates/mnemonist-napi/src/cursor.rs`'s `CellCursor`.
 
 ## Deliberate divergences
 
@@ -282,15 +282,15 @@ looks like a bug, and which B-22 shows *is* one at length 0.
 served as the sabotage.** "Fixing" `reset`'s missing `>>> 0` leaves the suite green, because every
 `reset` in the file clears a bit that is actually set. "Fixing" `select` leaves it green too, because
 its `select` test uses a length of 11 and never skips a word. Both would have been sabotages
-incapable of failing — the exact failure DESIGN.md §1.1 warns about, and here there were two of them
-waiting.
+incapable of failing — the exact failure mode gate 6 exists to catch, and here there were two of
+them waiting.
 
 ### Bench
 
 **Not run.** Gate 10 is deliberately outstanding: benchmarks need an idle machine, and this unit was
-ported alongside two others in parallel worktrees, where a contended run has already been measured on
-this project to inflate both sides 2–3× (NOTES.md, H+5). It is batched into a separate quiet pass,
-and `bit-set` is therefore **not** in `tests/scope.txt` yet — by DESIGN.md §1.1 it is not done until
+ported alongside two other modules in the same window, where a contended run has already been
+measured on this project to inflate both sides 2–3×. It is batched into a separate quiet pass,
+and `bit-set` is therefore **not** in `tests/scope.txt` yet — it is not done until
 it is. Gates 1–9 are green.
 
 ### `$forEach` — the op that was missing (added 2026-08-01, B-31)
@@ -340,7 +340,7 @@ account.
 | structure-only RSS delta MB | **1.3** | 9.8 | |
 | startup ms | **0.6** | 17.9 | 30× (reported separately; not throughput) |
 
-**This is the module DESIGN.md 5.1 predicted the port should win largest on, and on raw ns/op it
+**This is the module the port was predicted to win largest on, and on raw ns/op it
 does not — a real, disclosed regression, not a rounding artefact.** Both p50 and p99 are ~10–12%
 slower than V8's own typed-array path over three independent metrics (p50, p99, min), which rules
 out a single unlucky batch. The original explanation was unconfirmed: `BitSet::set`/`reset`/`get`/

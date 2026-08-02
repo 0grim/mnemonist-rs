@@ -127,8 +127,7 @@ the second fuzzing round caught (below).
 
 Fixed by resynchronising `delete`/`delete_reverse` only when something was actually removed. Both
 seeds are committed with provenance in `crates/difffuzz/proptest-regressions/bi-map.txt` — see "Fuzz"
-below for what that file's un-labelled first entry turned out to be. See `planning/NOTES.md` (B-120)
-and `planning/DECISIONS-CANDIDATES.md` (D-89) for the full writeup.
+below for what that file's un-labelled first entry turned out to be.
 
 **Strong candidate**, and worth reading past the bug itself: the module doc for
 `mnemonist_core::structures::bi_map` had already analysed and *named* this exact defect in prose,
@@ -173,8 +172,8 @@ module=bi-map seed=42  cases=11778  ops=1178193  wall=90.0s  divergences=0
 
 ### The orphan regression seed, resolved
 
-`crates/difffuzz/proptest-regressions/bi-map.txt` existed on this branch **before** the spec had ever
-been compiled or run as part of `cargo test` — a previous agent's process died mid-session, leaving
+`crates/difffuzz/proptest-regressions/bi-map.txt` existed in the repository **before** the spec had
+ever been compiled or run as part of `cargo test` — an earlier run's process was interrupted, leaving
 the file uncommitted and its meaning unrecorded. Its first line:
 
 ```
@@ -192,7 +191,7 @@ produces byte-identical output. And the spec it names had no `#[test]` anywhere 
 Replaying it directly against the current build (`difffuzz --module bi-map --seed 42 --cases 60`)
 answered the question: the seed decodes to exactly the program in its own comment, and that program
 diverges — B-120, round one, verbatim. **It was a real, previously uncaptured divergence, not
-noise** — the previous agent (or an ad hoc run of the already-registered CLI binary) had found B-120
+noise** — an earlier run (or an ad hoc run of the already-registered CLI binary) had found B-120
 and never got the chance to report it. The corpus file now carries a provenance block explaining
 both entries; the campaign above is clean against the fixed tree, including both persisted seeds
 replayed first.

@@ -118,8 +118,8 @@ A method named `set` reads as "make the multiplicity exactly `count`" — `set.s
 `.set` cases never call it twice on the same key with two positive counts (its double-call case
 follows a positive `set` with a non-positive one, which takes the early delete branch instead), so
 gate 4 cannot see this. Reproduced faithfully in `MultiSet::set` — a "corrected" replace-semantics
-version would be *more correct than upstream* and therefore wrong per CLAUDE.md's bug-for-bug
-mandate. Pinned by `set_replaces_a_missing_item_but_adds_to_an_existing_one`.
+version would be *more correct than upstream* and therefore wrong per this port's bug-for-bug
+fidelity rule. Pinned by `set_replaces_a_missing_item_but_adds_to_an_existing_one`.
 
 ### B-161 — `#.delete` on an absent item corrupts `size` to `NaN`, decrements `dimension`, and reports `true`
 
@@ -262,5 +262,5 @@ multiplicity per item on average by the run's end**, xorshift32 seed 42:
 rather than a structural cost: `min_ns_per_op` is the least statistically stable of the three latency
 figures (one sample, not a percentile over many), and nothing about this module's `add`/
 `multiplicity`/`remove` path does asymptotically more work than upstream's identical three calls.
-Reported rather than omitted regardless, per §5.1 — a regression is stated even when the likelier
+Reported rather than omitted regardless — a regression is stated even when the likelier
 explanation is measurement noise, not silently dropped because it looks small.

@@ -88,7 +88,7 @@ divergences; 5 has no upstream assertion anywhere.
 native tests, or 1.3M clean fuzz operations surfaced a genuine upstream defect. This is a real
 finding in its own right for a require-closure this size: not every unit hides a bug, and reporting a
 clean result plainly is part of the porting discipline this project holds itself to (see
-`planning/NOTES.md`'s "set — no upstream bugs, and that is the finding" for the precedent).
+`docs/modules/set.md`, which reports the identical outcome for that module).
 
 ## Deliberate divergences
 
@@ -115,7 +115,7 @@ module=bk-tree seed=42  cases=13238  ops=1325206  wall=90.0s  divergences=0
 * **Op alphabet:** `add(item)` (weight 5) · `search(n, query)` (4) · `clear()` (1).
 * **Items and queries are small integers in a 12-wide range**, with `distance(a, b) = |a - b|` (a
   real metric, cheap to mirror identically on both sides as `fuzz/oracle.js`'s `bkAbsDiff`). This is
-  the deliberate answer to the risk CLAUDE.md calls out by name for this module: a wide or random
+  the deliberate answer to the sharp risk named for this module: a wide or random
   alphabet would generate a stream of unrelated items that never collide on distance, and a tree
   that never grows past one child per node tests almost nothing about the algorithm. Twelve values is
   narrow enough that repeated `add`s land on the same distance from any given node constantly, which

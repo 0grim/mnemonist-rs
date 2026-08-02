@@ -116,7 +116,7 @@ primitive, since the walk just read `node[SENTINEL]` where `SENTINEL` collided w
 token), every later `node[token] = {}` is a silent no-op in sloppy mode — the assignment
 *expression* still evaluates to the discarded `{}`, so the loop's local `node` keeps rebinding to a
 chain of fresh, unlinked objects that vanish with the call, while `size` increments because the
-final orphan genuinely has no `SENTINEL` property of its own. See NOTES.md B-200 for the full trace.
+final orphan genuinely has no `SENTINEL` property of its own.
 
 **Not reproduced.** `mnemonist_core::structures::trie_map::Node` keeps the value and the children in
 two separate fields, never a shared keyspace (D-200), so a token equal to whatever the bridge treats
@@ -140,7 +140,7 @@ it.next();                          // {value: ['ab', 2]} -- the just-deleted en
 ```
 
 Neither original test file interleaves a mutation with an open walk over the region being mutated.
-**Found twice independently**: first by reading (recorded in NOTES.md/DECISIONS-CANDIDATES.md before
+**Found twice independently**: first by reading (recorded before
 this unit's fuzz spec existed), then again by the differential fuzzer's own first, ungated campaign
 for each unit — see "Fuzz + bench" for both minimised repros. **Not reproduced**:
 `mnemonist_core::structures::trie_map::Walk` re-navigates from the root by token path rather than

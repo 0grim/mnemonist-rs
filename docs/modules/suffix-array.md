@@ -235,7 +235,7 @@ value, `U+0001` equals the generalized separator, and `U+0100` / `U+0141` / `U+0
 under B-90's 8-bit radix. Lengths run to 45, covering all three residues of `l % 3`, several
 recursion depths, and the point where a reduced string's ranks exceed 255.
 
-Deliberately excluded, per DESIGN.md §3.7: an **empty** member list (upstream throws from the
+Deliberately excluded: an **empty** member list (upstream throws from the
 constructor, which the oracle protocol classifies as apparatus failure, and the port refuses it —
 see D-50) and **mixed** member kinds (D-49). Both are documented divergences, so fuzzing them would
 only re-report a known decision.
@@ -287,4 +287,4 @@ several of those upstream arrays are plain `Array`s rather than typed arrays, ca
 object-array overhead through every recursive level. The port's own `Sparse` type
 (`Vec<Option<i64>>`) is a flatter allocation with none of that indirection. Not isolated by
 profiling; stated as the mechanism most consistent with the RSS gap (200 MB against 1.2 MB) being
-so much larger here than in any other module in this batch.
+so much larger here than in any other module in this group.

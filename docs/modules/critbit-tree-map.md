@@ -64,8 +64,7 @@ prefix-sharing on every campaign, measured directly rather than assumed.
 ## Bugs this found
 
 **Two port defects, not upstream's**, both found by this unit's own differential fuzzer and fixed
-before any campaign was logged — full account in `planning/NOTES.md`'s "Two port defects found by
-fuzzing" entry for this pair of units, and in this file's own module doc comment. Summary: `set`'s
+before any campaign was logged — full account in this file's own module doc comment. Summary: `set`'s
 "tree is empty" fast path hardcoded `root = external_ptr(0)`, correct only the very first time it
 runs; after a `delete` back to an empty tree, this port's append-only arena already holds a stale
 entry at index `0` (unlike upstream, which links real, garbage-collected object references and has
@@ -81,7 +80,7 @@ collected version.
 
 ## Deliberate divergences
 
-* **D-245** (DECISIONS-CANDIDATES.md): keys are truncated to their low 8 bits at the bridge
+* **D-245**: keys are truncated to their low 8 bits at the bridge
   (`mnemonist_napi::critbit_tree_map::decode_key`), rather than reproducing upstream's own masked
   critical-bit arithmetic for UTF-16 code points ≥ 256. A no-op for every key either original suite
   supplies (all Latin-1/ASCII); sidesteps re-deriving which of several interacting masked bitwise

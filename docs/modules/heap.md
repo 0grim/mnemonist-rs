@@ -9,7 +9,7 @@ Bridge: `crates/mnemonist-napi/src/heap.rs`, `crates/mnemonist-napi/src/comparat
 `crates/mnemonist-napi/src/js_array.rs`.
 Shims: `tests/bridge/heap.js`, `tests/bridge/utils/comparators.js`.
 
-`test/heap.js` requires `../heap.js` **and** `../utils/comparators.js`, so under DESIGN.md §1.1 the
+`test/heap.js` requires `../heap.js` **and** `../utils/comparators.js`, so the
 two are one unit and neither can land alone.
 
 This is the module that opens **capability tier T2**: a comparator is a JavaScript function called
@@ -164,14 +164,14 @@ coexist with the five prototype methods of the same name.
 **does not terminate**, upstream or here. The scan is `for (i = n; i < l; i++)` and
 `-Infinity + 1` is `-Infinity`, so the loop reads `iterable[-Infinity]` — `undefined` — forever.
 The port hangs identically, which is bug-for-bug correct and therefore unrunnable in any test or
-fuzz grammar. It is a genuine upstream defect and it has **no `B-` number**: this agent's allocated
-range (B-70..B-79) was fully spent before it was found, and CLAUDE.md says to say so rather than
-spill past the range. Flagged for the orchestrator.
+fuzz grammar. It is a genuine upstream defect and it has **no `B-` number**: the range allotted for
+these findings (B-70..B-79) was already spent when it was found, and rather than run past it, it is
+disclosed here without one.
 
 ## Bugs this found
 
 Ten upstream defects, **B-70 through B-79**, all verified against Node 24.18.1 and all pinned by
-`tests/boundary/heap.js`. Full write-ups in `planning/NOTES.md`; in brief:
+`tests/boundary/heap.js`. In brief:
 
 | ID | Defect |
 |---|---|
@@ -200,9 +200,9 @@ Two adjacent values of `n` disagree about which element is smallest.
 `status: all fixed, all pinned by tests/boundary/heap.js`
 
 This is the most important paragraph in the document, because the unit had 21 upstream assertions,
-47 boundary cases, three fuzz campaigns and 5 M operations all green when they were found. It is
-the sixth entry for `planning/NOTES.md`'s table of confident green signals that were verifying
-something other than what was believed — and, like B-31, it was found by *a second, independent
+47 boundary cases, three fuzz campaigns and 5 M operations all green when they were found. It
+belongs alongside `docs/METHODOLOGY.md`'s "What these instruments cannot see" section, which covers
+this material — and, like B-31, it was found by *a second, independent
 look* rather than by the machinery.
 
 *1 — a `RefCell` borrow held across a call into JavaScript, which aborted the process.*
@@ -383,7 +383,7 @@ with `34 !== 1`. Reverted; **confirmed green again**: `14 passing`.
 Host: AMD Ryzen 5 7600X, 12 threads, WSL2, Node 24.18.1, rustc 1.97.1, quiet serial pass.
 Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 10,000 samples/side.
 
-This is the **pure Rust path against the vendored JS**, not the napi bridge — per DESIGN.md §5.1 the
+This is the **pure Rust path against the vendored JS**, not the napi bridge — the
 comparative table never goes through N-API, so the bridge's own per-comparison FFI crossing (real,
 and worth measuring separately if this harness is ever extended to run through the addon) is not
 what these figures show. What this table measures instead is core's own `RefCell<VecStore<f64>>`

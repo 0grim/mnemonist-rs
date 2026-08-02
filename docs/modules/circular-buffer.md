@@ -22,7 +22,7 @@ overrides two methods; the real surface behind those 339 lines is 497 LOC, and t
 
 **Its own unit, and the two are separate — but its require-closure strictly contains the other's.**
 
-DESIGN.md §1.1 defines a unit as the require-closure of one upstream *test file*. There are two
+A unit is defined as the require-closure of one upstream *test file*. There are two
 test files, so there are two units:
 
 | Test file | Require-closure |

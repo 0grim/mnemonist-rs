@@ -86,7 +86,6 @@ that the original test suite could not catch (`take()` accepts either shape via 
 that a direct comparison of `s.containers()`'s raw return value caught immediately: `[]` from the
 port against `{}` from upstream. Fixed by building a real `#[napi(iterator)]` generator for each of
 the five, matching `multi_map.rs`'s and `vector.rs`'s own established pattern. See
-`planning/NOTES.md`'s "multi-array, symspell, passjoin-index" entry for the full account, and
 `crates/mnemonist-napi/src/multi_array.rs`'s module docs.
 
 ## Deliberate divergences

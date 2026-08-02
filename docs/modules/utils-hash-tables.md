@@ -7,7 +7,7 @@ Port: `crates/mnemonist-core/src/utils/hash_tables.rs`. No bridge, for the same 
 
 ---
 
-## Scope note: this is not a "unit" by DESIGN.md §1.1
+## Scope note: this is not a "unit"
 
 Same standing as `utils/binary-search`. `test/_utils.js` is the only caller, its require-closure
 needs `merge` and `iterables`, and a missing sibling makes the whole file fail with zero partial
@@ -107,7 +107,7 @@ unchanged and upstream's `assert.throws(..., /full/)` still matches.
 upstream bug-for-bug" does not extend to hanging the process — a fuzz campaign or a `cargo test`
 would never terminate. `get`/`has` return "absent" and `set` returns `TABLE_IS_FULL`, all three
 guarded before the probe starts. This is the one place the port is deliberately *more* terminating
-than the original, and it is stated here rather than left implicit (DESIGN.md §3.7).
+than the original, and it is stated here rather than left implicit.
 
 **D-46 — keys are `u32`, values are generic.** Upstream is untyped, but the sentinel comparison
 `c === 0` and its one real call site both assume integer keys held in a typed array, and the

@@ -10,7 +10,7 @@ Fuzz spec: `crates/difffuzz/src/modules/fibonacci_heap.rs`.
 `test/fibonacci-heap.js` `require`s only `../fibonacci-heap.js`; that file's own require-closure
 also needs `./utils/comparators.js` (79 LOC), but that file is already a ported unit — the
 `DEFAULT_COMPARATOR`/`reverseComparator` machinery this module reuses verbatim rather than
-reimplementing, per DESIGN.md's own T2-tier table (`heap` 576 · `fixed-reverse-heap` 209 ·
+reimplementing, per the T2-tier table (`heap` 576 · `fixed-reverse-heap` 209 ·
 `fibonacci-heap` 321). So this unit's own LOC is the 321 alone, and it opens no new capability tier:
 T2 (a comparator called from inside a Rust sift, and able to re-enter the very structure it is
 comparing) was already established by `heap`, and this module is the second and sharpest test of it.
@@ -94,7 +94,7 @@ Everything below is reachable through the public API and never exercised by `tes
 | `interleaved_push_and_pop_stays_sorted_and_merges_repeatedly` | 2 — a 400-step xorshift32-seeded interleaving of push and pop, checked against a reference `Vec` sort at every third step, plus a measured floor on total merges |
 | `push_favours_the_most_recently_pushed_node_on_a_tie` | 3 — pins that a tie really does take the `<=` branch (see "Gate 6" for the sharper way this rule is actually pinned) |
 | `a_comparator_may_re_enter_and_push` | 4 (growing) |
-| `a_comparator_that_clears_the_heap_mid_pop_does_not_panic` | 4 (resetting) — and pins NOTES.md B-220's exact `-1`, not merely "doesn't crash" |
+| `a_comparator_that_clears_the_heap_mid_pop_does_not_panic` | 4 (resetting) — and pins B-220's exact `-1`, below, not merely "doesn't crash" |
 | `a_pop_after_b_220s_negative_size_panics_matching_upstreams_null_dereference` (`#[should_panic]`) | the follow-on half of B-220: the *next* `pop` after the corruption |
 
 The shrinking (via a **nested** `pop`, gap 4's shrinking shape) is not a separate native test: it is
@@ -113,8 +113,7 @@ because it is unreachable, not because it was skipped.
 ## Bugs this found
 
 Three upstream defects, **B-220 through B-222**, verified either by tracing upstream's own
-deterministic control flow or by the differential fuzzer itself. Full write-ups in
-`planning/NOTES.md`; in brief:
+deterministic control flow or by the differential fuzzer itself. In brief:
 
 | ID | Defect | Found by |
 |---|---|---|
@@ -299,7 +298,7 @@ instrument this event's whole thesis says should catch what example-based tests 
 Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 2,000 samples/side.
 
 **`mixed-2e5`** — 200,000 mixed `push`/`pop`/`peek` (50/25/25), default numeric comparator, `size`
-200,000 (not this batch's usual 1e6 — see below for why). The load-bearing check is
+200,000 (not this group's usual 1e6 — see below for why). The load-bearing check is
 `FibonacciHeap::merges`, a public counter of `link` calls (two trees becoming one): measured
 directly at **195,920 merges over 50,000 `pop` calls** for this exact op mix — ~3.9 merges per
 `pop`, confirming `consolidate` does real, repeated multi-tree linking rather than degenerating to
@@ -313,7 +312,7 @@ directly at **195,920 merges over 50,000 `pop` calls** for this exact op mix —
 | structure-only RSS delta MB | **0.1** | 6.7 | |
 | startup ms | **0.6** | 15.3 | 26× (reported separately; not throughput) |
 
-**`size`/`ops` are 200,000, not this batch's usual 1e6 — sanity-checked before committing** (the
+**`size`/`ops` are 200,000, not this group's usual 1e6 — sanity-checked before committing** (the
 `bit_set.rs` `rank` lesson `methodology.md` documents). A 1e6-op pass was timed by hand first: the
 port completed in ~6 seconds, but upstream took **over 2 minutes**, and the profile was the
 give-away — 92 seconds of *system* time against 52 seconds of *user* time, the signature of heavy

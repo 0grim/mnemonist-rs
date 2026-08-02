@@ -9,8 +9,8 @@ Port: `crates/mnemonist-core/src/structures/linked_list.rs`. Bridge:
 
 A singly linked list over plain `{item, next}` nodes: `push`/`unshift`/`shift`,
 `first`/`last`/`peek`, `forEach`, `toArray`, `values`/`entries` (`Symbol.iterator` aliased to
-`values`), and a static `.from`. Chosen for this batch specifically because CLAUDE.md's brief
-named it: "linked-list has a cursor" — and it does, but not the shape any other module in this
+`values`), and a static `.from`. Chosen for this group specifically because of its cursor —
+"linked-list has a cursor" — and it does, but not the shape any other module in this
 port has. Read `crates/mnemonist-core/src/structures/linked_list.rs`'s own module docs first; this
 file summarises what they establish and adds the six required sections.
 
@@ -47,7 +47,7 @@ Characterising the shape of that coverage:
 
 Everything below is reachable through the public API and never exercised by the original suite.
 
-**Cursor liveness — the whole reason this unit was chosen for this batch**
+**Cursor liveness — the whole reason this unit was chosen for this group**
 
 1. **A `push` while a cursor sits on the (old) tail is never observed.** Upstream's `push` mutates
    the tail node's `.next` in place, and a cursor that has not yet advanced past it sees the
@@ -57,7 +57,7 @@ Everything below is reachable through the public API and never exercised by the 
    either way.
 3. **A cursor that has reported `{done: true}` is never revisited after the list grows.** Nothing
    confirms it stays done rather than resuming (contrast `queue.js`, whose cursor *does* resume —
-   D-08/D-09 — this module's does not, and nothing here says so).
+   D-09 — this module's does not, and nothing here says so).
 4. **`clear()` under an open cursor is never done.** `clear` never touches any node object, so an
    open cursor is entirely unaffected by it; untested.
 
@@ -135,7 +135,7 @@ Silent and self-healing, exactly like B-40: the next `push` or `unshift` on an e
 `!this.head` branch and resets `tail` unconditionally, so the staleness is only observable in the
 narrow window between "shifted to empty" and "the next insert." Reproduced rather than corrected:
 `LinkedList::shift` deliberately does not touch `tail`, and `LinkedList::last` reads it verbatim
-with no `size == 0` guard upstream's own `last` does not have either. Recorded in NOTES.md as
+with no `size == 0` guard upstream's own `last` does not have either. Recorded here as
 **B-241**.
 
 **Two defects in the port, both found by `linked-list`'s own first fuzz campaign, both fixed

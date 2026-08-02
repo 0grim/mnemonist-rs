@@ -4,7 +4,7 @@ Upstream: `bloom-filter.js` (186 LOC) + `utils/murmurhash3.js` (87 LOC) ·
 `test/bloom-filter.js` (88 lines, 18 assertions)
 
 Require-closure: `bloom-filter.js` → `utils/murmurhash3.js` + `obliterator/foreach`. The unit is
-therefore **two** upstream files, per DESIGN.md §1.1; `obliterator/foreach` is the third member and
+therefore **two** upstream files; `obliterator/foreach` is the third member and
 was already ported to the boundary (`crates/mnemonist-napi/src/foreach.rs`), which is where a
 JavaScript-value coercion belongs. It is reused here, not reimplemented.
 
@@ -233,7 +233,7 @@ if the grammar can express a non-string item. `null` and `undefined` are exclude
 throws a `TypeError` there and the oracle compares thrown messages verbatim, which would turn an
 engine-wording difference into a false divergence.
 
-`errorRate` is held strictly below 1, per DESIGN.md §3.7's "state your exclusions": at or above it
+`errorRate` is held strictly below 1, stated here as an explicit exclusion: at or above it
 the sizing goes negative and a large enough capacity throws from the *constructor*, which reaches
 the oracle's `init` and is apparatus failure by protocol. That is B-99, and it is pinned by a native
 test instead. The zero-hash-function region (B-97) is **not** excluded and is reached routinely.

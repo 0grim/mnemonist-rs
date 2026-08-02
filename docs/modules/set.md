@@ -132,7 +132,7 @@ campaigns, zero divergences.
 **None in upstream.** `set.js` is 356 lines of straightforward code with no shared mutable state, no
 typed arrays, no index arithmetic and no re-entrancy, and reading it statement by statement turned
 up nothing to file. That is worth recording as an outcome rather than omitting: two of the three
-units this agent read closely produced verified upstream bugs (B-80 and B-81 in `sort`), and this
+units read closely this way produced verified upstream bugs (B-80 and B-81 in `sort`), and this
 one genuinely does not.
 
 Three things that *look* like bugs and are not, each checked against Node 24.18.1:
@@ -189,7 +189,7 @@ a port keyed on anything weaker would do.
 ### D-87 — the variadic pair goes through an array, and the arity check stays in core
 
 napi has no variadic parameter. `intersection` and `union` take a `Vec` and `tests/bridge/set.js`
-spreads into it — arity glue in the shim, DESIGN.md §2.3's Problem 2, and the same role
+spreads into it — arity glue in the shim, and the same role
 `crate::statics` plays for `X.of`. The `needs at least two arguments` check is in
 `mnemonist-core`, so upstream's threshold and its exact message live in one place and the shim
 forwards whatever it was handed, including nothing.
@@ -303,7 +303,7 @@ overlap), 50 passes, xorshift32 seed 42:
 | structure-only RSS delta MB | **0.1** | 5.7 | |
 | startup ms | **0.6** | 16.6 | 28× (reported separately; not throughput) |
 
-**No regressions**, and the widest p99 margin in this batch — a fresh native JS `Set` per pass
+**No regressions**, and the widest p99 margin in this group — a fresh native JS `Set` per pass
 (`new Set()` called eagerly for both `A` and `B`, then again inside `union` itself for the result)
 is a plausible, but unconfirmed, source of upstream's heavier tail: each `union` call upstream makes
 constructs one `Set` and does one `.add` per member visited, all through general-purpose `Set`

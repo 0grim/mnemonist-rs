@@ -11,9 +11,9 @@ Shim: `tests/bridge/fixed-reverse-heap.js`.
 
 **Is this the same unit as `heap`? No — it is a separate unit whose closure is a superset.**
 `test/fixed-reverse-heap.js` requires only `../fixed-reverse-heap.js`, which requires `./heap.js`
-and `./utils/comparators.js`. Two test files means two units under DESIGN.md §1.1; what they share
-is that this one cannot land until `heap` has. The practical consequence is the one the roadmap
-cares about: `multi-set` needs `fixed-reverse-heap`, and `fixed-reverse-heap` needs `heap`, so the
+and `./utils/comparators.js`. Two test files means two units; what they share
+is that this one cannot land until `heap` has. The practical consequence is straightforward:
+`multi-set` needs `fixed-reverse-heap`, and `fixed-reverse-heap` needs `heap`, so the
 655 LOC of the `heap` unit unblocks 209 here and 361 test lines later.
 
 A bounded "keep the best *k*" heap. It is *reverse* because it stores its elements under
@@ -122,7 +122,7 @@ neither), and gap 11 *in the fuzzer*, for the reason in the Fuzz section.
 ## Bugs this found
 
 Two of the ten in the `B-70`–`B-79` block are this module's; both are verified against
-Node 24.18.1 and pinned by `tests/boundary/heap.js`. Full write-ups in `planning/NOTES.md`.
+Node 24.18.1 and pinned by `tests/boundary/heap.js`.
 
 **B-73 — the capacity guard is `&&` where `||` was meant.**
 

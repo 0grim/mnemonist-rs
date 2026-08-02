@@ -7,7 +7,7 @@ Port: `crates/mnemonist-core/src/structures/hashed_array_tree.rs`.
 Bridge: `crates/mnemonist-napi/src/hashed_array_tree.rs`.
 Shim: `tests/bridge/hashed-array-tree.js`.
 
-Chosen first in Wave 1 because it needs **no new primitive** — `PointerVec` and nothing else — so it
+Chosen first among this group because it needs **no new primitive** — `PointerVec` and nothing else — so it
 tests the pipeline rather than the machinery. It turned out to be the module with the most
 upstream defects per line so far: two, both structural, both invisible to a test file that never
 leaves the first block.

@@ -9,7 +9,7 @@ Port: `crates/mnemonist-core/src/structures/multi_map.rs` — `MultiMap<K, V>`, 
 `crates/difffuzz/src/modules/multi_map.rs`.
 
 `test/multi-map.js` also `require`s `vector.js` for its one "should work with vectors" case, so
-under DESIGN.md §1.1 that dependency sits in this unit's require-closure — already ported and
+that dependency sits in this unit's require-closure — already ported and
 already in `tests/bridge/vector.js`, so nothing extra was needed here beyond knowing it was there.
 
 ---

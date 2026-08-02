@@ -238,8 +238,8 @@ coverage is, and it is why `offset` and `items` are both in the fuzzer's observa
 
 ### Bench
 
-**Not run.** Benchmarks need an idle machine and three agents were running concurrently; gate 10 is
-batched into a quiet pass (DESIGN.md §7.3). `queue` is ready for it, and its interesting workload
+**Not run.** Benchmarks need an idle machine, and this machine was under contention at the time;
+gate 10 is batched into a quiet pass. `queue` is ready for it, and its interesting workload
 is not the same as `stack`'s: the compaction makes enqueue/dequeue churn amortised rather than
 flat, so a workload that dequeues in bursts is worth having alongside a balanced one. Until that
 pass lands, this unit is **not** in `tests/scope.txt` and does not claim to be done.
@@ -289,7 +289,7 @@ seed 42 — `stack`'s exact shape with FIFO names, which its own bench doc expla
 | structure-only RSS delta MB | **1.3** | 9.7 | |
 | startup ms | **0.6** | 16.1 | 27× (reported separately; not throughput) |
 
-**No regressions.** The p99 gap here (12.4×) is the widest of any module in this batch, and it is
+**No regressions.** The p99 gap here (12.4×) is the widest of any module in this group, and it is
 plausibly the *compaction* upstream's queue performs — `this.items = this.items.slice(this.offset)`
 rebuilds the whole array once the dead prefix reaches half its length, which is a real allocation
 and copy on the JS side landing inside whichever 1000-op batch it falls in. The port's own

@@ -103,9 +103,6 @@ Reported plainly, per this project's "set — no upstream bugs, and that is the 
 | D-409 | **`dimensions == 0` fails differently on each side** (panic here, `NaN`-cascade upstream) rather than being reconciled. | No test constructs one; there is no real "right answer" in upstream's own silent-garbage output to reproduce, so this is disclosed as a known gap instead of papered over with an invented guard. |
 | D-410 | **`axes`/`labels`/`this.visited` are not exposed by the bridge.** | No test reads any of the three; `axes`/`labels` are reconstructable from the constructor arguments a caller already has, and `visited` is a diagnostic aside the fuzz harness measures a different way instead (see Fuzz, below). |
 
-Full detail, `Status`/`Category`/`Verify` fields, for every entry: `planning/DECISIONS-CANDIDATES.md`
-(D-406 through D-410; D-400 through D-405 belong to `vp-tree`, above).
-
 ## Fuzz + bench
 
 ### Fuzz
@@ -125,8 +122,8 @@ module=kd-tree seed=7   cases=6462  ops=650306  wall=60.0s  divergences=0
   alternate entry point: `static_factory()` names `"from"`, and `fuzz/oracle.js`'s `init` case
   grew an additive `staticFactory` field (`Ctor[name](...)` instead of `new Ctor(...)`) —
   optional, defaulted to the prior behaviour for every other module.
-* **A dense 12×12 integer grid, not a sparse or wide-ranging one.** CLAUDE.md names the sharp risk
-  for this module by name — "queries whose nearest neighbor lies across a splitting plane from the
+* **A dense 12×12 integer grid, not a sparse or wide-ranging one.** The sharp risk for this module
+  is named directly — "queries whose nearest neighbor lies across a splitting plane from the
   query point ... precisely the case a naive implementation gets wrong" — and a dense grid is the
   direct answer: many points share a coordinate on whichever axis the tree splits on (which is
   what puts a query close to a plane at all), and many points sit at genuinely equal squared
@@ -147,9 +144,8 @@ single-axis split; 100/500 had a genuine distance tie
 ```
 
 191 of 500 queries have a true nearest neighbor that a "just trust the first split" implementation
-would miss entirely; 100 of 500 have more than one point at the exact minimum distance. Both of the
-risks CLAUDE.md names for this module are measured occurring directly, not inferred from op
-weights.
+would miss entirely; 100 of 500 have more than one point at the exact minimum distance. Both named
+risks for this module are measured occurring directly, not inferred from op weights.
 
 ### Falsification of the port (gate 6)
 
@@ -165,8 +161,9 @@ tree's own pinned `pivots = [5, 1, 0, 3, 2, 4]`/`lefts = [2, 3, 0, 0, 6, 0]`/`ri
 0, 0]`, the root's primary descent for query `[8, 5]` goes directly to node 4 (`'two'` at `(9,
 6)`), a leaf, on the very first recursive call — before the disabled branch is ever consulted. The
 assertion is not incapable of expressing the defect (contrast the three green falsifications
-`docs/METHODOLOGY.md` §5 catalogues, none of which are this); this specific query, against this
-specific six-point tree, simply does not exercise the branch at all. A first attempt at a stronger
+catalogued under `docs/METHODOLOGY.md`'s "Gate 6 — falsification" heading, none of which are
+this); this specific query, against this specific six-point tree, simply does not exercise the
+branch at all. A first attempt at a stronger
 native regression test (`finds_neighbors_across_the_splitting_plane`, a 64-point diagonal line)
 *also* stayed green under the same sabotage — investigated to the same root cause: every point's
 `x` equalling its `y` lets the primary "trust the split" descent converge on the right answer by
@@ -214,9 +211,9 @@ outcomes of the cross-plane backtrack for real 2-D data, so no second radius par
 | structure-only RSS delta MB | **0.2** | 6.0 | |
 | startup ms | **0.6** | 15.3 | 26× (reported separately; not throughput) |
 
-**A real, measured loss on p50/p99/min — this batch's sharpest.** Isolated with a standalone probe
-(200,000 calls of each method alone, same tree, both sides): `nearest_neighbor` alone is 331 ns/call
-here against upstream's 620 ns (the port wins, consistent with the rest of this batch), but
+**A real, measured loss on p50/p99/min — the sharpest among this group of modules.** Isolated with
+a standalone probe (200,000 calls of each method alone, same tree, both sides): `nearest_neighbor` alone is 331 ns/call
+here against upstream's 620 ns (the port wins, consistent with the rest of this group), but
 `k_nearest_neighbors` alone is 6.6 µs/call here against upstream's 2.1 µs — a genuine reversal, and
 disproportionate: this port's own k-NN path costs **20×** its own `nearest_neighbor`, where
 upstream's costs only **3.4×** its own. `recurse_knn` heap-allocates a fresh 3-element `Vec<f64>`

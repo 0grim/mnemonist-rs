@@ -79,9 +79,9 @@ children (a typed-array write past its end is a silent no-op, not a throw); `get
 reachable only through that node then silently returns `undefined`. The 6th distinct key walks
 *through* the corrupted node and throws upstream's own
 `TypeError: Cannot read properties of undefined (reading 'length')`. Full transcript and mechanism
-in `planning/NOTES.md`'s B-261 entry and this port's own module doc comment, part 1.
+in this port's own module doc comment, part 1.
 
-Reproduced as `Error::Corrupted`, with upstream's own message text (D-246, DECISIONS-CANDIDATES.md).
+Reproduced as `Error::Corrupted`, with upstream's own message text (D-246, below).
 Measured, not assumed, that this campaign actually reaches it:
 `pool_self_check_capacity_is_actually_exceeded_and_hits_the_crash` samples 500 real constructed
 instances driven by real generated programs and asserts both "size exceeded capacity" and
@@ -101,13 +101,11 @@ the constructor sets `this.root = 0`; `clear` sets `this.root = null`. No method
 depends on which — every internal read of `root` treats `null` exactly as `0` would, through the
 same fallthrough that resolves any non-numeric pointer to "not found" — so this is observable only
 by reading `root` directly, which no original test does but this unit's own fuzz spec's `root`
-observation does. Reproduced via a `root_is_null` flag; full account in `planning/NOTES.md`'s B-260
-entry.
+observation does. Reproduced via a `root_is_null` flag, as detailed above.
 
 ### Two port defects, not upstream's
 
-Found by this unit's own differential fuzzer and fixed before any campaign was logged. Full account
-in `planning/NOTES.md`'s "Two port defects found by fuzzing" entry for this pair of units. Summary:
+Found by this unit's own differential fuzzer and fixed before any campaign was logged. Summary:
 the very first smoke run crashed the whole process (not merely reported a divergence) because `set`
 checked `self.keys.is_empty()` instead of `self.size == 0` to detect an empty tree — after a `clear`
 (which resets `size` but never truncates `keys`/`values`, matching upstream exactly), the next `set`
@@ -119,7 +117,7 @@ overwrites low indices post-`clear` instead of always pushing.
 
 * **D-245**, inherited from `critbit-tree-map`: keys truncated to bytes at the bridge. Identical
   reasoning; see that file's docs.
-* **D-246** (DECISIONS-CANDIDATES.md): B-261's crash is a Rust `Result::Err` carrying upstream's own
+* **D-246**: B-261's crash is a Rust `Result::Err` carrying upstream's own
   message text, not a panic modelling JavaScript's `NaN`-as-array-index cascade. `mnemonist-core`
   forbids `unsafe_code` and has no analogue of a typed-array read past its end silently returning
   `undefined`; a `panic!` would abort the whole Node process at the FFI boundary where upstream
@@ -232,13 +230,13 @@ crash this module's own docs describe. Same zero-padded, deep-critical-bit key s
 | startup ms | **0.6** | 15.4 | 26× (reported separately; not throughput) |
 
 **One real, reproducible loss: p50, ~1.06–1.08× across two independent runs.** Re-run twice rather
-than published from a single pass — DESIGN.md §5.1's own point about a clean-looking result
-inviting the question of what was left out applies equally to a *loss* that might be noise, and
+than published from a single pass — a clean-looking result invites the question of what was left
+out just as much as a *loss* that might be noise, and
 this one held in both passes rather than appearing once. **Cause: unconfirmed.** A plausible but
 unverified explanation is `BoundedSlots`' `Option`-returning bounds check on every internal-node
 read (`lefts`/`rights`), which upstream's raw typed-array indexing does not pay for — but this has
 not been checked against a metric that would falsify it (e.g. isolating that one accessor), so it
-is labelled unconfirmed rather than asserted, per CLAUDE.md's rule against overclaiming performance
+is labelled unconfirmed rather than asserted, per this port's rule against overclaiming performance
 causation. p99 and every RSS/startup figure still favour the port; the structure-only RSS row is
 the one place upstream's fixed typed arrays are smaller than the port's own pre-allocated arenas at
 this size. Checksum `15858409098`, identical on both sides — same ops, same answers, including

@@ -24,7 +24,7 @@ query only has to generate its own deletes and look them up directly. Bridge:
   order are pinned. Every returned `distance` is also cross-checked against the real
   `damerau-levenshtein` npm package.
 * **A wider `maxDistance` (4, not the default 2)** finds more, and different, suggestions —
-  the exact input CLAUDE.md's guidance calls out as needed to exercise the far branches at all.
+  the exact input needed to exercise the far branches at all.
 * **All three `verbosity` levels** (`0`, `1`, `2`) against the same data, checking that a lower
   verbosity returns a strict prefix of a higher one's suggestions for the same query.
 * **`clear()`** resets `size` to `0`.
@@ -92,7 +92,6 @@ the dictionary). Because most dictionary entries in `test/symspell.js`'s own ten
 cross-promoted to full objects by the data's own overlapping delete-forms, the original suite never
 reached an unpromoted entry at query time — the gap in "What upstream does NOT test," directly. Fixed
 by `Entry::suggestions()`, which reproduces the same local promotion for both entry shapes. See
-`planning/NOTES.md`'s "multi-array, symspell, passjoin-index" entry for the full account and
 `symspell.rs`'s `a_compact_dictionary_entry_still_contributes_its_suggestion`.
 
 A second, smaller defect caught during a `cargo clippy` pass rather than by fuzzing: an earlier draft
@@ -123,7 +122,7 @@ caught. Reproduce with e.g. `target/release/difffuzz --module symspell --seed 42
 * **Word pool:** fourteen words, chosen (not randomly generated) so every one sits at
   Damerau-Levenshtein distance 1-2 of at least one other (`"hello"/"mello"/"jello"/"hell"/"hallo"`,
   `"world"/"word"/"ward"`, `"john"/"joan"`, …), plus one deliberately distant word (`"zzz"`) so an
-  empty-result search is reachable too — the controlled-distance construction CLAUDE.md's guidance
+  empty-result search is reachable too — the controlled-distance construction this fuzz grammar
   requires, not random strings that would all be far apart.
 * **Constructor:** `maxDistance` uniform over `1..=4` (the same range `test/symspell.js` itself
   uses, `2` default and `4` explicit) and `verbosity` uniform over `0..=2`.

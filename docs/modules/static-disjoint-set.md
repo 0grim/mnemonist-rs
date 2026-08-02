@@ -9,7 +9,7 @@ Port: `crates/mnemonist-core/src/structures/static_disjoint_set.rs`,
 Bridge: `crates/mnemonist-napi/src/static_disjoint_set.rs`.
 
 This is the smallest unit in the repo and the one with the largest coverage gap. That combination
-is why it was chosen to shake out the fuzz and bench harnesses (DESIGN.md §7.2 step 3).
+is why it was chosen to shake out the fuzz and bench harnesses first.
 
 ---
 
@@ -56,7 +56,7 @@ and never exercised by the original suite.
    suite would stay green.
 3. **The `xRoot === yRoot` early return in `union` is never taken.** All six unions merge distinct
    sets. This is not a hypothetical: it is the exact branch the first falsification attempt
-   sabotaged, which is why gate 6 stayed green and proved nothing (DESIGN.md §1.1).
+   sabotaged, which is why gate 6 stayed green and proved nothing.
 4. **Self-union `union(x, x)` is never performed.**
 5. **`dimension` is asserted once, at the end.** That it does *not* decrement on a no-op union is
    never checked — which follows from (3).
@@ -142,7 +142,7 @@ candidate`. Upstream reads `this.ranks[x]` / `this.ranks[y]` where union-by-rank
 `this.ranks[xRoot]` / `this.ranks[yRoot]`, while incrementing `this.ranks[xRoot]`. Non-root ranks
 are therefore never maintained, stay 0 forever, and the equal-ranks branch fires on nearly every
 union — disabling the heuristic and degrading `find` towards O(n). Results stay correct; the
-elected root does not. See `planning/NOTES.md` B-7.
+elected root does not.
 
 **D-30 — the second-order consequence, which is the more interesting half.** Because B-7 makes the
 equal-ranks branch near-universal, one root's rank is bumped once per union, far past the
@@ -206,8 +206,9 @@ repeated corpus programs were short and cheap; the coverage rose by two orders o
 
 It was found while porting `sparse-set`, whose corpus did not exist yet — so instead of quietly
 repeating two programs the driver spun visibly and a 20-second run reported 32 cases. This belongs
-on the "confident green signal that was empty" list in `planning/NOTES.md`: the number was large,
-the run took the full 120 seconds, and nothing looked wrong.
+among the confident-but-empty green signals documented in `docs/METHODOLOGY.md`'s "What these
+instruments cannot see" section: the number was large, the run took the full 120 seconds, and
+nothing looked wrong.
 
 Throughput is ~11,700 op/s including a full `mapping()` + `compile()` comparison after every single
 op, which is the persistent-oracle decision (D-23) paying off: at one `node` spawn per op the same
@@ -300,7 +301,7 @@ revisions, which has not been run. It is recorded as a hypothesis, not a finding
 102.1 in one run and 134.9 in another on the same host — a 32% swing from ambient load alone, and
 a mid-run measurement taken while the machine was saturated inflated *both* sides by 2–3×. Absolute
 ns/op are therefore not comparable across runs; only the within-run A/B comparison is sound, which
-is precisely what §5.2's interleaving requirement protects. The 275 → 43.6 improvement is far
+is precisely what the interleaving requirement protects. The 275 → 43.6 improvement is far
 outside that noise band, but the smaller ratios in these tables should be read as "roughly 2×",
 not as three significant figures.
 

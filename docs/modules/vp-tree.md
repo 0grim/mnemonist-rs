@@ -107,8 +107,8 @@ methods, are exactly the kind of code most likely to hide an off-by-one. Neither
 during the port, the two upstream-pinned construction fixtures (both matched byte-for-byte on the
 first attempt), 90-plus seconds of differential fuzzing at two seeds (1.37M operations total, zero
 divergences), nor the gate 6 falsification below surfaced a genuine defect. Reported plainly, per
-this project's own precedent (`planning/NOTES.md`'s "set — no upstream bugs, and that is the
-finding").
+this project's own precedent (see `docs/modules/set.md`, which reports the identical outcome for
+that module).
 
 ## Deliberate divergences
 
@@ -117,12 +117,9 @@ finding").
 | D-400 | **Distance is passed per call, never stored on the struct.** | Same reasoning as `bk_tree.rs`: the JS callback belongs at the boundary. |
 | D-401 | **An empty tree's query returns no results** rather than crashing the caller's own distance function on an `undefined` vantage point. | No test builds an empty tree and queries it; the crash this would reproduce lives entirely in a caller-supplied metric, with no single "correct" answer to pick. |
 | D-402 | **`nearestNeighbors(0, query)` returns no results** rather than reading `undefined.distance`. | Untested; the crash is `mnemonist`'s own arithmetic, not a caller's. |
-| D-403 | **A reentrant distance function sees independent state, not upstream's shared `this.heap`/`this.D`.** | This port's queries hold no tree-wide mutable state to protect (see D-404), so a reentrant call is simply a second, correct query rather than an interleaved, corrupted one — *more* correct than upstream, and disclosed as CLAUDE.md requires rather than left implicit. |
+| D-403 | **A reentrant distance function sees independent state, not upstream's shared `this.heap`/`this.D`.** | This port's queries hold no tree-wide mutable state to protect (see D-404), so a reentrant call is simply a second, correct query rather than an interleaved, corrupted one — *more* correct than upstream, and disclosed rather than left implicit. |
 | D-404 | **The napi bridge holds no `RefCell` at all.** | Unlike `bk_tree.rs`, no method ever needs exclusive access post-construction — stated to make D-403's mechanism legible. |
 | D-405 | **`this.D` is not exposed by the bridge.** | No test reads it; the same information (whether a query pruned anything) is measured directly in the fuzz harness instead by wrapping the distance function with a counter. |
-
-Full detail, `Status`/`Category`/`Verify` fields, for every entry: `planning/DECISIONS-CANDIDATES.md`
-(D-400 through D-405; D-406 onward belong to `kd-tree`, below).
 
 ## Fuzz + bench
 
@@ -139,7 +136,7 @@ module=vp-tree seed=7   cases=5532  ops=552919  wall=60.0s  divergences=0
 * **Op alphabet:** `nearestNeighbors(k, query)` (weight 5) · `neighbors(radius, query)` (5).
 * **Items and queries are integers in `0..24`**, with `distance(a, b) = |a - b|` — reusing
   `bk-tree`'s own `bkAbsDiff` oracle factory rather than adding a near-duplicate. This is the
-  answer to the risk CLAUDE.md names for this module by name: a wide item range would make every
+  answer to the sharp risk named for this module: a wide item range would make every
   distance from a vantage point distinct, so the median split would never have to choose between
   two *equal* distances, and the "genuine near-ties" this module's brief demands would never occur.
   With up to 80 items packed into 24 distinct values, repeated collisions on the same distance from

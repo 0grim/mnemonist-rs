@@ -14,7 +14,7 @@ Bridge: `crates/mnemonist-napi/src/lru_cache.rs`, `lru_cache_with_delete.rs`, `l
 port's own shape.
 
 `test/lru-cache.js` `require`s all four upstream files and runs one `makeTests` suite against each
-of them via a shared closure, so under DESIGN.md §1.1 this is **one unit**, and a missing sibling —
+of them via a shared closure, so this is **one unit**, and a missing sibling —
 a bridge that only ported `LRUCache` — would fail the whole file with zero partial credit. This is
 also the largest single unit ported so far: four source files, one 497-line test file, four bridge
 crates, one fuzz spec covering all four.
@@ -191,7 +191,7 @@ reports every eviction correctly (it has no notion of JS truthiness at all — a
 falsy), so the bug is reproduced at the bridge, in `is_js_truthy`
 (`crates/mnemonist-napi/src/lru_cache.rs`), which all four `setpop` methods now gate the `Evicted`
 arm on. **A port that reported every eviction, as the pre-fix bridge did, is more correct than
-upstream and is therefore a defect** per CLAUDE.md's bug-for-bug mandate. `test/lru-cache.js`'s
+upstream and is therefore a defect** per this port's bug-for-bug fidelity rule. `test/lru-cache.js`'s
 three `setpop` blocks all evict or overwrite a non-empty string key, so gate 4 never touched this
 path; the fuzz grammar's key pool includes four JS-falsy raw keys (`Int(0)`, `Bool(false)`, `Null`,
 `Undefined`) out of ten; it found the divergence on the third generated case.
@@ -227,8 +227,8 @@ bound had not yet reached a pointer, when a callback (or an interleaved op, for 
 deleted exactly that pointer, hit the walk's own `.expect("a pointer reachable from head within
 size steps is always live")` — which the nulling had just made false — and **panicked**. Found by
 reading, before any fuzz campaign for this unit had run at all: the shape (a hole-bearing
-`-with-delete` variant, a walk left open across a mutation) was exactly what CLAUDE.md's brief for
-this unit named as the interesting territory, so it was checked directly with a scratch Rust probe.
+`-with-delete` variant, a walk left open across a mutation) was exactly the interesting territory
+named for this unit, so it was checked directly with a scratch Rust probe.
 Confirmed to panic; fixed by not nulling either slot in `unlink`, and by changing `remove` to
 `.clone()` the value instead of `.take()`-ing it (which independently zeroed it) — see
 `LruCache::unlink`'s and `LruCache::remove`'s doc comments for the reasoning in full. Pinned by three
@@ -246,8 +246,8 @@ own loop body**, one statement *before* `pointer = forward[pointer]`. Reusing th
 walk for `forEach` reproduced the *iterators'* timing for a method whose real timing is the
 opposite. Found by the differential fuzzer's very first campaign against this grammar (0 logged
 campaigns in `fuzz/log.txt` before the fix; the eight campaigns recorded in "Fuzz + bench" all
-post-date it): a `$forEach("set", "arg1,arg0", ...)` program — the very shape CLAUDE.md's brief
-called out ("interleaved with mutation") — disagreed on the third callback invocation, port seeing
+post-date it): a `$forEach("set", "arg1,arg0", ...)` program — the very shape named as interesting
+territory ("interleaved with mutation") — disagreed on the third callback invocation, port seeing
 `[undefined, 1]` where upstream re-saw `["w", true]`. Fixed by `ForEachWalk`
 (`mnemonist_core::structures::lru_cache`), which splits "read the current position" from "advance,
 reading `forward` live" into two calls the caller controls, so the caller's own mutation always runs
@@ -295,7 +295,7 @@ e.g. `target/release/difffuzz --module lru-cache-with-delete --seed 42 --cases 5
   them with eviction is where B-140's sibling defect and the two port defects above were found.
 * **Constructor alphabet:** capacity `1..=6` and nothing else — deliberately small relative to the
   op-count ceiling (`program_len` widened to `1..300`), so a generated program cycles the ring many
-  times over at every capacity in range. DESIGN.md's own warning is explicit: a campaign whose
+  times over at every capacity in range. The warning here is explicit: a campaign whose
   capacity is large relative to its op count proves only that a map stores things.
 * **Key pool:** ten keys mixing `Str`, `Int`, `Bool`, `Null` and `Undefined` (mirroring `JsKey`'s
   primitive shapes), including the one collision unique to this family — `Int(0)` and `Str("0")` are

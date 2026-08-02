@@ -81,7 +81,7 @@ Characterising the shape of that coverage:
 
 15. **A cursor is never re-drained** (D-06), and **`[...deque]` is never used** except through one
     `for…of` (D-07).
-16. **Mutation during iteration is never performed** (D-08), in either direction — neither an
+16. **Mutation during iteration is never performed**, in either direction — neither an
     element overwritten ahead of the cursor nor a `shift` moving the deque's start under it.
 17. **`values()` on an empty or cleared deque is never called.**
 18. **`entries()` is called once, on a fresh deque**, so its own `j` counter is never observed

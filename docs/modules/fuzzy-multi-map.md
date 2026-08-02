@@ -195,7 +195,7 @@ Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 10,0
 **`mixed-1e6`** — 1e6 mixed `set`/`get`/`has` (50/25/25), `ContainerKind::List` (upstream's default
 `Array` container), same `hash(x) = x >> 4` as `fuzzy-map` on both sides, over a 200,000 raw-key
 domain (chosen so the ~12,500-key post-hash domain reaches a representative values-per-key figure —
-**~40 values per key on average by the run's end**, this batch's other load-bearing multi-container
+**~40 values per key on average by the run's end**, this group's other load-bearing multi-container
 parameter), xorshift32 seed 42:
 
 | metric | port | upstream | |
