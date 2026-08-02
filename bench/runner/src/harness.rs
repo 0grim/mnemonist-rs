@@ -290,6 +290,13 @@ pub const MODULES: &[ModuleEntry] = &[
         drain: None,
         structure: crate::kd_tree::build_structure,
     },
+    ModuleEntry {
+        name: "static-interval-tree",
+        kinds: &["mixed"],
+        mixed: Some(crate::static_interval_tree::run_mixed),
+        drain: None,
+        structure: crate::static_interval_tree::build_structure,
+    },
 ];
 
 pub fn find(name: &str) -> Option<&'static ModuleEntry> {

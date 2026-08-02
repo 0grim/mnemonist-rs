@@ -71,6 +71,7 @@ mod bk_tree;
 mod critbit_tree_map;
 mod fixed_critbit_tree_map;
 mod kd_tree;
+mod static_interval_tree;
 mod trie_map;
 mod vp_tree;
 
