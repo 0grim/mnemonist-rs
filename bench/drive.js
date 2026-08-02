@@ -583,6 +583,18 @@ const WORKLOADS = {
       name: 'mixed-2e5', kind: 'mixed', size: 200000, ops: 1000000,
       label: 'mixed set/get/has (50/25/25) over zero-padded decimal keys, capacity reached and held'
     }
+  ],
+
+  // `bk-tree`: `size` 300,000 against 1e6 ops, found by sanity-checking two
+  // failure modes first (a too-small domain that goes superlinear via
+  // duplicate-chain growth, a too-large one that collapses the tree to
+  // depth 1) -- see bench/runner/src/bk_tree.rs's own module docs for the
+  // measurements that ruled each out.
+  'bk-tree': [
+    {
+      name: 'mixed-3e5', kind: 'mixed', size: 300000, ops: 1000000,
+      label: 'mixed add/search-small-radius/search-large-radius (50/25/25), metric |a - b|, over a 300,000-item domain'
+    }
   ]
 };
 

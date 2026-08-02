@@ -147,5 +147,27 @@ test also depends on.
 
 ### Bench
 
-**Not run.** Gate 10 needs an idle machine and is batched into a separate quiet pass (§7.3); this
-unit is deliberately not in `tests/scope.txt` until then. Gates 1–9 are green.
+`bench/results.json` → `modules["bk-tree"]`. Methodology: `bench/methodology.md`.
+Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 10,000 samples/side.
+
+**`mixed-3e5`** — 1e6 mixed `add`/`search` (50/25/25) over a 300,000-item domain, metric
+`distance(a, b) = |a - b|` rather than upstream's own Levenshtein: a BK-tree is metric-agnostic, and
+a numeric metric both sides compute identically carries zero risk of a Levenshtein port drifting
+apart in an edge case (see `bench/runner/src/bk_tree.rs`'s own module docs). The load-bearing split
+is the search radius: 25% of ops search at a small radius that mostly prunes, 25% at a larger radius
+that mostly descends — both exercised on the same tree built by the `add` stream, not two
+benchmarks glued together. Domain size was chosen by ruling out two failure modes first: 2,000 (too
+small — duplicate `add`s chain onto each other and both `add`/`search` degrade superlinearly, a
+200,000-op run took 21 seconds) and 1,000,000 (too large — the tree collapses to depth 1, so
+`search`'s recursive descent never actually runs). xorshift32 seed 42:
+
+| metric | port | upstream | |
+|---|---|---|---|
+| p50 ns/op | **3531.49** | 6855.01 | 1.9× faster |
+| p99 ns/op | **8870.66** | 17500.31 | 2.0× faster |
+| RSS delta MB | **106.3** | 522.9 | |
+| structure-only RSS delta MB | **0.1** | 6.9 | |
+| startup ms | **0.6** | 15.0 | 26× (reported separately; not throughput) |
+
+**No regressions.** Checksum `9589167`, identical on both sides — both trees pruned and descended
+at the same points for the same queries.

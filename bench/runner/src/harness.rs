@@ -269,6 +269,13 @@ pub const MODULES: &[ModuleEntry] = &[
         drain: None,
         structure: crate::fixed_critbit_tree_map::build_structure,
     },
+    ModuleEntry {
+        name: "bk-tree",
+        kinds: &["mixed"],
+        mixed: Some(crate::bk_tree::run_mixed),
+        drain: None,
+        structure: crate::bk_tree::build_structure,
+    },
 ];
 
 pub fn find(name: &str) -> Option<&'static ModuleEntry> {

@@ -23,7 +23,7 @@
   },
   "baseline_rss_mb": {
     "node": 45.7,
-    "rust": 4.9
+    "rust": 4.8
   },
   "modules": {
     "static-disjoint-set": {
@@ -1162,7 +1162,38 @@
           ]
         }
       }
+    },
+    "bk-tree": {
+      "workloads": {
+        "mixed-3e5": {
+          "workload": "1e6 mixed add/search-small-radius/search-large-radius (50/25/25), metric |a - b|, over a 300,000-item domain over size 300000, xorshift32 seed 42, ops materialised before the timed region",
+          "checksum": 9589167,
+          "checksum_note": "identical on both sides: same ops, same answers, upstream bugs included",
+          "structure_note": "structure_rss_delta_mb constructs size 300000 and nothing else, isolating the structure from the op arrays both sides materialise",
+          "port": {
+            "p50_ns_per_op": 3531.491,
+            "p99_ns_per_op": 8870.655,
+            "min_ns_per_op": 114.778,
+            "rss_total_mb": 111.1,
+            "rss_delta_mb": 106.3,
+            "structure_rss_delta_mb": 0.1,
+            "startup_ms": 0.6,
+            "samples": 10000
+          },
+          "original": {
+            "p50_ns_per_op": 6855.006,
+            "p99_ns_per_op": 17500.313,
+            "min_ns_per_op": 280.281,
+            "rss_total_mb": 568.6,
+            "rss_delta_mb": 522.9,
+            "structure_rss_delta_mb": 6.9,
+            "startup_ms": 15,
+            "samples": 10000
+          },
+          "regressions": []
+        }
+      }
     }
   },
-  "generated_utc": "2026-08-02T02:19:25.333Z"
+  "generated_utc": "2026-08-02T02:56:45.479Z"
 }

@@ -99,7 +99,8 @@ const MODULES = {
   // inserted: twin of harness.rs::MODULES.
   'trie-map': ['mixed'],
   'critbit-tree-map': ['mixed'],
-  'fixed-critbit-tree-map': ['mixed']
+  'fixed-critbit-tree-map': ['mixed'],
+  'bk-tree': ['mixed']
 };
 
 const argv = process.argv.slice(2);
@@ -1113,6 +1114,51 @@ function runMixedFixedCritbitTreeMap(FixedCritBitTreeMap, workload, k) {
   return {batches: batches, checksum: checksum, set: map};
 }
 
+// Twin of bench/runner/src/bk_tree.rs::distance. `|a - b|`, not upstream's
+// own Levenshtein -- a BK-tree is metric-agnostic, and a numeric metric both
+// sides compute identically carries zero risk of a Levenshtein port
+// drifting apart in an edge case. See that file's own module docs for the
+// full account, including the two failure modes (domain too small, domain
+// too large) found and rejected before committing to this workload's
+// parameters.
+function bkDistance(a, b) {
+  return Math.abs(a - b);
+}
+
+// Twin of bench/runner/src/bk_tree.rs. 50% `add` (mutating), 25% `search` at
+// SMALL_RADIUS (mostly pruned), 25% `search` at LARGE_RADIUS (reliably real
+// matches) -- both contributing upstream's own `found.length`.
+function runMixedBkTree(BKTree, workload, k) {
+  const SMALL_RADIUS = 2;
+  const LARGE_RADIUS = 20;
+  const tree = new BKTree(bkDistance);
+  const ops = workload.kind.length;
+  const batches = [];
+  let checksum = 0;
+
+  for (let start = 0; start < ops; start += k) {
+    const end = Math.min(start + k, ops);
+    const clock = process.hrtime.bigint();
+
+    for (let i = start; i < end; i++) {
+      const item = workload.a[i];
+      const op = workload.kind[i];
+
+      if (op === 0 || op === 1) {
+        tree.add(item);
+      } else if (op === 2) {
+        checksum += tree.search(SMALL_RADIUS, item).length;
+      } else {
+        checksum += tree.search(LARGE_RADIUS, item).length;
+      }
+    }
+
+    batches.push(Number(process.hrtime.bigint() - clock));
+  }
+
+  return {batches: batches, checksum: checksum, set: tree};
+}
+
 // Dispatch table, twin of harness.rs::MODULES's `mixed` field. Replaces what
 // was a two-armed ternary before five more modules made that the wrong shape.
 const MIXED_RUNNERS = {
@@ -1148,7 +1194,8 @@ const MIXED_RUNNERS = {
   // inserted: twin of harness.rs::MODULES.
   'trie-map': runMixedTrieMap,
   'critbit-tree-map': runMixedCritbitTreeMap,
-  'fixed-critbit-tree-map': runMixedFixedCritbitTreeMap
+  'fixed-critbit-tree-map': runMixedFixedCritbitTreeMap,
+  'bk-tree': runMixedBkTree
 };
 
 // Twin of harness.rs::MODULES's `structure` field: build the structure at
@@ -1369,6 +1416,16 @@ const STRUCTURE_BUILDERS = {
     for (let i = 0; i < size; i++) map.set(critbitKey(i), i);
 
     return map.get(critbitKey(size - 1));
+  },
+  // Twin of bench/runner/src/bk_tree.rs::build_structure: "size" means
+  // "after `size` `add` calls over the `0..size` domain".
+  'bk-tree': function (BKTree, size) {
+    const tree = new BKTree(bkDistance);
+    const domain = Math.max(size, 1);
+
+    for (let i = 0; i < size; i++) tree.add(i % domain);
+
+    return tree.size;
   }
 };
 
