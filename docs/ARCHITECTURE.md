@@ -2,9 +2,8 @@
 
 The deliverable of this project is **a standalone Rust crate**. The JavaScript test suite exists to
 prove that crate behaves like the library it replaces; it is not a dependency of it, and nothing in
-the shipped crate knows JavaScript exists.
-
-That single constraint determines almost every structural decision below.
+the shipped crate knows JavaScript exists. The sections below describe the crate layout, the proof
+harness, and the decisions that follow from that split.
 
 ---
 
@@ -23,13 +22,13 @@ Only the first is the deliverable. The other three exist to produce evidence abo
 
 ## `mnemonist-core` — the product
 
-**Three properties are enforced by the build**, not by convention:
+Three properties are enforced by the build, not by convention:
 
 - **`#![forbid(unsafe_code)]`.** Not `deny` — `forbid`, which cannot be locally overridden.
 - **A zero-dependency tree.** `cargo tree -p mnemonist-core` emits exactly one line: the crate
   itself. No serialisation library, no runtime, nothing transitive.
-- **It builds and tests with Node absent from the machine.** A Rust user needs no JavaScript
-  toolchain, and the check is run with Node removed from `PATH` rather than assumed.
+- **No Node dependency.** The crate builds and tests with Node absent from the machine, checked with
+  Node removed from `PATH` rather than assumed; a Rust user needs no JavaScript toolchain.
 
 Internally it is organised by domain:
 
@@ -50,7 +49,7 @@ crates/mnemonist-core/src/
 A Node addon built with napi-rs. Its job is to let **unmodified** upstream test files resolve
 `require('../lru-map.js')` and reach Rust.
 
-It is also, deliberately, **where all JavaScript weirdness is quarantined.** These modules exist
+It is also, deliberately, where all JavaScript-specific behaviour is isolated. These modules exist
 solely to model semantics that have no Rust equivalent:
 
 | Module | What it models |
@@ -64,7 +63,7 @@ solely to model semantics that have no Rust equivalent:
 | `cursor.rs`, `map_cursor.rs` | iterators that survive being called back into from JavaScript |
 | `statics.rs` | static factory methods (`.from`) as JavaScript exposes them |
 
-**None of this appears in the crate a Rust user depends on.** That is the point of the split.
+None of this appears in the crate a Rust user depends on — it is confined to `mnemonist-napi`.
 
 ### The boundary rule
 
@@ -116,9 +115,9 @@ its behaviour.
 `suffix-array` are `i64`, not `usize`, because a JavaScript number is an `f64` and negative or
 fractional indices are reachable. `usize` would make unrepresentable a state the original reaches.
 
-**Interior mutability at the bridge, not in the core.** Core algorithms take a store rather than
-`&mut Vec<T>`, because a JavaScript comparator invoked mid-sift can call back in and mutate the
-structure. An exclusive borrow would make that inexpressible rather than merely awkward. The bridge
+**Interior mutability at the bridge.** Core algorithms take a store rather than `&mut Vec<T>`,
+because a JavaScript comparator invoked mid-sift can call back in and mutate the structure. An
+exclusive borrow would make that inexpressible rather than merely awkward. The bridge, not the core,
 holds a `RefCell` and takes only `borrow()`.
 
 **Fallibility is explicit.** Any operation that can invoke user code has a `try_` form returning
@@ -128,8 +127,8 @@ holds a `RefCell` and takes only `borrow()`.
 
 ## Where fidelity cost idiom
 
-This crate reproduces upstream's behaviour, **including its bugs**. That is the contract, and it has
-a price. Six places where the Rust is worse than it would otherwise be:
+This crate reproduces upstream's behaviour, including its bugs, at a cost in idiom. Six places where
+the Rust is worse than it would otherwise be:
 
 | Site | What idiom would prefer | Why it is not that |
 |---|---|---|

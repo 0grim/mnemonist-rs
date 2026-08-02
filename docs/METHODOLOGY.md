@@ -1,12 +1,11 @@
 # How this port was verified
 
-A port can claim equivalence with the library it replaces, or it can build instruments capable of
-disproving that claim and report what they found.
+This document describes how each port unit is verified, and what the verification instruments
+found.
 
-Every unit of this port passes **ten gates** before it is considered finished. They are not a
-checklist written afterwards — they are executable. `tests/verify.sh` reads the list of units
-claimed complete and asserts, for each one, that the evidence exists. A unit cannot be claimed
-without it.
+Every unit of this port passes **ten gates** before it is considered finished. `tests/verify.sh`
+reads the list of units claimed complete and asserts, for each one, that the evidence exists. A
+unit cannot be claimed without it.
 
 ---
 
@@ -76,10 +75,10 @@ tree**, and is built and tested with Node absent from the machine. All JavaScrip
 `undefined` versus `null`, truthiness, `SameValueZero` key identity, array-class preservation — is
 confined to the separate `mnemonist-napi` crate.
 
-**What it caught.** It repeatedly pushed design the right way. In `fuzzy-map` the hash functions are
-JavaScript callbacks; the gate forced the core to accept an already-hashed key and kept the callback
-machinery in the bridge. Without it, a `napi` type would have leaked into the crate a Rust user
-depends on.
+**What it caught.** It repeatedly forced JavaScript-specific handling out of the core. In `fuzzy-map`
+the hash functions are JavaScript callbacks; the gate forced the core to accept an already-hashed key
+and kept the callback machinery in the bridge. Without it, a `napi` type would have leaked into the
+crate a Rust user depends on.
 
 ---
 
@@ -106,7 +105,8 @@ Rust without alteration.
 **How it runs.** `./tests/run.sh` — currently **733 upstream specs passing**.
 
 **What it caught.** Everything a hand-written port forgets. It is also the gate that makes gate 6
-necessary: a suite that passes tells you nothing until you have shown it can fail.
+necessary: a suite that passes provides no evidence of correctness until it has been shown capable
+of failing.
 
 ---
 
@@ -118,8 +118,8 @@ for anyone maintaining the port, not only for an outside reviewer.
 **How it runs.** All 42 upstream test files — 47 files in total — are **SHA-256 hashed** in `tests/SHA256SUMS`, verified
 by `sha256sum -c` on every commit. One changed byte fails the build.
 
-**What it caught.** Nothing, which is the point. It is a commitment device, and its value comes from
-having been fixed at the start of the project rather than negotiated later.
+**What it caught.** No changes: every upstream hash has matched on every commit. The hashes are a
+commitment device, fixed at the start of the project rather than negotiated later.
 
 ---
 
@@ -155,7 +155,8 @@ fuzzer's dense-grid grammar caught it immediately; the native test was then rebu
 confirmed red, reverted, and confirmed green.
 
 A falsification that stays green is not automatically a failed gate — it can be a true statement
-about which instrument covers what. The failure mode is staying green and nobody asking why.
+about which instrument covers what, provided the result is traced to a specific cause rather than
+accepted without investigation.
 
 ---
 
@@ -208,10 +209,10 @@ misunderstandings on both sides of the comparison.
 
 **A campaign that runs no operations is a failure, not a pass.** The runner exits with a distinct
 code when zero operations executed, and the tests assert it. "Zero divergences" over zero
-comparisons is a true statement and a worthless one.
+comparisons is true and uninformative.
 
-**The grammar must be shown to reach the interesting state.** Each module carries a
-`grammar_self_check` that measures this with no oracle attached:
+**The grammar must be shown to reach the state each structure is designed for.** Each module carries
+a `grammar_self_check` that measures this with no oracle attached:
 
 | Structure | What must actually happen | Measured |
 |---|---|---|
@@ -231,11 +232,11 @@ in the port itself before any campaign was logged: a linked-list `forEach` advan
 *before* the callback ran where upstream advances after, and an `inverted-index` `clear()` that
 rebinds its backing arrays rather than clearing them in place.
 
-**Where a path does not exist, that is stated directly.** One requirement called for the Fibonacci
+Where a path does not exist, that is stated directly. One requirement called for the Fibonacci
 heap's cascading-cut path to be exercised. Upstream has no `decreaseKey`, no `delete`, no `mark` and
 no cut — it implements the consolidation half of the structure and not the amortisation half. The
-honest answer to "make X fire" is sometimes "X is not there", available only to someone who reads
-the source instead of tuning the grammar until the report looks right.
+answer to "make X fire" is in that case "X is not there", determined by reading the source rather
+than by tuning the grammar until the report matched the requirement.
 
 ---
 
@@ -249,7 +250,7 @@ each side. Results are keyed per unit in `bench/results.json`, and **every workl
 explicit `regressions` array** — `tests/verify.sh` fails a unit whose entry omits the field, so a
 slowdown cannot be expressed by silence.
 
-**Benchmarks require an idle machine, and this is measured rather than assumed.** A contended run
+Benchmarks require an idle machine, and this is measured rather than assumed. A contended run
 inflated both sides two- to threefold; upstream's own p99 swung 32% between otherwise clean runs; a
 timing-sensitive test flaked under load and passed in isolation. Gate 10 therefore cannot run
 alongside other work, and executes as a serial pass on a quiet machine.
