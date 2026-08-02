@@ -343,10 +343,43 @@ account.
 **This is the module DESIGN.md 5.1 predicted the port should win largest on, and on raw ns/op it
 does not — a real, disclosed regression, not a rounding artefact.** Both p50 and p99 are ~10–12%
 slower than V8's own typed-array path over three independent metrics (p50, p99, min), which rules
-out a single unlucky batch. Unconfirmed explanation, stated as unconfirmed: `BitSet::set`/`reset`/
-`get`/`test` each go through `Words::set_bit`/`get_bit` (`crates/mnemonist-core/src/structures/
-bits.rs`), an extra call frame LLVM may not always inline as aggressively as V8 inlines a monomorphic
-`Uint32Array` element access at this op's simplicity — but no profiling was done to confirm that
-against a metric that would falsify it, so it is recorded as a lead, not a cause. What is confirmed
-is the memory and startup side: the port uses roughly a third of the RSS and starts thirty times
-faster, exactly where a `Vec<u32>` versus a full V8 process should differ.
+out a single unlucky batch. The original explanation was unconfirmed: `BitSet::set`/`reset`/`get`/
+`test` each go through `Words::set_bit`/`get_bit` (`crates/mnemonist-core/src/structures/bits.rs`),
+an extra call frame LLVM may not always inline as aggressively as V8 inlines a monomorphic
+`Uint32Array` element access at this op's simplicity.
+
+**Confirmed 2026-08-02, and refined** — `bench/runner/src/bit_set.rs`, reachable via
+`bench-runner --bit-set-probe`, runs three variants of the identical op stream: the real `BitSet`
+(`Rc<RefCell<Vec<u32>>>` behind `Words`, `i64` indices through a real `ToInt32`), a bare
+`Vec<u32>` with plain `usize` indices and no `RefCell` at all, and a third variant *between* the two
+— the same bare `Vec<u32>`, still no `RefCell`, but indices still pushed through the exact
+`f64`-based `to_int32`/`rem_euclid` conversion `Words::split` uses:
+
+| variant | p50 ns/op |
+|---|---|
+| wrapped `BitSet` (`RefCell` + `Words` + `to_int32`) | 8.456 |
+| bare `Vec<u32>` + `to_int32`, no `RefCell` | 4.489 |
+| bare `Vec<u32>`, plain `usize`, no `RefCell`, no `to_int32` | **3.026** |
+
+**Verdict: confirmed, but the named mechanism was incomplete.** The isolated gap (5.43 ns/op)
+splits roughly 73%/27% between the `RefCell`/`Words` wrapper layer (3.97 ns/op) and the `to_int32`
+conversion alone (1.46 ns/op) — the wrapper is the larger piece, consistent with what was named, but
+`to_int32`'s call to `f64::rem_euclid` (a real floating-point division, not a missed-inlining
+artefact) is a second, previously undocumented contributor nearly a third the size of the first, and
+the doc's "extra call frame LLVM may not inline" framing does not cover it — that framing describes
+a compiler decision; `rem_euclid` is real arithmetic work that would cost the same fully inlined.
+Both bare variants beat upstream's own published p50 (7.935 ns) outright, same pattern as `heap`'s
+own confirmation above: the overhead here is larger than the entire measured regression.
+
+What is confirmed independently of any of this is the memory and startup side: the port uses roughly
+a third of the RSS and starts thirty times faster, exactly where a `Vec<u32>` versus a full V8
+process should differ.
+
+**Fix not attempted.** Both layers are load-bearing, not incidental: the `Rc<RefCell<Vec<u32>>>` is
+`Words`'s own re-entrancy story (shared with `BitVector`, whose `length` is mutable and whose cursor
+must keep reading a `clear()`'d array — see `bits.rs`'s own module docs), and the `f64`-based
+`to_int32` is what makes a negative index drop cleanly rather than wrap through `usize` the way a
+naive Rust port would (`bits.rs`'s own docs on `set(-1)`). A `usize` fast path guarded by "index is
+non-negative and small" is conceivable, but it is a `crates/mnemonist-core` behaviour-preserving
+optimisation, not a local tweak, and would need bit-set's fuzz campaign and bench figures re-run
+before it could stand — out of scope here. Recorded as a proposal for later.
