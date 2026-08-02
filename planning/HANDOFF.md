@@ -14,112 +14,113 @@ A Rust port of the JS library `mnemonist`, entered in Port Mortem 2026. Kickoff 
 6. `planning/ADMIN-GUIDANCE.md` — **organiser statements, quoted verbatim.** What the deliverable
    is, and what the Bug Catcher prize requires. Cite it before arguing from assumption about either.
 
+Judge-facing documents already written: `docs/METHODOLOGY.md` (the ten gates, what each caught, and
+what the instruments cannot see) and `docs/ARCHITECTURE.md` (the crate split, and where fidelity
+cost idiom). Both are deliberately self-contained — no references to `planning/`, no bug or decision
+identifiers that mean nothing without their registries. **Keep them that way.**
+
 `git log` is dense and deliberately so; the merge commits carry the reasoning.
 
-## Position as of 2026-08-01 ~17:30 UTC (H+23)
+## Position as of 2026-08-02
 
-**83% ported, 0% scoped.** 721 Rust tests, 680 upstream harness specs, all green on `main`.
-Merged worktrees and branches are pruned as each batch lands.
+**The port is complete and gated. 42 of 42 upstream test files ported; 40 units pass all ten gates**
+— `tests/verify.sh` reports 247 checks green, 94% of the repo by upstream test weight. 799 Rust
+tests, 733 upstream harness specs. One branch, clean tree.
 
-**The submission is now the binding item, not the port.** None of README, `DECISIONS.md`, the
-Dockerfile or CI exists yet; only `.port-mortem.toml` does. 105 decision candidates and 69 bug
-candidates sit in working files no judge will open. See ROADMAP *What remains*.
+The two units not in scope are **excluded with stated reasons, not pending**:
 
-The 0% is not a mistake and not a crisis — see "Why 0% scoped" below. It is the single most
-important thing to fix, and it is fixed by running benchmarks, not by porting more.
+- **`default-weak-map`** — keys must be objects and entries vanish at the collector's discretion, so
+  a timing figure would measure V8's garbage collector rather than the structure.
+- **`_utils`** — a require-closure of five unrelated pure-function files with no shared instance.
+  The bench harness wires one function per module name; representing all five with one would
+  misstate it, and splitting them would no longer be `_utils` in `results.json`.
 
-## The plan, agreed with the user
+Both are recorded in their own module docs. Two argued exclusions beat 42 rows where two quietly
+mean nothing.
 
-**Ports run ONE AGENT AT A TIME, never in parallel.** This was a deliberate change. Parallel agents
-produced ten split-block repairs across ten merges, because git picks conflict boundaries by line
-similarity and repeatedly cut the *previous* match arm or test function in half. Sequential agents
-branch from a `main` that already contains all prior work, so conflicts drop to zero — and each
-agent can *see* the previous ones' machinery instead of rebuilding it, which had already happened
-four times. Wall-clock is not the binding constraint; orchestrator tokens are.
+## What remains: the write-up, and only the write-up
 
-Remaining batches, in priority order so that stopping early stops at the best available point:
+Nothing further needs porting, fuzzing or benchmarking. In priority order:
 
-| # | batch | lines | bug IDs | status |
-|---|---|---|---|---|
-| 1 | `fibonacci-heap` + close D-105 | 115 | B-220–239 | **merged** (B-220–222 used) |
-| 2 | `default-weak-map`, `linked-list`, `inverted-index` | 325 | B-240–259 | **merged** (B-240–242 used) |
-| 3 | `critbit-tree-map`, `fixed-critbit-tree-map` | 294 | B-260–279 | **in flight** |
-| 4 | `vp-tree`, `kd-tree` | 344 | B-280–299 | not started |
-| 5 | `passjoin-index`, `symspell`, `multi-array` | 639 | B-300–319 | not started |
+1. **`BUGS.md`** — the Bug Catcher submission. See the open item below; it is a separate prize and
+   the highest value per token remaining.
+2. **`DECISIONS.md`** — from ~137 candidates plus the reconciliation described below. The biggest
+   editorial job. Group thematically (JS number semantics, `undefined` vs absent, iteration order,
+   re-entrancy), not by identifier.
+3. **`README.md`** — write last; it mostly frames and links the others. Lead with what the
+   organisers confirmed the deliverable is: a standalone Rust crate, with the original JS suite as
+   the equivalence proof rather than a runtime dependency.
+4. **Refresh figures** in `METHODOLOGY.md` and `ARCHITECTURE.md`. Both predate gate 10 having any
+   results; `METHODOLOGY.md`'s gate 10 section in particular still says the benchmark caught little.
+   It now has real material, including several losses.
+5. Optional if budget allows: Dockerfile, CI, demo script (`DESIGN.md` §12), and the "dual port"
+   idea — corrected variants of the six sites where fidelity cost idiom, verified by invariants
+   rather than differential comparison, **added alongside and never modifying the faithful
+   implementations**, which would put 124.5M fuzz operations of evidence at risk.
 
-Bug-ID ranges are allocated by the orchestrator and must not overlap; the current high-water mark in
-`NOTES.md` is B-201. Two agents once claimed the same range and it had to be untangled by hand.
+## Benchmark results worth carrying into the write-up
 
-**Benchmarks run in TWO passes, not one.** Pass A covers everything landed by tonight; pass B covers
-whatever lands after. The tempting plan — port everything, benchmark once at the end — is cheaper
-and fragile: if anything goes wrong in the final hours we submit with `scope.txt` empty and our own
-gates reporting 0% done. Two passes cost a few hours and guarantee a floor.
+Not a clean sweep, and that is the point. Confirmed losses: **`kd-tree` 2.2×/1.8× slower** —
+isolated to `k_nearest_neighbors`, since `nearest_neighbor` alone wins; **`default-map`** loses p50
+and p99, re-checked at 4× domain and real; **`bi-map`** loses both; `multi-array` splits;
+`fixed-critbit-tree-map`, `fixed-reverse-heap` and `bit-set` lose narrowly. Every unconfirmed cause
+is labelled unconfirmed.
 
-Then: README, `DECISIONS.md` assembled from the 200-odd candidates, demo script, `.port-mortem.toml`,
-final `verify.sh`. `DESIGN.md` §12 has the specs. **Reserve budget for this** — the write-up is what
-judges read, and rigor is 50% of the score against coverage's 40%.
-
-## Why 0% scoped
-
-`tests/scope.txt` is the done marker and a unit enters it only when **all ten gates** pass. Gate 10
-is the benchmark, which has never run, so nearly everything sits at `pend` with `bench --` no matter
-how complete it otherwise is. **The benchmark pass is the conversion step from ported to counted.**
-
-Gate 10 cannot be pipelined: a benchmark on a busy machine is not slow, it is *wrong* — a contended
-run inflated both sides 2–3× here, upstream's own p99 swung 32% between clean runs, and a timing
-test flaked under agent contention during the last batch. Run it when nothing else is running.
+Three benchmark parameters were rejected before publishing — a `rank` op that was pathological
+rather than representative, a `symspell` vocabulary that produced no near-misses, and `critbit` keys
+that left every critical bit at byte 0. `vp-tree`'s superlinear construction was checked against
+upstream's own JS and confirmed inherited rather than introduced.
 
 ## Open items that must not be forgotten
 
-- **`sparse-set` is deliberately descoped**, reason inline in `tests/scope.txt`. B-31 is fixed, but
-  the `RefCell` added a borrow-flag check to every access that nobody has measured — which is gate
-  10. Re-scope after benchmarking.
-- **D-105 — CLOSED.** `_utils`'s k-way path now drives the real `FibonacciHeap`, and its grammar was
-  widened back to produce ties and NaN. No caveat remains on that campaign.
-- **D-106 — OPEN, and narrower.** Widening the `_utils` grammar immediately surfaced it:
-  `intersectionUnique`'s k-way path never used a heap at all and has its own NaN-sentinel gap. Its
-  `allow_nan` flag stays `false` **for that function only**, so its campaign is green over a region
-  excluding a known disagreement. Closing it means porting nothing new — it is a real gap in our
-  own code, and it is the one caveat left on `_utils`.
-- **Bug Catcher prize — a named submission deliverable, not a by-product.** Admins: claim it in the
+- **Bug Catcher prize — a named submission deliverable, not a by-product.** Claim it in the
   submission form with *clear repro steps, what the original does wrong, and how your port handles
-  it*, reviewed at judging. We hold **69 candidates, 57 verified against Node 24.18.1**, and the
+  it*, reviewed at judging. We hold **72 candidates, 57 verified against Node 24.18.1**, and the
   `NOTES.md` entry shape already carries repro + why-the-suite-misses-it + how-we-handle-it. Three
-  jobs: (1) **verify or demote the 7 unverified** — one disprovable claim discredits the other 68,
-  an asymmetry that makes silence cheaper than a maybe; (2) **rank them**, since 69 undifferentiated
+  jobs: (1) **verify or demote the 7 unverified** — one disprovable claim discredits the rest, an
+  asymmetry that makes silence cheaper than a maybe; (2) **rank them**, since 72 undifferentiated
   entries will not be read — the admins single out bugs *"surfaced when the original tests disagree
   with correct behavior"*, so a defect whose upstream test **asserts** the wrong result outranks one
-  the tests merely miss; (3) lift the best into a submission-ready `BUGS.md` — no judge will open a
-  2,000-line working log.
-- **Unregistered divergences — do this before assembling `DECISIONS.md`.** At least four module
-  docs (`bk-tree`, `default-weak-map`, `fuzzy-map`, `utils-bitwise`) record divergences in their
-  *Deliberate divergences* table numbered `—` rather than `D-nnn`, so they exist **only** in the
-  module doc and are absent from `DECISIONS-CANDIDATES.md`. Roughly 16 items. `DECISIONS.md` will be
-  built from the registry, so these would be silently dropped. Reconcile every module doc's
-  divergence table against the registry first; the docs are the more complete source.
-- **D-201** — `trie`'s cursor-versus-delete divergence. **Accepted, not a defect.** Upstream's
-  iterator holds a live object reference; ours is path-based because it must resume across the FFI
-  boundary. Its campaign is likewise green over a narrowed region. State it in DECISIONS.md as an
-  architectural divergence rather than revisiting it.
-- **Worktree hygiene.** All merged worktrees and branches were pruned (2.9 GB). Gate each deletion
-  on `git merge-base --is-ancestor <branch> HEAD`, never on the name: one worktree was **locked**
-  and its `--force` removal silently failed while its branch deletion succeeded. Run
-  `git worktree prune` afterwards or `scripts/status.sh` reports worktrees that no longer exist.
+  the tests merely miss; (3) lift the best into `BUGS.md`.
+- **Unregistered divergences — do this before assembling `DECISIONS.md`.** Four module docs were
+  reconciled into the registry as D-300–323, and each doc's table now carries its D-number. **Later
+  batches may have reintroduced the problem**, so re-run the check: any divergence row numbered `—`
+  rather than `D-nnn` exists only in the module doc and will be dropped when `DECISIONS.md` is built
+  from the registry. The docs are the more complete source.
+- **Four duplicate D-numbers** — D-01, D-80, D-81, D-89 each appear twice, from a merge collision
+  before D-ranges were allocated per batch. Untouched deliberately: renumbering means *editing*
+  existing entries, which is how the first collision happened. Fix during the `DECISIONS.md` pass,
+  when nothing else is writing to the file.
+- **D-106 — the one substantive caveat left.** `intersectionUnique`'s k-way path never used a heap
+  and has a NaN-sentinel gap; its fuzz campaign runs with `allow_nan` off **for that function only**,
+  so it is green over a region excluding a known disagreement. Closing it needs no new unit — it is
+  a gap in our own code.
+- **D-201 — accepted, not a defect.** `trie`'s cursor-versus-delete divergence: upstream's iterator
+  holds a live object reference, ours is path-based because it must resume across the FFI boundary.
+  State it in `DECISIONS.md` as architectural rather than revisiting it.
+- **Gate 7 flaked once**, reporting FAILING while `cargo test` by hand was green seconds later. It
+  now prints the failing test names and a line saying a green second attempt is not a passing gate.
+  The underlying flake is **not fixed** — a timing-sensitive fuzz-harness test is the suspect. If it
+  recurs, read what it names; do not re-run until green.
+- **One unmerged experimental branch**, `worktree-agent-aa33c59bb65f37e8a`: a generic benchmark
+  runner driving every module through `difffuzz`'s executor. It **failed calibration** — 2.4–3.6×
+  slower than the hand-written benchmarks because `apply` returns a `serde_json::Value` and mutating
+  ops allocate a chaining envelope. Kept for the record; delete once we are sure we will not revisit.
 
 ## When a background agent dies
 
-It has happened three times: the Claude Code process exits and takes its agents with it. Their
-transcripts survive on disk.
+It has happened four times — process exit or a stall watchdog. Transcripts survive on disk.
 
 1. **Preserve first.** `git -C .claude/worktrees/agent-<id> status --porcelain`; if anything is
-   loose, commit it labelled **UNVERIFIED** — it was snapshotted by the orchestrator, not by the
-   agent that wrote it, so nothing in it has been compiled or run. Never treat it as evidence.
+   loose, commit it labelled **UNVERIFIED** — snapshotted by the orchestrator, not by the agent that
+   wrote it, so nothing in it has been compiled or run. Never treat it as evidence.
 2. **Resume, do not relaunch.** `SendMessage` to the agent id picks up from its transcript with its
-   context intact, which is far cheaper than a fresh brief.
+   context intact, far cheaper than a fresh brief.
 3. Tell it what you snapshotted and that it must re-verify anything that snapshot touched.
 
-Agents briefed to "commit early and often" left zero loose files; agents without that line left 39
-and 8. Keep the line in every brief.
+**Commit-per-module is the mitigation that actually worked.** The batch briefed that way stalled
+halfway and lost nothing — six units were already committed. Agents without that line left 39 and 8
+loose files.
 
 ## Traps that have already cost this project time
 
@@ -127,12 +128,16 @@ and 8. Keep the line in every brief.
 - **A pipeline's exit status is its last command's** — `cargo clippy | tail` reports `tail`'s
   success and shipped a red commit. Never pipe verification.
 - **Merging: appending at the end of a shared list is necessary and not sufficient.** Ten split
-  blocks across ten merges. The compiler catches them; `git` does not. After resolving, run
-  `cargo test`, not `cargo build` — three compiled fine and only failed under test.
-- **rust-analyzer diagnostics go stale mid-merge.** They reported conflict markers in files that
-  had none. `grep -rln '^<<<<<<< '` is authoritative; a compile that succeeds is authoritative.
-- **Route by task shape.** Sonnet has done every port since the heap tier at roughly a quarter the
-  cost of Opus, and has found defects beyond what its briefs specified.
+  blocks across ten merges under parallel agents. The compiler catches them; `git` does not. After
+  resolving, run `cargo test`, not `cargo build` — three compiled fine and only failed under test.
+  Sequential agents have produced **zero** such repairs across the last nine merges.
+- **rust-analyzer diagnostics go stale mid-merge.** They reported conflict markers in files that had
+  none. `grep -rln '^<<<<<<< '` is authoritative; a successful compile is authoritative.
+- **Reading one line is not reading the code.** A wildcard match arm in the bench runner looked like
+  a live trap that would benchmark the wrong structure; an allowlist seventy lines earlier already
+  rejected unknown modules. The claim was wrong and had to be retracted.
+- **Route by task shape.** Sonnet has done every port and every benchmark batch since the heap tier
+  at roughly a quarter the cost of Opus, and has repeatedly found defects beyond its brief.
 
 ## The one idea worth not losing
 
@@ -141,11 +146,15 @@ believed. The table is in `NOTES.md`. The sharpest: a fuzz spec whose oracle-sid
 matched, so every case panicked at construction and the campaign reported zero divergences
 *truthfully* — zero disagreements out of zero comparisons.
 
-The countermeasure that emerged is now standard in every brief: **make the fuzzer prove it reached
-the interesting state.** Measured eviction rates for the LRU, a prefix pool where 5/8 entries are a
-strict prefix of another for the trie, multi-value-bucket counts for the MultiMaps. And gate 6 has
-now caught itself once — `_utils` named three sabotages, two stayed green, and it reported them as
-findings rather than swapping in an easier target.
+The countermeasure is now standard in every brief: **make the instrument prove it reached the state
+that matters.** Measured eviction rates for the LRU; a prefix pool where 5 of 8 entries are a strict
+prefix of another; 195,920 consolidation merges for the Fibonacci heap; a 50% fill ratio with a
+0.028% false-positive pool for the Bloom filter; 98.4% non-empty searches for symspell.
+
+Gate 6 has now stayed green four times, each investigated to a different cause: the assertions could
+not express the defect; the sabotage sat in a layer the fuzzer does not drive; the sabotage was a
+symmetry nothing observable could distinguish; and — the outcome the gate exists for — **the test
+was simply inadequate and was rebuilt**.
 
 That is the strongest material the write-up has: **passing your own verification is not the same as
 being correct.**
