@@ -103,7 +103,7 @@ the first run of a clean checkout and worked on every run after.
 **Purpose.** The primary equivalence evidence. Tests written for the JavaScript library pass against
 Rust without alteration.
 
-**How it runs.** `./tests/run.sh` — currently **702 upstream specs passing**.
+**How it runs.** `./tests/run.sh` — currently **733 upstream specs passing**.
 
 **What it caught.** Everything a hand-written port forgets. It is also the gate that makes gate 6
 necessary: a suite that passes tells you nothing until you have shown it can fail.
@@ -115,7 +115,7 @@ necessary: a suite that passes tells you nothing until you have shown it can fai
 **Purpose.** The easiest way to pass someone else's tests is to edit them. This removes that option
 for anyone maintaining the port, not only for an outside reviewer.
 
-**How it runs.** All **47 upstream test files are SHA-256 hashed** in `tests/SHA256SUMS`, verified
+**How it runs.** All 42 upstream test files — 47 files in total — are **SHA-256 hashed** in `tests/SHA256SUMS`, verified
 by `sha256sum -c` on every commit. One changed byte fails the build.
 
 **What it caught.** Nothing, which is the point. It is a commitment device, and its value comes from
@@ -164,7 +164,7 @@ about which instrument covers what. The failure mode is staying green and nobody
 **Purpose.** Cover what upstream's suite does not reach. Each divergence document lists those gaps
 explicitly.
 
-**How it runs.** `cargo test` — currently **764 tests**.
+**How it runs.** `cargo test` — currently **799 tests**.
 
 **What it caught.** A great deal, with one structural limitation: these tests were written by
 whoever wrote the implementation, against the same reading of the upstream source. A misreading
@@ -197,7 +197,7 @@ instead of silently healing.
 **How it runs.** Operation sequences are generated with `proptest`, replayed against both the Rust
 implementation and **real upstream JavaScript running in Node**, comparing observable state after
 every operation. Divergences are minimised by the shrinker and persisted as regression seeds.
-Currently **116 logged campaigns across 42 modules, 124.5 million operations, zero divergences**.
+Currently **124 logged campaigns across 45 modules, 129.8 million operations, zero divergences**.
 Every line in `fuzz/log.txt` carries its seed and replays exactly.
 
 Three design decisions determine whether such a harness means anything:

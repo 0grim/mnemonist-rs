@@ -12,9 +12,9 @@ That single constraint determines almost every structural decision below.
 
 | Crate | Lines | Role | Ships to a Rust user? |
 |---|---|---|---|
-| `mnemonist-core` | 34,909 | **The product.** 40 data structures plus supporting utilities | **Yes** |
-| `mnemonist-napi` | 18,785 | The proof harness — a Node addon letting the original JS tests call in | No |
-| `difffuzz` | 13,805 | Differential fuzzer comparing the core against real upstream JavaScript | No |
+| `mnemonist-core` | 37,099 | **The product.** 40 data structures plus supporting utilities | **Yes** |
+| `mnemonist-napi` | 19,714 | The proof harness — a Node addon letting the original JS tests call in | No |
+| `difffuzz` | 14,591 | Differential fuzzer comparing the core against real upstream JavaScript | No |
 | `bench/runner` | — | Matched benchmark driver | No |
 
 Only the first is the deliverable. The other three exist to produce evidence about it.
