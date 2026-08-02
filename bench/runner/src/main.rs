@@ -38,6 +38,22 @@ mod trie;
 mod vector;
 mod workload;
 mod xorshift;
+// Appended for the sequence-backed batch (Gate 10 extension past the first
+// seven modules), never inserted alphabetically: this list is shared and a
+// conflict boundary landing mid-list has already cost repairs elsewhere in
+// this project (CLAUDE.md, Git). main.rs's own dispatch logic below does not
+// change; only this module list grows.
+mod bit_vector;
+mod circular_buffer;
+mod fixed_deque;
+mod fixed_stack;
+mod hashed_array_tree;
+mod queue;
+mod sort;
+mod sparse_map;
+mod sparse_queue_set;
+mod stack;
+mod suffix_array;
 
 use std::process::ExitCode;
 
@@ -87,6 +103,56 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
+    // Not a gate-10 module: a diagnostic for B-31 (`tests/scope.txt`,
+    // `sparse_set.rs::run_mixed_refcell`). Measures what the napi bridge's
+    // `RefCell<CoreSet>` borrow-flag check costs on the exact mixed workload
+    // `sparse-set`'s own gate-10 entry uses, isolated from everything else
+    // napi adds and from anything JS. There is no `original` side to this and
+    // it is never written to `bench/results.json`.
+    if flags.contains(&"--refcell-probe") {
+        let size = match size_flag(&flags) {
+            Ok(size) => size,
+            Err(message) => return fail(&message),
+        };
+        let ops = number(&flags, "--ops", DEFAULT_OPS);
+        let seed = match u32_flag(&flags, "--seed", DEFAULT_SEED) {
+            Ok(seed) => seed,
+            Err(message) => return fail(&message),
+        };
+        let warmup = number(&flags, "--warmup", 3);
+        let measured = number(&flags, "--measured", 10);
+
+        let generated = workload::generate(size, ops, seed);
+
+        let plain = run_repeated(sparse_set::run_mixed, &generated, warmup, measured);
+        let refcelled = run_repeated(sparse_set::run_mixed_refcell, &generated, warmup, measured);
+
+        if plain.checksum != refcelled.checksum {
+            return fail(
+                "plain and RefCell-wrapped runs computed different checksums; \
+                 the probe is not measuring the same workload on both sides",
+            );
+        }
+
+        println!(
+            "{}",
+            json!({
+                "mode": "refcell-probe",
+                "module": "sparse-set",
+                "size": size,
+                "ops": ops,
+                "seed": seed,
+                "warmup": warmup,
+                "measured": measured,
+                "checksum": plain.checksum,
+                "plain": plain.summary(),
+                "refcell_wrapped": refcelled.summary(),
+            })
+        );
+
+        return ExitCode::SUCCESS;
+    }
+
     if flags.contains(&"--baseline") {
         // The RSS baseline (§5.2 Problem 3). Node carries ~40 MB of V8 before
         // any data structure exists, and reporting that as a data-structure
@@ -105,9 +171,6 @@ fn main() -> ExitCode {
 
     let entry = match harness::find(module) {
         None => return fail(&format!("unknown module `{module}`")),
-        Some(entry) if !entry.kinds.contains(&kind) => {
-            return fail(&format!("module `{module}` has no `{kind}` workload"))
-        }
         Some(entry) => entry,
     };
 
@@ -134,6 +197,18 @@ fn main() -> ExitCode {
         );
 
         return ExitCode::SUCCESS;
+    }
+
+    // `--kind` only matters for the timed run below -- `--structure` (handled
+    // above, before this check) does not consult it at all. This check used
+    // to run before the `--structure` branch too, which meant a drain-only
+    // module (no `mixed` kind: `suffix-array`, `sort`) could never build its
+    // structure, since the default `--kind` is `mixed` and nothing in
+    // `--structure` mode would have supplied `--kind drain` to satisfy it.
+    // That was invisible until a module existed with no `mixed` kind at all --
+    // every prior module supports `mixed`, so the default always matched.
+    if !entry.kinds.contains(&kind) {
+        return fail(&format!("module `{module}` has no `{kind}` workload"));
     }
 
     let warmup = number(&flags, "--warmup", 3);
@@ -298,6 +373,69 @@ fn drain(
     );
 
     ExitCode::SUCCESS
+}
+
+/// `--refcell-probe`'s own tiny protocol: `warmup` + `measured` passes of one
+/// `MixedFn`, K = 1000 batching (this crate's own `BATCH_K`), same as gate 10
+/// -- but single-process and non-interleaved, because there is no second
+/// runtime on the other side of this comparison to interleave against. Rule 4
+/// of DESIGN.md 5.1 (A/B/A/B) exists to cancel drift between two *processes*;
+/// here both variants run in the same process moments apart, which is the
+/// closer analogue of DESIGN.md 5.1's own warmup rationale, not a relaxation
+/// of it.
+struct RefcellProbeRun {
+    checksum: u64,
+    batches: Vec<u64>,
+}
+
+impl RefcellProbeRun {
+    fn summary(&self) -> serde_json::Value {
+        let mut sorted = self.batches.clone();
+        sorted.sort_unstable();
+
+        json!({
+            "p50_ns_per_op": round3(percentile(&sorted, 0.50) / BATCH_K as f64),
+            "p99_ns_per_op": round3(percentile(&sorted, 0.99) / BATCH_K as f64),
+            "min_ns_per_op": round3(sorted[0] as f64 / BATCH_K as f64),
+            "samples": sorted.len(),
+        })
+    }
+}
+
+fn run_repeated(
+    run: harness::MixedFn,
+    workload: &workload::Workload,
+    warmup: usize,
+    measured: usize,
+) -> RefcellProbeRun {
+    let mut checksum = 0;
+
+    for _ in 0..warmup {
+        checksum = run(workload, BATCH_K).1;
+    }
+
+    let mut batches = Vec::new();
+
+    for _ in 0..measured {
+        let (times, sum) = run(workload, BATCH_K);
+        checksum = sum;
+        batches.extend(times);
+    }
+
+    RefcellProbeRun { checksum, batches }
+}
+
+/// Nearest-rank percentile, twin of `bench/drive.js::percentile` -- the same
+/// maths this probe's own numbers get held to.
+fn percentile(sorted: &[u64], q: f64) -> f64 {
+    let rank = (q * sorted.len() as f64).ceil() as usize;
+    let index = rank.clamp(1, sorted.len()) - 1;
+
+    sorted[index] as f64
+}
+
+fn round3(value: f64) -> f64 {
+    (value * 1000.0).round() / 1000.0
 }
 
 fn value<'a>(flags: &[&'a str], name: &str) -> Option<&'a str> {
