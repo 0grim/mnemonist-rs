@@ -211,5 +211,27 @@ again**: all 11 `bi_map` unit tests pass, `cargo test --workspace` clean.
 
 ### Bench
 
-**Not run.** Gate 10 needs an idle machine and is batched into a separate quiet pass (§7.3); this
-unit is deliberately not in `tests/scope.txt` until then. Gates 1–9 are green.
+`bench/results.json` → `modules["bi-map"]`. Methodology: `bench/methodology.md`.
+Host: AMD Ryzen 5 7600X, 12 threads, WSL2, Node 24.18.1, rustc 1.97.1, quiet serial pass.
+Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 10,000 samples/side.
+
+**`mixed-1e6`** — 1e6 mixed `set`/`get`/`delete` (50/25/25) over a shared 1e6-value domain for both
+key and value (`K = u32`; drawing both from one domain makes `set`'s four-branch constraint
+resolution — B-120's own subject — fire under load rather than only on the cheap "brand new pair"
+path), xorshift32 seed 42:
+
+| metric | port | upstream | |
+|---|---|---|---|
+| p50 ns/op | 118.1 | **102.9** | 1.15× slower |
+| p99 ns/op | 322.3 | **288.2** | 1.12× slower |
+| RSS delta MB | **60.1** | 212.8 | |
+| structure-only RSS delta MB | **1.4** | 9.8 | |
+| startup ms | **0.6** | 16.5 | 25× (reported separately; not throughput) |
+
+**Another loss, on both p50 and p99** — stated plainly alongside `default-map`'s. **Unconfirmed
+cause:** `BiMap::set` maintains two `OrderedMap`s in lockstep (`items` and `inverse`) and, on the
+rebinding paths this workload's shared key/value domain deliberately exercises, does up to two
+extra `delete` calls beyond the two `set`s every relation needs — a real, structural reason this
+module could cost more per op than a single `Map`. That is a plausible account, not a confirmed
+one: it has not been checked against a metric (e.g. counting how often each of `set`'s four branches
+actually fires in this workload) that would let it be falsified rather than merely asserted.

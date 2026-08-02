@@ -284,13 +284,32 @@ single hand-picked assertion.
 
 ### Bench
 
-**Not run.** Gate 10 is deferred to the batched quiet pass (DESIGN.md §7.3). `inverted-index` is
-therefore **complete except gate 10** and correctly absent from `tests/scope.txt` until that pass
-lands.
+`bench/results.json` → `modules["inverted-index"]`. Methodology: `bench/methodology.md`.
+Host: AMD Ryzen 5 7600X, 12 threads, WSL2, Node 24.18.1, rustc 1.97.1, quiet serial pass.
+Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 2,000 samples/side.
 
-One thing to watch when it does: `get`'s repeated `intersection_unique_two` fold is left-to-right
-over `query_tokens`, matching upstream's own `helpers.intersectionUniqueArrays(results, c)` loop
-rather than the k-way form `mnemonist-core::utils::merge` also provides (which upstream itself
-never uses here) — whether that ordering has a measurable cost relative to a k-way scan at
-realistic query lengths (rarely more than a handful of tokens) is a question for the measurement,
-not for this document.
+**`mixed-2e5`** — 200,000 (deliberately smaller than this batch's usual 1e6 — see
+`bench/runner/src/inverted_index.rs`'s own module docs for the sizing check) mixed
+`add`(2-token doc)/`get`(1-token query)/`get`(2-token AND query) (50/25/25) over a 1,000-word
+vocabulary, identity tokenizer on both sides. **~200 documents per posting list on average by the
+run's end** — the load-bearing multi-container parameter here, exercising both a plain posting-list
+read and a real two-list AND intersection — xorshift32 seed 42:
+
+| metric | port | upstream | |
+|---|---|---|---|
+| p50 ns/op | **249.5** | 424.4 | 1.7× faster |
+| p99 ns/op | **539.3** | 1104.4 | 2.0× faster |
+| RSS delta MB | **2.1** | 118.2 | |
+| structure-only RSS delta MB | **0.1** | 0.2 | |
+| startup ms | **0.6** | 16.9 | 28× (reported separately; not throughput) |
+
+**No regressions**, and the largest RSS-delta ratio in this batch (upstream's ~118 MB against the
+port's ~2 MB) — most of that gap is `add`'s per-document allocation cost: every `add` upstream makes
+allocates a fresh `Set()` for its dedup pass and grows a plain-object-backed `Map`, while the port's
+`add` allocates a `HashSet` scoped to one call and writes into an already-hashed `OrderedMap`. One
+thing still open, unconfirmed either way: `get`'s repeated `intersection_unique_two` fold is
+left-to-right over `query_tokens`, matching upstream's own `helpers.intersectionUniqueArrays(results,
+c)` loop rather than the k-way form `mnemonist-core::utils::merge` also provides — this workload's
+queries are at most two tokens, so the two folds are identical at this length, and whether a k-way
+scan would matter at longer queries remains a question for a future measurement, not settled by this
+one.

@@ -177,6 +177,75 @@ pub const MODULES: &[ModuleEntry] = &[
         drain: Some(crate::sort::run_drain),
         structure: crate::sort::build_structure,
     },
+    // Appended for the map-like/multi-container Gate 10 batch, never
+    // inserted: same reasoning as the eleven-module batch above. `main.rs`
+    // does not change for any of these nine.
+    ModuleEntry {
+        name: "default-map",
+        kinds: &["mixed"],
+        mixed: Some(crate::default_map::run_mixed),
+        drain: None,
+        structure: crate::default_map::build_structure,
+    },
+    ModuleEntry {
+        name: "bi-map",
+        kinds: &["mixed"],
+        mixed: Some(crate::bi_map::run_mixed),
+        drain: None,
+        structure: crate::bi_map::build_structure,
+    },
+    ModuleEntry {
+        name: "multi-map",
+        kinds: &["mixed"],
+        mixed: Some(crate::multi_map::run_mixed),
+        drain: None,
+        structure: crate::multi_map::build_structure,
+    },
+    ModuleEntry {
+        name: "multi-set",
+        kinds: &["mixed"],
+        mixed: Some(crate::multi_set::run_mixed),
+        drain: None,
+        structure: crate::multi_set::build_structure,
+    },
+    ModuleEntry {
+        name: "multi-array",
+        kinds: &["mixed"],
+        mixed: Some(crate::multi_array::run_mixed),
+        drain: None,
+        structure: crate::multi_array::build_structure,
+    },
+    ModuleEntry {
+        name: "fuzzy-map",
+        kinds: &["mixed"],
+        mixed: Some(crate::fuzzy_map::run_mixed),
+        drain: None,
+        structure: crate::fuzzy_map::build_structure,
+    },
+    ModuleEntry {
+        name: "fuzzy-multi-map",
+        kinds: &["mixed"],
+        mixed: Some(crate::fuzzy_multi_map::run_mixed),
+        drain: None,
+        structure: crate::fuzzy_multi_map::build_structure,
+    },
+    ModuleEntry {
+        name: "inverted-index",
+        kinds: &["mixed"],
+        mixed: Some(crate::inverted_index::run_mixed),
+        drain: None,
+        structure: crate::inverted_index::build_structure,
+    },
+    // `set` has no per-element op stream (see `set_ops.rs`'s own module
+    // docs), so it reuses the `drain` kind -- same convention `sort`/
+    // `suffix-array` already established above.
+    ModuleEntry {
+        name: "set",
+        kinds: &["drain"],
+        mixed: None,
+        drain: Some(crate::set_ops::run_drain),
+        structure: crate::set_ops::build_structure,
+    },
 ];
 
 pub fn find(name: &str) -> Option<&'static ModuleEntry> {

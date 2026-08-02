@@ -439,6 +439,110 @@ const WORKLOADS = {
       name: 'build-2e4x50', kind: 'drain', size: 20000, passes: 50,
       label: 'DC3 construction over a freshly-generated 4-symbol random text, one timed sample per build'
     }
+  ],
+
+  // The ten map-like/multi-container modules added for this batch. Each is
+  // one workload, same reasoning as both prior extensions: a size sweep
+  // costs one more single-process pass per module without a documented
+  // signal to justify it. `default-weak-map` is deliberately absent -- its
+  // keys must be objects and entries vanish at the GC's discretion, so
+  // timing would be dominated by allocation and GC rather than by the
+  // structure; see planning/NOTES.md and docs/modules/default-weak-map.md
+  // for the same call made about GC timing elsewhere in this project.
+  //
+  // `default-map`/`bi-map`: `size` IS the full key domain, same reasoning as
+  // `sparse-map`/`bit-set` -- a hash map (or a pair of them, for `bi-map`)
+  // has no separate index to rig.
+  'default-map': [
+    {
+      name: 'mixed-1e6', kind: 'mixed', size: 1000000, ops: 1000000,
+      label: 'mixed set/get-or-insert/delete (50/25/25); factory always defined, so B-40\'s size drift never fires here'
+    },
+    // `mixed-1e6` lost on p50/p99 -- the sharpest margin in this batch (§5.1:
+    // "expect to lose somewhere and report it," and a clean sweep invites the
+    // question of what was left out). Probed at 4x domain, `static-disjoint-
+    // set`'s own convention for telling a real boundary from noise, before
+    // publishing either figure as the final word.
+    {
+      name: 'mixed-4e6', kind: 'mixed', size: 4000000, ops: 1000000,
+      label: 'mixed set/get-or-insert/delete (50/25/25); factory always defined, so B-40\'s size drift never fires here'
+    }
+  ],
+  'bi-map': [
+    {
+      name: 'mixed-1e6', kind: 'mixed', size: 1000000, ops: 1000000,
+      label: 'mixed set/get/delete (50/25/25); key and value share one domain so the bijection\'s rebinding path fires under load'
+    }
+  ],
+
+  // `multi-map`/`multi-set`/`multi-array`: the load-bearing parameter for
+  // every multi-container is how many VALUES sit under one key, so `size`
+  // here is the key/item/index domain, deliberately far smaller than the
+  // 1e6 op count -- see each bench/runner/src/*.rs file's own module docs
+  // for the exact values-per-key figure this reaches.
+  'multi-map': [
+    {
+      name: 'mixed-1e6', kind: 'mixed', size: 20000, ops: 1000000,
+      label: 'mixed set/get/remove (50/25/25) over a 20,000-key domain; ~25 values/key by the run\'s end'
+    }
+  ],
+  'multi-set': [
+    {
+      name: 'mixed-1e6', kind: 'mixed', size: 20000, ops: 1000000,
+      label: 'mixed add/multiplicity/remove (50/25/25) over a 20,000-item domain; ~12.5 net multiplicity/item by the run\'s end'
+    }
+  ],
+  'multi-array': [
+    {
+      name: 'mixed-1e6', kind: 'mixed', size: 20000, ops: 1000000,
+      label: 'mixed set/get/multiplicity (50/25/25) over a 20,000-index domain; ~25 values/bucket by the run\'s end'
+    }
+  ],
+
+  // `fuzzy-map`/`fuzzy-multi-map`: both hash `x >> 4` (16:1 collapse) on
+  // both sides -- see each bench/runner/src/*.rs file's own module docs for
+  // why the hash must do identical work on both sides to avoid measuring the
+  // hash instead of the structure. `fuzzy-map`'s domain is the full 1e6 (the
+  // hash's own collapse is what produces the collision-heavy access
+  // pattern); `fuzzy-multi-map`'s is smaller (200,000) so its post-hash
+  // domain (12,500) reaches a representative values-per-key figure.
+  'fuzzy-map': [
+    {
+      name: 'mixed-1e6', kind: 'mixed', size: 1000000, ops: 1000000,
+      label: 'mixed set/get/has (50/25/25), hash(x) = x >> 4, 16:1 key collapse'
+    }
+  ],
+  'fuzzy-multi-map': [
+    {
+      name: 'mixed-1e6', kind: 'mixed', size: 200000, ops: 1000000,
+      label: 'mixed set/get/has (50/25/25), hash(x) = x >> 4; ~40 values/key over the ~12,500-key post-hash domain'
+    }
+  ],
+
+  // `inverted-index`: `size` is the token VOCABULARY, not the doc count, and
+  // `ops` is 200,000 rather than this batch's usual 1e6 -- both deliberately
+  // smaller, sanity-checked before committing to them (the `bit-set.rs`
+  // `rank` lesson `methodology.md` documents): at this batch's usual 1e6/1e6
+  // shape, posting lists would average ~1,000 documents and a two-token
+  // query would cost ~25x what it does here, for no additional signal.
+  'inverted-index': [
+    {
+      name: 'mixed-2e5', kind: 'mixed', size: 1000, ops: 200000,
+      label: 'mixed add(2-token doc)/get(1-token query)/get(2-token AND query) (50/25/25) over a 1,000-word vocabulary; ~200 docs/token by the run\'s end'
+    }
+  ],
+
+  // `set`: no instance and no per-element op stream (see
+  // bench/runner/src/set_ops.rs's own module docs), so this reuses the
+  // `drain` shape -- one measured sample per `union` call, the representative
+  // choice out of set.js's fourteen free functions. `size * passes` at the
+  // same ~1e6 order of magnitude as `sort`/`suffix-array` above, for a
+  // comparable per-workload wall-clock cost.
+  'set': [
+    {
+      name: 'union-2e4x50', kind: 'drain', size: 20000, passes: 50,
+      label: 'union(A, B) of two 20,000-element sets drawn from a shared domain (real overlap and duplicates by the birthday bound), one timed sample per call'
+    }
   ]
 };
 

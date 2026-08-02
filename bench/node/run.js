@@ -80,7 +80,21 @@ const MODULES = {
   // No `mixed` kind: see bench/runner/src/sort.rs and suffix_array.rs for why
   // both reuse `drain`'s one-sample-per-operation shape instead.
   'suffix-array': ['drain'],
-  'sort': ['drain']
+  'sort': ['drain'],
+  // Appended for the map-like/multi-container Gate 10 batch, never inserted:
+  // twin of harness.rs::MODULES, which documents why a new module is always
+  // an appended entry rather than a reordered table.
+  'default-map': ['mixed'],
+  'bi-map': ['mixed'],
+  'multi-map': ['mixed'],
+  'multi-set': ['mixed'],
+  'multi-array': ['mixed'],
+  'fuzzy-map': ['mixed'],
+  'fuzzy-multi-map': ['mixed'],
+  'inverted-index': ['mixed'],
+  // No `mixed` kind: see bench/runner/src/set_ops.rs for why this reuses
+  // `drain`'s one-sample-per-call shape instead.
+  'set': ['drain']
 };
 
 const argv = process.argv.slice(2);
@@ -692,6 +706,294 @@ function runMixedBitVector(BitVector, workload, k) {
   return {batches: batches, checksum: checksum, set: vector};
 }
 
+// Twin of bench/runner/src/default_map.rs. 50% set (mutating), 25%
+// get-or-insert (mutating and a read -- the factory always returns a
+// defined value, so this never triggers B-40's `size` drift), 25% delete.
+function runMixedDefaultMap(DefaultMap, workload, k) {
+  const map = new DefaultMap(function(key) { return key; });
+  const ops = workload.kind.length;
+  const batches = [];
+  let checksum = 0;
+
+  for (let start = 0; start < ops; start += k) {
+    const end = Math.min(start + k, ops);
+    const clock = process.hrtime.bigint();
+
+    for (let i = start; i < end; i++) {
+      const key = workload.a[i];
+      const op = workload.kind[i];
+
+      if (op === 0 || op === 1) {
+        map.set(key, workload.b[i]);
+      } else if (op === 2) {
+        checksum += map.get(key);
+      } else {
+        checksum += map.delete(key) ? 1 : 0;
+      }
+    }
+
+    batches.push(Number(process.hrtime.bigint() - clock));
+  }
+
+  return {batches: batches, checksum: checksum, set: map};
+}
+
+// Twin of bench/runner/src/bi_map.rs. 50% set (mutating -- the four-branch
+// constraint resolution), 25% get (pure read), 25% delete. Key and value
+// share the same `0..size` domain, deliberately -- see that file's own
+// module docs for why.
+function runMixedBiMap(BiMap, workload, k) {
+  const map = new BiMap();
+  const ops = workload.kind.length;
+  const batches = [];
+  let checksum = 0;
+
+  for (let start = 0; start < ops; start += k) {
+    const end = Math.min(start + k, ops);
+    const clock = process.hrtime.bigint();
+
+    for (let i = start; i < end; i++) {
+      const key = workload.a[i];
+      const op = workload.kind[i];
+
+      if (op === 0 || op === 1) {
+        map.set(key, workload.b[i]);
+      } else if (op === 2) {
+        const value = map.get(key);
+        checksum += value === undefined ? 0 : value;
+      } else {
+        checksum += map.delete(key) ? 1 : 0;
+      }
+    }
+
+    batches.push(Number(process.hrtime.bigint() - clock));
+  }
+
+  return {batches: batches, checksum: checksum, set: map};
+}
+
+// Twin of bench/runner/src/multi_map.rs. 50% set (mutating append, default
+// Array container), 25% get (pure read, contributing the bucket's length),
+// 25% remove (mutating). `workload.size` is the KEY DOMAIN, deliberately far
+// smaller than the op count -- see that file's own module docs for the
+// values-per-key reasoning.
+function runMixedMultiMap(MultiMap, workload, k) {
+  const map = new MultiMap();
+  const ops = workload.kind.length;
+  const batches = [];
+  let checksum = 0;
+
+  for (let start = 0; start < ops; start += k) {
+    const end = Math.min(start + k, ops);
+    const clock = process.hrtime.bigint();
+
+    for (let i = start; i < end; i++) {
+      const key = workload.a[i];
+      const value = workload.b[i];
+      const op = workload.kind[i];
+
+      if (op === 0 || op === 1) {
+        map.set(key, value);
+      } else if (op === 2) {
+        const container = map.get(key);
+        checksum += container === undefined ? 0 : container.length;
+      } else {
+        checksum += map.remove(key, value) ? 1 : 0;
+      }
+    }
+
+    batches.push(Number(process.hrtime.bigint() - clock));
+  }
+
+  return {batches: batches, checksum: checksum, set: map};
+}
+
+// Twin of bench/runner/src/multi_set.rs. 50% add (mutating), 25%
+// multiplicity (pure read), 25% remove (mutating, no contribution --
+// `MultiSet#.remove` returns nothing, matching `#.set`'s convention
+// elsewhere in this batch). `delete`/`set` are excluded on purpose -- see
+// that file's own module docs on B-160/B-161.
+function runMixedMultiSet(MultiSet, workload, k) {
+  const set = new MultiSet();
+  const ops = workload.kind.length;
+  const batches = [];
+  let checksum = 0;
+
+  for (let start = 0; start < ops; start += k) {
+    const end = Math.min(start + k, ops);
+    const clock = process.hrtime.bigint();
+
+    for (let i = start; i < end; i++) {
+      const item = workload.a[i];
+      const op = workload.kind[i];
+
+      if (op === 0 || op === 1) {
+        set.add(item, 1);
+      } else if (op === 2) {
+        checksum += set.multiplicity(item);
+      } else {
+        set.remove(item, 1);
+      }
+    }
+
+    batches.push(Number(process.hrtime.bigint() - clock));
+  }
+
+  return {batches: batches, checksum: checksum, set: set};
+}
+
+// Twin of bench/runner/src/multi_array.rs. 50% set (mutating append,
+// dynamic/unbounded mode -- `test/multi-array.js` never builds a
+// fixed-capacity `Array` container), 25% get (a read that materialises the
+// whole bucket, contributing its length), 25% multiplicity (a pure O(1)
+// read). No delete: this module has none, upstream or here.
+function runMixedMultiArray(MultiArray, workload, k) {
+  const array = new MultiArray();
+  const ops = workload.kind.length;
+  const batches = [];
+  let checksum = 0;
+
+  for (let start = 0; start < ops; start += k) {
+    const end = Math.min(start + k, ops);
+    const clock = process.hrtime.bigint();
+
+    for (let i = start; i < end; i++) {
+      const index = workload.a[i];
+      const op = workload.kind[i];
+
+      if (op === 0 || op === 1) {
+        array.set(index, workload.b[i]);
+      } else if (op === 2) {
+        const bucket = array.get(index);
+        checksum += bucket === undefined ? 0 : bucket.length;
+      } else {
+        checksum += array.multiplicity(index);
+      }
+    }
+
+    batches.push(Number(process.hrtime.bigint() - clock));
+  }
+
+  return {batches: batches, checksum: checksum, set: array};
+}
+
+// `hash(x) = x >>> 4`, twin of bench/runner/src/fuzzy_map.rs::hash and
+// fuzzy_multi_map.rs::hash -- has to do the IDENTICAL work on both sides
+// (see fuzzy_map.rs's own module docs), which is exactly why this is a bare
+// arithmetic shift rather than anything floating-point-based.
+function fuzzyHash(x) {
+  return x >>> 4;
+}
+
+// Twin of bench/runner/src/fuzzy_map.rs. 50% set (mutating, hashed
+// internally by the class), 25% get (pure read), 25% has (pure read --
+// stands in for `sparse-map`'s delete slot, since this module has no
+// delete; see that file's own module docs).
+function runMixedFuzzyMap(FuzzyMap, workload, k) {
+  const map = new FuzzyMap(fuzzyHash);
+  const ops = workload.kind.length;
+  const batches = [];
+  let checksum = 0;
+
+  for (let start = 0; start < ops; start += k) {
+    const end = Math.min(start + k, ops);
+    const clock = process.hrtime.bigint();
+
+    for (let i = start; i < end; i++) {
+      const key = workload.a[i];
+      const op = workload.kind[i];
+
+      if (op === 0 || op === 1) {
+        map.set(key, workload.b[i]);
+      } else if (op === 2) {
+        const value = map.get(key);
+        checksum += value === undefined ? 0 : value;
+      } else {
+        checksum += map.has(key) ? 1 : 0;
+      }
+    }
+
+    batches.push(Number(process.hrtime.bigint() - clock));
+  }
+
+  return {batches: batches, checksum: checksum, set: map};
+}
+
+// Twin of bench/runner/src/fuzzy_multi_map.rs. Same hash as `fuzzy-map`; 50%
+// set (mutating append, default Array container), 25% get (pure read,
+// bucket length), 25% has (pure read). No delete/remove: this module has
+// none.
+function runMixedFuzzyMultiMap(FuzzyMultiMap, workload, k) {
+  const map = new FuzzyMultiMap(fuzzyHash);
+  const ops = workload.kind.length;
+  const batches = [];
+  let checksum = 0;
+
+  for (let start = 0; start < ops; start += k) {
+    const end = Math.min(start + k, ops);
+    const clock = process.hrtime.bigint();
+
+    for (let i = start; i < end; i++) {
+      const key = workload.a[i];
+      const op = workload.kind[i];
+
+      if (op === 0 || op === 1) {
+        map.set(key, workload.b[i]);
+      } else if (op === 2) {
+        const container = map.get(key);
+        checksum += container === undefined ? 0 : container.length;
+      } else {
+        checksum += map.has(key) ? 1 : 0;
+      }
+    }
+
+    batches.push(Number(process.hrtime.bigint() - clock));
+  }
+
+  return {batches: batches, checksum: checksum, set: map};
+}
+
+// Twin of bench/runner/src/inverted_index.rs. An identity tokenizer, so a
+// "document" IS its own token array -- the port's `Doc` (a bare document
+// id, never read back by this workload) and its tokens are two different
+// values on the Rust side and the same array reference here, which is an
+// equivalent design choice: neither side's checksum ever reads a document's
+// *content* back, only a query's result COUNT, so what the "document" value
+// contains is inert either way. 50% add (mutating, two tokens), 25% a
+// single-token get (pure read, contributing the match count), 25% a
+// two-token get (pure read, additionally exercising the AND intersection).
+// `workload.size` is the token VOCABULARY -- see that file's own module docs
+// for why it is far smaller than the op count.
+function runMixedInvertedIndex(InvertedIndex, workload, k) {
+  const index = new InvertedIndex(function(x) { return x; });
+  const ops = workload.kind.length;
+  const batches = [];
+  let checksum = 0;
+
+  for (let start = 0; start < ops; start += k) {
+    const end = Math.min(start + k, ops);
+    const clock = process.hrtime.bigint();
+
+    for (let i = start; i < end; i++) {
+      const t1 = workload.a[i];
+      const t2 = workload.b[i];
+      const op = workload.kind[i];
+
+      if (op === 0 || op === 1) {
+        index.add([t1, t2]);
+      } else if (op === 2) {
+        checksum += index.get([t1]).length;
+      } else {
+        checksum += index.get([t1, t2]).length;
+      }
+    }
+
+    batches.push(Number(process.hrtime.bigint() - clock));
+  }
+
+  return {batches: batches, checksum: checksum, set: index};
+}
+
 // Dispatch table, twin of harness.rs::MODULES's `mixed` field. Replaces what
 // was a two-armed ternary before five more modules made that the wrong shape.
 const MIXED_RUNNERS = {
@@ -712,7 +1014,17 @@ const MIXED_RUNNERS = {
   'hashed-array-tree': runMixedHashedArrayTree,
   'sparse-map': runMixedSparseMap,
   'sparse-queue-set': runMixedSparseQueueSet,
-  'bit-vector': runMixedBitVector
+  'bit-vector': runMixedBitVector,
+  // Appended for the map-like/multi-container batch, never inserted (twin of
+  // harness.rs::MODULES).
+  'default-map': runMixedDefaultMap,
+  'bi-map': runMixedBiMap,
+  'multi-map': runMixedMultiMap,
+  'multi-set': runMixedMultiSet,
+  'multi-array': runMixedMultiArray,
+  'fuzzy-map': runMixedFuzzyMap,
+  'fuzzy-multi-map': runMixedFuzzyMultiMap,
+  'inverted-index': runMixedInvertedIndex
 };
 
 // Twin of harness.rs::MODULES's `structure` field: build the structure at
@@ -833,6 +1145,80 @@ const STRUCTURE_BUILDERS = {
     const array = new SuffixArray(codes.join(''));
 
     return array.array[size - 1];
+  },
+  // Appended for the map-like/multi-container batch, never inserted (twin of
+  // harness.rs::MODULES). Each "one value per key" fill mirrors its own
+  // bench/runner/src/*.rs::build_structure -- see those files' own docs.
+  'default-map': function (DefaultMap, size) {
+    const map = new DefaultMap(function(key) { return key; });
+
+    for (let i = 0; i < size; i++) map.set(i, i);
+
+    return map.has(size - 1);
+  },
+  'bi-map': function (BiMap, size) {
+    const map = new BiMap();
+
+    for (let i = 0; i < size; i++) map.set(i, i);
+
+    return map.has(size - 1);
+  },
+  'multi-map': function (MultiMap, size) {
+    const map = new MultiMap();
+
+    for (let i = 0; i < size; i++) map.set(i, i);
+
+    return map.has(size - 1);
+  },
+  'multi-set': function (MultiSet, size) {
+    const set = new MultiSet();
+
+    for (let i = 0; i < size; i++) set.add(i, 1);
+
+    return set.has(size - 1);
+  },
+  'multi-array': function (MultiArray, size) {
+    const array = new MultiArray();
+
+    for (let i = 0; i < size; i++) array.push(i);
+
+    return array.has(size - 1);
+  },
+  'fuzzy-map': function (FuzzyMap, size) {
+    const map = new FuzzyMap(fuzzyHash);
+
+    for (let i = 0; i < size; i++) map.set(i, i);
+
+    return map.has(fuzzyHash(size - 1));
+  },
+  'fuzzy-multi-map': function (FuzzyMultiMap, size) {
+    const map = new FuzzyMultiMap(fuzzyHash);
+
+    for (let i = 0; i < size; i++) map.set(i, i);
+
+    return map.has(fuzzyHash(size - 1));
+  },
+  // `size` is the token VOCABULARY here (matching runMixedInvertedIndex's own
+  // meaning of it), so this fills `size * DOCS_PER_WORD` documents rather
+  // than `size` -- twin of bench/runner/src/inverted_index.rs::DOCS_PER_WORD.
+  'inverted-index': function (InvertedIndex, size) {
+    const DOCS_PER_WORD = 100;
+    const index = new InvertedIndex(function(x) { return x; });
+    const docCount = Math.max(1, size * DOCS_PER_WORD);
+
+    for (let i = 0; i < docCount; i++) index.add([i % size, Math.floor(i / size) % size]);
+
+    return index.get([0]).length;
+  },
+  // `set.js` has no persistent structure of its own (see set_ops.rs's own
+  // module docs) -- a plain native `Set`, not `SetOps` itself, is what is
+  // actually built and measured.
+  'set': function (SetOps, size) {
+    const set = new Set();
+
+    for (let i = 0; i < size; i++) set.add(i);
+
+    return set.has(size - 1);
   }
 };
 
@@ -943,6 +1329,48 @@ function runDrainSuffixArray(SuffixArray, size, seed, passes) {
   return {batches: batches, checksum: checksum, perPass: size, set: text};
 }
 
+// Twin of bench/runner/src/set_ops.rs. One measured sample per `union` call
+// -- `union` is the representative choice out of set.js's fourteen free
+// functions; see that file's own module docs for why. Both `A` and `B` are
+// `size` elements drawn from the SAME `0..size` domain, guaranteeing real
+// overlap and internal duplicates by the birthday bound -- see that file's
+// docs. `perPass` is `2 * size` (the number of source elements `union`
+// visits per call), constant across passes.
+function runDrainSet(SetOps, size, seed, passes) {
+  const rng = new XorShift32(seed);
+  const buffer = new Uint32Array(2 * size * passes);
+
+  for (let i = 0; i < buffer.length; i++) buffer[i] = rng.below(size);
+
+  const batches = [];
+  let checksum = 0;
+
+  for (let pass = 0; pass < passes; pass++) {
+    const base = pass * 2 * size;
+
+    const a = new Set();
+    for (let i = base; i < base + size; i++) a.add(buffer[i]);
+
+    const b = new Set();
+    for (let i = base + size; i < base + 2 * size; i++) b.add(buffer[i]);
+
+    const clock = process.hrtime.bigint();
+    const result = SetOps.union(a, b);
+    batches.push(Number(process.hrtime.bigint() - clock));
+
+    // Outside the timed region: a verification read, not part of what
+    // `union` itself costs. Position-weighted, not a sum -- see that file's
+    // own docs on why order has to be part of the checksum.
+    let index = 0;
+    for (const member of result) {
+      checksum += (index + 1) * member;
+      index++;
+    }
+  }
+
+  return {batches: batches, checksum: checksum, perPass: 2 * size, set: null};
+}
+
 // Dispatch table, twin of harness.rs::MODULES's `drain` field. `sparse-set`
 // was the only drain-shaped module before this batch, so its loop used to be
 // called directly by name; two more modules with genuinely different drain
@@ -951,7 +1379,10 @@ function runDrainSuffixArray(SuffixArray, size, seed, passes) {
 const DRAIN_RUNNERS = {
   'sparse-set': runDrain,
   'sort': runDrainSort,
-  'suffix-array': runDrainSuffixArray
+  'suffix-array': runDrainSuffixArray,
+  // Appended for the map-like/multi-container batch, never inserted (twin of
+  // harness.rs::MODULES).
+  'set': runDrainSet
 };
 
 // --- CLI --------------------------------------------------------------------

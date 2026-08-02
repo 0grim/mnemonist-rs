@@ -272,11 +272,38 @@ still passes (`4 passing`).
 
 ### Bench
 
-**Not run.** Gate 10 is deferred to the batched quiet pass (DESIGN.md §7.3). `default-weak-map` is
-therefore **complete except gate 10** and correctly absent from `tests/scope.txt` until that pass
-lands.
+**Excluded, deliberately, and not merely deferred.** The quiet serial pass that produced
+`bench/results.json` for the other nine units in this batch (`default-map`, `bi-map`, `multi-map`,
+`multi-set`, `multi-array`, `fuzzy-map`, `fuzzy-multi-map`, `inverted-index`, `set`) did not attempt
+`default-weak-map`, and this is a stated exclusion rather than an oversight: a benchmark's whole
+premise is that both sides execute the identical, materialised op sequence
+(`bench/methodology.md`'s matched-PRNG rule), and this module's entire reason to exist breaks that
+premise at the root.
 
-One thing to watch when it does: `WeakKey::matches` is O(n) per lookup (a linear scan with one
-`napi_strict_equals` call per live entry), which is the honest cost of not having a hashable
-identity — see "Deliberate divergences." Whether that shows up in a benchmark at any realistic map
-size is a question for the measurement, not for this document.
+* **Upstream's keys must be real objects**, and a `WeakMap` holds them weakly — an entry becomes
+  eligible for reclamation the instant nothing outside the map references its key, at a time
+  JavaScript deliberately gives no way to observe (see "What is and is not observable", above). Any
+  timing taken under a workload that creates and drops objects would be measuring **when V8's
+  garbage collector happens to run**, not the structure's own cost — and per DESIGN.md's own
+  standard for what counts as a benchmark, a number that cannot be attributed to the thing under test
+  is not a number worth publishing, however clean it looks.
+* **This module's own core (`crate::structures::default_weak_map::DefaultWeakMap`) is a linear scan
+  over `Vec<(K, Option<V>)>` by design** (see the module docs above), so even a same-process,
+  no-N-API benchmark would need real distinct "identities" it could construct, hold, and then decide
+  to drop at chosen moments to produce a representative live/dead entry ratio — machinery this
+  module deliberately has no need for anywhere else (its own fuzz spec, per its own docs, "deliberately
+  never asks either side whether an unreferenced key has been reclaimed", for exactly this reason).
+  Building it only for a benchmark would be constructing a scenario to get a number, not measuring the
+  structure as it is actually used.
+
+This is the same call the correctness work already made about GC timing (see "What is and is not
+observable" above and `planning/NOTES.md`) and recorded rather than working around: a stated
+exclusion is worth more than a benchmark result nobody could trust. `default-weak-map` is therefore
+**complete except gate 10**, correctly absent from `tests/scope.txt`, and is expected to *stay*
+absent from it rather than merely waiting for a quiet machine the way the other nine units were.
+
+One thing worth recording for if this call is ever revisited: `WeakKey::matches` is O(n) per lookup
+(a linear scan with one `napi_strict_equals` call per live entry), which is the honest cost of not
+having a hashable identity — see "Deliberate divergences." Whether that cost is even the dominant
+one at any realistic map size is exactly the question a GC-dominated timing could not answer either
+way.

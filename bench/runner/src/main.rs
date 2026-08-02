@@ -54,6 +54,17 @@ mod sparse_map;
 mod sparse_queue_set;
 mod stack;
 mod suffix_array;
+// Appended for the map-like/multi-container Gate 10 batch, never inserted
+// alphabetically -- same reasoning as the block above it.
+mod bi_map;
+mod default_map;
+mod fuzzy_map;
+mod fuzzy_multi_map;
+mod inverted_index;
+mod multi_array;
+mod multi_map;
+mod multi_set;
+mod set_ops;
 
 use std::process::ExitCode;
 
