@@ -304,6 +304,13 @@ pub const MODULES: &[ModuleEntry] = &[
         drain: None,
         structure: crate::fibonacci_heap::build_structure,
     },
+    ModuleEntry {
+        name: "fixed-reverse-heap",
+        kinds: &["mixed"],
+        mixed: Some(crate::fixed_reverse_heap::run_mixed),
+        drain: None,
+        structure: crate::fixed_reverse_heap::build_structure,
+    },
 ];
 
 pub fn find(name: &str) -> Option<&'static ModuleEntry> {

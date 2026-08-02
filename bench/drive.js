@@ -653,6 +653,18 @@ const WORKLOADS = {
       name: 'mixed-2e5', kind: 'mixed', size: 200000, ops: 200000,
       label: 'mixed push/pop/peek (50/25/25), default numeric comparator'
     }
+  ],
+
+  // `fixed-reverse-heap`: capacity is HALF the value domain, not a tiny
+  // slice of the op count -- see bench/runner/src/fixed_reverse_heap.rs's
+  // own module docs for why that is load-bearing (a tiny capacity fills
+  // once and then rarely displaces anything again). Measured: 60.3%
+  // displacement rate over full-heap pushes.
+  'fixed-reverse-heap': [
+    {
+      name: 'mixed-1e6', kind: 'mixed', size: 1000000, ops: 1000000,
+      label: 'mixed push/peek (75/25), capacity = size/2, default numeric comparator'
+    }
   ]
 };
 

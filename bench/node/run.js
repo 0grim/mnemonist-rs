@@ -104,7 +104,8 @@ const MODULES = {
   'vp-tree': ['mixed'],
   'kd-tree': ['mixed'],
   'static-interval-tree': ['mixed'],
-  'fibonacci-heap': ['mixed']
+  'fibonacci-heap': ['mixed'],
+  'fixed-reverse-heap': ['mixed']
 };
 
 const argv = process.argv.slice(2);
@@ -1385,6 +1386,41 @@ function runMixedFibonacciHeap(FibonacciHeap, workload, k) {
   return {batches: batches, checksum: checksum, set: heap};
 }
 
+// Twin of bench/runner/src/fixed_reverse_heap.rs. Capacity is HALF the
+// value domain, not a tiny slice of the op count -- see that file's own
+// module docs for why a tiny capacity would fill once and then rarely
+// displace anything again. 75% push (never guarded -- it cannot fail),
+// 25% peek. No `consume`: draining resets size to zero, undoing the
+// "capacity filled" state this workload exists to hold.
+function runMixedFixedReverseHeap(FixedReverseHeap, workload, k) {
+  const capacity = Math.max(Math.floor(workload.size / 2), 1);
+  const heap = new FixedReverseHeap(Float64Array, capacity);
+  const ops = workload.kind.length;
+  const batches = [];
+  let checksum = 0;
+
+  for (let start = 0; start < ops; start += k) {
+    const end = Math.min(start + k, ops);
+    const clock = process.hrtime.bigint();
+
+    for (let i = start; i < end; i++) {
+      const value = workload.a[i];
+      const op = workload.kind[i];
+
+      if (op < 3) {
+        heap.push(value);
+      } else {
+        const peeked = heap.peek();
+        checksum += peeked === undefined ? 0 : peeked;
+      }
+    }
+
+    batches.push(Number(process.hrtime.bigint() - clock));
+  }
+
+  return {batches: batches, checksum: checksum, set: heap};
+}
+
 // Dispatch table, twin of harness.rs::MODULES's `mixed` field. Replaces what
 // was a two-armed ternary before five more modules made that the wrong shape.
 const MIXED_RUNNERS = {
@@ -1425,7 +1461,8 @@ const MIXED_RUNNERS = {
   'vp-tree': runMixedVpTree,
   'kd-tree': runMixedKdTree,
   'static-interval-tree': runMixedStaticIntervalTree,
-  'fibonacci-heap': runMixedFibonacciHeap
+  'fibonacci-heap': runMixedFibonacciHeap,
+  'fixed-reverse-heap': runMixedFixedReverseHeap
 };
 
 // Twin of harness.rs::MODULES's `structure` field: build the structure at
@@ -1683,6 +1720,16 @@ const STRUCTURE_BUILDERS = {
   },
   'fibonacci-heap': function (FibonacciHeap, size) {
     const heap = new FibonacciHeap();
+
+    for (let i = 0; i < size; i++) heap.push(i);
+
+    return heap.peek();
+  },
+  // Twin of bench/runner/src/fixed_reverse_heap.rs::build_structure:
+  // capacity size/2, prefilled with `size` pushes.
+  'fixed-reverse-heap': function (FixedReverseHeap, size) {
+    const capacity = Math.max(Math.floor(size / 2), 1);
+    const heap = new FixedReverseHeap(Float64Array, capacity);
 
     for (let i = 0; i < size; i++) heap.push(i);
 
