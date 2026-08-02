@@ -1077,3 +1077,5 @@
 2026-08-01T23:10:00Z  module=passjoin-index seed=20260802 cases=8857 ops=880275 wall=60.0s divergences=0
 2026-08-02T10:08:40Z  module=heap seed=42 cases=1309 ops=132700 wall=5.0s divergences=0
 2026-08-02T10:09:33Z  module=heap seed=42 cases=1376 ops=139663 wall=5.0s divergences=0
+2026-08-02T16:51:24Z  module=heap seed=42 cases=1323 ops=134104 wall=5.0s divergences=0
+2026-08-02T16:55:53Z  module=heap seed=42 cases=1367 ops=138789 wall=5.0s divergences=0
