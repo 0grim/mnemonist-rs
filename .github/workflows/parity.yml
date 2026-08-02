@@ -1,0 +1,46 @@
+name: parity
+on: [push, pull_request]
+
+jobs:
+  # 1. THE FFI-RULE REBUTTAL, AUTOMATED.
+  #    Container image has no Node at all -- if the core needed a JS runtime,
+  #    this fails. Same assertion as the Dockerfile's `core` stage.
+  core-standalone:
+    runs-on: ubuntu-latest
+    container: rust:1.97.1-slim
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assert Node is absent
+        run: '! command -v node'
+      - run: cargo test -p mnemonist-core --release
+      - name: Assert the unsafe ban is still declared
+        run: grep -q 'forbid(unsafe_code)' crates/mnemonist-core/src/lib.rs
+
+  # 2. TEST PARITY. tests/run.sh's own sha256sum check gates every run, so
+  #    hash verification is not a separate step here.
+  parity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with: { toolchain: '1.97.1' }
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with: { node-version: '24.18.1' }
+      - name: In-scope parity (gates the badge)
+        run: ./tests/run.sh
+      - name: Repo-wide count (informational, never fails)
+        run: |
+          ./tests/run.sh all | tee /tmp/all.txt || true
+          { echo '### Repo-wide (informational)';
+            grep -E 'passing|failing|pending' /tmp/all.txt; } >> "$GITHUB_STEP_SUMMARY"
+
+  # 3. ONE-COMMAND BUILD -- the submission requirement, checked on every push.
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - run: docker build -t port-mortem .
+      - name: Also prove the core stage builds standalone
+        run: docker build -t pm-core --target core .
