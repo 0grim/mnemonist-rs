@@ -16,7 +16,7 @@ without it.
 
 This is forced by the harness rather than chosen. Every `require('../x.js')` in an upstream test
 file sits at the top of the file, so one missing module throws before a single assertion runs and
-the **whole file fails with zero partial credit**.
+the whole file fails with zero partial credit.
 
 Most test files map to one module. These do not:
 
@@ -112,8 +112,8 @@ necessary: a suite that passes tells you nothing until you have shown it can fai
 
 ## Gate 5 — the originals are provably untouched
 
-**Purpose.** The easiest way to pass someone else's tests is to edit them. This removes that option,
-including from ourselves.
+**Purpose.** The easiest way to pass someone else's tests is to edit them. This removes that option
+for anyone maintaining the port, not only for an outside reviewer.
 
 **How it runs.** All **47 upstream test files are SHA-256 hashed** in `tests/SHA256SUMS`, verified
 by `sha256sum -c` on every commit. One changed byte fails the build.
@@ -142,11 +142,11 @@ each with a different cause:
 | Case | Cause | What it revealed |
 |---|---|---|
 | `fibonacci-heap` — flipping `push`'s `<=` tie-break | The assertions **cannot express** the defect: the values it reorders are *equal*, so no expected-value check can observe it | The differential fuzzer caught it in 425 cases. The two instruments are not redundant |
-| `default-weak-map` — sabotaging the bridge's `get` | The sabotage sits in a **layer the fuzzer does not drive** | A structural blind spot — see *What these instruments cannot see* |
+| `default-weak-map` — sabotaging the bridge's `get` | The sabotage sits in a layer the fuzzer does not drive | A structural blind spot — see *What these instruments cannot see* |
 | `fixed-critbit-tree-map` — corrupting the critical-bit isolator | The corruption is a **self-consistent mirror**: the same wrong direction function drives insert and lookup, so every query answer still matches | A property of the structure, not the harness. The native test, which checks visitation order, failed as predicted |
 
-A fourth case is the one the gate exists for, and unlike the three above it found a weakness in
-**our own tests** rather than a fact about the instruments. Disabling `kd-tree`'s "search the other
+A fourth case is the one the gate exists for, and unlike the three above it found a weakness in the
+port's own tests rather than a fact about the instruments. Disabling `kd-tree`'s "search the other
 side of the splitting plane" branch stayed green against the upstream-pinned fixture — that
 particular query resolves through the primary descent alone — and stayed green against the first
 native test written for it, a diagonal arrangement of points that happened to share the same
@@ -166,9 +166,9 @@ explicitly.
 
 **How it runs.** `cargo test` — currently **764 tests**.
 
-**What it caught.** A great deal, with one structural limitation worth stating plainly: these tests
-were written by whoever wrote the implementation, against the same reading of the upstream source. A
-misreading produces a matching test and a green light. Gates 4 and 9 exist to break that symmetry.
+**What it caught.** A great deal, with one structural limitation: these tests were written by
+whoever wrote the implementation, against the same reading of the upstream source. A misreading
+produces a matching test and a green light. Gates 4 and 9 exist to break that symmetry.
 
 ---
 
@@ -183,8 +183,8 @@ the unit if any is missing. There are **39 such documents; the shortest is 141 l
 
 **What it caught.** Writing *what upstream does not test* per module is what surfaced most of the
 upstream bugs found in this port — the question forces an adversarial reading of the original's
-tests rather than a trusting one. It also caught cases where our port was **more correct than
-upstream**, which under a fidelity requirement is a defect: `MultiSet`'s size counter had to be kept
+tests rather than a trusting one. It also caught cases where the port was more correct than
+upstream, which under a fidelity requirement is a defect: `MultiSet`'s size counter had to be kept
 as a tracked value rather than a derived one, so that upstream's drift on a failed delete reproduces
 instead of silently healing.
 
@@ -203,7 +203,7 @@ Every line in `fuzz/log.txt` carries its seed and replays exactly.
 Three design decisions determine whether such a harness means anything:
 
 **The oracle runs the real thing** — upstream's own source in Node, over a line-delimited JSON
-protocol, not a model of what we believe upstream does. A reimplementation would encode our
+protocol, not a model of what upstream is believed to do. A reimplementation would encode the same
 misunderstandings on both sides of the comparison.
 
 **A campaign that runs no operations is a failure, not a pass.** The runner exits with a distinct
@@ -227,15 +227,15 @@ produces a clean campaign proving only that the structure can store things.
 
 **What it caught.** Bugs the upstream suite does not reach — for instance that `BiMap`'s `clear()`
 resets only one of its two size counters, found from a two-operation program. It also caught defects
-in our own port before any campaign was logged: a linked-list `forEach` advancing its cursor *before*
-the callback ran where upstream advances after, and an `inverted-index` `clear()` that rebinds its
-backing arrays rather than clearing them in place.
+in the port itself before any campaign was logged: a linked-list `forEach` advancing its cursor
+*before* the callback ran where upstream advances after, and an `inverted-index` `clear()` that
+rebinds its backing arrays rather than clearing them in place.
 
-**Where a path does not exist, we say so.** One brief demanded the Fibonacci heap's cascading-cut
-path be exercised. Upstream has no `decreaseKey`, no `delete`, no `mark` and no cut — it implements
-the consolidation half of the structure and not the amortisation half. The honest answer to "make X
-fire" is sometimes "X is not there", and it is available only to someone who reads the source
-instead of tuning the grammar until the report looks right.
+**Where a path does not exist, that is stated directly.** One requirement called for the Fibonacci
+heap's cascading-cut path to be exercised. Upstream has no `decreaseKey`, no `delete`, no `mark` and
+no cut — it implements the consolidation half of the structure and not the amortisation half. The
+honest answer to "make X fire" is sometimes "X is not there", available only to someone who reads
+the source instead of tuning the grammar until the report looks right.
 
 ---
 
@@ -246,8 +246,8 @@ instead of tuning the grammar until the report looks right.
 **How it runs.** Matched workloads driven by an identical xorshift32 sequence on both sides, batch
 timed, interleaved A/B/A/B, 3 warmup and 10 measured rounds, with in-process peak-RSS sampling on
 each side. Results are keyed per unit in `bench/results.json`, and **every workload must carry an
-explicit `regressions` array** — `tests/verify.sh` fails a unit whose entry omits the field, so "we
-were slower here" cannot be expressed by silence.
+explicit `regressions` array** — `tests/verify.sh` fails a unit whose entry omits the field, so a
+slowdown cannot be expressed by silence.
 
 **Benchmarks require an idle machine, and this is measured rather than assumed.** A contended run
 inflated both sides two- to threefold; upstream's own p99 swung 32% between otherwise clean runs; a
@@ -263,9 +263,8 @@ labelled unconfirmed.
 
 ## What these instruments cannot see
 
-The most useful thing this project learned is that **passing your own verification is not the same
-as being correct**. Three cases where a confident green signal was answering a different question
-than the one intended:
+This project's own verification instruments passed while measuring something other than correctness
+on three separate occasions:
 
 **A fuzz specification that never ran, reporting clean.** One module's harness referred to its hash
 factories by names the oracle did not register. Every generated case failed at construction, and the
@@ -273,16 +272,16 @@ campaign reported zero divergences *truthfully* — zero disagreements out of ze
 Nothing was broken, the arithmetic was correct, and the number meant nothing. After the fix, the
 same campaign executed 1,210,496 real operations.
 
-**Our own decoder manufacturing divergences.** Two specifications opened with 1-ULP disagreements
+**A decoder manufacturing divergences.** Two specifications opened with 1-ULP disagreements
 indistinguishable from genuine port bugs. The JSON library's default float parser is not
 correctly-rounded: parsing `38403.356486892444` lands one unit in the last place away from Rust's
 own `f64` parser. A differential fuzzer that decodes its oracle's numbers wrongly invents findings.
 
-**The layer gap.** The differential fuzzer compares the *native crate* against upstream. **The napi
-bridge is not in that loop.** When a sabotage was planted in the bridge, a direct script went red,
-the upstream suite stayed green, and the fuzzer stayed green *and was right to*. Every defect living
-in the bridge — reference retention, borrow discipline, argument marshalling, factory composition —
-is invisible to fuzzing **by construction**, and needs reading, boundary tests or review instead.
+**The layer gap.** The differential fuzzer compares the *native crate* against upstream; the napi
+bridge is not in that loop. When a sabotage was planted in the bridge, a direct script went red, the
+upstream suite stayed green, and the fuzzer stayed green, correctly so. Every defect living in the
+bridge — reference retention, borrow discipline, argument marshalling, factory composition — is
+invisible to fuzzing by construction, and needs reading, boundary tests or review instead.
 
 That conclusion was reached three separate times before it was named: through a soundness bug where
 `&self` on a frozen type let the optimiser hoist reads across a re-entrant JavaScript callback;
@@ -295,12 +294,12 @@ Node with `SIGABRT`; and finally through a falsification designed to expose it.
 
 - **Garbage-collection timing in `default-weak-map`.** Its fuzz key pool is created once and held
   for the oracle process's lifetime, so no key is ever collectible mid-campaign. A `WeakMap`'s
-  entries vanish when the collector decides; a differential test depending on *when* would flake.
-  **A flaky red is worse than a narrow green — it teaches you to ignore the instrument.**
-- **`intersectionUnique` with `NaN`.** A known gap in our own code. Its campaign runs with `NaN`
-  generation disabled *for that function only*, leaving it green over a region that excludes a known
-  disagreement. Recorded in the module document rather than hidden.
-- **Trie cursors across deletion.** Upstream's iterator holds a live object reference; ours is
+  entries vanish when the collector decides; a differential test depending on *when* would flake,
+  and a flaky red is worse than a narrow green, since it teaches the team to distrust the instrument.
+- **`intersectionUnique` with `NaN`.** A known gap in the port's own code. Its campaign runs with
+  `NaN` generation disabled *for that function only*, leaving it green over a region that excludes a
+  known disagreement. Recorded in the module document rather than hidden.
+- **Trie cursors across deletion.** Upstream's iterator holds a live object reference; the port's is
   path-based because it must resume across the language boundary. An architectural divergence,
   accepted and documented, with the fuzz grammar split so the two regimes do not mix.
 
@@ -318,6 +317,6 @@ scripts/status.sh                # derived status: coverage and per-unit evidenc
 cargo run -p difffuzz --release -- --module <name> --seed <n> --duration 60
 ```
 
-Every campaign line in `fuzz/log.txt` carries its seed and replays exactly. **Withdrawn campaigns
-are commented out with their reason rather than deleted**, so a figure later found to be overstated
-stays visible as a correction instead of disappearing from the record.
+Every campaign line in `fuzz/log.txt` carries its seed and replays exactly. Withdrawn campaigns are
+commented out with their reason rather than deleted, so a figure later found to be overstated stays
+visible as a correction instead of disappearing from the record.
