@@ -414,3 +414,29 @@ pre-fix bridges, green after.
 One deliberate narrowing, mirrored on both sides: a selected callback argument that is `undefined`
 skips the mutation. Feeding it back in reaches upstream's `NaN`-indexed swap, which `usize` cannot
 express and the core does not model. Fully disclosed in `fuzz/log.txt`.
+
+### Bench
+
+`bench/results.json` → `modules["sparse-queue-set"]`. Methodology: `bench/methodology.md`.
+Host: AMD Ryzen 5 7600X, 12 threads, WSL2, Node 24.18.1, rustc 1.97.1, quiet serial pass.
+Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 10,000 samples/side.
+
+**`mixed-1e6`** — 1e6 mixed `enqueue`/`has`/`dequeue` (50/25/25) over capacity 1e6, xorshift32 seed
+42, `sparse-set`'s add/has/delete shape with FIFO names — `dequeue` takes no operand, so the
+workload's second operand goes unused on that op exactly as `has`'s does on `sparse-set`'s own
+workload. Members drawn in range, so this never reaches B-13's out-of-range eviction path; in range
+the ring's own ceiling does the interesting thing on its own once every member has cycled through.
+
+| metric | port | upstream | |
+|---|---|---|---|
+| p50 ns/op | **8.4** | 12.9 | 1.5× faster |
+| p99 ns/op | **23.4** | 61.2 | 2.6× faster |
+| min ns/op | **5.8** | 10.2 | 1.8× faster |
+| RSS delta MB | **11.6** | 41.3 | |
+| structure-only RSS delta MB | **1.3** | 9.8 | |
+| startup ms | **0.6** | 16.5 | 27× (reported separately; not throughput) |
+
+No regressions. B-12 (the dequeue sentinel truncating at 256/65536) and B-13/B-14 are all reachable
+only through out-of-range members, which this in-range workload never draws — consistent with
+`sparse-set`'s own bench doc, which makes the same call for the same reason: benchmarking the
+corruption path measures a bug, not a data structure.

@@ -411,3 +411,32 @@ pre-fix bridges, green after.
 One deliberate narrowing, mirrored on both sides: a selected callback argument that is `undefined`
 skips the mutation. Feeding it back in reaches upstream's `NaN`-indexed swap, which `usize` cannot
 express and the core does not model. Fully disclosed in `fuzz/log.txt`.
+
+### Bench
+
+`bench/results.json` → `modules["sparse-map"]`. Methodology: `bench/methodology.md`.
+Host: AMD Ryzen 5 7600X, 12 threads, WSL2, Node 24.18.1, rustc 1.97.1, quiet serial pass.
+Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 10,000 samples/side.
+
+**`mixed-1e6`** — 1e6 mixed `set`/`get`/`delete` (50/25/25) over length 1e6, xorshift32 seed 42,
+`set` taking the workload's second operand as the value (every op already draws three PRNG values
+per DESIGN.md §5.1, so this costs the mixed workload nothing extra). Members drawn in range, same
+reasoning as `sparse-set`'s own mixed workload: the out-of-range corruption path (B-8, inherited)
+belongs to the differential fuzzer.
+
+| metric | port | upstream | |
+|---|---|---|---|
+| p50 ns/op | **12.0** | 16.3 | 1.4× faster |
+| p99 ns/op | **28.8** | 52.1 | 1.8× faster |
+| min ns/op | **6.1** | 8.3 | 1.4× faster |
+| RSS delta MB | **13.8** | 79.7 | |
+| structure-only RSS delta MB | **1.3** | 9.9 | |
+| startup ms | **0.6** | 17.4 | 29× (reported separately; not throughput) |
+
+No regressions. The margin here is narrower than `sparse-set`'s own (1.4× against 1.3× p50, but
+`sparse-set` is a tie at p99 where this module still wins 1.8×) — plausible given this module does
+strictly more per op (a second array, `vals`, alongside `dense`/`sparse`), so there is more surface
+for both sides to spend time on and the *ratio* need not track exactly. B-11 (`delete` moving the
+key but not the value) is reproduced and is part of what the checksum agreement confirms: a port
+that had "fixed" it would desynchronise `get`'s answer after a `delete`, and the checksum would
+catch that before any timing number was trusted.
