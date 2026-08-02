@@ -611,6 +611,18 @@ const WORKLOADS = {
       name: 'mixed-5e4', kind: 'mixed', size: 50000, ops: 200000,
       label: 'mixed neighbors-small-radius/neighbors-large-radius/nearestNeighbors (40/40/20), metric |a - b|, over a shuffled 50,000-item domain'
     }
+  ],
+
+  // `kd-tree`: no `add` -- the tree is built once (untimed) from `size`
+  // scattered 2-D points, then every op is a query. Unlike `bk-tree`/
+  // `vp-tree`, a single query shape already exercises both outcomes of the
+  // cross-plane backtrack for genuine 2-D data, so no second radius is
+  // needed -- see bench/runner/src/kd_tree.rs's own module docs.
+  'kd-tree': [
+    {
+      name: 'mixed-1e5', kind: 'mixed', size: 100000, ops: 1000000,
+      label: 'mixed nearestNeighbor/kNearestNeighbors (75/25) over 100,000 scattered 2-D points'
+    }
   ]
 };
 

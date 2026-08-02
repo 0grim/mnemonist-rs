@@ -1224,7 +1224,57 @@
           "regressions": []
         }
       }
+    },
+    "kd-tree": {
+      "workloads": {
+        "mixed-1e5": {
+          "workload": "1e6 mixed nearestNeighbor/kNearestNeighbors (75/25) over 100,000 scattered 2-D points over size 100000, xorshift32 seed 42, ops materialised before the timed region",
+          "checksum": 723901217380,
+          "checksum_note": "identical on both sides: same ops, same answers, upstream bugs included",
+          "structure_note": "structure_rss_delta_mb constructs size 100000 and nothing else, isolating the structure from the op arrays both sides materialise",
+          "port": {
+            "p50_ns_per_op": 2049.082,
+            "p99_ns_per_op": 2536.655,
+            "min_ns_per_op": 1677.518,
+            "rss_total_mb": 14.5,
+            "rss_delta_mb": 9.6,
+            "structure_rss_delta_mb": 0.2,
+            "startup_ms": 0.6,
+            "samples": 10000
+          },
+          "original": {
+            "p50_ns_per_op": 939.76,
+            "p99_ns_per_op": 1375.656,
+            "min_ns_per_op": 828.599,
+            "rss_total_mb": 97,
+            "rss_delta_mb": 51.3,
+            "structure_rss_delta_mb": 6,
+            "startup_ms": 15.3,
+            "samples": 10000
+          },
+          "regressions": [
+            {
+              "metric": "p50_ns_per_op",
+              "port": 2049.082,
+              "original": 939.76,
+              "ratio": 2.18
+            },
+            {
+              "metric": "p99_ns_per_op",
+              "port": 2536.655,
+              "original": 1375.656,
+              "ratio": 1.84
+            },
+            {
+              "metric": "min_ns_per_op",
+              "port": 1677.518,
+              "original": 828.599,
+              "ratio": 2.02
+            }
+          ]
+        }
+      }
     }
   },
-  "generated_utc": "2026-08-02T03:16:51.107Z"
+  "generated_utc": "2026-08-02T03:22:55.994Z"
 }

@@ -101,7 +101,8 @@ const MODULES = {
   'critbit-tree-map': ['mixed'],
   'fixed-critbit-tree-map': ['mixed'],
   'bk-tree': ['mixed'],
-  'vp-tree': ['mixed']
+  'vp-tree': ['mixed'],
+  'kd-tree': ['mixed']
 };
 
 const argv = process.argv.slice(2);
@@ -1229,6 +1230,64 @@ function runMixedVpTree(VPTree, workload, k) {
   return {batches: batches, checksum: checksum, set: tree};
 }
 
+// Twin of bench/runner/src/kd_tree.rs::scattered_points. Two independent
+// coordinates per point from a fixed-seed (1) XorShift32, same convention
+// vp-tree's own shuffle uses -- an unsorted, uncorrelated domain matters
+// here too (construction sorts each level's window by one axis's raw
+// value).
+function kdScatteredPoints(size) {
+  const rng = new XorShift32(1);
+  const axes = [new Array(size), new Array(size)];
+  const labels = new Array(size);
+  const domain = Math.max(size, 1);
+
+  for (let i = 0; i < size; i++) {
+    axes[0][i] = rng.below(domain);
+    axes[1][i] = rng.below(domain);
+    labels[i] = i;
+  }
+
+  return {axes: axes, labels: labels};
+}
+
+// Twin of bench/runner/src/kd_tree.rs. No mutating op -- the tree is built
+// once (untimed) from scattered 2-D points, then every op is a query: 75%
+// nearestNeighbor (pure read), 25% kNearestNeighbors(K) (pure read,
+// position-weighted -- the heap pins an exact tie-break order).
+function runMixedKdTree(KDTree, workload, k) {
+  const K = 10;
+  const built = kdScatteredPoints(workload.size);
+  const tree = KDTree.fromAxes(built.axes, built.labels);
+  const domain = Math.max(workload.size, 1);
+  const ops = workload.kind.length;
+  const batches = [];
+  let checksum = 0;
+
+  for (let start = 0; start < ops; start += k) {
+    const end = Math.min(start + k, ops);
+    const clock = process.hrtime.bigint();
+
+    for (let i = start; i < end; i++) {
+      const query = [workload.a[i] % domain, workload.b[i] % domain];
+      const op = workload.kind[i];
+
+      if (op < 3) {
+        const label = tree.nearestNeighbor(query);
+        checksum += label === null ? 0 : label;
+      } else {
+        const hits = tree.kNearestNeighbors(K, query);
+        for (let position = 0; position < hits.length; position++) {
+          checksum += (position + 1) * hits[position];
+        }
+      }
+    }
+
+    batches.push(Number(process.hrtime.bigint() - clock));
+  }
+
+  return {batches: batches, checksum: checksum, set: tree};
+}
+
 // Dispatch table, twin of harness.rs::MODULES's `mixed` field. Replaces what
 // was a two-armed ternary before five more modules made that the wrong shape.
 const MIXED_RUNNERS = {
@@ -1266,7 +1325,8 @@ const MIXED_RUNNERS = {
   'critbit-tree-map': runMixedCritbitTreeMap,
   'fixed-critbit-tree-map': runMixedFixedCritbitTreeMap,
   'bk-tree': runMixedBkTree,
-  'vp-tree': runMixedVpTree
+  'vp-tree': runMixedVpTree,
+  'kd-tree': runMixedKdTree
 };
 
 // Twin of harness.rs::MODULES's `structure` field: build the structure at
@@ -1503,6 +1563,14 @@ const STRUCTURE_BUILDERS = {
   'vp-tree': function (VPTree, size) {
     const items = vpShuffledItems(size);
     const tree = new VPTree(vpDistance, items);
+
+    return tree.size;
+  },
+  // Twin of bench/runner/src/kd_tree.rs::build_structure: "size" means
+  // "built from `size` scattered points".
+  'kd-tree': function (KDTree, size) {
+    const built = kdScatteredPoints(size);
+    const tree = KDTree.fromAxes(built.axes, built.labels);
 
     return tree.size;
   }

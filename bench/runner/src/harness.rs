@@ -283,6 +283,13 @@ pub const MODULES: &[ModuleEntry] = &[
         drain: None,
         structure: crate::vp_tree::build_structure,
     },
+    ModuleEntry {
+        name: "kd-tree",
+        kinds: &["mixed"],
+        mixed: Some(crate::kd_tree::run_mixed),
+        drain: None,
+        structure: crate::kd_tree::build_structure,
+    },
 ];
 
 pub fn find(name: &str) -> Option<&'static ModuleEntry> {
