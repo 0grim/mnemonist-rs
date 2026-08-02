@@ -22,8 +22,8 @@
     "rss": "in-process: getrusage(RUSAGE_SELF) in Rust, process.resourceUsage().maxRSS in Node"
   },
   "baseline_rss_mb": {
-    "node": 45,
-    "rust": 4.7
+    "node": 45.6,
+    "rust": 4.8
   },
   "modules": {
     "static-disjoint-set": {
@@ -31,26 +31,26 @@
         "mixed-1e6": {
           "workload": "1e6 mixed union/find/connected (50/25/25) over size 1e6, xorshift32 seed 42, ops materialised before the timed region",
           "checksum": 125056860759,
-          "checksum_note": "identical on both sides: same ops, same answers, rank bug included",
+          "checksum_note": "identical on both sides: same ops, same answers, upstream bugs included",
           "structure_note": "structure_rss_delta_mb constructs size 1e6 and nothing else, isolating the structure from the op arrays both sides materialise",
           "port": {
-            "p50_ns_per_op": 15.579,
-            "p99_ns_per_op": 34.545,
-            "min_ns_per_op": 7.494,
-            "rss_total_mb": 15.8,
-            "rss_delta_mb": 11.1,
-            "structure_rss_delta_mb": 1.4,
+            "p50_ns_per_op": 16.281,
+            "p99_ns_per_op": 31.89,
+            "min_ns_per_op": 8.086,
+            "rss_total_mb": 15.9,
+            "rss_delta_mb": 11,
+            "structure_rss_delta_mb": 1.2,
             "startup_ms": 0.6,
             "samples": 10000
           },
           "original": {
-            "p50_ns_per_op": 22.622,
-            "p99_ns_per_op": 68.529,
-            "min_ns_per_op": 13.585,
-            "rss_total_mb": 85,
-            "rss_delta_mb": 41.9,
-            "structure_rss_delta_mb": 11.8,
-            "startup_ms": 15.3,
+            "p50_ns_per_op": 21.45,
+            "p99_ns_per_op": 63.17,
+            "min_ns_per_op": 13.115,
+            "rss_total_mb": 86.2,
+            "rss_delta_mb": 40.7,
+            "structure_rss_delta_mb": 9.8,
+            "startup_ms": 16.3,
             "samples": 10000
           },
           "regressions": []
@@ -58,26 +58,26 @@
         "mixed-4e6": {
           "workload": "1e6 mixed union/find/connected (50/25/25) over size 4e6, xorshift32 seed 42, ops materialised before the timed region",
           "checksum": 500597930518,
-          "checksum_note": "identical on both sides: same ops, same answers, rank bug included",
+          "checksum_note": "identical on both sides: same ops, same answers, upstream bugs included",
           "structure_note": "structure_rss_delta_mb constructs size 4e6 and nothing else, isolating the structure from the op arrays both sides materialise",
           "port": {
-            "p50_ns_per_op": 21.831,
-            "p99_ns_per_op": 43.632,
-            "min_ns_per_op": 13.125,
-            "rss_total_mb": 30,
-            "rss_delta_mb": 25.3,
-            "structure_rss_delta_mb": 13,
+            "p50_ns_per_op": 29.386,
+            "p99_ns_per_op": 60.985,
+            "min_ns_per_op": 15.8,
+            "rss_total_mb": 30.1,
+            "rss_delta_mb": 25.2,
+            "structure_rss_delta_mb": 12.7,
             "startup_ms": 0.6,
             "samples": 10000
           },
           "original": {
-            "p50_ns_per_op": 42.861,
-            "p99_ns_per_op": 134.855,
-            "min_ns_per_op": 28.103,
-            "rss_total_mb": 121.4,
-            "rss_delta_mb": 78.4,
-            "structure_rss_delta_mb": 23.4,
-            "startup_ms": 15.3,
+            "p50_ns_per_op": 47.58,
+            "p99_ns_per_op": 139.584,
+            "min_ns_per_op": 34.295,
+            "rss_total_mb": 123.7,
+            "rss_delta_mb": 78.2,
+            "structure_rss_delta_mb": 21.3,
+            "startup_ms": 16.3,
             "samples": 10000
           },
           "regressions": []
@@ -92,23 +92,23 @@
           "checksum_note": "identical on both sides: same ops, same answers, upstream bugs included",
           "structure_note": "structure_rss_delta_mb constructs size 1e6 and nothing else, isolating the structure from the op arrays both sides materialise",
           "port": {
-            "p50_ns_per_op": 8.927,
-            "p99_ns_per_op": 24.928,
-            "min_ns_per_op": 5.22,
-            "rss_total_mb": 16.1,
-            "rss_delta_mb": 11.4,
+            "p50_ns_per_op": 9.287,
+            "p99_ns_per_op": 32.782,
+            "min_ns_per_op": 5.04,
+            "rss_total_mb": 16.2,
+            "rss_delta_mb": 11.3,
             "structure_rss_delta_mb": 1.4,
             "startup_ms": 0.6,
             "samples": 10000
           },
           "original": {
-            "p50_ns_per_op": 11.462,
-            "p99_ns_per_op": 25.619,
-            "min_ns_per_op": 7.514,
-            "rss_total_mb": 84.1,
-            "rss_delta_mb": 39,
-            "structure_rss_delta_mb": 10.2,
-            "startup_ms": 15.1,
+            "p50_ns_per_op": 12.644,
+            "p99_ns_per_op": 40.907,
+            "min_ns_per_op": 8.246,
+            "rss_total_mb": 83.8,
+            "rss_delta_mb": 38.3,
+            "structure_rss_delta_mb": 9.8,
+            "startup_ms": 17,
             "samples": 10000
           },
           "regressions": []
@@ -119,26 +119,33 @@
           "checksum_note": "identical on both sides: same ops, same answers, upstream bugs included",
           "structure_note": "structure_rss_delta_mb constructs size 4e6 and nothing else, isolating the structure from the op arrays both sides materialise",
           "port": {
-            "p50_ns_per_op": 13.786,
-            "p99_ns_per_op": 240.445,
-            "min_ns_per_op": 8.997,
-            "rss_total_mb": 28,
-            "rss_delta_mb": 23.3,
+            "p50_ns_per_op": 16,
+            "p99_ns_per_op": 330.395,
+            "min_ns_per_op": 11.111,
+            "rss_total_mb": 27.9,
+            "rss_delta_mb": 23.1,
             "structure_rss_delta_mb": 12.9,
             "startup_ms": 0.6,
             "samples": 10000
           },
           "original": {
-            "p50_ns_per_op": 21.17,
-            "p99_ns_per_op": 324.263,
-            "min_ns_per_op": 13.806,
-            "rss_total_mb": 132.4,
-            "rss_delta_mb": 87.4,
-            "structure_rss_delta_mb": 21.6,
-            "startup_ms": 15.1,
+            "p50_ns_per_op": 27.772,
+            "p99_ns_per_op": 328.803,
+            "min_ns_per_op": 17.433,
+            "rss_total_mb": 132.5,
+            "rss_delta_mb": 87,
+            "structure_rss_delta_mb": 21.3,
+            "startup_ms": 17,
             "samples": 10000
           },
-          "regressions": []
+          "regressions": [
+            {
+              "metric": "p99_ns_per_op",
+              "port": 330.395,
+              "original": 328.803,
+              "ratio": 1
+            }
+          ]
         },
         "drain-1e5": {
           "workload": "6.3061e6 elements yielded: full iteration of a prefilled set, one timed sample per walk. Set of length 100000 prefilled by 100000 random adds (xorshift32 seed 42), leaving 63061 distinct members; 100 walks per measured pass, one timed sample each",
@@ -146,29 +153,216 @@
           "checksum_note": "identical on both sides: same ops, same answers, upstream bugs included",
           "structure_note": "structure_rss_delta_mb constructs size 100000 and nothing else, isolating the structure from the op arrays both sides materialise",
           "port": {
-            "p50_ns_per_op": 0.941,
-            "p99_ns_per_op": 1.656,
-            "min_ns_per_op": 0.919,
-            "rss_total_mb": 5.1,
+            "p50_ns_per_op": 1.312,
+            "p99_ns_per_op": 2.354,
+            "min_ns_per_op": 1.287,
+            "rss_total_mb": 5.2,
             "rss_delta_mb": 0.4,
             "structure_rss_delta_mb": 0.4,
             "startup_ms": 0.6,
             "samples": 1000
           },
           "original": {
-            "p50_ns_per_op": 3.184,
-            "p99_ns_per_op": 4.762,
-            "min_ns_per_op": 2.498,
-            "rss_total_mb": 58.9,
-            "rss_delta_mb": 13.9,
-            "structure_rss_delta_mb": 6.6,
-            "startup_ms": 15.1,
+            "p50_ns_per_op": 3.168,
+            "p99_ns_per_op": 5.709,
+            "min_ns_per_op": 2.499,
+            "rss_total_mb": 59,
+            "rss_delta_mb": 13.5,
+            "structure_rss_delta_mb": 6.3,
+            "startup_ms": 17,
             "samples": 1000
+          },
+          "regressions": []
+        }
+      }
+    },
+    "bit-set": {
+      "workloads": {
+        "mixed-1e6": {
+          "workload": "1e6 mixed set/reset/get/test (50/25/25); rank excluded -- see bench/runner/src/bit_set.rs for why a 25%-weighted rank blew up wall-clock time over size 1e6, xorshift32 seed 42, ops materialised before the timed region",
+          "checksum": 53739,
+          "checksum_note": "identical on both sides: same ops, same answers, upstream bugs included",
+          "structure_note": "structure_rss_delta_mb constructs size 1e6 and nothing else, isolating the structure from the op arrays both sides materialise",
+          "port": {
+            "p50_ns_per_op": 8.867,
+            "p99_ns_per_op": 16.301,
+            "min_ns_per_op": 7.424,
+            "rss_total_mb": 10.9,
+            "rss_delta_mb": 6.1,
+            "structure_rss_delta_mb": 1.3,
+            "startup_ms": 0.6,
+            "samples": 10000
+          },
+          "original": {
+            "p50_ns_per_op": 7.935,
+            "p99_ns_per_op": 14.868,
+            "min_ns_per_op": 6.693,
+            "rss_total_mb": 63.1,
+            "rss_delta_mb": 17.6,
+            "structure_rss_delta_mb": 9.8,
+            "startup_ms": 17.9,
+            "samples": 10000
+          },
+          "regressions": [
+            {
+              "metric": "p50_ns_per_op",
+              "port": 8.867,
+              "original": 7.935,
+              "ratio": 1.12
+            },
+            {
+              "metric": "p99_ns_per_op",
+              "port": 16.301,
+              "original": 14.868,
+              "ratio": 1.1
+            },
+            {
+              "metric": "min_ns_per_op",
+              "port": 7.424,
+              "original": 6.693,
+              "ratio": 1.11
+            }
+          ]
+        }
+      }
+    },
+    "lru-cache": {
+      "workloads": {
+        "mixed-1e6": {
+          "workload": "1e6 mixed set/get/has (50/25/25), capacity 20% of the 1e6 key domain over size 1e6, xorshift32 seed 42, ops materialised before the timed region",
+          "checksum": 19747951452,
+          "checksum_note": "identical on both sides: same ops, same answers, upstream bugs included",
+          "structure_note": "structure_rss_delta_mb constructs size 1e6 and nothing else, isolating the structure from the op arrays both sides materialise",
+          "port": {
+            "p50_ns_per_op": 32.401,
+            "p99_ns_per_op": 112.874,
+            "min_ns_per_op": 12.453,
+            "rss_total_mb": 32.6,
+            "rss_delta_mb": 27.8,
+            "structure_rss_delta_mb": 1.2,
+            "startup_ms": 0.6,
+            "samples": 10000
+          },
+          "original": {
+            "p50_ns_per_op": 58.14,
+            "p99_ns_per_op": 287.695,
+            "min_ns_per_op": 27.582,
+            "rss_total_mb": 157.3,
+            "rss_delta_mb": 111.8,
+            "structure_rss_delta_mb": 9.8,
+            "startup_ms": 17.1,
+            "samples": 10000
+          },
+          "regressions": []
+        }
+      }
+    },
+    "heap": {
+      "workloads": {
+        "mixed-1e6": {
+          "workload": "1e6 mixed push/pop/peek (50/25/25), default numeric comparator over size 1e6, xorshift32 seed 42, ops materialised before the timed region",
+          "checksum": 124694542085,
+          "checksum_note": "identical on both sides: same ops, same answers, upstream bugs included",
+          "structure_note": "structure_rss_delta_mb constructs size 1e6 and nothing else, isolating the structure from the op arrays both sides materialise",
+          "port": {
+            "p50_ns_per_op": 31.991,
+            "p99_ns_per_op": 48.803,
+            "min_ns_per_op": 20.789,
+            "rss_total_mb": 14.8,
+            "rss_delta_mb": 9.9,
+            "structure_rss_delta_mb": 1.3,
+            "startup_ms": 0.6,
+            "samples": 10000
+          },
+          "original": {
+            "p50_ns_per_op": 24.316,
+            "p99_ns_per_op": 60.614,
+            "min_ns_per_op": 19.457,
+            "rss_total_mb": 92.4,
+            "rss_delta_mb": 46.8,
+            "structure_rss_delta_mb": 9.8,
+            "startup_ms": 16.5,
+            "samples": 10000
+          },
+          "regressions": [
+            {
+              "metric": "p50_ns_per_op",
+              "port": 31.991,
+              "original": 24.316,
+              "ratio": 1.32
+            },
+            {
+              "metric": "min_ns_per_op",
+              "port": 20.789,
+              "original": 19.457,
+              "ratio": 1.07
+            }
+          ]
+        }
+      }
+    },
+    "trie": {
+      "workloads": {
+        "mixed-2e5": {
+          "workload": "1e6 mixed add/has/delete (50/25/25) over hex-encoded keys over size 200000, xorshift32 seed 42, ops materialised before the timed region",
+          "checksum": 246973,
+          "checksum_note": "identical on both sides: same ops, same answers, upstream bugs included",
+          "structure_note": "structure_rss_delta_mb constructs size 200000 and nothing else, isolating the structure from the op arrays both sides materialise",
+          "port": {
+            "p50_ns_per_op": 172.527,
+            "p99_ns_per_op": 265.573,
+            "min_ns_per_op": 76.085,
+            "rss_total_mb": 35.6,
+            "rss_delta_mb": 30.7,
+            "structure_rss_delta_mb": 0.1,
+            "startup_ms": 0.6,
+            "samples": 10000
+          },
+          "original": {
+            "p50_ns_per_op": 454.842,
+            "p99_ns_per_op": 792.502,
+            "min_ns_per_op": 205.169,
+            "rss_total_mb": 266,
+            "rss_delta_mb": 220.5,
+            "structure_rss_delta_mb": 6.6,
+            "startup_ms": 16.2,
+            "samples": 10000
+          },
+          "regressions": []
+        }
+      }
+    },
+    "vector": {
+      "workloads": {
+        "mixed-1e6": {
+          "workload": "1e6 mixed push/get/pop (50/25/25) over size 1e6, xorshift32 seed 42, ops materialised before the timed region",
+          "checksum": 249930270812,
+          "checksum_note": "identical on both sides: same ops, same answers, upstream bugs included",
+          "structure_note": "structure_rss_delta_mb constructs size 1e6 and nothing else, isolating the structure from the op arrays both sides materialise",
+          "port": {
+            "p50_ns_per_op": 7.354,
+            "p99_ns_per_op": 27.883,
+            "min_ns_per_op": 5.28,
+            "rss_total_mb": 16.7,
+            "rss_delta_mb": 11.8,
+            "structure_rss_delta_mb": 1.3,
+            "startup_ms": 0.6,
+            "samples": 10000
+          },
+          "original": {
+            "p50_ns_per_op": 9.559,
+            "p99_ns_per_op": 60.495,
+            "min_ns_per_op": 7.274,
+            "rss_total_mb": 83,
+            "rss_delta_mb": 37.4,
+            "structure_rss_delta_mb": 9.7,
+            "startup_ms": 16.9,
+            "samples": 10000
           },
           "regressions": []
         }
       }
     }
   },
-  "generated_utc": "2026-08-01T00:39:55.953Z"
+  "generated_utc": "2026-08-02T00:23:32.362Z"
 }
