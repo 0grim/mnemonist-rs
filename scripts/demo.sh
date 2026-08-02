@@ -14,15 +14,23 @@
 #
 # Usage:
 #
-#     scripts/demo.sh                    the whole thing, ~4 minutes
+#     scripts/demo.sh                    the whole thing, ~4.5 minutes
 #     scripts/demo.sh --warm             build everything first, unnarrated
 #     scripts/demo.sh --pace 0           no pauses, for rehearsal and CI
 #     scripts/demo.sh --pace 1.5         slower
+#     scripts/demo.sh --hold 6           longer on the last frame of each step
 #     scripts/demo.sh --list             the step titles, numbered
 #     scripts/demo.sh --from 7           start at step 7, to re-record one stretch
 #     scripts/demo.sh --from 7 --until 8
 #
-# DEMO_PACE, DEMO_FROM and DEMO_UNTIL are read from the environment as well.
+# DEMO_PACE, DEMO_HOLD, DEMO_FROM and DEMO_UNTIL are read from the environment
+# as well.
+#
+# The hold is separate from the reading pauses on purpose. A pause after a
+# paragraph is time to read that paragraph; the hold is time to take in the
+# whole finished screen — usually a command's output, which arrives with no
+# pause of its own after it — before it is wiped. Rehearsal kept losing the
+# last line of a step to the clear.
 #
 # WARM THE CACHES BEFORE RECORDING. Steps 3, 4 and 5 build real things: warm,
 # they take seconds, and cold they take minutes of silent compilation with
@@ -37,6 +45,7 @@ SELF="${BASH_SOURCE[0]}"
 cd "$ROOT"
 
 PACE=${DEMO_PACE:-1.0}
+HOLD=${DEMO_HOLD:-4}
 FROM=${DEMO_FROM:-1}
 UNTIL=${DEMO_UNTIL:-999}
 WARM=0
@@ -51,11 +60,15 @@ list_steps() {
   grep '^screen "' "$SELF" | sed 's/^screen "//; s/"$//' | nl -w3 -s'   '
 }
 
-usage() { sed -n '2,26p' "$SELF" | sed 's/^#\{0,1\} \{0,1\}//'; }
+# Everything between the shebang and the first line of code, uncommented: the
+# header is the documentation, and a hardcoded line range goes stale the first
+# time a paragraph is added to it.
+usage() { awk 'NR > 1 && /^#/ { sub(/^#[[:space:]]?/, ""); print; next } NR > 1 { exit }' "$SELF"; }
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --pace)  PACE=$2;  shift 2 ;;
+    --hold)  HOLD=$2;  shift 2 ;;
     --from)  FROM=$2;  shift 2 ;;
     --until) UNTIL=$2; shift 2 ;;
     --warm)  WARM=1;   shift ;;
@@ -128,6 +141,12 @@ beat() {
 # Steps outside --from/--until advance the counter and produce nothing, so that
 # a re-recorded stretch carries the same step numbers as the full run.
 screen() {
+  # Hold the finished screen before wiping it. This sits here rather than at
+  # the end of each step so that no step can forget it, and so the last frame
+  # of a step is held for the same length however that step ends.
+  if [ "$STEP_NO" -gt 0 ] && [ "$SKIP" = 0 ]; then
+    beat "$HOLD"
+  fi
   STEP_NO=$((STEP_NO + 1))
   if [ "$STEP_NO" -lt "$FROM" ] || [ "$STEP_NO" -gt "$UNTIL" ]; then
     SKIP=1
@@ -179,6 +198,14 @@ note() {
 line() {
   if [ "$SKIP" = 1 ]; then return 0; fi
   echo "$1"
+}
+
+# A deliberate pause inside a step, as opposed to the automatic one screen()
+# takes before wiping. Skip-aware, so that --from does not sit in silence
+# waiting out steps it is not showing.
+hold() {
+  if [ "$SKIP" = 1 ]; then return 0; fi
+  beat "${1:-$HOLD}"
 }
 
 DOCKER=""
@@ -276,7 +303,7 @@ line "  ${GREEN}docs/METHODOLOGY.md${RESET}   what each gate detected, and what 
 line "  ${GREEN}docs/BUGS.md${RESET}          defects found in the original library"
 line "  ${GREEN}docs/DECISIONS.md${RESET}     every deliberate divergence, and why"
 line ""
-beat 4
+hold
 say "The methodology document also records where these instruments are blind. The differential fuzzer never exercises the bridge, and four falsification attempts stayed green for four different reasons. Those are written down too."
 
 # The closing card counts from the repository rather than from memory: a figure
@@ -291,5 +318,8 @@ if [ "$SKIP" != 1 ]; then
   echo "  ${BOLD}${OPS} differential operations.${RESET}  Zero divergences."
   echo "  The original test suite passes unmodified."
   echo
-  beat 4
+  # The last frame of the recording, with nothing after it to clear it away:
+  # held half again as long as any other, since this is the one a viewer is
+  # most likely to pause on.
+  beat "$(awk "BEGIN{print $HOLD * 1.5}")"
 fi
