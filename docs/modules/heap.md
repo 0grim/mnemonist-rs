@@ -379,13 +379,38 @@ with `34 !== 1`. Reverted; **confirmed green again**: `14 passing`.
 
 ### Bench
 
-**Not run.** Gate 10 is deferred to a serial pass on an idle machine (DESIGN.md §7.3): three other
-agents were working while this unit landed, and a contended run inflated both sides 2–3× when it
-was last attempted. `heap` is therefore **complete except gate 10** and is deliberately *not* in
-`tests/scope.txt`; `tests/verify.sh` will say so, which is the intended state rather than an
-oversight.
+`bench/results.json` → `modules["heap"]`. Methodology: `bench/methodology.md`.
+Host: AMD Ryzen 5 7600X, 12 threads, WSL2, Node 24.18.1, rustc 1.97.1, quiet serial pass.
+Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 10,000 samples/side.
 
-One thing worth flagging for whoever runs it: the bridge's comparator crosses the FFI boundary once
-per comparison, and its default variant is a native Rust comparison rather than a JS call, so the
-port's advantage on a default-comparator workload will be structurally different from its
-disadvantage on a user-comparator one. Measure both; do not report either alone.
+This is the **pure Rust path against the vendored JS**, not the napi bridge — per DESIGN.md §5.1 the
+comparative table never goes through N-API, so the bridge's own per-comparison FFI crossing (real,
+and worth measuring separately if this harness is ever extended to run through the addon) is not
+what these figures show. What this table measures instead is core's own `RefCell<VecStore<f64>>`
+plus a `Comparator` trait call per comparison, against V8 inlining the same default numeric
+comparator directly into its sift loop.
+
+**`mixed-1e6`** — 1e6 mixed `push`/`pop`/`peek` (50/25/25), default numeric comparator, value range
+1e6, xorshift32 seed 42:
+
+| metric | port | upstream | |
+|---|---|---|---|
+| p50 ns/op | 32.0 | **24.3** | 1.32× slower |
+| p99 ns/op | **48.8** | 60.6 | 1.24× faster |
+| min ns/op | 20.8 | **19.5** | 1.07× slower |
+| RSS delta MB | **9.9** | 46.8 | |
+| structure-only RSS delta MB | **1.3** | 9.8 | |
+| startup ms | **0.6** | 16.5 | 27× (reported separately; not throughput) |
+
+**A disclosed regression on p50 and min, and it is exactly the mechanism this module was picked to
+expose.** Every `push`/`pop`/`peek` borrows the `RefCell`, clones the `Rc` handle (D-41's re-entrancy
+requirement), and calls `Comparator::compare` through a trait object — three indirections V8 has no
+equivalent of for its own numeric comparator, which it inlines. p99 tells a second, different story:
+the port is *faster* at the tail, plausibly because V8 pays a GC pause somewhere in ten measured
+passes of 1e6 ops that a `RefCell`-checked but allocation-light Rust loop does not. Both readings are
+real and neither cancels the other; reporting only p50 or only p99 here would hide half the result.
+
+Unconfirmed, and stated as such: how much of the p50 gap is the `RefCell` borrow-flag check
+specifically versus the `Comparator` trait call was not isolated by profiling, so it is not claimed
+here as the specific cause — only that the mechanism (bridge-shaped indirection per comparison) is
+present and the direction of the regression is consistent with it.
