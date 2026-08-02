@@ -410,7 +410,39 @@ the port is *faster* at the tail, plausibly because V8 pays a GC pause somewhere
 passes of 1e6 ops that a `RefCell`-checked but allocation-light Rust loop does not. Both readings are
 real and neither cancels the other; reporting only p50 or only p99 here would hide half the result.
 
-Unconfirmed, and stated as such: how much of the p50 gap is the `RefCell` borrow-flag check
-specifically versus the `Comparator` trait call was not isolated by profiling, so it is not claimed
-here as the specific cause — only that the mechanism (bridge-shaped indirection per comparison) is
-present and the direction of the regression is consistent with it.
+Originally unconfirmed: how much of the p50 gap is the `RefCell` borrow-flag check specifically
+versus the `Comparator` trait call was not isolated by profiling, so it was not claimed as the
+specific cause — only that the mechanism (indirection per comparison) was present and the direction
+of the regression was consistent with it.
+
+**Confirmed 2026-08-02**, with a bare counterfactual rather than a profiler (no `perf`/`cargo
+flamegraph` on this host). `bench/runner/src/heap.rs::run_mixed_bare`, reachable via
+`bench-runner --heap-probe`, runs the identical mixed op stream against a bare `Vec<f64>` binary
+min-heap — same sift-up/sift-down algorithm, no `RefCell`, no `Cell`, no `Store`/`Comparator` trait,
+`<` inlined directly:
+
+| variant | p50 ns/op | min ns/op |
+|---|---|---|
+| wrapped (`RefCell<VecStore<f64>>` + `Comparator` trait) | 31.781 | 20.529 |
+| bare `Vec<f64>`, no indirection | **21.721** | **16.271** |
+
+Checksums agree (both are valid min-heaps over the same op stream; ties among numerically-equal
+pushed values do not affect which *value* a pop returns, so tie-break policy does not need to match
+for this check to be meaningful). The bare heap is not merely faster than the wrapped one — it beats
+*upstream's own* published p50 (24.316 ns) and min (19.457 ns) outright. **Verdict: confirmed, and
+understated.** The indirection layer costs 10.06 ns/op in this isolated comparison, which is *more*
+than the entire measured regression against upstream (7.68 ns/op) — removing it does not just close
+the gap, it flips the comparison to a Rust win, the same direction every other metric in this table
+already points.
+
+**Fix not attempted, and not a free one if it were.** The `RefCell` is not incidental laziness: it
+exists because upstream's comparator is arbitrary, re-entrant JavaScript that can call back into the
+very heap it is comparing (`clear()` rebinding `this.items` mid-sift is the concrete case this
+module's own docs open with), and a plain `&mut Vec` could not express that without either a runtime
+panic or `unsafe`. Removing the `RefCell` would remove the capability this module exists to test
+(capability tier T2), not merely optimise it — the fix, if pursued, would need a design that keeps
+re-entrancy safety for the general `Comparator` case while giving a *non-re-entrant* concrete
+comparator (like this benchmark's own `DefaultComparator`) a faster path, e.g. specialising `Heap`
+for `S: Store` combinations known not to re-enter. That is a `crates/mnemonist-core` design change,
+not a local tweak, and would need heap's fuzz campaign and bench figures re-run before it could
+stand — out of scope here. Recorded as a proposal for later.
