@@ -162,5 +162,30 @@ catch it, in either instrument.
 
 ### Bench
 
-**Not run.** Gate 10 is deferred to a serial pass on an idle machine (DESIGN.md §7.3). `multi-array`
-is therefore complete except gate 10, and deliberately not in `tests/scope.txt`.
+`bench/results.json` → `modules["multi-array"]`. Methodology: `bench/methodology.md`.
+Host: AMD Ryzen 5 7600X, 12 threads, WSL2, Node 24.18.1, rustc 1.97.1, quiet serial pass.
+Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 10,000 samples/side.
+
+**`mixed-1e6`** — 1e6 mixed `set`/`get`/`multiplicity` (50/25/25), dynamic (unbounded, exact-`f64`)
+container, over a 20,000-index domain deliberately far smaller than the op count. **~25 values per
+bucket on average by the run's end**, matching `multi-map`'s own ratio, xorshift32 seed 42:
+
+| metric | port | upstream | |
+|---|---|---|---|
+| p50 ns/op | 50.2 | **26.4** | 1.9× slower |
+| p99 ns/op | **177.5** | 272.8 | 1.5× faster |
+| min ns/op | **6.4** | 11.7 | |
+| RSS delta MB | **19.9** | 115.8 | |
+| structure-only RSS delta MB | **0.1** | 5.7 | |
+| startup ms | **0.6** | 17.3 | 29× (reported separately; not throughput) |
+
+**A split result: p50 loses, p99 wins, stated as both rather than either alone.** Reporting only
+p99 here would have hidden a real p50 regression; reporting only p50 would have hidden that the
+port's tail is *better* than upstream's, which is the more usual pattern for a GC'd runtime doing
+frequent small allocations (`get` allocates a fresh array/`Vec` on every call, tail-to-head, and
+does so on both sides). **Unconfirmed cause of the p50 gap:** `MultiArray::get` walks the pointer
+chain and materialises a `Vec<f64>` on every call, one bounds-checked array write per step; upstream
+does the same walk over a plain `Array`, whose access V8 can speculate on more aggressively once the
+shape is monomorphic. That is a plausible account of where the p50 gap comes from, not a confirmed
+one — it has not been checked against a metric (e.g. isolating `get` from `set`/`multiplicity` in a
+narrower probe) that would let it be falsified.

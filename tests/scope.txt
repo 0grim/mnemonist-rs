@@ -53,3 +53,28 @@ sort
 #                distinguished from noise is not a cost we can honestly report as a
 #                regression, and gate 10's `regressions` array says so explicitly.
 sparse-set
+# Appended for the map-like/multi-container Gate 10 batch (2026-08-02): all
+# nine were already shim/test/doc/fuzz-complete per scripts/status.sh and
+# needed only the benchmark. See bench/results.json and each
+# docs/modules/<unit>.md's own "### Bench" section for figures. Two lost on
+# p50/p99 (default-map, bi-map) and two more lost on a single metric
+# (multi-set's min_ns_per_op, multi-array's p50_ns_per_op) -- stated plainly
+# rather than smoothed into a clean sweep; default-map's loss was re-checked
+# at 4x domain (mixed-4e6) and holds at both sizes, so it is a real,
+# reproducible cost rather than noise.
+#
+# `default-weak-map` is deliberately NOT in this batch: its keys must be
+# objects and entries vanish at the garbage collector's discretion, so timing
+# would be dominated by allocation and GC rather than by the structure --
+# see docs/modules/default-weak-map.md's own "### Bench" section for the
+# reasoning. A stated exclusion is the honest call here, not a number nobody
+# could trust.
+default-map
+bi-map
+multi-map
+multi-set
+multi-array
+fuzzy-map
+fuzzy-multi-map
+inverted-index
+set

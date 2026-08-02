@@ -157,6 +157,27 @@ else was needed to catch it.
 
 ### Bench
 
-**Not run.** Gate 10 is deferred to a serial pass on an idle machine (DESIGN.md §7.3); other agents
-were working on this repository while this unit landed. `multi-map` is therefore complete except
-gate 10, and deliberately not in `tests/scope.txt`.
+`bench/results.json` → `modules["multi-map"]`. Methodology: `bench/methodology.md`.
+Host: AMD Ryzen 5 7600X, 12 threads, WSL2, Node 24.18.1, rustc 1.97.1, quiet serial pass.
+Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 10,000 samples/side.
+
+**`mixed-1e6`** — 1e6 mixed `set`/`get`/`remove` (50/25/25), `ContainerKind::List` (upstream's
+default `Array` container), over a 20,000-key domain deliberately far smaller than the op count —
+the load-bearing multi-container parameter is how many VALUES sit under one key, and a workload
+where every key holds exactly one value would benchmark a map with extra indirection, not a
+multi-container. **~25 values per key on average by the run's end** (500,000 `set` calls over
+20,000 keys), xorshift32 seed 42:
+
+| metric | port | upstream | |
+|---|---|---|---|
+| p50 ns/op | **25.9** | 36.4 | 1.4× faster |
+| p99 ns/op | **46.1** | 89.8 | 1.9× faster |
+| RSS delta MB | **11.6** | 79.3 | |
+| structure-only RSS delta MB | **0.1** | 5.8 | |
+| startup ms | **0.6** | 16.8 | 28× (reported separately; not throughput) |
+
+**No regressions.** `remove`'s linear scan (of whichever bucket its key hits) is genuinely exercised
+at the ~25-value-per-key depth this workload reaches, and upstream pays the identical `Array
+.indexOf` linear scan — unlike `bit-set.rs`'s `rank` trap, this is an op whose cost scales with a
+workload parameter *on both sides*, not a port-only pathology, and it was checked before committing
+to the 25%-weighted mix (see `bench/runner/src/multi_map.rs`'s own module docs for the arithmetic).

@@ -188,5 +188,25 @@ narrow enough to be a real test of this one path rather than of the whole bridge
 
 ### Bench
 
-**Not run.** Gate 10 is deferred to a serial pass on an idle machine (DESIGN.md §7.3).
-`fuzzy-multi-map` is therefore complete except gate 10, and deliberately not in `tests/scope.txt`.
+`bench/results.json` → `modules["fuzzy-multi-map"]`. Methodology: `bench/methodology.md`.
+Host: AMD Ryzen 5 7600X, 12 threads, WSL2, Node 24.18.1, rustc 1.97.1, quiet serial pass.
+Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 10,000 samples/side.
+
+**`mixed-1e6`** — 1e6 mixed `set`/`get`/`has` (50/25/25), `ContainerKind::List` (upstream's default
+`Array` container), same `hash(x) = x >> 4` as `fuzzy-map` on both sides, over a 200,000 raw-key
+domain (chosen so the ~12,500-key post-hash domain reaches a representative values-per-key figure —
+**~40 values per key on average by the run's end**, this batch's other load-bearing multi-container
+parameter), xorshift32 seed 42:
+
+| metric | port | upstream | |
+|---|---|---|---|
+| p50 ns/op | **17.3** | 27.4 | 1.6× faster |
+| p99 ns/op | **34.2** | 58.5 | 1.7× faster |
+| RSS delta MB | **10.8** | 65.3 | |
+| structure-only RSS delta MB | **0.1** | 6.5 | |
+| startup ms | **0.6** | 16.6 | 28× (reported separately; not throughput) |
+
+**No regressions.** This module has no `delete`/`remove` at all (upstream or here), so — unlike
+`multi-map` — nothing here pays a linear-scan cost; every op is O(1) amortised on both sides, and the
+hash's own collapse is what produces the ~40-values-per-key figure without needing a separately
+hand-picked small domain the way `multi-map`/`multi-set`/`multi-array` do.

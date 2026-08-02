@@ -277,7 +277,35 @@ that block and only that block, with
 revert. The other fifteen blocks staying green is the useful part — the sabotage is local to one
 function and the suite localised it.
 
-**Bench.** Not run. Gate 10 is batched into a quiet serial pass on an idle machine (DESIGN.md §7.3);
-this unit was developed alongside three other agents, and a contended run inflated both sides 2–3×
-here before. `set` is therefore **not** in `tests/scope.txt`, and `tests/verify.sh` reporting it as
-out of scope is the expected state until that pass runs.
+### Bench
+
+`bench/results.json` → `modules["set"]`. Methodology: `bench/methodology.md`.
+Host: AMD Ryzen 5 7600X, 12 threads, WSL2, Node 24.18.1, rustc 1.97.1, quiet serial pass.
+Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 500 samples/side.
+
+`set.js` has no instance and no per-element op stream, so this reuses `sort`/`suffix-array`'s
+`drain` shape: one measured sample per **`union`** call — the representative choice out of the
+fourteen free functions this module exports; see `bench/runner/src/set_ops.rs`'s own module docs
+for why `union` rather than `disjunct` (this module's most intricate function, already covered
+above by its own falsification) or `intersection` (which only ever walks its smallest argument, so
+its cost does not scale the same way with both inputs).
+
+**`union-2e4x50`** — `union(A, B)` of two 20,000-element sets drawn from the SAME `0..20,000`
+domain (guaranteeing real overlap and internal duplicates by the birthday bound, so the dedup path
+`OrderedSet::add` takes is genuinely exercised rather than benchmarking two sets that never
+overlap), 50 passes, xorshift32 seed 42:
+
+| metric | port | upstream | |
+|---|---|---|---|
+| p50 ns/op | **13.2** | 25.0 | 1.9× faster |
+| p99 ns/op | **17.6** | 89.2 | 5.1× faster |
+| RSS delta MB | **7.8** | 120.9 | |
+| structure-only RSS delta MB | **0.1** | 5.7 | |
+| startup ms | **0.6** | 16.6 | 28× (reported separately; not throughput) |
+
+**No regressions**, and the widest p99 margin in this batch — a fresh native JS `Set` per pass
+(`new Set()` called eagerly for both `A` and `B`, then again inside `union` itself for the result)
+is a plausible, but unconfirmed, source of upstream's heavier tail: each `union` call upstream makes
+constructs one `Set` and does one `.add` per member visited, all through general-purpose `Set`
+machinery, while the port's `OrderedSet` is backed by the same `OrderedMap` every T3 module in this
+project already shares.

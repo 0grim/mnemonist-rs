@@ -239,5 +239,28 @@ in descending order.
 
 ### Bench
 
-**Not run.** Gate 10 is deferred to a serial pass on an idle machine (DESIGN.md §7.3). `multi-set`
-is therefore complete except gate 10, and deliberately not in `tests/scope.txt`.
+`bench/results.json` → `modules["multi-set"]`. Methodology: `bench/methodology.md`.
+Host: AMD Ryzen 5 7600X, 12 threads, WSL2, Node 24.18.1, rustc 1.97.1, quiet serial pass.
+Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 10,000 samples/side.
+
+**`mixed-1e6`** — 1e6 mixed `add`/`multiplicity`/`remove` (50/25/25) over a 20,000-item domain
+(`add`/`remove` deliberately used rather than `delete`/`set`, which carry reproduced-bug-for-bug
+corruption — B-160/B-161 — on paths this workload would otherwise hit constantly). **~12.5 net
+multiplicity per item on average by the run's end**, xorshift32 seed 42:
+
+| metric | port | upstream | |
+|---|---|---|---|
+| p50 ns/op | **19.0** | 22.3 | 1.2× faster |
+| p99 ns/op | **37.4** | 44.7 | 1.2× faster |
+| min ns/op | 17.9 | **15.9** | 1.13× slower |
+| RSS delta MB | **8.1** | 30.0 | |
+| structure-only RSS delta MB | **0.1** | 5.7 | |
+| startup ms | **0.6** | 16.5 | 27× (reported separately; not throughput) |
+
+**One regression, on `min_ns_per_op` only** — p50 and p99 both win clearly, and a single-metric
+1.13× gap on the *minimum* (the single fastest batch out of 10,000) is the shape a noise floor takes
+rather than a structural cost: `min_ns_per_op` is the least statistically stable of the three latency
+figures (one sample, not a percentile over many), and nothing about this module's `add`/
+`multiplicity`/`remove` path does asymptotically more work than upstream's identical three calls.
+Reported rather than omitted regardless, per §5.1 — a regression is stated even when the likelier
+explanation is measurement noise, not silently dropped because it looks small.

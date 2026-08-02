@@ -147,5 +147,25 @@ the *stored value* instead, which is wrong for a key stored with `undefined`.
 
 ### Bench
 
-**Not run.** Gate 10 needs an idle machine and is batched into a separate quiet pass (§7.3); this
-unit is deliberately not in `tests/scope.txt` until then. Gates 1–9 are green.
+`bench/results.json` → `modules["fuzzy-map"]`. Methodology: `bench/methodology.md`.
+Host: AMD Ryzen 5 7600X, 12 threads, WSL2, Node 24.18.1, rustc 1.97.1, quiet serial pass.
+Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 10,000 samples/side.
+
+**`mixed-1e6`** — 1e6 mixed `set`/`get`/`has` (50/25/25) over the full 1e6-key domain, keys hashed
+by `hash(x) = x >> 4` on **both** sides (an arithmetic right shift needs no floating-point rounding
+to keep in sync between a Rust closure and a JS function — see `bench/runner/src/fuzzy_map.rs`'s
+own module docs on why the hash has to do identical work on both sides), collapsing 16 raw keys onto
+one stored slot, xorshift32 seed 42:
+
+| metric | port | upstream | |
+|---|---|---|---|
+| p50 ns/op | **14.7** | 26.0 | 1.8× faster |
+| p99 ns/op | **40.1** | 50.9 | 1.3× faster |
+| RSS delta MB | **12.8** | 33.6 | |
+| structure-only RSS delta MB | **1.5** | 9.7 | |
+| startup ms | **0.6** | 16.5 | 27× (reported separately; not throughput) |
+
+**No regressions.** Faster on every latency metric despite the extra hash step both sides pay
+identically — `FuzzyMap` here is `default-map`'s shape without the factory's mutating-read path
+(`get`/`has` are plain lookups, no `get_or_insert_with`), which is a smaller surface than
+`default-map`'s own workload and, unlike that unit, does not lose.

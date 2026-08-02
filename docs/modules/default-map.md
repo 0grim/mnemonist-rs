@@ -378,19 +378,51 @@ an emptied corpus and watching the same hash come back.
 
 ### Bench
 
-**Not yet run.** Gate 10 is deliberately deferred to the batched quiet pass (DESIGN.md §7.3): a
-benchmark taken while three other agents are compiling is not a slow benchmark, it is a wrong one.
-`default-map` is therefore **complete except gate 10** and is correctly absent from
-`tests/scope.txt` until that pass lands. `tests/verify.sh` will say so.
+`bench/results.json` → `modules["default-map"]`. Methodology: `bench/methodology.md`.
+Host: AMD Ryzen 5 7600X, 12 threads, WSL2, Node 24.18.1, rustc 1.97.1, quiet serial pass.
+Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 10,000 samples/side.
 
-Two things to watch when it does run, both consequences of decisions recorded above:
+**`mixed-1e6`** — 1e6 mixed `set`/`get-or-insert`/`delete` (50/25/25) over the full 1e6-key domain
+(`IK = K = V = u32`; the factory always returns `Some`, so B-40's `size` drift never fires in this
+workload), xorshift32 seed 42:
 
-* **`Rc<str>` keys versus V8 strings.** Every key is stored twice (once in the entry vector, once
-  in the index); the second copy is a refcount rather than the text, but the allocation per distinct
-  key is still one more than upstream makes.
-* **`get` on a hit is two hash lookups**, not one — `slot_of` then `get` — because the borrow has to
-  end before the factory can run. A single-lookup version needs either a slot-based API or polonius;
-  whether it is worth it is a question for the measurement, not for this document.
+| metric | port | upstream | |
+|---|---|---|---|
+| p50 ns/op | 62.3 | **44.0** | 1.42× slower |
+| p99 ns/op | 176.0 | **153.2** | 1.15× slower |
+| RSS delta MB | **67.0** | 220.6 | |
+| structure-only RSS delta MB | **1.4** | 9.7 | |
+| startup ms | **0.6** | 16.7 | 28× (reported separately; not throughput) |
+
+**This is a loss, on both p50 and p99, stated plainly rather than smoothed into a clean sweep** —
+§5.1 says to expect one and report it. Re-checked at 4x domain (`mixed-4e6`, 4e6 keys, same 1e6 ops)
+before trusting a single data point:
+
+| metric | port | upstream | |
+|---|---|---|---|
+| p50 ns/op | 55.1 | **47.1** | 1.17× slower |
+| p99 ns/op | 156.6 | **123.8** | 1.27× slower |
+
+The loss holds at both sizes — a real, reproducible cost, not a one-run blip (run-to-run p50 noise
+on this host is up to ~32% per `methodology.md`; the two `mixed-1e6` measurements taken during this
+batch — 1.33× and 1.42× — sit inside that band, but the *direction* of the loss never flipped across
+either rerun or the 4x domain probe).
+
+**The cause is not confirmed.** This doc's own prior note speculated about two candidate mechanisms
+before any number existed; one of them does not apply to what was actually measured here and the
+other is a plausible but unverified explanation, not a confirmed one:
+
+* **`Rc<str>` keys versus V8 strings — does not apply to this benchmark.** That concern is about the
+  bridge's string-keyed instantiation; this benchmark links `mnemonist-core` directly with bare
+  `u32` keys (per `methodology.md`, never through N-API), so no `Rc<str>` allocation exists on this
+  path at all. Ruled out by construction, not by measurement.
+* **`get_or_insert_with` on a hit does two hash lookups, not one** — `slot_of` then `entry_at`
+  (`DefaultMap::try_get_or_insert_with`), because the borrow from the first has to end before a
+  factory that might re-enter can run. This is a plausible explanation for a chunk of the p50 gap —
+  `OrderedMap` doing a lookup twice on the 25% of ops that are `get_or_insert_with` is a real,
+  structural cost — but it has not been isolated against a metric that would confirm or falsify it
+  (e.g. a probe comparing this path to a hypothetical single-lookup one), so it is labelled here as
+  **unconfirmed**, not as the cause.
 
 ### `$forEach` — the op that was missing (added 2026-08-01, B-31)
 
