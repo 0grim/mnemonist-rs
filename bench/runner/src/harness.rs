@@ -246,6 +246,15 @@ pub const MODULES: &[ModuleEntry] = &[
         drain: Some(crate::set_ops::run_drain),
         structure: crate::set_ops::build_structure,
     },
+    // Appended for the final Gate 10 batch (the last fourteen units), never
+    // inserted -- same reasoning as the two blocks above.
+    ModuleEntry {
+        name: "trie-map",
+        kinds: &["mixed"],
+        mixed: Some(crate::trie_map::run_mixed),
+        drain: None,
+        structure: crate::trie_map::build_structure,
+    },
 ];
 
 pub fn find(name: &str) -> Option<&'static ModuleEntry> {

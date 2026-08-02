@@ -78,3 +78,9 @@ fuzzy-map
 fuzzy-multi-map
 inverted-index
 set
+# The final Gate 10 batch (2026-08-02): the last fourteen units, already
+# shim/test/doc/fuzz-complete per scripts/status.sh and needing only the
+# benchmark. Added one at a time as each was measured, not as a batch --
+# see bench/results.json and each docs/modules/<unit>.md's own "### Bench"
+# section for figures.
+trie-map

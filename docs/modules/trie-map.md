@@ -255,5 +255,27 @@ named.
 
 ### Bench
 
-**Not run.** Gate 10 is deferred to a serial pass on an idle machine (DESIGN.md §7.3); this unit is
-therefore complete except gate 10 and deliberately not added to `tests/scope.txt`.
+`bench/results.json` → `modules["trie-map"]`. Methodology: `bench/methodology.md`.
+Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 10,000 samples/side.
+
+**`mixed-2e5`** — 1e6 mixed `set`/`get`/`delete` (50/25/25) over hex-encoded keys
+(`format!("{value:x}")` / `value.toString(16)` — byte-identical, no second matched generator; see
+`bench/runner/src/trie_map.rs`), `size` 200,000 kept an order of magnitude below the flat-structure
+modules' 1e6 so genuine prefix-sharing (every value under 0x1000 shares its leading digits with
+thousands of others) stays the dominant cost rather than sheer key count — same reasoning
+`trie.rs`'s own workload already established, reused rather than re-derived. `delete`'s checksum
+contribution is upstream's own plain boolean, not the `Option<V>` core's richer API exposes, so the
+two sides are proven to compute the *same* answer rather than merely the same count. xorshift32
+seed 42:
+
+| metric | port | upstream | |
+|---|---|---|---|
+| p50 ns/op | **146.96** | 406.22 | 2.8× faster |
+| p99 ns/op | **215.70** | 695.65 | 3.2× faster |
+| RSS delta MB | **30.8** | 224.6 | |
+| structure-only RSS delta MB | **0.1** | 6.7 | |
+| startup ms | **0.6** | 15.9 | 26× (reported separately; not throughput) |
+
+**No regressions.** Checksum `12349076899`, identical on both sides — the shared workload walked
+the same prefix-sharing tree and both implementations computed the same answer at every step,
+including upstream's own `delete` return shape.

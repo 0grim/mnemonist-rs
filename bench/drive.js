@@ -543,6 +543,21 @@ const WORKLOADS = {
       name: 'union-2e4x50', kind: 'drain', size: 20000, passes: 50,
       label: 'union(A, B) of two 20,000-element sets drawn from a shared domain (real overlap and duplicates by the birthday bound), one timed sample per call'
     }
+  ],
+
+  // The final fourteen units. Appended, not inserted -- same reasoning as
+  // every prior batch.
+  //
+  // `trie-map`: same domain as `trie`'s own workload and the same reasoning
+  // -- `size` is the hex-key domain, kept an order of magnitude below the
+  // flat-structure modules' 1e6 so the prefix-sharing shape (every value
+  // under 0x1000 shares its leading digits with thousands of others) stays
+  // the dominant cost rather than sheer key count.
+  'trie-map': [
+    {
+      name: 'mixed-2e5', kind: 'mixed', size: 200000, ops: 1000000,
+      label: 'mixed set/get/delete (50/25/25) over hex-encoded keys'
+    }
   ]
 };
 

@@ -94,7 +94,10 @@ const MODULES = {
   'inverted-index': ['mixed'],
   // No `mixed` kind: see bench/runner/src/set_ops.rs for why this reuses
   // `drain`'s one-sample-per-call shape instead.
-  'set': ['drain']
+  'set': ['drain'],
+  // Appended for the final Gate 10 batch (the last fourteen units), never
+  // inserted: twin of harness.rs::MODULES.
+  'trie-map': ['mixed']
 };
 
 const argv = process.argv.slice(2);
@@ -994,6 +997,42 @@ function runMixedInvertedIndex(InvertedIndex, workload, k) {
   return {batches: batches, checksum: checksum, set: index};
 }
 
+// Twin of bench/runner/src/trie_map.rs. Same hex-key generator and prefix-
+// sharing shape as `runMixedTrie`, reused rather than re-derived. 50% `set`
+// (mutating), 25% `get` (pure read, contributing the stored value), 25%
+// `delete` (mutating, contributing upstream's own plain boolean return --
+// see trie_map.rs's module docs for why the Rust side matches that shape
+// rather than checksumming the displaced value core's richer API exposes).
+function runMixedTrieMap(TrieMap, workload, k) {
+  const trie = new TrieMap();
+  const ops = workload.kind.length;
+  const batches = [];
+  let checksum = 0;
+
+  for (let start = 0; start < ops; start += k) {
+    const end = Math.min(start + k, ops);
+    const clock = process.hrtime.bigint();
+
+    for (let i = start; i < end; i++) {
+      const word = workload.a[i].toString(16);
+      const op = workload.kind[i];
+
+      if (op === 0 || op === 1) {
+        trie.set(word, workload.a[i]);
+      } else if (op === 2) {
+        const value = trie.get(word);
+        checksum += value === undefined ? 0 : value;
+      } else {
+        checksum += trie.delete(word) ? 1 : 0;
+      }
+    }
+
+    batches.push(Number(process.hrtime.bigint() - clock));
+  }
+
+  return {batches: batches, checksum: checksum, set: trie};
+}
+
 // Dispatch table, twin of harness.rs::MODULES's `mixed` field. Replaces what
 // was a two-armed ternary before five more modules made that the wrong shape.
 const MIXED_RUNNERS = {
@@ -1024,7 +1063,10 @@ const MIXED_RUNNERS = {
   'multi-array': runMixedMultiArray,
   'fuzzy-map': runMixedFuzzyMap,
   'fuzzy-multi-map': runMixedFuzzyMultiMap,
-  'inverted-index': runMixedInvertedIndex
+  'inverted-index': runMixedInvertedIndex,
+  // Appended for the final Gate 10 batch (the last fourteen units), never
+  // inserted: twin of harness.rs::MODULES.
+  'trie-map': runMixedTrieMap
 };
 
 // Twin of harness.rs::MODULES's `structure` field: build the structure at
@@ -1219,6 +1261,16 @@ const STRUCTURE_BUILDERS = {
     for (let i = 0; i < size; i++) set.add(i);
 
     return set.has(size - 1);
+  },
+  // Appended for the final Gate 10 batch (the last fourteen units), never
+  // inserted: twin of harness.rs::MODULES. Same convention as `trie`: "size"
+  // means "prefilled with `size` distinct hex keys".
+  'trie-map': function (TrieMap, size) {
+    const trie = new TrieMap();
+
+    for (let i = 0; i < size; i++) trie.set(i.toString(16), i);
+
+    return trie.get((size - 1).toString(16));
   }
 };
 

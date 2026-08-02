@@ -65,6 +65,9 @@ mod multi_array;
 mod multi_map;
 mod multi_set;
 mod set_ops;
+// Appended for the final Gate 10 batch (the last fourteen units), never
+// inserted alphabetically -- same reasoning as the two blocks above.
+mod trie_map;
 
 use std::process::ExitCode;
 
