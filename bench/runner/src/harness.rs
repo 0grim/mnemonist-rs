@@ -255,6 +255,20 @@ pub const MODULES: &[ModuleEntry] = &[
         drain: None,
         structure: crate::trie_map::build_structure,
     },
+    ModuleEntry {
+        name: "critbit-tree-map",
+        kinds: &["mixed"],
+        mixed: Some(crate::critbit_tree_map::run_mixed),
+        drain: None,
+        structure: crate::critbit_tree_map::build_structure,
+    },
+    ModuleEntry {
+        name: "fixed-critbit-tree-map",
+        kinds: &["mixed"],
+        mixed: Some(crate::fixed_critbit_tree_map::run_mixed),
+        drain: None,
+        structure: crate::fixed_critbit_tree_map::build_structure,
+    },
 ];
 
 pub fn find(name: &str) -> Option<&'static ModuleEntry> {

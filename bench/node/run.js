@@ -97,7 +97,9 @@ const MODULES = {
   'set': ['drain'],
   // Appended for the final Gate 10 batch (the last fourteen units), never
   // inserted: twin of harness.rs::MODULES.
-  'trie-map': ['mixed']
+  'trie-map': ['mixed'],
+  'critbit-tree-map': ['mixed'],
+  'fixed-critbit-tree-map': ['mixed']
 };
 
 const argv = process.argv.slice(2);
@@ -1033,6 +1035,84 @@ function runMixedTrieMap(TrieMap, workload, k) {
   return {batches: batches, checksum: checksum, set: trie};
 }
 
+// Twin of bench/runner/src/critbit_tree_map.rs::key. Zero-padded to six
+// decimal digits, not bare `String(value)` -- see that file's own module
+// docs for why fixed width is what makes most pairs diverge deep in the key
+// rather than at byte 0.
+function critbitKey(value) {
+  return String(value).padStart(6, '0');
+}
+
+// Twin of bench/runner/src/critbit_tree_map.rs. 50% `set` (mutating), 25%
+// `get` (pure read), 25% `delete` (mutating, upstream's own plain boolean).
+function runMixedCritbitTreeMap(CritBitTreeMap, workload, k) {
+  const map = new CritBitTreeMap();
+  const ops = workload.kind.length;
+  const batches = [];
+  let checksum = 0;
+
+  for (let start = 0; start < ops; start += k) {
+    const end = Math.min(start + k, ops);
+    const clock = process.hrtime.bigint();
+
+    for (let i = start; i < end; i++) {
+      const key = critbitKey(workload.a[i]);
+      const op = workload.kind[i];
+
+      if (op === 0 || op === 1) {
+        map.set(key, workload.a[i]);
+      } else if (op === 2) {
+        const value = map.get(key);
+        checksum += value === undefined ? 0 : value;
+      } else {
+        checksum += map.delete(key) ? 1 : 0;
+      }
+    }
+
+    batches.push(Number(process.hrtime.bigint() - clock));
+  }
+
+  return {batches: batches, checksum: checksum, set: map};
+}
+
+// Twin of bench/runner/src/fixed_critbit_tree_map.rs. No `delete` (see that
+// file's own module docs -- upstream has none), so this is `fuzzy-map`'s
+// set/get/has shape instead. `workload.size` is BOTH the capacity and the
+// full key domain -- load-bearing, not a style choice: upstream's `set` has
+// no capacity guard at all, and inserting a distinct key past capacity
+// silently corrupts the tree and later THROWS from the walk that next
+// passes through the corrupted node. Capping the domain at capacity is what
+// lets this workload fill the tree without ever reaching that crash.
+function runMixedFixedCritbitTreeMap(FixedCritBitTreeMap, workload, k) {
+  const map = new FixedCritBitTreeMap(workload.size);
+  const ops = workload.kind.length;
+  const batches = [];
+  let checksum = 0;
+
+  for (let start = 0; start < ops; start += k) {
+    const end = Math.min(start + k, ops);
+    const clock = process.hrtime.bigint();
+
+    for (let i = start; i < end; i++) {
+      const key = critbitKey(workload.a[i]);
+      const op = workload.kind[i];
+
+      if (op === 0 || op === 1) {
+        map.set(key, workload.a[i]);
+      } else if (op === 2) {
+        const value = map.get(key);
+        checksum += value === undefined ? 0 : value;
+      } else {
+        checksum += map.has(key) ? 1 : 0;
+      }
+    }
+
+    batches.push(Number(process.hrtime.bigint() - clock));
+  }
+
+  return {batches: batches, checksum: checksum, set: map};
+}
+
 // Dispatch table, twin of harness.rs::MODULES's `mixed` field. Replaces what
 // was a two-armed ternary before five more modules made that the wrong shape.
 const MIXED_RUNNERS = {
@@ -1066,7 +1146,9 @@ const MIXED_RUNNERS = {
   'inverted-index': runMixedInvertedIndex,
   // Appended for the final Gate 10 batch (the last fourteen units), never
   // inserted: twin of harness.rs::MODULES.
-  'trie-map': runMixedTrieMap
+  'trie-map': runMixedTrieMap,
+  'critbit-tree-map': runMixedCritbitTreeMap,
+  'fixed-critbit-tree-map': runMixedFixedCritbitTreeMap
 };
 
 // Twin of harness.rs::MODULES's `structure` field: build the structure at
@@ -1271,6 +1353,22 @@ const STRUCTURE_BUILDERS = {
     for (let i = 0; i < size; i++) trie.set(i.toString(16), i);
 
     return trie.get((size - 1).toString(16));
+  },
+  'critbit-tree-map': function (CritBitTreeMap, size) {
+    const map = new CritBitTreeMap();
+
+    for (let i = 0; i < size; i++) map.set(critbitKey(i), i);
+
+    return map.get(critbitKey(size - 1));
+  },
+  // Capacity IS the domain here too -- see runMixedFixedCritbitTreeMap's own
+  // docs for why that is load-bearing rather than a style choice.
+  'fixed-critbit-tree-map': function (FixedCritBitTreeMap, size) {
+    const map = new FixedCritBitTreeMap(size);
+
+    for (let i = 0; i < size; i++) map.set(critbitKey(i), i);
+
+    return map.get(critbitKey(size - 1));
   }
 };
 

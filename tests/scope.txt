@@ -84,3 +84,5 @@ set
 # see bench/results.json and each docs/modules/<unit>.md's own "### Bench"
 # section for figures.
 trie-map
+critbit-tree-map
+fixed-critbit-tree-map

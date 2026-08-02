@@ -558,6 +558,31 @@ const WORKLOADS = {
       name: 'mixed-2e5', kind: 'mixed', size: 200000, ops: 1000000,
       label: 'mixed set/get/delete (50/25/25) over hex-encoded keys'
     }
+  ],
+
+  // `critbit-tree-map`: zero-padded 6-digit decimal keys over a 200,000-key
+  // domain -- same order-of-magnitude reasoning as `trie-map`'s own domain,
+  // and the padding is what forces most key pairs to diverge deep in the
+  // key rather than at the first byte; see bench/runner/src/
+  // critbit_tree_map.rs's own module docs for the full account.
+  'critbit-tree-map': [
+    {
+      name: 'mixed-2e5', kind: 'mixed', size: 200000, ops: 1000000,
+      label: 'mixed set/get/delete (50/25/25) over zero-padded decimal keys, forcing deep critical-bit positions'
+    }
+  ],
+
+  // `fixed-critbit-tree-map`: no `delete` (upstream has none), so this is
+  // `fuzzy-map`'s set/get/has shape. `size` is BOTH the capacity and the
+  // full key domain -- load-bearing, not a style choice: upstream's `set`
+  // has no capacity guard, and a distinct key past capacity silently
+  // corrupts the tree and later throws. See bench/runner/src/
+  // fixed_critbit_tree_map.rs's own module docs.
+  'fixed-critbit-tree-map': [
+    {
+      name: 'mixed-2e5', kind: 'mixed', size: 200000, ops: 1000000,
+      label: 'mixed set/get/has (50/25/25) over zero-padded decimal keys, capacity reached and held'
+    }
   ]
 };
 

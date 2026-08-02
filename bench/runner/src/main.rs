@@ -67,6 +67,8 @@ mod multi_set;
 mod set_ops;
 // Appended for the final Gate 10 batch (the last fourteen units), never
 // inserted alphabetically -- same reasoning as the two blocks above.
+mod critbit_tree_map;
+mod fixed_critbit_tree_map;
 mod trie_map;
 
 use std::process::ExitCode;

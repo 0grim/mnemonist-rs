@@ -156,5 +156,27 @@ reading about.
 
 ### Bench
 
-**Not run.** Gate 10 is deferred to a serial pass on an idle machine (DESIGN.md §7.3); this unit is
-therefore complete except gate 10 and deliberately not added to `tests/scope.txt`.
+`bench/results.json` → `modules["critbit-tree-map"]`. Methodology: `bench/methodology.md`.
+Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 10,000 samples/side.
+
+**`mixed-2e5`** — 1e6 mixed `set`/`get`/`delete` (50/25/25), `size` 200,000 (`trie-map`'s own order
+of magnitude). Keys are zero-padded to six decimal digits (`format!("{value:06}")` /
+`String(value).padStart(6, '0')`), not bare `toString()`: a crit-bit tree branches on the position
+of the FIRST bit two keys disagree on, and variable-length keys would make most pairs diverge at
+byte 0 (the tail-vs-implicit-0 branch), exercising the shortest path through the tree rather than a
+representative one. Zero-padding forces genuine byte-by-byte comparison — every key under 100,000
+shares its leading `0`, so the actual divergence sits in the low-order digits, deep into the key —
+see `bench/runner/src/critbit_tree_map.rs`'s own module docs. `delete`'s checksum contribution is
+upstream's own plain boolean, matching `trie-map`'s reasoning for the same divergence from core's
+richer `Option<V>`. xorshift32 seed 42:
+
+| metric | port | upstream | |
+|---|---|---|---|
+| p50 ns/op | **305.32** | 412.07 | 1.4× faster |
+| p99 ns/op | **533.30** | 728.81 | 1.4× faster |
+| RSS delta MB | **40.2** | 247.1 | |
+| structure-only RSS delta MB | **0.1** | 6.6 | |
+| startup ms | **0.6** | 15.4 | 26× (reported separately; not throughput) |
+
+**No regressions.** Checksum `12349076899`, identical on both sides — confirms the two trees
+actually diverge at the same bit positions, not merely produce the same op count.
