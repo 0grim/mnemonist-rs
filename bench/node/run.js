@@ -105,7 +105,8 @@ const MODULES = {
   'kd-tree': ['mixed'],
   'static-interval-tree': ['mixed'],
   'fibonacci-heap': ['mixed'],
-  'fixed-reverse-heap': ['mixed']
+  'fixed-reverse-heap': ['mixed'],
+  'bloom-filter': ['mixed']
 };
 
 const argv = process.argv.slice(2);
@@ -1421,6 +1422,48 @@ function runMixedFixedReverseHeap(FixedReverseHeap, workload, k) {
   return {batches: batches, checksum: checksum, set: heap};
 }
 
+// Twin of bench/runner/src/bloom_filter.rs. Filter is prefilled to half its
+// stated capacity (untimed) -- see that file's own module docs for why an
+// empty/near-empty filter proves nothing. 50% add (mutating, same 0..size
+// domain the prefill drew from -- fill ratio climbs toward ~1.0 over the
+// run), 25% test on the hit pool (0..size), 25% test on the miss pool
+// (size..2*size, never added).
+function runMixedBloomFilter(BloomFilter, workload, k) {
+  const domain = Math.max(workload.size, 1);
+  const filter = new BloomFilter(domain);
+  const prefill = Math.floor(workload.size / 2);
+
+  for (let i = 0; i < prefill; i++) filter.add(i.toString(16));
+
+  const ops = workload.kind.length;
+  const batches = [];
+  let checksum = 0;
+
+  for (let start = 0; start < ops; start += k) {
+    const end = Math.min(start + k, ops);
+    const clock = process.hrtime.bigint();
+
+    for (let i = start; i < end; i++) {
+      const op = workload.kind[i];
+
+      if (op === 0 || op === 1) {
+        const member = workload.a[i] % domain;
+        filter.add(member.toString(16));
+      } else if (op === 2) {
+        const member = workload.a[i] % domain;
+        checksum += filter.test(member.toString(16)) ? 1 : 0;
+      } else {
+        const member = domain + (workload.a[i] % domain);
+        checksum += filter.test(member.toString(16)) ? 1 : 0;
+      }
+    }
+
+    batches.push(Number(process.hrtime.bigint() - clock));
+  }
+
+  return {batches: batches, checksum: checksum, set: filter};
+}
+
 // Dispatch table, twin of harness.rs::MODULES's `mixed` field. Replaces what
 // was a two-armed ternary before five more modules made that the wrong shape.
 const MIXED_RUNNERS = {
@@ -1462,7 +1505,8 @@ const MIXED_RUNNERS = {
   'kd-tree': runMixedKdTree,
   'static-interval-tree': runMixedStaticIntervalTree,
   'fibonacci-heap': runMixedFibonacciHeap,
-  'fixed-reverse-heap': runMixedFixedReverseHeap
+  'fixed-reverse-heap': runMixedFixedReverseHeap,
+  'bloom-filter': runMixedBloomFilter
 };
 
 // Twin of harness.rs::MODULES's `structure` field: build the structure at
@@ -1734,6 +1778,17 @@ const STRUCTURE_BUILDERS = {
     for (let i = 0; i < size; i++) heap.push(i);
 
     return heap.peek();
+  },
+  // Twin of bench/runner/src/bloom_filter.rs::build_structure: "size" means
+  // "capacity `size`, prefilled with `size` items" -- full, not the
+  // workload's own half-capacity starting point.
+  'bloom-filter': function (BloomFilter, size) {
+    const domain = Math.max(size, 1);
+    const filter = new BloomFilter(domain);
+
+    for (let i = 0; i < size; i++) filter.add(i.toString(16));
+
+    return filter.test((size - 1).toString(16));
   }
 };
 

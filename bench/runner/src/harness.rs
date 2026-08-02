@@ -311,6 +311,13 @@ pub const MODULES: &[ModuleEntry] = &[
         drain: None,
         structure: crate::fixed_reverse_heap::build_structure,
     },
+    ModuleEntry {
+        name: "bloom-filter",
+        kinds: &["mixed"],
+        mixed: Some(crate::bloom_filter::run_mixed),
+        drain: None,
+        structure: crate::bloom_filter::build_structure,
+    },
 ];
 
 pub fn find(name: &str) -> Option<&'static ModuleEntry> {

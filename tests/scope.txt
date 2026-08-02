@@ -92,3 +92,4 @@ kd-tree
 static-interval-tree
 fibonacci-heap
 fixed-reverse-heap
+bloom-filter

@@ -12,9 +12,7 @@ Port: `crates/mnemonist-core/src/structures/bloom_filter.rs` +
 `crates/mnemonist-core/src/utils/murmurhash3.rs` · bridge `crates/mnemonist-napi/src/bloom_filter.rs`
 · shim `tests/bridge/bloom-filter.js`
 
-Gates 1–9 green. **Gate 10 (benchmark) deliberately not run** — five agents were working this tree
-and DESIGN.md §7.3 batches benchmarks into a quiet serial pass. `tests/scope.txt` is untouched, so
-`tests/verify.sh` correctly reports this unit as not-in-scope; that is the intended end state.
+Gates 1–10 green. `tests/scope.txt` lists this unit; see "Fuzz + bench" below for gate 10's figures.
 
 ---
 
@@ -261,4 +259,27 @@ false), which a completely different hash satisfies just as well. Two of upstrea
 detect a change to the hash at all, and both do it through a frozen byte array rather than through
 any property of the filter.
 
-**Gate 10 — not run, on purpose.** See the header.
+### Bench
+
+`bench/results.json` → `modules["bloom-filter"]`. Methodology: `bench/methodology.md`.
+Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 2,000 samples/side.
+
+**`mixed-2e5`** — 200,000 mixed `add`/`test`-hit/`test`-miss (50/25/25), hex-encoded keys, capacity
+200,000 at upstream's default 0.5% error rate. The filter is **prefilled to a stated 50% fill
+ratio** before timing starts — an empty or near-empty filter answers every `test` the same way
+all-zero bits would, trivially fast and proving nothing about the hashing/bit-setting this module
+exists to measure. `test` queries split across two disjoint pools, both measured directly (size
+200,000, seed 42) before committing to the mix: the **hit** pool (`0..size`, the domain `add` keeps
+drawing from) answers `true` **61.1%** of the time, and the **miss** pool (`size..2*size`, never
+added) has a **0.028%** false-positive rate — both a genuine mix of true/false answers, not a
+degenerate all-one-answer workload:
+
+| metric | port | upstream | |
+|---|---|---|---|
+| p50 ns/op | **97.36** | 163.93 | 1.7× faster |
+| p99 ns/op | **162.72** | 235.92 | 1.4× faster |
+| RSS delta MB | **0.1** | 14.4 | |
+| structure-only RSS delta MB | **0.1** | 6.6 | |
+| startup ms | **0.6** | 15.3 | 26× (reported separately; not throughput) |
+
+**No regressions.** Checksum `30440`, identical on both sides.

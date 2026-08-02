@@ -665,6 +665,17 @@ const WORKLOADS = {
       name: 'mixed-1e6', kind: 'mixed', size: 1000000, ops: 1000000,
       label: 'mixed push/peek (75/25), capacity = size/2, default numeric comparator'
     }
+  ],
+
+  // `bloom-filter`: prefilled to a stated 50% fill ratio (untimed), climbing
+  // toward ~1.0 over the run via the `add` stream. Measured: 61.1% hit rate
+  // on the hit pool, 0.028% false-positive rate on the miss pool -- see
+  // bench/runner/src/bloom_filter.rs's own module docs.
+  'bloom-filter': [
+    {
+      name: 'mixed-2e5', kind: 'mixed', size: 200000, ops: 200000,
+      label: 'mixed add/test-hit/test-miss (50/25/25), prefilled to 50% fill ratio'
+    }
   ]
 };
 
