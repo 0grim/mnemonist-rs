@@ -219,22 +219,47 @@ fn every_batch_generates_new_cases() {
 
     let _ = std::fs::remove_file(NO_CORPUS);
 
-    let campaign = Campaign {
-        seed: 0x0B47C4,
-        cases: None,
-        duration: Some(Duration::from_secs(2)),
-        batch: BATCH,
-        regressions: NO_CORPUS,
-    };
+    // The deadline escalates instead of being a single fixed budget, because a
+    // 2-second wall clock is a proxy for "at least two batches ran" and the
+    // proxy breaks under CPU contention: every case round-trips through the
+    // Node oracle, so on a loaded machine two seconds buys exactly one batch
+    // and the assertion fails while the implementation is correct. Observed
+    // five times, and reproducible on demand by running this suite against 12
+    // busy cores.
+    //
+    // Escalating cannot mask the defect this test exists to catch. The broken
+    // version cannot exceed `BATCH` cases at ANY deadline -- its second and
+    // later batches generate nothing at all, so more time yields more spinning
+    // and no more cases. Extra time can therefore only rescue a slow machine,
+    // never a broken implementation.
+    let mut report = None;
 
-    let report = difffuzz::run(&StaticDisjointSetSpec, &campaign)
-        .expect("oracle must be reachable; `node` is required for differential tests");
+    for seconds in [2u64, 10, 30] {
+        let campaign = Campaign {
+            seed: 0x0B47C4,
+            cases: None,
+            duration: Some(Duration::from_secs(seconds)),
+            batch: BATCH,
+            regressions: NO_CORPUS,
+        };
+
+        let attempt = difffuzz::run(&StaticDisjointSetSpec, &campaign)
+            .expect("oracle must be reachable; `node` is required for differential tests");
+
+        let exceeded = attempt.cases > u64::from(BATCH);
+        report = Some((seconds, attempt));
+
+        if exceeded {
+            break;
+        }
+    }
+
+    let (seconds, report) = report.expect("the loop runs at least once");
 
     assert!(
         report.cases > u64::from(BATCH),
-        "a {}s campaign executed {} cases with a batch of {BATCH}: batches after \
-         the first generated nothing. {}",
-        2,
+        "campaigns of up to {seconds}s executed {} cases with a batch of {BATCH}: \
+         batches after the first generated nothing. {}",
         report.cases,
         report.log_line()
     );
