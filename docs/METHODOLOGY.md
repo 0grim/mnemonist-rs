@@ -198,7 +198,7 @@ instead of silently healing.
 **How it runs.** Operation sequences are generated with `proptest`, replayed against both the Rust
 implementation and **real upstream JavaScript running in Node**, comparing observable state after
 every operation. Divergences are minimised by the shrinker and persisted as regression seeds.
-Currently **124 logged campaigns across 45 modules, 129.8 million operations, zero divergences**.
+Currently **126 logged campaigns across 46 modules, 130.0 million operations, zero divergences**.
 Every line in `fuzz/log.txt` carries its seed and replays exactly.
 
 Three design decisions determine whether such a harness means anything:
@@ -269,6 +269,13 @@ inflated both sides two- to threefold; upstream's own p99 swung 32% between othe
 timing-sensitive test flaked under load and passed in isolation. Gate 10 therefore cannot run
 alongside other work, and executes as a serial pass on a quiet machine.
 
+The benchmark for each unit is written by hand rather than generated. The generic alternative was
+built and rejected: a runner driving every module through the differential fuzzer's own executor
+measured 2.4–3.6× slower than the hand-written benchmarks, because that executor returns a
+`serde_json::Value` and its mutating operations allocate a chaining envelope. It would have produced
+a complete table quickly, and every figure in it would have been the harness rather than the
+structure. The branch is kept unmerged as the record of a discarded approach.
+
 **What it caught.** An early measurement attributed a memory improvement to a mechanism that a
 follow-up metric did not support — the improvement was real, the explanation was not. Performance
 claims are now checked against a metric that would falsify them, and anything unconfirmed is
@@ -331,6 +338,16 @@ scripts/status.sh                # derived status: coverage and per-unit evidenc
 
 cargo run -p difffuzz --release -- --module <name> --seed <n> --duration 60
 ```
+
+The toolchain is pinned to Node 24.18.1 and mocha 9.1.3, and that pin is a measurement rather than a
+preference. Mocha 9.1.3 is upstream's own declared version, kept because a v10 glob change would
+silently alter which files run. Against it, Node 26.5.1 fails outright — mocha's bundled `yargs`
+raises `require is not defined in ES module scope` — and 22.23.2 segfaults on exec with status 139.
+24.18.1 is the newest release that runs the published suite with zero deviation from upstream's own
+devDependencies; 20.20.2 and 18.20.8 also pass. The alternative, upgrading mocha so a newer Node
+would work, leaves the test files byte-identical but replaces the runner that executes them, which
+introduces a divergence where none is needed. The version appears identically in `.nvmrc`, the
+`Dockerfile` and CI.
 
 Every campaign line in `fuzz/log.txt` carries its seed and replays exactly. Withdrawn campaigns are
 commented out with their reason rather than deleted, so a figure later found to be overstated stays

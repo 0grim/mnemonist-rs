@@ -9,11 +9,24 @@ suite serves as the equivalence proof rather than a runtime dependency: those te
 unmodified against the Rust build through an N-API bridge that forms no part of the published crate.
 
 ```
-42 of 42 upstream test files ported        733 upstream specs passing, unmodified
-42 units through all ten gates (100%)       799 native Rust tests
-129.8M differential fuzz operations        zero divergences
+43 of 44 upstream structures ported        42 of 42 upstream test files ported
+42 units through all ten gates (100%)      733 upstream specs passing, unmodified
+130.0M differential fuzz operations        zero divergences
 71 upstream defects examined               12 documented in full
 ```
+
+One upstream file is not ported. `semi-dynamic-trie.js` (251 LOC) is absent from `mnemonist`'s own
+`index.js`, has no file in the published test suite, is required only from upstream's internal
+`benchmark/` directory, and still carries `TODO: rename => ternary search tree` in its header. A
+port of it could not have been checked by anything in the original suite, which is the evidence this
+submission rests on, so it is out of scope and named here rather than absorbed into a count.
+
+Of the 43 that are ported, 40 are in `mnemonist-core`. The remaining three — `lru-map`,
+`lru-cache-with-delete`, `lru-map-with-delete` — are upstream files whose only difference from
+`lru-cache` is which key identity they use and which half of an entry they project. Key identity is
+a JavaScript-value question, so those three are assembled at the bridge over the same core cache.
+Upstream ships no separate test file for any of them: `test/lru-cache.js` requires all four and
+exercises them together, which is what makes that closure one unit rather than four.
 
 ## Scope of fidelity
 
@@ -115,7 +128,9 @@ which upstream behaviour requires.
 
 ```
 crates/mnemonist-core     the crate — 40 structures, no dependencies, no unsafe code
-crates/mnemonist-napi     the N-API bridge, used only to run the upstream suite
+crates/mnemonist-napi     the N-API bridge, used only to run the upstream suite;
+                          also the three LRU siblings, which differ from
+                          lru-cache only in key identity and projection
 crates/difffuzz           differential fuzzer: core against upstream in Node
 bench/                    matched benchmark harness, Rust and JavaScript halves
 tests/original/           the upstream suite, byte-identical and hashed

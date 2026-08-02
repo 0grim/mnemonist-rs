@@ -217,7 +217,7 @@ done
 
 # ───────────────────────────────────────────────────────────── 1. what this is
 screen "What this is"
-say "mnemonist is a JavaScript library of 44 data structures. This is a Rust port of all of it."
+say "mnemonist is a JavaScript library of 44 data structures. Forty-three of them are ported here. The one left out is not exported by the library and has no test in its published suite, so nothing in that suite could have checked it."
 say "The deliverable is a standalone Rust crate: no dependencies, no unsafe code, and it builds without Node installed anywhere on the machine."
 say "The original JavaScript test suite is not a dependency of that crate. It is the proof that the crate behaves like the library it replaces. Those tests run unmodified against the Rust build, through a thin bridge that ships to nobody."
 run "grep -E '^(track|source|version|commit)[[:space:]]*=' .port-mortem.toml | head -5"

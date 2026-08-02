@@ -21,7 +21,13 @@ tests_total     = 525          # measured pre-kickoff, Node 24.18.1, clean clone
 
 [port]
 scope_manifest = "tests/scope.txt"
-modules_ported = 44
+# 43 of the 44, not all 44. semi-dynamic-trie.js (251 LOC) is not ported: it is
+# absent from upstream's own index.js, has no file in the published test suite,
+# is reached only from upstream's internal benchmark/ directory, and its source
+# still carries "TODO: rename => ternary search tree". Nothing in the original
+# suite could have checked a port of it. Stated in README.md rather than rounded
+# up to 44 here.
+modules_ported = 43
 # Upstream LOC of fully ported modules. utils/typed-arrays.js (187 LOC) is in
 # static-disjoint-set's require-closure but only getPointerArray is reachable
 # from it, so it is not counted here; it will be when test/_utils.js lands.
