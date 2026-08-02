@@ -1,0 +1,30 @@
+# Not hygiene -- a correctness and speed requirement (DESIGN.md 12c.1).
+# Without this, `COPY . .` in the builder stage sweeps in the host's
+# target/ (easily 1-3 GB with debug artifacts) and any worktrees living
+# under .claude/, which both bloats the image and invalidates layer
+# caching on every build, since those paths churn constantly.
+#
+# Do not over-exclude: the builder needs Cargo.toml, Cargo.lock, crates/,
+# and tests/. README.md, DECISIONS.md, and .port-mortem.toml are COPY'd
+# explicitly into the parity stage, so they must not be ignored here.
+
+# Build outputs -- large, and they churn on every local build
+target/
+**/node_modules/
+tests/.work/
+
+# Agent worktrees live inside the repo; never bake one into the image
+.claude/worktrees/
+
+# VCS and editor state
+.git/
+.idea/
+*.swp
+
+# Generated evidence: belongs in the repo, not baked into the image
+fuzz/corpus/
+proptest-regressions/
+bench/raw/
+
+# Planning docs the image has no use for
+planning/NOTES.md
