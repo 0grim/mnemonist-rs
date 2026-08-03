@@ -89,6 +89,7 @@ split rather than leaving it to be inferred.
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Crate structure, the role of the bridge, and the six sites where fidelity displaced idiom |
 | [docs/BUGS.md](docs/BUGS.md) | Defects identified in the original library, with reproductions |
 | [docs/DECISIONS.md](docs/DECISIONS.md) | Deliberate divergences from upstream behaviour |
+| [bench/methodology.md](bench/methodology.md) | How both sides are measured: what is compared, what is excluded, and the checksum that must agree before a figure is written |
 | [docs/modules/](docs/modules/) | 46 per-unit documents covering upstream coverage, gaps, and additions |
 | [docs/modules/evidence/](docs/modules/evidence/) | per-unit gate artifacts: coverage tables, fuzz grammars, falsification records, benchmark figures |
 | [docs/modules/log/](docs/modules/log/) | per-unit working logs — chronological, including superseded figures and refuted hypotheses |

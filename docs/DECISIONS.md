@@ -640,4 +640,10 @@ Divergences that are purely about the test harness or the differential fuzzer it
 oracle is driven, how percentiles are computed, how a JSON float parser's own rounding was found to
 manufacture a false divergence, how a fuzz batch's case count was found to be counting replays rather
 than new programs — are process and tooling decisions, not divergences between the port and
-upstream `mnemonist`, and are covered by `docs/METHODOLOGY.md` instead.
+upstream `mnemonist`.
+
+They are documented, in two places rather than this one. `docs/METHODOLOGY.md` covers the gates and
+the instruments' own failures, including the float parser and the replay-inflated case count.
+`bench/methodology.md` covers the benchmark harness end to end: what is compared and what is
+deliberately not, how percentiles are computed once in the driver over both sides rather than twice
+and hoped to agree, and the checksum both sides must produce before any result is written.
