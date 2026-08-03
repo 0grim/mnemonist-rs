@@ -61,6 +61,19 @@ conceals a numeric or comparison lint.
 | [docs/DECISIONS.md](docs/DECISIONS.md) | Deliberate divergences from upstream behaviour |
 | [docs/modules/](docs/modules/) | 46 per-unit documents covering upstream coverage, gaps, and additions |
 
+**Bug Catcher submission.** The upstream defects this entry claims are
+[docs/BUGS.md](docs/BUGS.md), in full and in one place: 12 written up individually with
+reproductions, 48 more in a summary table, and 3 held separately as lower-confidence candidates
+because each has a plausible reading as intentional design. Every entry gives the reproduction, what
+the original does wrong, and how this port handles it; every row in the table was re-confirmed
+against Node 24.18.1 while the document was written rather than carried over from working notes.
+
+Two further candidates are listed as *not* bugs, having proved unreachable through any public
+sequence of calls, and one file was read end to end and found to have nothing to file. The document
+also records a negative result about its own ranking: a defect whose upstream test asserts the buggy
+output as correct would prove the bug survived review, and no case of that kind was found — in every
+defect claimed here, the existing suite never reaches the state where the bug lives.
+
 ## Verification
 
 ```bash
