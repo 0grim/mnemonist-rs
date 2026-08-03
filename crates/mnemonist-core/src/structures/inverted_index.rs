@@ -243,8 +243,8 @@ impl<Doc, Tok> InvertedIndex<Doc, Tok> {
     /// Reproduced rather than "fixed": a walk that visited every document
     /// would be the *correct*, useful behaviour, and is exactly what a
     /// careful porter would write without reading this file line by line —
-    /// which is precisely why it would be a defect (CLAUDE.md's bug-for-bug
-    /// mandate). [`InvertedIndex::for_each`] hands back a [`DocumentsCursor`]
+    /// which is precisely why it would be a defect under this port's
+    /// bug-for-bug mandate. [`InvertedIndex::for_each`] hands back a [`DocumentsCursor`]
     /// frozen at length **zero** unconditionally, so stepping it always
     /// yields `None` immediately: the loop bound really is zero here, not a
     /// value merely rendered as if it were.

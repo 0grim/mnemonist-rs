@@ -78,8 +78,8 @@
 //! semi-random walk over a multi-megabyte array, in the same vein as
 //! `default-map.rs`'s already-confirmed cache-miss cause, but **not itself
 //! confirmed here**: no profiler or cache-counter measurement was taken, so
-//! this is recorded as a hypothesis, not a finding, per CLAUDE.md's rule
-//! against overclaiming performance causation.
+//! this is recorded as a hypothesis, not a finding. This project does not
+//! claim a performance cause it has not measured.
 
 use crate::utils::typed_arrays::{PointerVec, PointerWidth, TypedValue};
 

@@ -299,12 +299,11 @@ impl<V> CritBitTreeMap<V> {
             // stale, orphaned entries (see `delete`'s doc comment; this
             // port's arena is append-only, unlike upstream's own
             // garbage-collected object references), so the next insert
-            // lands at `keys.len()`, wherever that is. A hardcoded `0`
-            // here -- an earlier draft of this port had exactly that --
-            // pointed `root` at a stale, already-taken slot the moment a
-            // second insert followed a delete-to-empty, and
+            // lands at `keys.len()`, wherever that is. A hardcoded `0` here
+            // would point `root` at a stale, already-taken slot the moment a
+            // second insert followed a delete-to-empty, which
             // `CritBitTreeMap::root`'s own "always holds a value" panic
-            // caught it within the first few generated operations of this
+            // reports -- within the first few generated operations of this
             // module's differential-fuzz campaign.
             let index = self.keys.len();
 

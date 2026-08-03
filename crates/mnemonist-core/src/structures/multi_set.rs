@@ -58,8 +58,8 @@
 //! delete-on-non-positive branch instead) — so this is unexercised by gate 4
 //! and worth flagging as a likely defect: NOTES.md BUG-MULTI-SET-1. [`MultiSet::set`]
 //! reproduces the addition faithfully; a "corrected" replace-semantics
-//! version would be *more correct than upstream* and therefore wrong per
-//! CLAUDE.md's bug-for-bug mandate.
+//! version would be *more correct than upstream* and therefore wrong under
+//! this port's bug-for-bug mandate.
 //!
 //! # `dimension` is a **tracked counter**, not derived — unlike `multi-map`
 //!

@@ -24,8 +24,8 @@
 //! `large_segments = l - a * m` of them (placed *last*), `small_segments =
 //! m - large_segments` (placed *first*). Getting the boundary between the
 //! small and large runs off by one silently produces a **smaller** candidate
-//! set that still contains most correct answers — the failure mode CLAUDE.md
-//! calls out as the one least likely to be noticed — so every arithmetic
+//! set that still contains most correct answers — the failure mode least
+//! likely to be noticed — so every arithmetic
 //! step here is checked against `test/passjoin-index.js`'s own pinned
 //! segment/position/interval examples, not just against end-to-end
 //! add/search behaviour.

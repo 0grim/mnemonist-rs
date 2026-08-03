@@ -62,8 +62,8 @@
 //! [`BkTree::try_search`] reproduces the loop and the stack verbatim, in that
 //! order, rather than collecting and sorting — a sorted result would agree on
 //! *membership* and diverge on *order*, which is exactly the kind of "more
-//! correct, and therefore wrong" divergence this project's porting rule
-//! (CLAUDE.md) exists to catch.
+//! correct, and therefore wrong" divergence this port's bug-for-bug rule
+//! exists to catch.
 //!
 //! # What this deliberately does not model
 //!

@@ -409,14 +409,14 @@ impl<V> FixedCritBitTreeMap<V> {
         // `this.size === 0` upstream -- NOT `self.keys.is_empty()`. `clear`
         // resets `size` but never truncates `keys`/`values` (see `clear`'s
         // doc comment), so after a `clear` this branch must still fire even
-        // though `keys` already holds old entries; using `keys.is_empty()`
-        // was a bug in an EARLIER draft of this port (not an upstream one),
-        // caught by this module's own differential-fuzz campaign within its
-        // first handful of generated programs: a `clear`-then-`set` fell
-        // through to the walk below with `pointer == EMPTY`, which nothing
-        // there guarded against, and panicked computing `external_index`
-        // from it. See `docs/modules/fixed-critbit-tree-map.md`'s
-        // falsification section and the test below.
+        // though `keys` already holds old entries. Using `keys.is_empty()`
+        // instead is a port bug, not an upstream one, and this module's own
+        // differential-fuzz campaign reaches it within its first handful of
+        // generated programs: a `clear`-then-`set` falls through to the walk
+        // below with `pointer == EMPTY`, which nothing there guards against,
+        // and panics computing `external_index` from it. See
+        // `docs/modules/fixed-critbit-tree-map.md`'s falsification section
+        // and the test below.
         if self.size == 0 {
             self.store_external(0, key, value);
             self.size = 1;

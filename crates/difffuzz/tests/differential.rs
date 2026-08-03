@@ -401,8 +401,6 @@ fn suffix_array_matches_upstream() {
     }
 }
 
-/// The corpora added by this wave carry provenance too.
-///
 /// The same assertion as
 /// `every_regression_corpus_explains_where_its_seeds_came_from` above, over
 /// a second group of corpora. Every seed in them came from a deliberate

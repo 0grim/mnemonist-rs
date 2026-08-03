@@ -197,7 +197,7 @@ pub struct FibonacciHeap<T, C, E = Thrown> {
     /// `usize::MAX` (a release-mode wraparound) or a panic (debug mode)
     /// would each be a materially different, more "defensive" answer than
     /// upstream's own silent corruption -- exactly the kind of accidental
-    /// improvement CLAUDE.md's bug-for-bug mandate rules out.
+    /// improvement this port's bug-for-bug mandate rules out.
     size: Cell<i64>,
     /// Not part of upstream's API. Exists so a native test or the fuzzer can
     /// **measure** whether `consolidate` actually merged two trees, rather
@@ -994,7 +994,7 @@ mod tests {
         // clear's `size = 0` is what the decrement actually sees --
         // `0 - 1 == -1`, not `0`. A heap "helpfully" clamped to `0` here
         // would be MORE correct than upstream, which is exactly the
-        // divergence CLAUDE.md rules out.
+        // divergence this port's bug-for-bug mandate rules out.
         assert_eq!(
             heap.size(),
             -1,

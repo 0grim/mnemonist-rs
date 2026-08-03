@@ -295,7 +295,7 @@ impl JsFixedStack {
 /// throws — **before** `isArrayLike` is consulted, and `guessLength` runs
 /// before that. Three different errors, in a fixed order.
 ///
-/// # The one divergence in this wave: `size` when `.length` is not a number
+/// # The one divergence here: `size` when `.length` is not a number
 ///
 /// `stack.size = l` assigns the *iterable's* `length` with no type check, and
 /// `isArrayLike` is `Array.isArray || ArrayBuffer.isView` — which is true for a

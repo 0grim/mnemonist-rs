@@ -14,8 +14,8 @@
 //! overwrites and `start` walks. With capacities of 1..=8 and 200-op programs,
 //! a generated program wraps the ring tens of times.
 //!
-//! That makes one thing routine here that is unreachable elsewhere in the
-//! wave: **an insert that overwrites a slot an open cursor has not yet
+//! That makes one thing routine here that most other modules cannot reach at
+//! all: **an insert that overwrites a slot an open cursor has not yet
 //! reached.** Elements are read live while the geometry is frozen (DIV-PROJ-10), so
 //! `$next` can yield a value that was not in the buffer when the walk started.
 //! The `$iter`/`$next`/`push` interleaving in this alphabet produces it

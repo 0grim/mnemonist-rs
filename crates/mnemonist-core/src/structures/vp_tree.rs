@@ -64,8 +64,8 @@
 //!   `self`, so a reentrant call here is simply independent — which is *more*
 //!   correct than upstream's shared-state interleaving, not merely different.
 //!   No test inspects `D`/the heap directly, so this is invisible to the
-//!   upstream suite; recorded as a divergence anyway, per CLAUDE.md's rule
-//!   that "more correct" still needs to be written down.
+//!   upstream suite; recorded as a divergence anyway, because "more
+//!   correct" still needs to be written down.
 
 use crate::sort::quick::inplace_quick_sort_indices;
 use crate::structures::heap::{Heap, VecStore};

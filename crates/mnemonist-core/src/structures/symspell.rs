@@ -147,12 +147,12 @@ impl Entry {
     /// read during `lookup` — never persisted back to the dictionary (that
     /// only happens in `add`), so a `Compact` entry is read here exactly as
     /// if it had been promoted: one suggestion (the encoded index) and a
-    /// `count` of `0`. Skipping this for `Compact` entries (an earlier draft
-    /// of this port did, via a `None`-returning `as_full`) silently dropped
-    /// every suggestion reachable only through a delete-form nothing else
-    /// had reached yet — caught by the very first differential-fuzz
-    /// campaign run for this module: `add("jello")` then `search("hello")`
-    /// at `maxDistance: 1` found nothing, where upstream finds `jello`.
+    /// `count` of `0`. Skipping the promotion for `Compact` entries — as a
+    /// `None`-returning `as_full` would — silently drops every suggestion
+    /// reachable only through a delete-form nothing else has reached yet.
+    /// This module's first differential-fuzz campaign reports it directly:
+    /// `add("jello")` then `search("hello")` at `maxDistance: 1` finds
+    /// nothing, where upstream finds `jello`.
     fn suggestions(&self) -> std::borrow::Cow<'_, [usize]> {
         match self {
             Self::Compact(seed) => std::borrow::Cow::Owned(vec![*seed]),

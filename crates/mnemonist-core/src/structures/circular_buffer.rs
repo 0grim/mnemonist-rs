@@ -623,8 +623,8 @@ mod tests {
 
     /// DIV-PROJ-10: a `push` that overwrites *behind* an open cursor is visible to it,
     /// because elements are read live while the geometry is frozen. This is the
-    /// sharpest form of the hybrid capture in the whole wave — the cursor can
-    /// yield an element that was not in the buffer when the walk started.
+    /// sharpest form of the hybrid capture anywhere in this port — the cursor
+    /// can yield an element that was not in the buffer when the walk started.
     #[test]
     fn an_overwriting_push_is_visible_to_an_open_cursor() {
         let mut buffer = plain(3);

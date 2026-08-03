@@ -183,8 +183,9 @@ pub fn union_unique_two<T: Clone + PartialOrd>(a: &[T], b: &[T]) -> Vec<T> {
     // that `a` is already internally unique; when a caller violates that (an
     // "awkward value" no test here or upstream reaches), consecutive
     // duplicates in this prefix survive into the output. Calling `push_unique`
-    // here would be *more correct* than upstream and therefore a defect
-    // (CLAUDE.md). Differential fuzzing is what distinguishes the two, on
+    // here would be *more correct* than upstream and therefore a defect under
+    // this port's bug-for-bug mandate. Differential fuzzing distinguishes the
+    // two, on
     // `unionUnique([-5, -5, 0], [-0.5])`; reading the code does not.
     while a_pointer < a.len() && a[a_pointer] < *b_start {
         out.push(a[a_pointer].clone());
@@ -592,10 +593,10 @@ mod tests {
     /// not by reading: upstream's prefix loop in `unionUniqueArrays` has NO
     /// dedup check, unlike its overlap and filling loops, so an internally
     /// non-unique first argument leaks a duplicate straight into the output.
-    /// A pre-fuzz draft of this port called the shared `push_unique` helper
-    /// in the prefix loop too -- more correct than upstream, and therefore a
-    /// port defect per CLAUDE.md's bug-for-bug mandate, not an improvement.
-    /// Verified against Node 24.18.1.
+    /// Calling the shared `push_unique` helper in the prefix loop too would be
+    /// more correct than upstream, and therefore a port defect under this
+    /// port's bug-for-bug mandate, not an improvement. Verified against Node
+    /// 24.18.1.
     #[test]
     fn the_prefix_loop_does_not_deduplicate_an_already_non_unique_input() {
         assert_eq!(
