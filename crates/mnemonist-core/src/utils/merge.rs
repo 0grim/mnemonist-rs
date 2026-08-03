@@ -79,8 +79,7 @@
 //! heap.pop(); ...; if (pointers[p] < arrays[p].length) heap.push(p); }`
 //! verbatim.
 //!
-//! This closes DIV-UTILS-2 (`planning/DECISIONS-CANDIDATES.md`, `docs/modules/
-//! _utils.md`): the previous cut of this file picked the minimum head by a
+//! This closes DIV-UTILS-2 (`docs/modules/_utils.md`): a minimum head picked by a
 //! **linear scan** that kept the earliest array on a tie, where upstream's
 //! heap updates `min` with `<=` — favouring the most recently *pushed* node,
 //! which after `consolidate`'s degree-bucket restructuring is not simply "the

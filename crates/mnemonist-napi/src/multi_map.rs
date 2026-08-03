@@ -19,8 +19,8 @@
 //! `Vector`-specific method on the returned container. [`get`]/[`containers`]/
 //! [`associations`] therefore always materialise a **plain `Array`** for a
 //! `List`-kind bucket, regardless of what `Container` originally was. This is
-//! a deliberate divergence (`docs/modules/multi-map.md`, `planning/
-//! DECISIONS-CANDIDATES.md`): a caller that does check `instanceof Vector`, or
+//! a deliberate divergence (`docs/modules/multi-map.md`): a caller that does
+//! check `instanceof Vector`, or
 //! that relies on a custom container's own behaviour beyond `.push`, sees a
 //! plain array instead. Nothing in the original suite can tell the
 //! difference.

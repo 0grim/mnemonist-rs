@@ -5,7 +5,7 @@
 # Every number here is read from an artifact that some gate already had to
 # produce: tests/scope.txt, fuzz/log.txt, bench/results.json, docs/modules/,
 # and git. Nothing is hand-updated, so nothing can go stale — which is the
-# point, because the hand-maintained log in planning/NOTES.md did go stale.
+# point, because the hand-maintained status log this replaced did go stale.
 #
 # Usage:  scripts/status.sh
 set -uo pipefail

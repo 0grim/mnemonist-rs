@@ -33,7 +33,7 @@
 //! * **Harder:** the keys have to be objects with a *stable identity* the
 //!   oracle and the port can each recognise as "the same key" across many
 //!   calls, and — because this project keeps campaigns closed to
-//!   non-determinism (`planning/NOTES.md`'s running theme) — the fuzz grammar
+//!   non-determinism — the fuzz grammar
 //!   deliberately never asks either side whether an unreferenced key has been
 //!   reclaimed. Garbage collection timing is not observable through this
 //!   module's API in the first place (nothing above lists it), so there is no

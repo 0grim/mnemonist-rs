@@ -1,8 +1,7 @@
 //! The `vector` mixed workload — a growable array with `push`/`get`/`pop`,
 //! the simplest and lowest-per-op-overhead structure in this batch. It is the
-//! throughput floor the other four's overhead can be read against, and
-//! `planning/DESIGN.md` §5.1's own workload table asks for exactly this shape
-//! ("sequential push ... then random reads; include resize").
+//! throughput floor the other four's overhead can be read against: sequential
+//! push, then random reads, with a resize crossed on the way.
 //!
 //! Op mix: 50% `push` (mutating, growth), 25% `get` at a uniformly random
 //! *existing* index (pure read — `workload.a[i]` is reduced modulo the

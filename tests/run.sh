@@ -3,9 +3,8 @@
 # Minimal harness runner. Deliberately crude: it assembles the work tree and
 # runs the specs named on the command line, nothing more.
 #
-# The full design (scope.txt selection, tiered hash verification, repo-wide
-# mode) is specified in planning/DESIGN.md 2.3 and lands at D1, once a second
-# module has shown what the generator actually needs to emit.
+# Selection is driven by tests/scope.txt; hash verification is tiered, and the
+# repo-wide mode checks every upstream file rather than only the selected ones.
 #
 # Usage:  tests/run.sh [spec ... | all]  default/"all": every spec with a shim
 set -euo pipefail

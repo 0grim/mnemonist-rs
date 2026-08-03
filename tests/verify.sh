@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Executable Definition of Done (planning/DESIGN.md 1.1).
+# Executable Definition of Done. The ten gates are described in docs/METHODOLOGY.md.
 #
 # Driven by tests/scope.txt: for every unit declared done, assert the evidence
 # actually exists. That makes the done marker un-cheatable -- a unit cannot be
@@ -38,7 +38,7 @@ note() { printf '        %s\n' "$1"; printf '        %s\n' "$1" >> "$LOG"; }
 scoped_units() { grep -vE '^[[:space:]]*(#|$)' tests/scope.txt 2>/dev/null || true; }
 
 echo
-echo "Definition of Done -- planning/DESIGN.md 1.1"
+echo "Definition of Done -- docs/METHODOLOGY.md"
 echo "============================================"
 
 UNITS=$(scoped_units)

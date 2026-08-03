@@ -447,7 +447,7 @@ const WORKLOADS = {
   // signal to justify it. `default-weak-map` is deliberately absent -- its
   // keys must be objects and entries vanish at the GC's discretion, so
   // timing would be dominated by allocation and GC rather than by the
-  // structure; see planning/NOTES.md and docs/modules/default-weak-map.md
+  // structure; see docs/modules/default-weak-map.md and docs/METHODOLOGY.md
   // for the same call made about GC timing elsewhere in this project.
   //
   // `default-map`/`bi-map`: `size` IS the full key domain, same reasoning as
