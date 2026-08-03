@@ -54,7 +54,7 @@ If other agents are working, do not benchmark; gate 10 is batched into a quiet s
 
 - **Reproduce upstream bug-for-bug.** A fuzz "divergence" where our port is *more correct* is a bug
   in the port. Document divergences in `docs/modules/<unit>.md`, and project-level ones in
-  `docs/DECISIONS.md`.
+  `docs/DIVERGENCES.md`.
 - `mnemonist-core` keeps `#![forbid(unsafe_code)]` and a **zero-dependency tree**. It must build
   and test with Node absent. JS-value handling belongs in `mnemonist-napi`.
 - **Do not overclaim causation**, especially about performance. Check an explanation against a
@@ -119,7 +119,7 @@ then merge them one at a time, never as a batch.
 | | |
 |---|---|
 | `docs/METHODOLOGY.md` | the ten gates, what each caught, and what the instruments cannot see |
-| `docs/DECISIONS.md` | deliberate divergences from upstream, project-wide |
+| `docs/DIVERGENCES.md` | deliberate divergences from upstream, project-wide |
 | `docs/ARCHITECTURE.md` | crate split, the boundary rule, where fidelity displaced idiom |
 | `docs/BUGS.md` | upstream defects, with reproductions |
 | `docs/modules/<unit>.md` | per-unit state; `evidence/` for gate artifacts, `log/` for chronology |

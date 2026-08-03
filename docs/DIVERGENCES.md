@@ -1,11 +1,13 @@
-# Decisions
+# Divergences
 
-This document records every deliberate divergence between this port and upstream `mnemonist`:
-places where the port's observable behaviour differs from the JavaScript library's on purpose, and
-places where it reproduces something upstream does that a Rust implementation would not naturally
-do. It is the companion to `docs/BUGS.md`, which records defects found *in* upstream; this document
-records where the port knowingly departs from upstream, or knowingly keeps a departure upstream
-itself would not recognise as a bug.
+Every deliberate divergence between this port and upstream `mnemonist`, in full: places where the
+port's observable behaviour differs from the JavaScript library's on purpose, and places where it
+reproduces something upstream does that a Rust implementation would not naturally do.
+
+This is the long form. **`DECISIONS.md` in the repository root is the short one** — the decisions
+that shaped the port, without the per-mechanism detail below. It is also the companion to
+`docs/BUGS.md`, which records defects found *in* upstream, where this document records where the
+port knowingly departs from it.
 
 Every entry below traces to a specific module and a specific mechanism. Divergences are grouped by
 theme rather than listed in the order they were found, because the order they were found in has no

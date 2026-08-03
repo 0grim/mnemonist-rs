@@ -106,7 +106,7 @@ const CURSOR_FACTORIES: &[(&str, &str)] = &[
 /// and no new mechanism is needed. No gate detects the difference: the upstream
 /// suites never resume a cursor after `break`, and the differential fuzzer
 /// compares `mnemonist-core`, where there is no `return` to latch.
-/// `docs/DECISIONS.md` states the gap for a reader of the port.
+/// `docs/DIVERGENCES.md` states the gap for a reader of the port.
 const CURSOR_PATCH: &str = "(function (Ctor, method) { \
      var original = Ctor.prototype[method]; \
      Ctor.prototype[method] = function () { \

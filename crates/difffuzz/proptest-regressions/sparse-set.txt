@@ -33,12 +33,12 @@
 #
 cc a22059c1d2499c99a9cec3e3edd8204714dcb04c916d13cc1bd97056b96c21ce # shrinks to Program { ctor: [Number(5)], ops: [Op { name: "add", args: [Number(0)] }, Op { name: "add", args: [Number(1)] }, Op { name: "add", args: [Number(2)] }, Op { name: "add", args: [Number(4)] }, Op { name: "add", args: [Number(5)] }, Op { name: "add", args: [Number(5)] }, Op { name: "delete", args: [Number(1)] }] }
 #
-# --- B: the shrink window collapsed, i.e. `docs/DECISIONS.md`'s iteration section Option B ---
+# --- B: the shrink window collapsed, i.e. `docs/DIVERGENCES.md`'s iteration section Option B ---
 #
 # The sabotage was one line in mnemonist-core/src/cursor: return `Step::Done`
 # where the faithful port returns `Step::Gap`, so a walk that runs off the end
 # of the backing array terminates instead of yielding `undefined`. That is
-# exactly the alternative `docs/DECISIONS.md`'s iteration section considered and rejected, and it is the
+# exactly the alternative `docs/DIVERGENCES.md`'s iteration section considered and rejected, and it is the
 # most plausible way this port could have been written. Found in 352 cases
 # (0.3s) and shrunk to two operations:
 #
@@ -46,7 +46,7 @@ cc a22059c1d2499c99a9cec3e3edd8204714dcb04c916d13cc1bd97056b96c21ce # shrinks to
 #     s.add(0);            // out of range on a zero-length set: size becomes 1
 #     Array.from(s);       // port [], upstream [undefined]
 #
-# Worth recording precisely because `docs/DECISIONS.md`'s iteration section measured Option B as costing
+# Worth recording precisely because `docs/DIVERGENCES.md`'s iteration section measured Option B as costing
 # "exactly zero" on the 40% axis -- true, no upstream TEST reaches it. This
 # says it is reachable from the public API in two calls, and that the fuzzer
 # sees it.

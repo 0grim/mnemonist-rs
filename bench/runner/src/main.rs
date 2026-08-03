@@ -25,7 +25,7 @@
 //! `--kind` selects the loop within a module. `mixed` is the op-stream
 //! workload every module has; `sparse-set` adds `drain`, which measures
 //! iteration and is the only benchmark that puts the cursor machinery of
-//! `docs/DECISIONS.md`'s iteration section on the clock.
+//! `docs/DIVERGENCES.md`'s iteration section on the clock.
 
 mod bit_set;
 mod harness;

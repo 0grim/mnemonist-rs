@@ -25,7 +25,7 @@
 //   -> {"cmd":"ping"}          <- {"ok":true}
 //   -> {"cmd":"quit"}          (no response; process exits)
 //
-// Cursor lifecycle ops `docs/DECISIONS.md`'s iteration section/3.7, DIV-PROJ-21). An op name starting with `$`
+// Cursor lifecycle ops `docs/DIVERGENCES.md`'s iteration section/3.7, DIV-PROJ-21). An op name starting with `$`
 // is not a method on the instance; it drives the ONE cursor the oracle keeps
 // alongside it. This is what lets a generated program interleave iteration
 // with mutation, which is the only way DIV-STACK-1/DIV-PROJ-10/DIV-SPARSE-SET-1 are reachable at all.

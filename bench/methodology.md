@@ -94,7 +94,7 @@ once.
 walk of the set rather than 1000 elements, and `batch_k` carries the number of
 members yielded per walk instead of a constant 1000 — so `ns / batch_k` still
 means nanoseconds per element. The reason is that a cursor costs something *per
-walk* as well as per element: it freezes state at creation (`docs/DECISIONS.md`'s iteration section).
+walk* as well as per element: it freezes state at creation (`docs/DIVERGENCES.md`'s iteration section).
 Splitting a walk across samples would bury that fixed cost in whichever sample
 happened to contain the creation, and hide exactly the thing this workload
 exists to measure. Both sides compute `batch_k` from their own set and the

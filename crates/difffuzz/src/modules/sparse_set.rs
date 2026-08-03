@@ -3,7 +3,7 @@
 //! # Grammar, and what it deliberately includes
 //!
 //! This is the first module whose grammar exercises **iteration interleaved
-//! with mutation** (DIV-PROJ-21), which is what `docs/DECISIONS.md`'s iteration section was written for and
+//! with mutation** (DIV-PROJ-21), which is what `docs/DIVERGENCES.md`'s iteration section was written for and
 //! what `static-disjoint-set` had no surface to reach. Three ops beyond the
 //! plain methods:
 //!
@@ -281,7 +281,7 @@ fn member(op: &Op) -> usize {
 
 /// A step, in the shape `fuzz/oracle.js` normalises both sides to.
 ///
-/// The `Gap`/`Done` distinction is the whole of `docs/DECISIONS.md`'s iteration section: both carry
+/// The `Gap`/`Done` distinction is the whole of `docs/DIVERGENCES.md`'s iteration section: both carry
 /// `undefined` as their value, and only `done` tells them apart.
 fn step_value(step: Step<u32>) -> Value {
     match step {

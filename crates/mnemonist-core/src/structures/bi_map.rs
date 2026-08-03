@@ -3,7 +3,7 @@
 //! A `BiMap` keeps two `Map`s in lockstep — `items` (key → value) and
 //! `inverse.items` (value → key) — so a lookup works in either direction and
 //! `set`/`delete` keep both sides a true bijection. Inherits the T3 split
-//! (`docs/DECISIONS.md`'s iteration section) directly: [`crate::map::OrderedMap`] owns order and
+//! (`docs/DIVERGENCES.md`'s iteration section) directly: [`crate::map::OrderedMap`] owns order and
 //! liveness, and the bridge's `JsKey` supplies SameValueZero.
 //!
 //! # One core type parameter, not two

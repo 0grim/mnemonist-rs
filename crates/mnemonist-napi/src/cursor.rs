@@ -1,4 +1,4 @@
-//! The JS half of the cursor contract `docs/DECISIONS.md`'s iteration section, 3.6, 3.7).
+//! The JS half of the cursor contract `docs/DIVERGENCES.md`'s iteration section, 3.6, 3.7).
 //!
 //! `mnemonist-core`'s [`CursorState`] is the faithful walk; this module is the
 //! two things that only exist once JavaScript is in the picture.
@@ -153,7 +153,7 @@ impl<Owner: 'static, S: Sequence + 'static> CellCursor<Owner, S> {
 
 /// Translate a core [`Step`] into what `Generator::next` must return.
 ///
-/// The three-way mapping is the whole of `docs/DECISIONS.md`'s iteration section Option A, and it is
+/// The three-way mapping is the whole of `docs/DIVERGENCES.md`'s iteration section Option A, and it is
 /// this function that answers the question §3.7 left open — whether napi can
 /// express `undefined` in a `Yield` slot. It can, but **not** through
 /// `Option<T>`: napi maps `Option::None` to `null`, and `null` is not

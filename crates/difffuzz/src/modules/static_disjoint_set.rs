@@ -9,7 +9,7 @@
 //! exercised on every step of every program, which is the part of this module
 //! most likely to diverge.
 //!
-//! **Out-of-range indices are excluded**, and `docs/DECISIONS.md`'s iteration section asks for such
+//! **Out-of-range indices are excluded**, and `docs/DIVERGENCES.md`'s iteration section asks for such
 //! exclusions to be stated rather than left implicit. Upstream reads past the
 //! end of a typed array, gets `undefined`, and propagates `NaN` through the
 //! parent walk; the port raises a `RangeError` at the bridge (see the napi

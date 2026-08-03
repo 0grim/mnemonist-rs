@@ -49,7 +49,7 @@
 # ---------------------------------------------------------------------------
 # GRAMMAR, PER MODULE — including what is deliberately excluded.
 #
-# `docs/DECISIONS.md`'s iteration section asks for narrowed grammars to be disclosed, because "we fuzzed
+# `docs/DIVERGENCES.md`'s iteration section asks for narrowed grammars to be disclosed, because "we fuzzed
 # it" reads as "we covered everything" when it wasn't.
 #
 # static-disjoint-set
@@ -433,12 +433,12 @@
 #      It proves the out-of-range half of the grammar is doing work.
 #
 #   B. The shrink window collapsed -- `Step::Gap` returned as `Step::Done`,
-#      which is exactly `docs/DECISIONS.md`'s iteration section's rejected Option B. Caught in 352 cases
+#      which is exactly `docs/DIVERGENCES.md`'s iteration section's rejected Option B. Caught in 352 cases
 #      (0.3s), shrunk to TWO operations:
 #          var s = new SparseSet(0); s.add(0); Array.from(s);
 #          port []   upstream [undefined]
 #      It proves the cursor half of the grammar is doing work, and it corrects
-#      a measurement in `docs/DECISIONS.md`'s iteration section: Option B costs zero on the 40% axis
+#      a measurement in `docs/DIVERGENCES.md`'s iteration section: Option B costs zero on the 40% axis
 #      because no upstream TEST reaches it, but it is reachable from the
 #      public API in two calls and the fuzzer sees it immediately.
 #

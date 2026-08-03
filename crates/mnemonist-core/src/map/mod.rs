@@ -1,4 +1,4 @@
-//! JavaScript `Map` semantics, ported from ECMA-262 (`docs/DECISIONS.md`'s iteration section).
+//! JavaScript `Map` semantics, ported from ECMA-262 (`docs/DIVERGENCES.md`'s iteration section).
 //!
 //! Every module in bridge tier T3 — `default-map`, `bi-map`, `fuzzy-map`,
 //! `multi-map`, `multi-set`, `lru-map` and friends — keeps its state in a
@@ -421,7 +421,7 @@ impl MapCursor {
     /// `None` is `{done: true}` and is permanent. Anything else is
     /// `{done: false, value: ...}`. There is no third state: unlike
     /// [`crate::cursor::Step`], a `Map` cursor has no frozen length to run
-    /// past, so the `undefined` gap of `docs/DECISIONS.md`'s iteration section cannot arise here.
+    /// past, so the `undefined` gap of `docs/DIVERGENCES.md`'s iteration section cannot arise here.
     pub fn step<'m, K, V>(&mut self, map: &'m OrderedMap<K, V>) -> Option<(&'m K, &'m V)> {
         if self.done {
             return None;

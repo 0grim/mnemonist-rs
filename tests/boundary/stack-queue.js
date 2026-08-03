@@ -6,7 +6,7 @@
  * happens when JavaScript *aliases* one: mutating a collection from inside its
  * own `forEach` callback, or from between two `next()` calls on a cursor it
  * still holds. The borrow checker forbids exactly that in Rust, which is the
- * point of `docs/DECISIONS.md`'s iteration section — the behaviour lives at the boundary, so the tests
+ * point of `docs/DIVERGENCES.md`'s iteration section — the behaviour lives at the boundary, so the tests
  * for it do too.
  *
  * Every case here is asserted **differentially** against the vendored upstream
@@ -318,7 +318,7 @@ describe('Stack (boundary) — behaviours only a Stack has', function () {
   it('should let a pop during iteration open an undefined hole.', function () {
     // `pop()` shortens the very array the cursor captured, and the frozen
     // length still admits the missing slot: {done: false, value: undefined}.
-    // This is `docs/DECISIONS.md`'s iteration section's shrink window, on a module whose test file
+    // This is `docs/DIVERGENCES.md`'s iteration section's shrink window, on a module whose test file
     // never mutates during iteration.
     var seen = agree('Stack', function (S) {
       var s = S.from([1, 2, 3]),

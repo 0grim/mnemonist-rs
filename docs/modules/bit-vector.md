@@ -167,7 +167,7 @@ from inside `grow`** — so `push`, `set`, `grow`, `resize`, `reallocate` and `a
 vector while a JS function runs. A `RefCell` panic inside a `#[napi]` method aborts the process:
 napi 3.12 does not `catch_unwind` a sync call, and a panic unwinding out of an `extern "C"` frame is
 an abort. Every borrow in this bridge is therefore fallible and raises a named error instead of
-risking that abort — see `REENTRANT_POLICY`, `docs/DECISIONS.md`'s "Re-entrancy" section, and the
+risking that abort — see `REENTRANT_POLICY`, `docs/DIVERGENCES.md`'s "Re-entrancy" section, and the
 two `BitVector` policy specs
 in `tests/boundary/reentrancy.js`. Upstream would serve a re-entrant call from a half-grown vector;
 this port refuses it instead. That is a stated narrowing, and it replaces an abort, which replaced

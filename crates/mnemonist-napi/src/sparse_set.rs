@@ -199,7 +199,7 @@ impl Generator for JsSparseSetValues {
     /// a `break`, `SparseSet.values().next()` answers `{done: true}` where
     /// upstream resumes. Deleting the property is the only fix — see
     /// [`crate::statics`] — and this class is not yet in that table.
-    /// `docs/DECISIONS.md` records the gap.
+    /// `docs/DIVERGENCES.md` records the gap.
     fn complete(&mut self, _value: Option<()>) -> Option<Self::Yield> {
         None
     }

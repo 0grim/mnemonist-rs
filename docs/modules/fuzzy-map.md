@@ -69,7 +69,7 @@ and an empty map reporting nothing.
 Gaps 3, 5 and 6 are stated rather than closed — 3 and 5 are bridge-level (the hash-function split is
 JavaScript, not core), covered instead by the differential campaign below and by
 `mnemonist_napi::fuzzy_map`'s own construction tests; 6 is the same disclosed absence as every other
-unit in this port — `.inspect()` is a repo-wide scope cut, listed in `docs/DECISIONS.md`.
+unit in this port — `.inspect()` is a repo-wide scope cut, listed in `docs/DIVERGENCES.md`.
 
 ## Bugs this found
 

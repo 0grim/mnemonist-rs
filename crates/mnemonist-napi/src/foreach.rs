@@ -1,4 +1,4 @@
-//! `obliterator/foreach`, ported to the boundary `docs/DECISIONS.md`'s iteration section, §3.5, DIV-QUEUE-1).
+//! `obliterator/foreach`, ported to the boundary `docs/DIVERGENCES.md`'s iteration section, §3.5, DIV-QUEUE-1).
 //!
 //! Thirty of the forty-four upstream modules import this one function, and a
 //! grep of every call site shows all of them are `forEach(iterable, cb)` inside

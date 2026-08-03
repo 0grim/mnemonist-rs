@@ -240,7 +240,7 @@ function host() {
 // `sparse-set` adds `drain`, and that one is not symmetry for its own sake:
 // iteration is the whole reason this module was ported now, and the drain
 // workload is the only benchmark in the repo that puts the cursor machinery of
-// `docs/DECISIONS.md`'s iteration section against the JS closure it was ported from. Its batch is a
+// `docs/DIVERGENCES.md`'s iteration section against the JS closure it was ported from. Its batch is a
 // whole walk rather than 1000 elements, because a cursor costs something per
 // walk (it freezes state at creation) as well as per element.
 const WORKLOADS = {
