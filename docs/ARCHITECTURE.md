@@ -145,7 +145,7 @@ Where a behaviour is deliberately wrong it is documented on the item itself and 
 divergence document under `docs/modules/`. Nothing is left to be discovered by surprise.
 
 Everywhere the two did not conflict, the code is ordinary Rust. `clippy --all-targets -D warnings`
-is clean across the workspace, and there are **25 lint suppressions in roughly 71,000 lines**.
+is clean across the workspace, and there are **25 lint suppressions in roughly 72,000 lines**.
 Twenty-four are complaints about signature shape or ergonomics: 18 `type_complexity`, 5
 `too_many_arguments`, 1 `new_without_default`.
 
