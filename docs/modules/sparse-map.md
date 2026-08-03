@@ -114,8 +114,9 @@ Everything below is reachable through the public API and never exercised by the 
 
 **Iteration — everything except three immediate drains**
 
-17. **Mutation during iteration is never performed.** The hybrid capture means an
-    element write mid-walk *is* visible and a length change is *not*; neither half is tested. On
+17. **Mutation during iteration is never performed.** The hybrid capture — length frozen at
+    construction, elements read live on every step — means an element write mid-walk *is* visible
+    and a length change is *not*; neither half is tested. On
     this module the visible result of a mid-walk `delete` is a **mismatched pair**, which is B-11
     at its sharpest.
 18. **A cursor is never re-drained**, so D-06 non-restartability is unobserved.

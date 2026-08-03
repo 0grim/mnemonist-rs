@@ -83,8 +83,9 @@ and never exercised by the original suite.
 
 **Iteration — everything except one immediate drain**
 
-12. **Mutation during iteration is never performed.** Upstream's cursor freezes `size` and reads
-    `dense` lazily (hybrid capture), so an element write mid-walk *is* visible and a
+12. **Mutation during iteration is never performed.** Upstream's cursor freezes `size` at
+    construction but reads `dense` lazily, live, on every step — a **hybrid capture**: the walk's
+    *length* is a snapshot, its *elements* are not. So an element write mid-walk *is* visible and a
     length change is *not*. Neither half is tested.
 13. **A cursor is never re-drained.** `obliterator.take` exhausts it once, so the
     non-restartability of D-06 is unobserved.

@@ -102,8 +102,9 @@ and never exercised by the original suite.
 16. **A cursor is never re-drained**, so the non-restartability of D-06 is unobserved.
 17. **`[...stack]` is never used.** The suite reaches the cursor through `values()`, `entries()` and
     one `for…of`, so the *factory* half of D-07 has coverage only through the `for…of`.
-18. **Mutation during iteration is never performed**, so neither half of the hybrid capture
-    is tested.
+18. **Mutation during iteration is never performed**, so neither half of the hybrid capture — the
+    frozen length, the live elements — is tested. See `docs/modules/sparse-set.md`, which states it
+    in full.
 19. **`values()` on an empty stack, or after a `clear`, is never called.**
 20. **The `undefined` shrink window is never reached** — it needs (7), which needs (6)'s sibling
     branch.
