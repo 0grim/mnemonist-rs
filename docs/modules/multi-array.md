@@ -215,6 +215,23 @@ JavaScript baseline, which measured 26.4 ns in the earlier session and 29.81 ns 
 unchanged code. Within one session the harness reproduces to 0.9%; across sessions it does not, so
 the port's own 3.9% is the figure to trust here.
 
+**Then a second change, found by looking at `get` rather than at the walk — 17%.** `get` allocated
+its result with `vec![0.0; length]`, which memsets `length * 8` bytes that the following `length`
+steps then overwrite one by one. It now builds with `Vec::with_capacity` and `push`, reversing at
+the end (the walk runs tail-to-head, so the reverse restores upstream's order over bytes already in
+cache), and matches the `Storage` discriminant once per call instead of once per element.
+
+Measured across three runs on a settled machine, the port's own p50 is 39.7–40.2 ns against 48.3
+before — a 1.3% spread on the port side, against 5.3% on the JavaScript side, which is why the
+port's own figure is the one quoted. **50.2 → 48.3 → 39.9 ns** across the two changes; the ratio
+reads 1.45× slower.
+
+What is left is the allocation `get` cannot avoid: it returns a fresh container per call, and the
+probe above already puts a bare `Vec::with_capacity(25)` plus fill at 34.88 ns of the original
+50.96. Both implementations allocate; V8's nursery is better at this shape than a general-purpose
+allocator is. Fixing that would mean changing what the method returns, which is upstream's contract,
+so it stays.
+
 `get` allocates exactly once per call, confirmed by counting rather than by reading the source — the
 compiler does not elide it. The gap between `get` and `multiplicity` (50.14 ns/call) splits roughly
 70/30 between the allocation itself (the bare-allocation baseline, 34.88 ns/call, with no chain walk

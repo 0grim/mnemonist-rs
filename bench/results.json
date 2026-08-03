@@ -23,7 +23,7 @@
   },
   "baseline_rss_mb": {
     "node": 45.2,
-    "rust": 4.8
+    "rust": 4.7
   },
   "modules": {
     "static-disjoint-set": {
@@ -915,31 +915,31 @@
           "checksum_note": "identical on both sides: same ops, same answers, upstream bugs included",
           "structure_note": "structure_rss_delta_mb constructs size 20000 and nothing else, isolating the structure from the op arrays both sides materialise",
           "port": {
-            "p50_ns_per_op": 48.291,
-            "p99_ns_per_op": 170.924,
-            "min_ns_per_op": 6.312,
-            "rss_total_mb": 22.1,
-            "rss_delta_mb": 17.3,
+            "p50_ns_per_op": 39.686,
+            "p99_ns_per_op": 145.796,
+            "min_ns_per_op": 6.402,
+            "rss_total_mb": 22.2,
+            "rss_delta_mb": 17.5,
             "structure_rss_delta_mb": 0.1,
             "startup_ms": 0.6,
             "samples": 10000
           },
           "original": {
-            "p50_ns_per_op": 29.806,
-            "p99_ns_per_op": 365.272,
-            "min_ns_per_op": 11.773,
-            "rss_total_mb": 161.6,
-            "rss_delta_mb": 116.5,
-            "structure_rss_delta_mb": 6.3,
-            "startup_ms": 19.5,
+            "p50_ns_per_op": 28.174,
+            "p99_ns_per_op": 306.441,
+            "min_ns_per_op": 11.893,
+            "rss_total_mb": 163.2,
+            "rss_delta_mb": 118.1,
+            "structure_rss_delta_mb": 6.2,
+            "startup_ms": 17.7,
             "samples": 10000
           },
           "regressions": [
             {
               "metric": "p50_ns_per_op",
-              "port": 48.291,
-              "original": 29.806,
-              "ratio": 1.62
+              "port": 39.686,
+              "original": 28.174,
+              "ratio": 1.41
             }
           ]
         }
@@ -1499,5 +1499,5 @@
       "excluded": "A require-closure of five unrelated pure-function files (typed-arrays, binary-search, hash-tables, iterables, merge) with no shared instance. The benchmark harness keys one workload per module name, so a single entry would misrepresent all five, and splitting them would no longer describe the unit named in the scope manifest. Correctness is covered by gates 1-9."
     }
   },
-  "generated_utc": "2026-08-03T02:16:31.319Z"
+  "generated_utc": "2026-08-03T02:27:37.699Z"
 }

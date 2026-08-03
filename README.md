@@ -123,7 +123,7 @@ an idle machine. Full methodology in [docs/METHODOLOGY.md](docs/METHODOLOGY.md).
 | `kd-tree` | 1.40× faster |
 | `heap` | 1.32× slower |
 | `default-map` | 1.36× slower |
-| `multi-array` | 1.62× slower |
+| `multi-array` | 1.45× slower |
 
 Every row above was measured in a single session on an idle machine, which matters because the
 JavaScript baseline is not stable across sessions: `kd-tree`'s upstream figure moved 22% and
@@ -143,11 +143,18 @@ slot on every sift step, so the allocation was closer to once per comparison tha
 Fixed-size `[f64; N]` tuples are `Copy`, making that clone a stack copy: the port's own time fell
 from 2049 ns to 830 ns, a change far larger than the baseline drift above.
 
-`multi-array` is the honest counter-example. Narrowing its bookkeeping from `usize` to `u32` was
-expected to reduce the cache-miss cost of its bucket walk; measured, it bought 3.9% on the port's own
-time — real, but small enough that the stated cause is not established. The remaining regression is
-more plausibly the allocator traffic of returning a fresh container per call, which was the
-falsifier named in advance.
+`multi-array` is where measurement disagreed with the reasoning. Narrowing its bookkeeping from
+`usize` to `u32` was expected to reduce the cache-miss cost of its bucket walk; measured, it bought
+3.9% on the port's own time — kept, but too small to call the width the cause. Removing a zero-fill
+found afterwards bought 17%: `get` allocated its result with `vec![0.0; n]`, memsetting bytes that
+the next `n` steps immediately overwrote. It now builds by `push` and reverses, and matches the
+storage discriminant once per call instead of once per element. The port's own time went 50.2 ns →
+48.3 ns → 39.9 ns across the two changes.
+
+What remains is the allocation itself: `get` returns a fresh container per call, and a bare
+`Vec::with_capacity(25)` plus fill already accounts for 34.9 ns of it. Both sides allocate, and V8's
+nursery is simply better at this shape than a general-purpose allocator. That is the residue, and it
+is not addressable without changing what the method returns.
 
 The `heap` figures are the clearest measure of what fidelity costs. The delivered implementation
 runs at 31.9 ns against upstream's 24.1 ns; a bare `Vec<f64>` heap over the identical workload runs

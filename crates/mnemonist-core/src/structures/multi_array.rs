@@ -312,16 +312,31 @@ impl MultiArray {
             return None;
         }
 
-        let length = self.lengths[index];
+        let length = self.lengths[index] as usize;
         let mut pointer = self.tails[index];
-        let mut out = vec![0.0; length as usize];
-        let mut i = length;
+        let mut out = Vec::with_capacity(length);
 
-        while i != 0 {
-            i -= 1;
-            out[i as usize] = self.storage.get(pointer as usize);
-            pointer = self.pointers[pointer as usize];
+        // Built tail-first and reversed rather than zero-filled and written
+        // backwards by index: `vec![0.0; n]` memsets `n * 8` bytes that every
+        // one of the next `n` steps overwrites. The reverse pass that replaces
+        // it runs over bytes already in cache. The storage discriminant is
+        // matched once here instead of once per element, for the same reason.
+        match &self.storage {
+            Storage::Dynamic(items) => {
+                for _ in 0..length {
+                    out.push(items[pointer as usize]);
+                    pointer = self.pointers[pointer as usize];
+                }
+            }
+            Storage::Fixed(items) => {
+                for _ in 0..length {
+                    out.push(f64::from(items.get(pointer as usize)));
+                    pointer = self.pointers[pointer as usize];
+                }
+            }
         }
+
+        out.reverse();
 
         Some(out)
     }
