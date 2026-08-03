@@ -243,11 +243,37 @@ RSS and startup still favour the port. Checksum `723901217380`, identical on bot
 original gate-10 measurement (the allocation probe uses its own smaller, unmatched workload and is
 not itself gate-10 evidence — see the file's own docs for why).
 
-**Fix not attempted.** `FixedReverseHeap`'s backing store is `VecStore<Vec<f64>>` because it is a
-faithful port of upstream's own tuple-array shape (`heap[i]` holding a 3-element JS array); avoiding
-the allocation would mean giving `k_nearest_neighbors` its own fixed-size `[f64; 3]` or a flattened
-`Vec<f64>` backing store instead of going through the general-purpose `Store`/`Comparator` machinery
-`FixedReverseHeap` shares with `Heap`/`FibonacciHeap`. That is a `crates/mnemonist-core` change, and
-per this project's rule, changing it would make this module's fuzz campaign and bench figures stale
-and require re-running both before the change could stand — out of scope for this investigation's
-"strictly secondary" fix budget. Recorded here as a proposal for later, not applied.
+**Fixed 2026-08-03**, by the route this section proposed: `k_nearest_neighbors` and
+`linear_k_nearest_neighbors` now hold `[f64; 3]` and `[f64; 2]` instead of `Vec<f64>`. Both are
+`Copy`, so the `Store::get`/`set` clone on every sift step is a stack copy rather than a `malloc`.
+`TupleComparator` gained a matching `Comparator<[T; N], E>` impl, appended beside the `Vec<T>` one
+rather than replacing it; the two are the same lexicographic rule, and since every tuple here is
+exactly `N` long the "shorter than `N`" case only the `Vec` impl needs is unreachable from either.
+
+The same allocation probe, re-run unchanged:
+
+| method | ns/call | allocations/call | bytes/call |
+|---|---|---|---|
+| `nearest_neighbor` | 352.4 | **0.000** | 0 |
+| `k_nearest_neighbors` | 1909.3 | **7.000** | 1,392 |
+
+499.3 allocations per call became 7.0 — a 71× reduction — and the time per call fell 4.2×, from
+8,071 ns to 1,909 ns. The self-ratio this probe measures fell from 22.2× to 5.4×, against upstream's
+own 3.4×. This is the metric that would have falsified the explanation had it been wrong: had the
+cost been the pointer chase through `lefts`/`rights`/`pivots`, or `squared_distance`'s per-dimension
+loop, removing the allocations would have left the time where it was.
+
+The full gate-10 workload, re-measured in the same session as every other figure in this port's
+performance table:
+
+| metric | port | upstream | |
+|---|---|---|---|
+| p50 ns/op | **830.23** | 1159.03 | port 1.40× faster |
+| p99 ns/op | **1423.68** | 2144.00 | port 1.51× faster |
+| min ns/op | **680.31** | 883.83 | port 1.30× faster |
+
+One caution against reading the swing as larger than it is. The upstream figure in the table above
+this one, 939.76 ns, and today's 1159.03 ns are the *same code on the same host*, 22% apart across
+sessions. Back to back within one session the harness reproduces to 0.9% on both sides, so the
+honest statement of the improvement is the port's own time — 2049 ns to 830 ns — rather than the
+ratio's move from 2.2× slower to 1.40× faster, which carries that drift.

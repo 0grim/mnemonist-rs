@@ -116,24 +116,43 @@ an idle machine. Full methodology in [docs/METHODOLOGY.md](docs/METHODOLOGY.md).
 
 | Structure | Median, relative to upstream |
 |---|---|
-| `fibonacci-heap` | 25× faster |
-| `linked-list` | 4.1× faster |
-| `trie` | 2.6× faster |
-| `lru-cache` | 1.8× faster |
+| `fibonacci-heap` | 26.8× faster |
+| `linked-list` | 4.8× faster |
+| `trie` | 2.8× faster |
+| `lru-cache` | 1.42× faster |
+| `kd-tree` | 1.40× faster |
 | `heap` | 1.32× slower |
-| `default-map` | 1.42× slower |
-| `multi-array` | 1.90× slower |
-| `kd-tree` | 2.18× slower |
+| `default-map` | 1.36× slower |
+| `multi-array` | 1.62× slower |
+
+Every row above was measured in a single session on an idle machine, which matters because the
+JavaScript baseline is not stable across sessions: `kd-tree`'s upstream figure moved 22% and
+`multi-array`'s 13% between two runs of unchanged code on different days. Back to back within one
+session the same measurements agree to 0.9% on both sides, so ratios are comparable down the column
+but not against figures quoted in an earlier run.
 
 Each regression has a confirmed cause, established against a measurement that would have produced a
 different result had the explanation been incorrect. One earlier explanation was refuted by this
 process: `default-map`'s regression had been attributed to a duplicate hash lookup that does not
 exist in the code; the observed cause is cache-miss latency, which is consistent with the regression
-narrowing from 1.42× to 1.17× as the domain grows and both implementations begin to miss.
+narrowing as the domain grows and both implementations begin to miss.
 
-The `heap` figures are the clearest measure of what fidelity costs. A bare `Vec<f64>` heap over the
-identical workload runs at 21.7 ns against upstream's 24.3 ns. The delivered implementation runs at
-31.8 ns, so the `RefCell` and comparator indirection accounts for more than the entire regression.
+`kd-tree` was the largest regression at 2.18× slower and is now faster than upstream. Its k-nearest-
+neighbour search built a fresh heap-allocated tuple per node visited, and the heap's store clones a
+slot on every sift step, so the allocation was closer to once per comparison than once per push.
+Fixed-size `[f64; N]` tuples are `Copy`, making that clone a stack copy: the port's own time fell
+from 2049 ns to 830 ns, a change far larger than the baseline drift above.
+
+`multi-array` is the honest counter-example. Narrowing its bookkeeping from `usize` to `u32` was
+expected to reduce the cache-miss cost of its bucket walk; measured, it bought 3.9% on the port's own
+time — real, but small enough that the stated cause is not established. The remaining regression is
+more plausibly the allocator traffic of returning a fresh container per call, which was the
+falsifier named in advance.
+
+The `heap` figures are the clearest measure of what fidelity costs. The delivered implementation
+runs at 31.9 ns against upstream's 24.1 ns; a bare `Vec<f64>` heap over the identical workload runs
+at 21.7 ns — a separate probe, not part of the table above — so the `RefCell` and comparator
+indirection accounts for more than the entire regression.
 That indirection is what permits a JavaScript comparator to re-enter and mutate the heap mid-sift,
 which upstream behaviour requires.
 

@@ -198,6 +198,23 @@ a plausible account of where the p50 gap comes from, not originally a confirmed 
 | `multiplicity(index)` (O(1), no walk) | 0.82 | 0.000 |
 | bare `Vec::with_capacity(25)` + fill, no walk | 34.88 | 1.000 |
 
+**Re-measured 2026-08-03, after narrowing the bookkeeping.** `tails`, `lengths` and `pointers` moved
+from `Vec<usize>` to `Vec<u32>`. `pointers` is read once per step of every bucket walk, over an array
+that reaches megabytes on this workload, so halving its element width was expected to cut the
+cache-miss cost of that walk.
+
+Measured, it bought **3.9%** on the port's own p50 — 50.25 ns to 48.29 ns. That is real and it is
+kept, but it is not enough to call the width the cause of the regression: the falsifier named before
+the measurement was "if the cost is the allocator traffic of returning a fresh container per call
+rather than the width of the walk, this shows little or no effect", and 3.9% is nearer to little.
+The probe above already found `get` doing exactly one allocation per call and a bare
+`Vec::with_capacity(25)` costing 34.88 ns of the 50.96, which points the same way.
+
+The gate-10 ratio reads 1.62× slower rather than the 1.9× above, but most of that move is the
+JavaScript baseline, which measured 26.4 ns in the earlier session and 29.81 ns in this one on
+unchanged code. Within one session the harness reproduces to 0.9%; across sessions it does not, so
+the port's own 3.9% is the figure to trust here.
+
 `get` allocates exactly once per call, confirmed by counting rather than by reading the source — the
 compiler does not elide it. The gap between `get` and `multiplicity` (50.14 ns/call) splits roughly
 70/30 between the allocation itself (the bare-allocation baseline, 34.88 ns/call, with no chain walk
