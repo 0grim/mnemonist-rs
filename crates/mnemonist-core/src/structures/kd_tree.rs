@@ -31,13 +31,13 @@
 //! `vp-tree.js`'s builder sorts by distance — see that module's docs for why
 //! the working permutation is a [`PointerVec`] here even though upstream's
 //! own `ids` is a plain array: only the scratch representation differs, and
-//! [`inplace_quick_sort_indices`](crate::sort::quick::inplace_quick_sort_indices)
+//! [`crate::sort::quick::inplace_quick_sort_indices`]
 //! is already exhaustively tested against `sort/quick.js`.
 //!
 //! # What this deliberately does not model
 //!
 //! * **An empty tree's query.** `KDTree.from([], dimensions)` builds cleanly
-//!   (see [`build_tree`]'s early return, mirroring `vp_tree`'s), but querying
+//!   (see `build_tree`'s early return, mirroring `vp_tree`'s), but querying
 //!   it would read `this.pivots[0]` as `undefined` and cascade from there. No
 //!   upstream test builds an empty tree and queries it. [`KdTree::nearest_neighbor`]
 //!   returns [`None`] instead.

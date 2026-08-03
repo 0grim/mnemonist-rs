@@ -26,7 +26,7 @@
 //! search([1, 2, 3], 9, 0, 100)  ->  49   // "found" at a hole
 //! ```
 //!
-//! So every read below goes through [`Missing`]-aware helpers that return
+//! So every read below goes through `Missing`-aware helpers that return
 //! `false` for a comparison against an absent element, which reproduces the
 //! JavaScript exactly rather than panicking on a bounds check the original does
 //! not have.

@@ -31,7 +31,7 @@
 //! purely to recreate one write silently going nowhere. No upstream test ever
 //! embeds the sentinel character in a real token (both `test/trie.js` and
 //! `test/trie-map.js` use only ordinary words), and nothing else in this port
-//! needs that duality. So [`Node`] keeps the value and the children in two
+//! needs that duality. So `Node` keeps the value and the children in two
 //! separate fields instead of one shared keyspace, which makes a token equal
 //! to the sentinel string an utterly ordinary token here — stored, retrieved
 //! and iterated like any other, never colliding with anything. This is a
@@ -47,7 +47,7 @@
 //! exception this port does not reproduce; see "Deliberate divergences"
 //! below), and `SENTINEL` is a key exactly like any token: whichever of "this
 //! node's own value" or "a child at token T" was written first is enumerated
-//! first. [`Node`] is therefore an insertion-ordered list of [`Slot`]s, not a
+//! first. `Node` is therefore an insertion-ordered list of `Slot`s, not a
 //! value field plus a hash map — the two are stored in the SAME ordered
 //! sequence for exactly this reason, even though they no longer share a
 //! keyspace. Losing the interleaving would get every DFS order wrong the
@@ -71,7 +71,7 @@
 //!   region. See `docs/modules/trie-map.md`.
 //! * **DIV-TRIE-MAP-3**: `Object.keys` order for a plain object special-cases
 //!   integer-like keys (`"0"`, `"1"`, …), enumerating them ascending *before*
-//!   any other key regardless of insertion order. [`Node`] does not reproduce
+//!   any other key regardless of insertion order. `Node` does not reproduce
 //!   this — every entry enumerates in insertion order, full stop. No token
 //!   in either original test file is ever a digit, so gate 4 never reaches
 //!   this rule.

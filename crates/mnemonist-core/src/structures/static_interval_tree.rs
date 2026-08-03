@@ -47,7 +47,7 @@
 //! an immutable stored interval (the test suite's, and every sane caller's),
 //! re-invoking them at query time can only ever reproduce the same
 //! `(start, end)` pair building already computed. `mnemonist-core` therefore
-//! takes the **resolved bounds** once, at construction — [`bounds`] below —
+//! takes the **resolved bounds** once, at construction — `bounds` below —
 //! and the getters themselves (a JS-value concern: an arbitrary callback, or
 //! a default index/property read) never appear in this crate, matching
 //! `docs/ARCHITECTURE.md`'s boundary rule. The bridge is where a getter, if any, actually runs.

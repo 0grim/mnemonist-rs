@@ -13,7 +13,7 @@
 //! constructed, while the heap inside it is only `size` long, so
 //! `heap.js`'s `var endIndex = heap.length` would walk into the unwritten tail.
 //! The local copy takes `size` as a parameter and is otherwise identical — see
-//! [`sift_up_within`](crate::structures::heap::sift_up_within), which is that
+//! [`crate::structures::heap::sift_up_within`], which is that
 //! one function.
 //!
 //! # Two upstream defects live here

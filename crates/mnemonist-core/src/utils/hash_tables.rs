@@ -27,7 +27,7 @@
 //! The initial slot is `hash(key) & (n - 1)`, which is only a modulo when `n` is
 //! a power of two. For any other `n` the mask can select a slot at or past the
 //! end — upstream then reads `undefined`, treats it as "occupied but not equal",
-//! and probes on. Reproduced through [`slot`], which returns `None` for an
+//! and probes on. Reproduced through `slot`, which returns `None` for an
 //! out-of-range read exactly as JavaScript does.
 //!
 //! # Deliberate divergences

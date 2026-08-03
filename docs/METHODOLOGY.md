@@ -172,7 +172,7 @@ accepted without investigation.
 **Purpose.** Cover what upstream's suite does not reach. Each divergence document lists those gaps
 explicitly.
 
-**How it runs.** `cargo test` — currently **799 tests**.
+**How it runs.** `cargo test` — currently **803 tests**, 12 of them doctests.
 
 **What it caught.** A great deal, with one structural limitation: these tests were written by
 whoever wrote the implementation, against the same reading of the upstream source. A misreading

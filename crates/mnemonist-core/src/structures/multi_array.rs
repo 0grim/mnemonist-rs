@@ -57,7 +57,7 @@
 //! `test/multi-array.js` or the differential fuzzer can observe the
 //! *internal* representation of an index-to-position mapping, only the
 //! *values* a bucket yields — which are still width-narrowed exactly where
-//! upstream narrows them (the [`Storage::Fixed`] item backing). This is the
+//! upstream narrows them (the `Storage::Fixed` item backing). This is the
 //! same category of simplification `crate::structures::multi_map`'s
 //! `dimension()` makes (a derived count instead of a tracked one): cheaper,
 //! and behaviourally identical on every reachable input.

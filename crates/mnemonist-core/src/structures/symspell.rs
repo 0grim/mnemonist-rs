@@ -19,10 +19,10 @@
 //! itself an added word). This is not merely a memory optimisation to skip
 //! allocating an object for a delete-form nobody has revisited — the
 //! promotion point (`typeof item === 'number'`) is a real branch upstream's
-//! own `add`/lookup logic takes, and [`Entry`] reproduces the same two
+//! own `add`/lookup logic takes, and `Entry` reproduces the same two
 //! shapes and the same promotion rather than always allocating
 //! [`DictItem`], so that `first` (`suggestions.values().next().value`, used
-//! by [`add_lowest_distance`]'s verbosity pruning) is always genuinely "the
+//! by `add_lowest_distance`'s verbosity pruning) is always genuinely "the
 //! first index this form was ever reached from", matching a JS `Set`'s
 //! insertion-order iteration.
 //!

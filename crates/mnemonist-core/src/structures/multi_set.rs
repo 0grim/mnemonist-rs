@@ -30,7 +30,7 @@
 //! time it runs is `NaN` (or `undefined`, when the caller omits the
 //! argument) — both become `1`. `add('hello', NaN)` therefore behaves as
 //! `add('hello', 1)`, confirmed by reading (this is unconditional numeric
-//! coercion, not a runtime-dependent code path). [`fold_falsy`] is that one
+//! coercion, not a runtime-dependent code path). `fold_falsy` is that one
 //! rule, applied identically in [`MultiSet::add`], [`MultiSet::remove`] and
 //! [`MultiSet::set`].
 //!
@@ -457,7 +457,7 @@ impl<K> Default for RepeatCursor<K> {
 
 impl<K> RepeatCursor<K> {
     /// A fresh cursor positioned before the first item. Like
-    /// [`MapCursor`](crate::map::MapCursor) it is not bound to a set: the map
+    /// [`crate::map::MapCursor`] it is not bound to a set: the map
     /// is supplied to each [`step`](RepeatCursor::step).
     pub fn open() -> Self {
         Self {

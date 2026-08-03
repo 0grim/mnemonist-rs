@@ -15,8 +15,8 @@
 //! `undefined`, and every relational comparison against `undefined` is `false`
 //! because `ToNumber(undefined)` is `NaN`.
 //!
-//! So the indices variants compare `Option<&T>` through [`gt`], [`ge`] and
-//! [`le`] below, each of which is false whenever either side is absent. That
+//! So the indices variants compare `Option<&T>` through `gt`, `ge` and
+//! `le` below, each of which is false whenever either side is absent. That
 //! is not defensive programming; it is the comparison upstream performs, and a
 //! port that panicked on the out-of-range read instead would refuse inputs
 //! upstream accepts.

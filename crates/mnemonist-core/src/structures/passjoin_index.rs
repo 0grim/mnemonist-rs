@@ -405,7 +405,7 @@ impl PassjoinIndex {
 
     /// `#.search(query)` — every added string within Levenshtein distance
     /// `k` of `query`, in the order upstream's `Set` would iterate them
-    /// (see [`OrderedStringSet`]), computed with an infallible
+    /// (see `OrderedStringSet`), computed with an infallible
     /// `levenshtein`. The convenience form of [`PassjoinIndex::try_search`]
     /// for a native Rust metric that cannot throw.
     pub fn search(

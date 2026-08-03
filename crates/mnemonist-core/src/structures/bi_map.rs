@@ -41,7 +41,7 @@
 //! [`BiMap::set_reverse`] is the *same* function with `items`/`inverse`
 //! swapped — which is what upstream's `InverseMap.prototype.set = set` is:
 //! one function bound to two receivers. Sharing the core of both through
-//! [`link`] keeps that fact visible rather than duplicating the four branches.
+//! `link` keeps that fact visible rather than duplicating the four branches.
 //!
 //! # `InverseMap` is a *view*, not a second structure
 //!

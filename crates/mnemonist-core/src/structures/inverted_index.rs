@@ -91,7 +91,7 @@
 //! would have been wrong here). Confirmed against Node 24.18.1: a `tokens()`
 //! cursor opened before `clear()` goes on yielding the pre-clear tokens
 //! after it, same as `documents()`. So [`InvertedIndex::mapping`] is also an
-//! `Rc<RefCell<_>>` ([`Mapping`]), `clear` rebinds it, and
+//! `Rc<RefCell<_>>` (`Mapping`), `clear` rebinds it, and
 //! [`InvertedIndex::tokens`] hands back a dedicated [`TokensCursor`] that
 //! captures the `Rc` the same way [`DocumentsCursor`] captures `items` —
 //! `crate::map::MapCursor` itself is reused for the actual walk, but it is

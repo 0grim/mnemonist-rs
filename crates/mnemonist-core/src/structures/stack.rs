@@ -92,7 +92,7 @@ impl<T> Stack<T> {
     ///
     /// Any cursor already open keeps the array it captured and is unaffected.
     /// That is upstream's `this.items = []`, and reproducing it is the reason
-    /// [`Items`] is refcounted.
+    /// `Items` is refcounted.
     pub fn clear(&mut self) {
         self.items = Rc::new(RefCell::new(Vec::new()));
         self.size = 0;

@@ -37,7 +37,7 @@ use crate::utils::typed_arrays::PointerVec;
 ///
 /// # Panics
 ///
-/// Panics unless `lo <= hi <= array.len()`. See [`super::check_window`].
+/// Panics unless `lo <= hi <= array.len()`. See `super::check_window`.
 pub fn inplace_insertion_sort<T: PartialOrd>(array: &mut [T], lo: usize, hi: usize) {
     check_window(lo, hi, array.len(), "the array");
 
@@ -59,7 +59,7 @@ pub fn inplace_insertion_sort<T: PartialOrd>(array: &mut [T], lo: usize, hi: usi
 ///
 /// `array` is read only. An index pointing past the end of `array` reads
 /// `undefined` upstream, which loses every comparison it takes part in; see
-/// [`super::gt`].
+/// `super::gt`.
 ///
 /// # Panics
 ///

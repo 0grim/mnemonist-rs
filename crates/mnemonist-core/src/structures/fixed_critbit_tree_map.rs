@@ -42,10 +42,10 @@
 //!     at FixedCritBitTreeMap.set (fixed-critbit-tree-map.js:199:17)
 //! ```
 //!
-//! [`BoundedSlots`] models exactly this: a fixed-length slot store whose
+//! `BoundedSlots` models exactly this: a fixed-length slot store whose
 //! writes past the end are dropped and whose reads past the end come back
 //! [`None`] — JavaScript's `undefined` — rather than the in-bounds zero,
-//! [`Some(0)`]. The distinction is load-bearing: an in-bounds `0` is a
+//! `Some(0)`. The distinction is load-bearing: an in-bounds `0` is a
 //! genuinely empty child slot (attach a new leaf here); an out-of-bounds
 //! read is the corruption above. [`Error::Corrupted`] surfaces the crash
 //! with upstream's own message text, so a caller two layers up (the napi
@@ -646,7 +646,7 @@ impl<V> FixedCritBitTreeMap<V> {
     /// `current < 0` / `current > 0` checks all treat as false — pushed
     /// once, then popped with no callback and no further descent. That is
     /// observationally identical to never pushing it at all, so reads here
-    /// fold `None` straight to [`EMPTY`] rather than threading a separate
+    /// fold `None` straight to `EMPTY` rather than threading a separate
     /// corrupted state through — unlike `set`, which must not, because
     /// `set`'s crash is observable (`Error::Corrupted`) and `forEach`'s
     /// silent skip is not.

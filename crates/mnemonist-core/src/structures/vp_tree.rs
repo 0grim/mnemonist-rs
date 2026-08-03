@@ -43,7 +43,7 @@
 //! # What this deliberately does not model
 //!
 //! * **An empty tree's query.** `new VPTree(distance, [])` builds cleanly
-//!   (every array ends up length zero — see [`build`]'s early return), but
+//!   (every array ends up length zero — see `build`'s early return), but
 //!   upstream's `nearestNeighbors`/`neighbors` on it would read
 //!   `this.nodes[0]` as `undefined`, then `this.items[undefined]` as
 //!   `undefined`, and hand that `undefined` vantage point to the caller's

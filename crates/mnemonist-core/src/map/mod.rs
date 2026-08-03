@@ -28,7 +28,7 @@
 //!
 //! Confirmed against Node 24.18.1. [`OrderedMap::set`] therefore updates in
 //! place when the key is present and appends only when it is not — and
-//! keeps the *original* key, which is what the spec's "if p.[[Key]] is
+//! keeps the *original* key, which is what the spec's "if p.`Key` is
 //! SameValueZero(key)" clause means.
 //!
 //! **3. Iterators are live, not snapshots.** A `Map` iterator is an index

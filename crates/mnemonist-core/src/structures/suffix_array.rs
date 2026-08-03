@@ -11,7 +11,7 @@
 //! short version is what a reader of this file needs to know before touching
 //! anything:
 //!
-//! **BUG-SUFFIX-ARRAY-1 — the radix sort silently narrows to 8 bits.** [`sort`] scans for the
+//! **BUG-SUFFIX-ARRAY-1 — the radix sort silently narrows to 8 bits.** `sort` scans for the
 //! largest symbol with `Math.max` in order to pick a radix width. Its scan
 //! reads `string[array[i] + offset]`, and for `offset` of 1 and 2 that index
 //! routinely runs past the padded sequence — the padding is `length % 3`
@@ -35,7 +35,7 @@
 //! Neither is this port's bug to fix. Its porting rule is explicit that a
 //! divergence in which the port is *more* correct is a defect in the port.
 //!
-//! # Everything is read through [`Sparse`], and that is load-bearing
+//! # Everything is read through `Sparse`, and that is load-bearing
 //!
 //! The two defects above are both *consequences of reading past the end of an
 //! array*, and one of them (BUG-SUFFIX-ARRAY-1) depends on the difference between "read a
@@ -43,10 +43,10 @@
 //! second poisons `Math.max`. A port that indexed with `[]` would panic where
 //! upstream computes an answer, and a port that clamped to `0` would compute a
 //! *different, more correct* answer. So every sequence in this module is a
-//! [`Sparse`], whose `get` returns `None` for both a hole and an out-of-range
+//! `Sparse`, whose `get` returns `None` for both a hole and an out-of-range
 //! index, exactly as JavaScript's `undefined` does.
 //!
-//! [`compare`] returns `f64` for the same reason: upstream's `||` chain treats
+//! `compare` returns `f64` for the same reason: upstream's `||` chain treats
 //! `NaN` as falsy and its caller tests `< 0`, which `NaN` fails. Modelling that
 //! with an `Ordering` would quietly delete a branch.
 

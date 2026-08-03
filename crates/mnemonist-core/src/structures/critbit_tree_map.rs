@@ -16,7 +16,7 @@
 //! index-based, iterative bubble-up over an explicit `ancestors`/`path`
 //! stack. So this port keeps upstream's own shape: two parallel arenas,
 //! `keys`/`values` for external nodes and `internals` for internal nodes,
-//! addressed by [`Ptr`] — upstream's own encoding (`0` empty, positive an
+//! addressed by `Ptr` — upstream's own encoding (`0` empty, positive an
 //! internal node, negative an external one) kept verbatim because
 //! `fixed_critbit_tree_map` (which genuinely cannot use `Box` — its arrays
 //! are pre-allocated and bounds-checked) needs the identical encoding, and
@@ -36,10 +36,10 @@
 //! narrows to bytes and does not attempt to reproduce the wide-character
 //! case — see DIV-CRITBIT-TREE-MAP-1 in `docs/modules/critbit-tree-map.md`.
 //!
-//! [`msb8`] and [`mask_for`] are the literal `bitwise.js` functions,
+//! `msb8` and `mask_for` are the literal `bitwise.js` functions,
 //! specialised to `u8` (Rust's `!x` on a `u8` already truncates to 8 bits, so
 //! no `& 0xff` is needed the way JavaScript's 32-bit `~` requires one).
-//! [`get_direction`] is upstream's own `(1 + (byte | mask)) >> 8` trick,
+//! `get_direction` is upstream's own `(1 + (byte | mask)) >> 8` trick,
 //! kept exactly rather than replaced with a clearer bit-extraction, because
 //! the trick's degenerate case — a mask of `0xff`, which happens exactly
 //! when the two keys' diverging byte pair XORs to `0` (the tail-extension
@@ -56,7 +56,7 @@
 //! call into a two-argument function, so the missing `b` parameter is
 //! `undefined`, and `a ^ undefined` is `a ^ NaN`, which XOR coerces to `a ^ 0`
 //! — upstream's own comment says as much ("NOTE: x ^ 0 is the same as x").
-//! [`diverging_byte`] returns `0` for the absent side to match, and every
+//! `diverging_byte` returns `0` for the absent side to match, and every
 //! caller feeds that pair through the same `mask_for` used everywhere else —
 //! no special case needed, which is exactly why porting the real bitwise
 //! trick (rather than a cleaner reinterpretation) pays for itself here.

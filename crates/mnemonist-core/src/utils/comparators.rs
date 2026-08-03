@@ -320,7 +320,7 @@ impl<E, T: ?Sized, C: Comparator<T, E> + ?Sized> Comparator<T, E> for &C {
 ///
 /// Reading past the end of a tuple yields `undefined` upstream, and
 /// `undefined < undefined` is false both ways, so a short tuple simply
-/// contributes no ordering. [`Vec::get`] reproduces that by returning `None`.
+/// contributes no ordering. `Vec::get` reproduces that by returning `None`.
 #[derive(Debug, Clone, Copy)]
 pub struct TupleComparator {
     /// How many leading members participate in the comparison. Members past

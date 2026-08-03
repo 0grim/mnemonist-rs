@@ -89,7 +89,7 @@
 //! v.get(1) === 8          // length(1) < index(1) is false: reads the stale 8
 //! ```
 //!
-//! Verified against Node 24.18.1. [`Storage::grown`] reproduces the bulk copy
+//! Verified against Node 24.18.1. `Storage::grown` reproduces the bulk copy
 //! (of the whole old capacity, not just `length`) rather than the "tidier"
 //! copy-up-to-length a hand-written port would reach for.
 //!
@@ -161,7 +161,7 @@ pub enum Error {
     /// `bit-vector` divergence it mirrors.
     PolicyNotRepresentable,
     /// `Vector(<ArrayClass>).set: index out of bounds.` `class` is upstream's
-    /// `this.ArrayClass.name`, resolved from [`Storage::class_name`]. It is
+    /// `this.ArrayClass.name`, resolved from `Storage::class_name`. It is
     /// carried in the error itself rather than interpolated at the bridge, so
     /// the message this crate produces already matches upstream byte for
     /// byte — the differential fuzzer compares it literally.

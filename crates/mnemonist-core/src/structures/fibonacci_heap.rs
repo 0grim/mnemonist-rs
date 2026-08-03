@@ -41,7 +41,7 @@
 //! `left`/`right`/`parent`/`child` are indices, not owning pointers. Nothing
 //! here can form a reference cycle because indices do not own anything.
 //! Unlike a typical arena, though, **a popped node's slot is never freed or
-//! recycled** — see [`Arena`]'s own docs for why a recycling arena panics
+//! recycled** — see `Arena`'s own docs for why a recycling arena panics
 //! (or worse, silently aliases two logically distinct nodes) the moment a
 //! re-entrant comparator pops from inside another pop's `consolidate`, a
 //! shape the fuzz grammar in `crates/difffuzz/src/modules/fibonacci_heap.rs`
@@ -167,8 +167,8 @@ impl<T> Arena<T> {
 ///
 /// [`Comparator<T, E>`] takes `E` as a free parameter rather than an
 /// associated type (see that trait's own docs), which means a single `C` can
-/// in principle implement it for more than one `E` — [`DefaultComparator`]
-/// does, for *every* `E`, since [`Relational`]'s blanket impls do too. So
+/// in principle implement it for more than one `E` — `DefaultComparator`
+/// does, for *every* `E`, since `Relational`'s blanket impls do too. So
 /// `E` cannot be inferred from `C` alone the way
 /// [`Heap`](crate::structures::heap::Heap) infers it from `Store::Error`
 /// (a real associated type on a real type parameter already in play there).
@@ -255,7 +255,7 @@ impl<T: Clone, C, E> FibonacciHeap<T, C, E> {
         self.min.get().map(|id| self.item(id))
     }
 
-    /// How many times [`link`](Self::link) has run: two trees became one.
+    /// How many times `link` has run: two trees became one.
     /// See the field's own docs for why this exists.
     pub fn merges(&self) -> u64 {
         self.merges.get()

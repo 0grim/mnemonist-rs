@@ -49,7 +49,7 @@ const STACK: usize = 64;
 ///
 /// # Panics
 ///
-/// Panics unless `lo <= hi <= array.len()`. See [`super::check_window`].
+/// Panics unless `lo <= hi <= array.len()`. See `super::check_window`.
 pub fn inplace_quick_sort<T: PartialOrd + Clone>(array: &mut [T], lo: usize, hi: usize) {
     check_window(lo, hi, array.len(), "the array");
 
@@ -104,7 +104,7 @@ pub fn inplace_quick_sort<T: PartialOrd + Clone>(array: &mut [T], lo: usize, hi:
 /// Sort `indices[lo..hi)` by the `array` values they point at, in place.
 ///
 /// `array` is read only. An index pointing past the end of `array` reads
-/// `undefined` upstream, which loses every comparison; see [`super::ge`].
+/// `undefined` upstream, which loses every comparison; see `super::ge`.
 ///
 /// # Panics
 ///

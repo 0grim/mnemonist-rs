@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
+#![deny(rustdoc::broken_intra_doc_links, rustdoc::private_intra_doc_links)]
 
 //! `mnemonist-core` is the Rust port of the `mnemonist` JavaScript data
 //! structures library. This crate is the port proper: it has zero

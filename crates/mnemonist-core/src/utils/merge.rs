@@ -73,8 +73,8 @@
 //! arrays[b][pointers[b]]; ... })` — a heap over **array indices**, keyed by
 //! each array's *current* head value through a shared, mutable `pointers`
 //! array the comparator closure reads fresh on every call. `fibonacci-heap`
-//! is now ported (`crate::structures::fibonacci_heap`), so [`k_way_scan`]
-//! below is the same algorithm, not a substitute for it: [`KWayKeyComparator`]
+//! is now ported (`crate::structures::fibonacci_heap`), so `k_way_scan`
+//! below is the same algorithm, not a substitute for it: `KWayKeyComparator`
 //! is that exact closure, and the loop is upstream's `while (heap.size) { p =
 //! heap.pop(); ...; if (pointers[p] < arrays[p].length) heap.push(p); }`
 //! verbatim.

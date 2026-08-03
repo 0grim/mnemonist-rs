@@ -473,7 +473,7 @@ impl<IK: Hash + Eq, K, V> LruCache<IK, K, V> {
 
     /// Upstream's `delete` (the `-with-delete` pair only). `false` for a
     /// missing key; the linked-list splice and hole recording are shared with
-    /// [`LruCache::remove`] via [`LruCache::unlink`].
+    /// [`LruCache::remove`] via `LruCache::unlink`.
     pub fn delete(&mut self, index_key: &IK) -> bool {
         let Some(pointer) = self.index.remove(index_key) else {
             return false;
@@ -494,11 +494,11 @@ impl<IK: Hash + Eq, K, V> LruCache<IK, K, V> {
     /// `V: Clone` here (and only here, not on the surrounding `impl` block):
     /// upstream's `var dead = this.V[pointer];` reads the value without
     /// disturbing the array, so `this.V[pointer]` is still the just-removed
-    /// value afterwards — stale, exactly like [`LruCache::unlink`] leaves
+    /// value afterwards — stale, exactly like `LruCache::unlink` leaves
     /// `this.K[pointer]`, and reachable the same way, by a walk whose frozen
     /// bound has not yet reached this pointer. Taking ownership outright
     /// (`.take()`) would zero it instead, reintroducing on this one field
-    /// exactly the crash [`LruCache::unlink`]'s doc comment describes; a
+    /// exactly the crash `LruCache::unlink`'s doc comment describes; a
     /// clone is what lets both the return value AND the stale slot exist at
     /// once, matching upstream's read without a write.
     pub fn remove(&mut self, index_key: &IK) -> Option<V>
@@ -635,7 +635,7 @@ impl<IK: Hash + Eq, K: Clone, V: Clone> Sequence for LruCache<IK, K, V> {
 impl<IK: Hash + Eq, K: Clone, V: Clone> LruCache<IK, K, V> {
     /// The frozen state one of the three walks starts from: `head`, captured
     /// now, next to which walk this is. Exposed so the napi bridge can open a
-    /// [`crate::cursor::CellCursor`] directly (it needs the `Frozen` payload,
+    /// `crate::cursor::CellCursor` directly (it needs the `Frozen` payload,
     /// not a borrowing [`CursorState`]) without reaching into private fields.
     pub fn frozen(&self, projection: Projection) -> <Self as Sequence>::Frozen {
         (Cell::new(self.head), projection)

@@ -11,8 +11,8 @@ unmodified against the Rust build through an N-API bridge that forms no part of 
 ```
 43 of 44 upstream structures ported        42 of 42 upstream test files ported
 42 units through all ten gates (100%)      525 upstream specs passing, unmodified
-130.0M differential fuzz operations        zero divergences
-71 upstream defects examined               12 documented in full
+125.6M differential fuzz operations        zero divergences
+72 upstream defects examined               12 documented in full
 ```
 
 **What the 525 counts, and what it does not.** `./tests/run.sh` executes 733 specs in one mocha run:
@@ -63,14 +63,14 @@ counted here. Re-derive any of it with `scripts/loc.sh`:
 
 | crate | code | tests | rustdoc | comments + blank | total |
 |---|---:|---:|---:|---:|---:|
-| `mnemonist-core` — the port itself, zero dependencies | 9,973 | 16,282 | 8,160 | 3,306 | 37,721 |
-| `mnemonist-napi` — the N-API bridge | 11,451 | 109 | 4,766 | 3,443 | 19,769 |
-| `difffuzz` — differential fuzzing harness | 8,718 | 1,103 | 3,206 | 2,371 | 15,398 |
-| `bench-runner` — the matched benchmark harness | 2,878 | — | 1,916 | 984 | 5,778 |
-| **workspace** | **33,020** | **17,494** | **18,048** | **10,104** | **78,666** |
+| `mnemonist-core` — the port itself, zero dependencies | 9,973 | 16,281 | 8,168 | 3,306 | 37,728 |
+| `mnemonist-napi` — the N-API bridge | 11,451 | 109 | 4,767 | 3,441 | 19,768 |
+| `difffuzz` — differential fuzzing harness | 8,718 | 1,103 | 3,206 | 2,373 | 15,400 |
+| `bench-runner` — the matched benchmark harness | 2,878 | — | 1,915 | 984 | 5,777 |
+| **workspace** | **33,020** | **17,493** | **18,056** | **10,104** | **78,673** |
 
 Two figures are worth reading rather than skimming. `mnemonist-core` carries **more test code than
-implementation code** — 16,282 lines against 9,973 — which is the shape a compatibility port should
+implementation code** — 16,281 lines against 9,973 — which is the shape a compatibility port should
 have. And `mnemonist-napi` has almost no Rust tests by design: its tests are JavaScript, because
 what it has to be correct about is what JavaScript sees, so they live in `tests/bridge/` and
 `tests/boundary/` and run under Node.
@@ -128,7 +128,7 @@ docker build -t pm-core --target core . && docker run --rm pm-core
 Individual checks:
 
 ```bash
-cargo test                       # 799 native tests
+cargo test                       # 803 native tests
 cargo run --release --example tour -p mnemonist-core   # the crate used from Rust
 ./tests/run.sh                   # 525 upstream specs + 208 of this port's own, via the bridge
 ./tests/verify.sh                # all ten gates, per unit claimed complete
