@@ -145,7 +145,10 @@ Where a behaviour is deliberately wrong it is documented on the item itself and 
 divergence document under `docs/modules/`. Nothing is left to be discovered by surprise.
 
 Everywhere the two did not conflict, the code is ordinary Rust. `clippy --all-targets -D warnings`
-is clean across the workspace, and there are **25 lint suppressions in roughly 72,000 lines**.
+is clean across the workspace, and there are **25 lint suppressions in 33,008 lines of
+implementation code** — 78,711 lines of Rust in total once tests, rustdoc and comments are included.
+The split per crate is in the README and re-derivable with `scripts/loc.sh`; no count here includes
+the Markdown under `docs/`, which is documentation rather than port code.
 Twenty-four are complaints about signature shape or ergonomics: 18 `type_complexity`, 5
 `too_many_arguments`, 1 `new_without_default`.
 

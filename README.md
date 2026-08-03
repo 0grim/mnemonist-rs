@@ -45,11 +45,28 @@ library. Every deliberate deviation is recorded on the affected item and in that
 divergence document.
 
 Where fidelity and Rust idiom did not conflict, the implementation is conventional. `clippy
---all-targets -D warnings` is clean across approximately 72,000 lines, with 25 lint suppressions:
+--all-targets -D warnings` is clean across every crate in the workspace, with 25 lint suppressions:
 24 concern signature shape or ergonomics (18 `type_complexity`, 5 `too_many_arguments`, 1
 `new_without_default`), and one is an `if_same_then_else` in `passjoin-index`, where two branches
 share a body but not their guards because only the second calls `levenshtein`. No suppression
 conceals a numeric or comparison lint.
+
+**Size.** Rust only — the Markdown under `docs/` is documentation, not port code, and is not
+counted here. Re-derive any of it with `scripts/loc.sh`:
+
+| crate | code | tests | rustdoc | comments + blank | total |
+|---|---:|---:|---:|---:|---:|
+| `mnemonist-core` — the port itself, zero dependencies | 9,971 | 16,287 | 8,007 | 3,353 | 37,618 |
+| `mnemonist-napi` — the N-API bridge | 11,441 | 109 | 4,700 | 3,512 | 19,762 |
+| `difffuzz` — differential fuzzing harness | 8,718 | 1,103 | 3,209 | 2,523 | 15,553 |
+| `bench-runner` — the matched benchmark harness | 2,878 | — | 1,916 | 984 | 5,778 |
+| **workspace** | **33,008** | **17,499** | **17,832** | **10,372** | **78,711** |
+
+Two figures are worth reading rather than skimming. `mnemonist-core` carries **more test code than
+implementation code** — 16,287 lines against 9,971 — which is the shape a compatibility port should
+have. And `mnemonist-napi` has almost no Rust tests by design: its tests are JavaScript, because
+what it has to be correct about is what JavaScript sees, so they live in `tests/bridge/` and
+`tests/boundary/` and run under Node.
 
 ## Documentation
 
