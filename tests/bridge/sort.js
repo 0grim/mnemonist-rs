@@ -5,7 +5,7 @@
 // `sort/quick.js` and `utils/typed-arrays.js` -- and none of them exports a
 // class. So there is no `module.exports = addon.Something` to write; the shim
 // has to re-assemble a two-file export shape out of the addon's flat
-// namespace, which is precisely DESIGN.md 2.3's Problem 2.
+// namespace, which is precisely `docs/METHODOLOGY.md`'s gate 3's Problem 2.
 //
 // This file is where that assembly lives, and `sort/insertion.js` and
 // `sort/quick.js` are cut from it. Doing it the other way round -- two leaf

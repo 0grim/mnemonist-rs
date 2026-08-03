@@ -7,7 +7,7 @@
 //!   is not in this loop at all.
 //! * [`run_drain`] measures **iteration**, which is the whole reason this
 //!   module was ported now. It is the only benchmark in the repo that puts the
-//!   cursor machinery of DESIGN.md 3.4 on the clock, against the JS closure it
+//!   cursor machinery of `docs/DECISIONS.md`'s iteration section on the clock, against the JS closure it
 //!   was ported from. A cursor that reached the parent through a trait call
 //!   per element would show up here and nowhere else.
 //! * [`run_mixed_refcell`] is not part of the gate-10 protocol above and is
@@ -129,7 +129,7 @@ pub fn build_structure(size: u32) {
 /// `add`/`delete` on every single access — one borrow-flag check and
 /// increment/decrement per op, on top of whatever `SparseSet` itself costs.
 /// [`run_mixed`] above never goes anywhere near that: it links `SparseSet`
-/// directly, which is correct per DESIGN.md 5.1 ("never through N-API") for
+/// directly, which is correct per `bench/methodology.md` ("never through N-API") for
 /// *comparing the port against upstream*, but it also means nobody has ever
 /// measured the RefCell's own cost, because the one harness that could
 /// measure it is the one methodologically forbidden from going through the

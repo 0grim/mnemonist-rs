@@ -1,7 +1,7 @@
 //! [`ModuleSpec`] for `_utils` — the fifth **free-function** module, and the
 //! only one whose require-closure is five upstream files at once
 //! (`typed-arrays`, `binary-search`, `hash-tables`, `iterables`, `merge`; see
-//! `mnemonist_core::utils::merge`'s module docs and DESIGN.md §1.1's table).
+//! `mnemonist_core::utils::merge`'s module docs and `docs/METHODOLOGY.md`'s table).
 //! Same mode `crate::modules::sort`/`crate::modules::set` introduced:
 //! `Instance = ()`, no observable state, every op's arguments are echoed back
 //! after the call because several of these functions mutate them (or, for
@@ -88,7 +88,7 @@ pub const REGRESSIONS: &str = concat!(
     "/proptest-regressions/_utils.txt"
 );
 
-/// The whole require-closure of `test/_utils.js` — see DESIGN.md §1.1.
+/// The whole require-closure of `test/_utils.js` — see `docs/METHODOLOGY.md`.
 const FILES: &[&str] = &[
     "utils/typed-arrays",
     "utils/binary-search",

@@ -3,8 +3,8 @@
 // Benchmark driver: runs both sides, interleaved, and writes one keyed entry
 // into bench/results.json.
 //
-// Why the driver rather than each runner computes the percentiles: DESIGN.md
-// 5.2 Problem 1 asks for "same percentile maths" on both sides. Implementing
+// Why the driver rather than each runner computes the percentiles: both sides
+// must use the same percentile maths. Implementing
 // the maths twice and asserting the implementations agree is weaker than
 // implementing it once over samples from both, so the runners emit raw
 // per-batch nanoseconds and nothing else. The runners themselves stay strictly
@@ -122,7 +122,7 @@ function si(value) {
 }
 
 // Every metric here is lower-is-better, so a regression is mechanical to find.
-// It is computed rather than written down on purpose: DESIGN.md 5.1 says
+// It is computed rather than written down on purpose: `bench/methodology.md` says
 // hiding a regression scores worse than disclosing one, and a field nobody has
 // to remember to fill in cannot be quietly left out on a bad day.
 function regressions(entry) {
@@ -240,7 +240,7 @@ function host() {
 // `sparse-set` adds `drain`, and that one is not symmetry for its own sake:
 // iteration is the whole reason this module was ported now, and the drain
 // workload is the only benchmark in the repo that puts the cursor machinery of
-// DESIGN.md 3.4 against the JS closure it was ported from. Its batch is a
+// `docs/DECISIONS.md`'s iteration section against the JS closure it was ported from. Its batch is a
 // whole walk rather than 1000 elements, because a cursor costs something per
 // walk (it freezes state at creation) as well as per element.
 const WORKLOADS = {
@@ -425,7 +425,7 @@ const WORKLOADS = {
   // element. 20,000 elements/characters times 50 passes keeps the total work
   // per measured sample at the same 1e6 order of magnitude as the mixed
   // workloads above, for a comparable per-workload wall-clock cost -- sanity
-  // checked (DESIGN.md 5.1's own lesson, repeated in bit_set.rs's `rank`
+  // checked `bench/methodology.md`'s own lesson, repeated in bit_set.rs's `rank`
   // account): a single process invocation at these parameters completes in
   // well under three seconds on both sides before this was committed to.
   'sort': [

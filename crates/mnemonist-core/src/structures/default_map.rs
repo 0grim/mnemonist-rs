@@ -36,7 +36,7 @@
 //! m.delete('a');           size 0   items.size 0   resynchronised
 //! ```
 //!
-//! Measured against Node 24.18.1; recorded as **BUG-DEFAULT-MAP-1** in NOTES.md. It is
+//! Measured against Node 24.18.1; recorded as **BUG-DEFAULT-MAP-1**. It is
 //! reproduced here rather than corrected, so [`DefaultMap::size`] is a stored
 //! counter and [`DefaultMap::items`]`().len()` is the truth. A port that made
 //! `size` return `items.len()` would be *tidier and wrong*, and no upstream

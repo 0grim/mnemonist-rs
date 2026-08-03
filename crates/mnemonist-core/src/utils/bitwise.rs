@@ -43,7 +43,7 @@
 //! The `>>> 0` produces the intended unsigned value, and then `& 0xffffffff`
 //! converts *both* operands back to `i32` — `0xffffffff` is `-1` there — so the
 //! mask is a no-op that re-signs the result. Its byte-wide sibling
-//! `criticalBit8Mask` ends in `& 0xff` and is correct. See NOTES.md BUG-SPARSE-QUEUE-SET-3.
+//! `criticalBit8Mask` ends in `& 0xff` and is correct. See BUG-SPARSE-QUEUE-SET-3.
 
 /// ToInt32: the conversion every JavaScript bitwise operator applies.
 ///
@@ -152,7 +152,7 @@ pub fn test_critical_bit8(x: f64, mask: f64) -> i32 {
 /// **Returns a negative `i32`**, because the trailing `& 0xffffffff` converts
 /// its own operands to `i32` and so undoes the `>>> 0` that precedes it.
 /// Verified against Node: `criticalBit32Mask(1, 2) === -3` and
-/// `criticalBit32Mask(0, 0) === -1`. Reproduced bug-for-bug; see NOTES.md BUG-SPARSE-QUEUE-SET-3.
+/// `criticalBit32Mask(0, 0) === -1`. Reproduced bug-for-bug; see BUG-SPARSE-QUEUE-SET-3.
 pub fn critical_bit32_mask(a: f64, b: f64) -> i32 {
     let unsigned = f64::from(!msb32(f64::from(to_int32(a) ^ to_int32(b))) as u32);
 

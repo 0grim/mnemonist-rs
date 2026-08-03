@@ -169,7 +169,7 @@
 //! list.last()                   // 'a'        (tail is STALE: the removed item)
 //! ```
 //!
-//! Verified against Node 24.18.1; recorded as **BUG-LINKED-LIST-1** in NOTES.md. Silent
+//! Verified against Node 24.18.1; recorded as **BUG-LINKED-LIST-1**. Silent
 //! and self-healing exactly like BUG-DEFAULT-MAP-1: the next `push` or `unshift` on an
 //! empty list takes the `!this.head` branch, which sets `this.tail = node`
 //! unconditionally — so the staleness is observable only in the narrow window

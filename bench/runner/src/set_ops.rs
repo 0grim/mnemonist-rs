@@ -56,7 +56,7 @@ pub fn run_drain(size: u32, seed: u32, passes: usize) -> (Vec<u64>, u64, usize) 
     let mut rng = XorShift32::new(seed);
 
     // Materialised before any timing -- one draw per element, the same "op
-    // array" discipline DESIGN.md 5.1 asks for, applied to this module's
+    // array" discipline `bench/methodology.md` asks for, applied to this module's
     // input rather than to an op-kind stream. `2 * size * passes` values:
     // the first half of each pass's slice seeds `A`, the second half `B`.
     let domain = size as u32;

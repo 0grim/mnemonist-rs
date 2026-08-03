@@ -49,7 +49,7 @@
 # ---------------------------------------------------------------------------
 # GRAMMAR, PER MODULE — including what is deliberately excluded.
 #
-# DESIGN.md 3.7 asks for narrowed grammars to be disclosed, because "we fuzzed
+# `docs/DECISIONS.md`'s iteration section asks for narrowed grammars to be disclosed, because "we fuzzed
 # it" reads as "we covered everything" when it wasn't.
 #
 # static-disjoint-set
@@ -101,8 +101,8 @@
 #     add(m >= length)    -> corrupts: dense store truncates, sparse store is
 #                                     dropped, size++ happens anyway
 #
-#   and `size` therefore runs past `length`, which is what makes DESIGN.md
-#   3.7's `undefined` shrink window reachable THROUGH THE PUBLIC API.
+#   and `size` therefore runs past `length`, which is what makes the
+#   `undefined` shrink window reachable THROUGH THE PUBLIC API.
 #
 #   NOTE: the `$` ops are protocol, not methods (see fuzz/oracle.js). $iter
 #   opens the one cursor each side holds; $next steps it against whatever the
@@ -433,12 +433,12 @@
 #      It proves the out-of-range half of the grammar is doing work.
 #
 #   B. The shrink window collapsed -- `Step::Gap` returned as `Step::Done`,
-#      which is exactly DESIGN.md 3.7's rejected Option B. Caught in 352 cases
+#      which is exactly `docs/DECISIONS.md`'s iteration section's rejected Option B. Caught in 352 cases
 #      (0.3s), shrunk to TWO operations:
 #          var s = new SparseSet(0); s.add(0); Array.from(s);
 #          port []   upstream [undefined]
 #      It proves the cursor half of the grammar is doing work, and it corrects
-#      a measurement in DESIGN.md 3.7: Option B costs zero on the 40% axis
+#      a measurement in `docs/DECISIONS.md`'s iteration section: Option B costs zero on the 40% axis
 #      because no upstream TEST reaches it, but it is reachable from the
 #      public API in two calls and the fuzzer sees it immediately.
 #
@@ -726,7 +726,7 @@
 # A wall-clock-bounded campaign is not reproducible in case count; only
 # --cases is. That is why every line here is reproducible with --cases rather
 # than --duration, and it is a small live demonstration of why a benchmark
-# taken while three agents share a machine is worthless (NOTES.md, H+5).
+# taken while three agents share a machine is worthless.
 #2026-08-01T02:15:23Z  module=bit-vector seed=42 cases=20657 ops=2125754 wall=120.0s divergences=0
 2026-08-01T02:15:38Z  module=bit-vector seed=20260801 cases=9617 ops=981385 wall=60.0s divergences=0
 #2026-08-01T02:16:23Z  module=bit-vector seed=20260801 cases=10603 ops=1081279 wall=60.0s divergences=0
@@ -928,7 +928,7 @@
 2026-08-01T10:24:58Z  module=fixed-reverse-heap seed=31337 cases=13442 ops=1320693 wall=60.0s divergences=0
 
 # CORRECTION -- the six heap / fixed-reverse-heap campaigns above ran against a
-# build carrying three defects an independent review later found (NOTES.md, "the
+# build carrying three defects an independent review later found ("the
 # T2 review"). They are NOT withdrawn: none of the three was reachable by the
 # fuzz grammar by construction -- the core-side store never calls JavaScript
 # from `allocate`, has a single array class, and `nsmallest`/`nlargest` are
@@ -956,8 +956,8 @@
 2026-08-01T14:36:54Z  module=_utils seed=20260801 cases=12515 ops=503372 wall=60.0s divergences=0
 # trie / trie-map: both units' FIRST campaigns (unlogged, pre-regime-split) diverged inside a few
 # hundred ops -- trie-map over `delete` unlinking an already-queued `entries()` frame, trie over
-# `clear` replacing the root out from under an open `keys()` cursor. Both are DIV-TRIE-MAP-2 (NOTES.md
-# BUG-TRIE-MAP-2): upstream's lazy iterator holds a live object reference; this port's `Walk` re-navigates
+# `clear` replacing the root out from under an open `keys()` cursor. Both are DIV-TRIE-MAP-2
+# (BUG-TRIE-MAP-2): upstream's lazy iterator holds a live object reference; this port's `Walk` re-navigates
 # by token path, which is required for it to be resumable at the FFI boundary. Fixed by a grammar
 # regime split, not a core change -- delete/clear never share a generated program with a persistent
 # $iter/$next cursor. The four lines below are the post-fix campaigns.
@@ -1019,7 +1019,7 @@
 # already hold a stale entry at index 0 (this port's arena is append-only, unlike upstream's real,
 # GC'd object references), the third op's insert correctly pushed at index 1, but root kept
 # pointing at the stale index 0, and RootNode's own "always holds a value" panic caught it. Not
-# upstream's bug -- see NOTES.md's "Two port defects found by fuzzing" entry. Fixed by capturing
+# upstream's bug -- see docs/modules/log/ for the write-up. Fixed by capturing
 # the real pushed index instead of hardcoding 0. The two lines below are the post-fix campaigns.
 2026-08-01T20:41:03Z  module=critbit-tree-map seed=42 cases=10987 ops=1096914 wall=60.0s divergences=0
 2026-08-01T20:42:15Z  module=critbit-tree-map seed=20260801 cases=10634 ops=1054262 wall=60.0s divergences=0
@@ -1028,13 +1028,13 @@
 # self.keys.is_empty() instead of self.size == 0, so a clear()-then-set() (clear resets size but
 # never truncates keys/values, matching upstream) fell through to the walk loop with
 # pointer == EMPTY unguarded, computing an out-of-bounds index and panicking. Not upstream's bug
-# either -- same NOTES.md entry. Fixed by adding a real size field and a store_external helper that
+# either -- same write-up. Fixed by adding a real size field and a store_external helper that
 # overwrites low indices post-clear instead of always pushing. Once that and the critbit-tree-map
 # bug above were both fixed, the differential fuzzer also confirmed two genuine, disclosed upstream
 # bugs by direct comparison against real Node: BUG-FIXED-CRITBIT-TREE-MAP-1 (root is 0 fresh off the constructor, null
 # after clear -- reproduced via a root_is_null flag) and BUG-FIXED-CRITBIT-TREE-MAP-2 (no capacity guard at all; exceeding
 # it silently corrupts a node then crashes a later set -- reproduced as Error::Corrupted with
-# upstream's own message text). Both documented in full in NOTES.md and
+# upstream's own message text). Both documented in full and
 # crates/mnemonist-core/src/structures/fixed_critbit_tree_map.rs's module docs. The two lines below
 # are the post-fix campaigns, with capacity drawn from 2..=5 against the same 8-key pool so BUG-FIXED-CRITBIT-TREE-MAP-2's
 # crash is reached in nearly every generated program (measured: pool_self_check_capacity_is_
@@ -1064,7 +1064,7 @@
 2026-08-01T21:24:00Z  module=kd-tree seed=42 cases=9713 ops=970441 wall=90.0s divergences=0
 2026-08-01T21:26:00Z  module=kd-tree seed=7 cases=6462 ops=650306 wall=60.0s divergences=0
 #
-# multi-array, symspell, passjoin-index (planning/HANDOFF.md batch 5). Each
+# multi-array, symspell, passjoin-index. Each
 # campaign below is clean, but not on the first attempt for two of the three units -- both real
 # bugs were caught by these exact campaigns and fixed before the numbers below were logged; see
 # docs/modules/symspell.md and docs/modules/multi-array.md, "Bugs this found", for what a quick

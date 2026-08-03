@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 //
-// Node half of the matched benchmark harness (DESIGN.md 5.1-5.2).
+// Node half of the matched benchmark harness `bench/methodology.md`-5.2).
 //
 // This file is a deliberate mirror of bench/runner/src/*.rs, line of reasoning
 // for line of reasoning: same PRNG, same three-draws-per-op discipline, same
 // materialise-before-timing rule, same K = 1000 batching, same warmup and
-// measured counts, same JSON envelope. DESIGN.md 5.2 Problem 1 is the reason -
+// measured counts, same JSON envelope. `bench/methodology.md` Problem 1 is the reason -
 // two different measurement methodologies in one comparison table invalidate
 // every row of it, so neither side gets a tool the other cannot have.
 //

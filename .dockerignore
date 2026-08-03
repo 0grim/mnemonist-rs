@@ -1,4 +1,4 @@
-# Not hygiene -- a correctness and speed requirement (DESIGN.md 12c.1).
+# Not hygiene -- a correctness and speed requirement.
 # Without this, `COPY . .` in the builder stage sweeps in the host's
 # target/ (easily 1-3 GB with debug artifacts) and any worktrees living
 # under .claude/, which both bloats the image and invalidates layer
@@ -27,4 +27,3 @@ proptest-regressions/
 bench/raw/
 
 # Planning docs the image has no use for
-planning/NOTES.md

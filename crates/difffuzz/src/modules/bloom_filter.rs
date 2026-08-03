@@ -40,7 +40,7 @@
 //! an `init` failure is apparatus failure by protocol, aborting the campaign
 //! instead of reporting anything. That is BUG-BLOOM-FILTER-4, it is documented in
 //! `docs/modules/bloom-filter.md` and pinned by a native test, so fuzzing it
-//! would only re-report a known decision (DESIGN.md §3.7).
+//! would only re-report a known decision (`docs/DECISIONS.md`'s iteration section).
 //!
 //! Every `errorRate` below 1 is safe: `ln(x) < 0` makes `bits` positive, so the
 //! allocation length is never negative. The **zero-hash-function** region — the
@@ -199,7 +199,7 @@ impl ModuleSpec for BloomFilterSpec {
 ///
 /// Found by the fuzzer on its very first run, before a single real operation:
 /// `capacity: port 6.0, upstream 6`. Worth recording rather than quietly
-/// fixing, because it is the failure mode DESIGN.md warns about for every
+/// fixing, because it is the failure mode this port warns about for every
 /// module spec — an encoding mismatch is a *false* divergence, and a spec that
 /// produced one on a rare value instead of on every value would have looked
 /// like a port defect.

@@ -1,6 +1,6 @@
 //! Campaign driver: turns a [`ModuleSpec`] into a timed proptest run.
 //!
-//! DESIGN.md 4.1 is explicit that generation *and shrinking* are proptest's
+//! `docs/METHODOLOGY.md`'s gate 9 is explicit that generation *and shrinking* are proptest's
 //! job, not ours — shrinking is the expensive thing to write and the valuable
 //! thing to have, since it is what turns a 4,000-op divergence into a repro
 //! small enough to paste into an upstream issue. So this module builds a

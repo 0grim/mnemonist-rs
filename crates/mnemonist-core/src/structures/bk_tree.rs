@@ -99,7 +99,7 @@ pub struct Found<I> {
 /// Upstream's `BKTree`.
 ///
 /// `I` is the item type; `distance` is supplied per call, never stored — the
-/// same reasoning as `DefaultMap`'s factory (DESIGN.md/`default-map.rs`): the
+/// same reasoning as `DefaultMap`'s factory (`default_map.rs`): the
 /// JS callback belongs at the boundary, and a Rust caller of this type never
 /// needs to know a bridge exists.
 #[derive(Debug, Clone)]

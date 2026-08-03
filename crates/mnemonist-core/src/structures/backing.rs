@@ -40,7 +40,7 @@
 //! It is those two bits, and nothing else. It is **not** a model of a JS array
 //! class: element coercion — `Uint8Array` storing `300` as `44` — is a
 //! JavaScript-value semantic and lives at the napi boundary with the rest of
-//! them (DESIGN.md §3.5). A Rust caller picks [`Backing::Holes`] for
+//! them (`docs/ARCHITECTURE.md`'s boundary rule). A Rust caller picks [`Backing::Holes`] for
 //! "`undefined` where nothing was written" or [`Backing::Filled`] for "this
 //! value where nothing was written, and a fixed length", and gets exactly the
 //! two behaviours above.

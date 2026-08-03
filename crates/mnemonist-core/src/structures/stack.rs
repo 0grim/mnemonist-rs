@@ -2,7 +2,7 @@
 //!
 //! A LIFO stack over a growable array. Trivial as a data structure, which is
 //! exactly why it was chosen to host the `forEach` boundary coercion
-//! (DESIGN.md §7.1): if the dispatch is wrong, it shows up here rather than
+//! : if the dispatch is wrong, it shows up here rather than
 //! inside a module that needs four primitives at once.
 //!
 //! Three things a naive port gets wrong, all of them upstream's, none of them

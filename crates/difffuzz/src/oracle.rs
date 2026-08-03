@@ -1,7 +1,7 @@
 //! The JS side of the comparison: one long-lived `node` process, addressed
 //! over line-delimited JSON.
 //!
-//! The whole reason this type exists is the performance rule in DESIGN.md 4 —
+//! The whole reason this type exists is the performance rule in `docs/METHODOLOGY.md`'s gate 9 —
 //! spawn Node **once**. A fresh `node` costs ~30 ms to boot, so paying it per
 //! operation would cap a fuzz campaign at ~30 ops/second and make the 60-second
 //! target in gate 9 take the better part of a day. Reusing one process brings

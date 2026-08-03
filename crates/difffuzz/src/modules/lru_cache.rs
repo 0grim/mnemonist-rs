@@ -4,7 +4,7 @@
 //! # Four module keys, one grammar
 //!
 //! `test/lru-cache.js` requires all four upstream files and runs the exact
-//! same `makeTests` suite against each of them (DESIGN.md §1.1 makes this one
+//! same `makeTests` suite against each of them `docs/METHODOLOGY.md` makes this one
 //! unit), so this file mirrors that shape: one generic engine
 //! ([`Instance`], parameterised on the index key `IK` exactly the way
 //! `mnemonist_core::structures::lru_cache::LruCache<IK, K, V>` itself is),
@@ -742,7 +742,7 @@ impl ModuleSpec for LruMapWithDeleteSpec {
 }
 
 /// A self-check on the GRAMMAR, not a differential test — no oracle, no
-/// `node`, nothing compared against upstream. DESIGN.md's own warning about
+/// `node`, nothing compared against upstream. This port's own warning about
 /// this family is that a campaign whose capacity is large relative to its op
 /// count proves only that a map stores things, and "the weights look right
 /// by inspection" is a green signal that verifies something other than what

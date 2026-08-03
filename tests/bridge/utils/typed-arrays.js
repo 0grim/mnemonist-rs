@@ -1,7 +1,7 @@
 // Shim standing in for upstream `utils/typed-arrays.js`.
 //
 // Two units reach this file, each for different exports of it, and each
-// assembles the shape in its own hub rather than here (DESIGN.md 2.3,
+// assembles the shape in its own hub rather than here `docs/METHODOLOGY.md`'s gate 3,
 // Problem 2 -- an aggregate shim per *caller* unit, not per upstream file):
 //
 //   * `test/sort.js` uses exactly `indices`, assembled in `../sort.js`.

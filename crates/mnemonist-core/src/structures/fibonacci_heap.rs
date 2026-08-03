@@ -188,7 +188,7 @@ pub struct FibonacciHeap<T, C, E = Thrown> {
     min: Cell<Option<NodeId>>,
     /// `this.size`.
     ///
-    /// `i64`, not `usize` -- see NOTES.md BUG-FIBONACCI-HEAP-1. `pop`'s `this.size--` runs
+    /// `i64`, not `usize` -- see BUG-FIBONACCI-HEAP-1. `pop`'s `this.size--` runs
     /// AFTER `consolidate`, so a comparator that calls `clear()` (which sets
     /// `this.size = 0`) from inside that `consolidate` leaves the pending
     /// decrement to compute `0 - 1`. JavaScript has no unsigned integers:
@@ -230,7 +230,7 @@ impl<T: Clone, C, E> FibonacciHeap<T, C, E> {
         }
     }
 
-    /// `this.size`. `i64`, not `usize` -- see the field's own docs, NOTES.md
+    /// `this.size`. `i64`, not `usize` -- see the field's own docs and
     /// BUG-FIBONACCI-HEAP-1.
     pub fn size(&self) -> i64 {
         self.size.get()
@@ -417,7 +417,7 @@ impl<T: Clone, C, E> FibonacciHeap<T, C, E> {
 
 impl<T: Clone, E, C: Comparator<T, E>> FibonacciHeap<T, C, E> {
     /// `#.push` — returns `++this.size`. `i64`, matching [`size`](Self::size)
-    /// — see that field's own docs, NOTES.md BUG-FIBONACCI-HEAP-1.
+    /// — see that field's own docs, BUG-FIBONACCI-HEAP-1.
     pub fn push(&self, item: T) -> Result<i64, E> {
         let node = self.create_node(item);
 
@@ -450,7 +450,7 @@ impl<T: Clone, E, C: Comparator<T, E>> FibonacciHeap<T, C, E> {
     pub fn pop(&self) -> Result<Option<T>, E> {
         // `if (!this.size) return undefined;` -- a JS falsy check, which
         // only a `size` of exactly `0` (or `NaN`, unreachable here) passes.
-        // A NEGATIVE `size` (NOTES.md BUG-FIBONACCI-HEAP-1) is truthy and does NOT satisfy
+        // A NEGATIVE `size` (BUG-FIBONACCI-HEAP-1) is truthy and does NOT satisfy
         // this guard, so a `pop()` that follows the exact re-entrant-`clear`
         // sequence BUG-FIBONACCI-HEAP-1 describes proceeds past this point with `this.min`
         // already `null` -- upstream's next line, `z.child`, is then a
@@ -460,7 +460,7 @@ impl<T: Clone, E, C: Comparator<T, E>> FibonacciHeap<T, C, E> {
         // building a raised-message channel for a state reachable only
         // through this one adversarial re-entrancy is disproportionate to
         // what any caller -- fuzzer included -- can otherwise reach. See
-        // NOTES.md BUG-FIBONACCI-HEAP-1 and `docs/modules/fibonacci-heap.md`.
+        // BUG-FIBONACCI-HEAP-1 and `docs/modules/fibonacci-heap.md`.
         if self.size.get() == 0 {
             return Ok(None);
         }
@@ -531,7 +531,7 @@ impl<T: Clone, E, C: Comparator<T, E>> FibonacciHeap<T, C, E> {
     /// in 0..captured_size`, which would silently diverge under exactly
     /// that re-entrant case.
     ///
-    /// # NOTES.md BUG-FIBONACCI-HEAP-3 — `root` can be `null` here too, from a DIFFERENT
+    /// # BUG-FIBONACCI-HEAP-3 — `root` can be `null` here too, from a DIFFERENT
     /// re-entrant path than BUG-FIBONACCI-HEAP-1's
     ///
     /// `pop`'s caller only reaches this method when `z.right !== z` held —
@@ -622,8 +622,8 @@ impl<T: Clone, E, C: Comparator<T, E>> FibonacciHeap<T, C, E> {
     }
 
     /// `FibonacciHeap.from(iterable, comparator)`, given the items already
-    /// materialised. `forEach` itself is a boundary function (DESIGN.md
-    /// §3.5) and does not belong in core; this is `N` ordinary `push` calls,
+    /// materialised. `forEach` itself is a boundary function
+    /// (`docs/ARCHITECTURE.md`'s boundary rule) and does not belong in core; this is `N` ordinary `push` calls,
     /// exactly as upstream's own `.from` is.
     pub fn from_iter<I: IntoIterator<Item = T>>(iterable: I, comparator: C) -> Result<Self, E> {
         let heap = Self::new(comparator);
@@ -990,7 +990,7 @@ mod tests {
             "the clear's trigger point must have been reached from inside this pop"
         );
 
-        // NOTES.md BUG-FIBONACCI-HEAP-1: `this.size--` runs AFTER `consolidate`, so the
+        // BUG-FIBONACCI-HEAP-1: `this.size--` runs AFTER `consolidate`, so the
         // clear's `size = 0` is what the decrement actually sees --
         // `0 - 1 == -1`, not `0`. A heap "helpfully" clamped to `0` here
         // would be MORE correct than upstream, which is exactly the
@@ -1002,7 +1002,7 @@ mod tests {
         );
     }
 
-    /// NOTES.md BUG-FIBONACCI-HEAP-1's second half: once `size` is negative, `pop`'s own
+    /// BUG-FIBONACCI-HEAP-1's second half: once `size` is negative, `pop`'s own
     /// `if (!this.size)` guard no longer catches "nothing left", because a
     /// negative number is truthy in JavaScript. Upstream proceeds into
     /// `z.child` with `z` (`this.min`) already `null` and crashes with a

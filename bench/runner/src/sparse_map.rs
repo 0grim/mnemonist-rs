@@ -4,7 +4,7 @@
 //!
 //! Op mix: 50% `set(member, value)` / 25% `get(member)` / 25% `delete(member)`
 //! — `sparse-set`'s exact shape, with `set` taking `workload.b[i]` as the
-//! value. Every op already draws three PRNG values (DESIGN.md 5.1: exactly
+//! value. Every op already draws three PRNG values `bench/methodology.md`: exactly
 //! three, whether or not an op uses the second), so `set` costs the mixed
 //! workload nothing extra by using the operand `has`/`delete` leave idle.
 //!

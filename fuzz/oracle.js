@@ -3,7 +3,7 @@
 // Persistent differential-fuzzing oracle.
 //
 // Speaks line-delimited JSON on stdin/stdout, one response per request, and
-// holds a single live upstream instance between requests. DESIGN.md 4 is
+// holds a single live upstream instance between requests. `docs/METHODOLOGY.md`'s gate 9 is
 // explicit about why: spawning `node` per operation turns a 60-second fuzz run
 // into an hour of process startup. One process, one pipe, no per-op cost
 // beyond a round trip.
@@ -25,7 +25,7 @@
 //   -> {"cmd":"ping"}          <- {"ok":true}
 //   -> {"cmd":"quit"}          (no response; process exits)
 //
-// Cursor lifecycle ops (DESIGN.md 3.4/3.7, DIV-PROJ-21). An op name starting with `$`
+// Cursor lifecycle ops `docs/DECISIONS.md`'s iteration section/3.7, DIV-PROJ-21). An op name starting with `$`
 // is not a method on the instance; it drives the ONE cursor the oracle keeps
 // alongside it. This is what lets a generated program interleave iteration
 // with mutation, which is the only way DIV-STACK-1/DIV-PROJ-10/DIV-SPARSE-SET-1 are reachable at all.
@@ -63,7 +63,7 @@
 // The third callback argument -- the collection itself, where a module passes
 // one -- is deliberately not recorded: it encodes as `{"$self": true}` on
 // every step and can never disagree.
-// Free-function modules (DESIGN.md 1.1's `sort` and `set` units). `init` may
+// Free-function modules `docs/METHODOLOGY.md`'s `sort` and `set` units). `init` may
 // name a LIST OF FILES instead of one constructor; their exports are merged
 // and `instance` becomes that object, so `instance[name](...)` still
 // dispatches and nothing else in the protocol changes.
@@ -438,7 +438,7 @@ const FACTORIES = {
     };
   },
   // Resets `root`/`min`/`size` out from under the `consolidate` call
-  // currently comparing against them -- NOTES.md BUG-FIBONACCI-HEAP-1's trigger.
+  // currently comparing against them -- BUG-FIBONACCI-HEAP-1's trigger.
   fibClearer: () => {
     let budget = 1;
     return (a, b) => {
@@ -522,7 +522,7 @@ function handle(request) {
       observations = request.observe;
       cursor = null;
 
-      // Free-function modules (DESIGN.md 1.1's `sort` and `set` units). They
+      // Free-function modules `docs/METHODOLOGY.md`'s `sort` and `set` units). They
       // have no constructor at all -- `set.js` and `sort/*.js` export bare
       // functions -- so there is nothing to `new`, and `instance` becomes the
       // module object itself so that `instance[name](...)` still dispatches.

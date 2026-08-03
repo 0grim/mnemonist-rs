@@ -14,7 +14,7 @@
 //! (`crate::set`'s module docs cover the same gap for `union`/`intersection`
 //! there), so this file exposes the two-array and k-way halves as separate
 //! `#[napi]` functions, and `tests/bridge/_utils.js` assembles the dispatch —
-//! arity glue, not semantics, per DESIGN.md §2.3 Problem 2. `isArrayLike`
+//! arity glue, not semantics, per `docs/METHODOLOGY.md`'s gate 3 Problem 2. `isArrayLike`
 //! itself is `crate::iterables::js_is_array_like`, already exported at the
 //! addon's top level; nothing new is built for it here.
 //!
@@ -24,7 +24,7 @@
 //! JS `Error` carrying
 //! [`mnemonist_core::utils::merge::STALE_LENGTH_TYPE_ERROR`] verbatim, so a
 //! caller checking upstream's message (as `assert.throws(fn, /message/)`
-//! would) sees the identical text. See NOTES.md BUG-UTILS-1 and the core module's
+//! would) sees the identical text. See BUG-UTILS-1 and the core module's
 //! own docs for the empirical confirmation against Node 24.18.1.
 
 use mnemonist_core::utils::merge as core_merge;

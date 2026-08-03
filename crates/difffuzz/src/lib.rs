@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 
-//! Generic op-sequence differential fuzzer (DESIGN.md 4).
+//! Generic op-sequence differential fuzzer (`docs/METHODOLOGY.md`'s gate 9).
 //!
 //! ```text
 //! seed -> proptest generates an op sequence -> apply to mnemonist-core (in process)
@@ -12,7 +12,7 @@
 //! than invented here:
 //!
 //! * **One Node process for the whole campaign** ([`Oracle`]). Line-delimited
-//!   JSON over a pipe. Spawning per op is the failure mode DESIGN.md 4 names
+//!   JSON over a pipe. Spawning per op is the failure mode `docs/METHODOLOGY.md`'s gate 9 names
 //!   explicitly — it would turn a 60-second run into an hour.
 //! * **proptest owns generation and shrinking** ([`Campaign`]). A raw
 //!   divergence is a several-hundred-op program; the useful artifact is the

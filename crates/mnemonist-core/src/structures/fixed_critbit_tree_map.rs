@@ -6,7 +6,7 @@
 //! whole algorithm against typed arrays rather than importing anything from
 //! `critbit-tree-map.js`. Two upstream properties make the fixed variant
 //! genuinely different from "the same tree with a capacity check bolted on",
-//! and both are measured, not assumed — see NOTES.md BUG-FIXED-CRITBIT-TREE-MAP-1/BUG-FIXED-CRITBIT-TREE-MAP-2.
+//! and both are measured, not assumed — see BUG-FIXED-CRITBIT-TREE-MAP-1/BUG-FIXED-CRITBIT-TREE-MAP-2.
 //!
 //! # 1. There is no capacity guard at all
 //!
@@ -91,7 +91,7 @@
 //! would be a structural divergence with no upside — and reproduces the
 //! exact wrong write target (`self.lefts.set(0, ...)`, not
 //! `self.lefts.set(internal_index, ...)`) in case a future, wider campaign
-//! ever does reach it. See NOTES.md DIV-PROJ-60.
+//! ever does reach it. See DIV-PROJ-60.
 //!
 //! # No `delete`
 //!

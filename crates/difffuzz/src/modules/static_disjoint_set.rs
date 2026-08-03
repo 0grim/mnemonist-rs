@@ -9,7 +9,7 @@
 //! exercised on every step of every program, which is the part of this module
 //! most likely to diverge.
 //!
-//! **Out-of-range indices are excluded**, and DESIGN.md 3.7 asks for such
+//! **Out-of-range indices are excluded**, and `docs/DECISIONS.md`'s iteration section asks for such
 //! exclusions to be stated rather than left implicit. Upstream reads past the
 //! end of a typed array, gets `undefined`, and propagates `NaN` through the
 //! parent walk; the port raises a `RangeError` at the bridge (see the napi
@@ -23,7 +23,7 @@
 //! * it straddles 256, where `getPointerArray` switches `parents` from 8-bit to
 //!   16-bit while `ranks` — sized from `log2(size)` — stays 8-bit; and
 //! * it is large enough for the BUG-STATIC-DISJOINT-SET-1 rank bug to drive one root's rank past 255
-//!   and wrap it inside a `Uint8Array`, the compounding-bugs case in NOTES.md
+//!   and wrap it inside a `Uint8Array`, the compounding-bugs case
 //!   that a `Vec<u32>` port would silently get wrong.
 
 use mnemonist_core::structures::static_disjoint_set::StaticDisjointSet;

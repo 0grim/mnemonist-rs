@@ -59,7 +59,7 @@
 //! * **Mixed member kinds** (a string next to a token array). Upstream decides
 //!   from `strings[0]` and then spreads a string into its characters; the port
 //!   rejects it. Another documented divergence, so fuzzing it would only
-//!   re-report a known decision (DESIGN.md §3.7).
+//!   re-report a known decision (`docs/DECISIONS.md`'s iteration section).
 
 use mnemonist_core::structures::suffix_array::{GeneralizedSuffixArray, Sequence, SuffixArray};
 use proptest::prelude::*;

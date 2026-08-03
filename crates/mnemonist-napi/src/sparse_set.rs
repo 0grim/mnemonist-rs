@@ -169,7 +169,7 @@ impl JsSparseSet {
 /// `#[napi(iterator)]` supplies the identity half of DIV-STACK-2 for free: this
 /// object's own `Symbol.iterator` returns itself, so it is non-restartable,
 /// and partial consumption followed by a spread continues rather than
-/// restarting. Verified pre-kickoff against Node 24 (DESIGN.md 11.3).
+/// restarting. Verified against Node 24.
 #[napi(iterator, js_name = "SparseSetValues")]
 pub struct JsSparseSetValues {
     cursor: CellCursor<JsSparseSet, CoreSet>,

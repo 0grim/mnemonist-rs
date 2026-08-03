@@ -10,7 +10,7 @@
 //!
 //! [`decode_key`] takes each UTF-16 code unit of the JS string and truncates
 //! it to its low 8 bits. That is a real, disclosed divergence (DIV-CRITBIT-TREE-MAP-1 in
-//! DECISIONS-CANDIDATES.md) from upstream, which runs its critical-bit
+//! `docs/modules/critbit-tree-map.md`) from upstream, which runs its critical-bit
 //! arithmetic against the untruncated code unit — arithmetic that masks
 //! with `0xff` at nearly every step anyway (see the core module's own
 //! docs), so it only ever computes something matching "first differing

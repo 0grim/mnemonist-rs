@@ -10,7 +10,7 @@
 //! * `clear()` installs a *new* array, so a cursor opened beforehand keeps
 //!   walking the old one and is completely unaffected;
 //! * `pop()` shortens the *same* array, so a cursor opened beforehand reads
-//!   past its new end and yields `undefined` — DESIGN.md §3.7's shrink window.
+//!   past its new end and yields `undefined` — `docs/DECISIONS.md`'s iteration section's shrink window.
 //!
 //! Two mutations, one shortening a walk and the other not, and a port that
 //! modelled `items` as a `Vec<T>` would have produced identical (wrong) answers

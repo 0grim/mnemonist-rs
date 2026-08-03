@@ -199,7 +199,7 @@ impl JsMultiSet {
         self.inner.borrow().size()
     }
 
-    /// `i64`, not `u32`: NOTES.md BUG-MULTI-SET-2 can drive this negative (deleting an
+    /// `i64`, not `u32`: BUG-MULTI-SET-2 can drive this negative (deleting an
     /// item that was never in the set), and the port reproduces that
     /// bug-for-bug rather than silently clamping it.
     #[napi(getter)]
@@ -250,7 +250,7 @@ impl JsMultiSet {
     }
 
     /// `#.delete`. See `mnemonist_core::structures::multi_set`'s module docs
-    /// (NOTES.md BUG-MULTI-SET-2) for why this reports `true` and disturbs
+    /// (BUG-MULTI-SET-2) for why this reports `true` and disturbs
     /// `size`/`dimension` even for an item that was never present.
     #[napi(js_name = "delete")]
     pub fn delete(&self, item: JsKey) -> bool {

@@ -56,7 +56,7 @@
 //! same key with two *positive* counts (its double-call case follows a
 //! positive `set` with a negative one, which takes the early
 //! delete-on-non-positive branch instead) — so this is unexercised by gate 4
-//! and worth flagging as a likely defect: NOTES.md BUG-MULTI-SET-1. [`MultiSet::set`]
+//! and worth flagging as a likely defect: BUG-MULTI-SET-1. [`MultiSet::set`]
 //! reproduces the addition faithfully; a "corrected" replace-semantics
 //! version would be *more correct than upstream* and therefore wrong under
 //! this port's bug-for-bug mandate.
@@ -69,7 +69,7 @@
 //! not have that property, and reading `items.len()` here would silently
 //! *fix* two real upstream defects rather than reproduce them:
 //!
-//! * **NOTES.md BUG-MULTI-SET-2 — `#.delete` on an absent item still decrements
+//! * **BUG-MULTI-SET-2 — `#.delete` on an absent item still decrements
 //!   `dimension` and corrupts `size` to `NaN`, and reports `true`.**
 //!   Upstream's guard is `if (count === 0) return false;`, but
 //!   `this.items.get(item)` on a missing item is `undefined`, and
@@ -80,7 +80,7 @@
 //!   `this.size -= undefined` (`NaN`), `this.dimension--` unconditionally,
 //!   and `this.items.delete(item)` (a harmless no-op on a missing key)
 //!   before returning `true`.
-//! * **NOTES.md BUG-MULTI-SET-3 — `#.edit` never touches `dimension` at all**, even
+//! * **BUG-MULTI-SET-3 — `#.edit` never touches `dimension` at all**, even
 //!   when it removes a real key. If `b` already exists, `edit(a, b)` deletes
 //!   `a` from `this.items` — the real distinct-key count drops by one — but
 //!   `this.dimension` is left exactly where it was, so it overcounts by one
@@ -287,7 +287,7 @@ impl<K: Hash + Eq + Clone> MultiSet<K> {
         self.size += count;
     }
 
-    /// `#.delete`. NOTES.md BUG-MULTI-SET-2: upstream's guard (`count === 0`) never
+    /// `#.delete`. BUG-MULTI-SET-2: upstream's guard (`count === 0`) never
     /// actually fires, so deleting an item **not in the set** still
     /// decrements `dimension`, sets `size` to `NaN` (`- undefined` in
     /// JavaScript), and reports `true`. Reproduced exactly — see the module
@@ -323,7 +323,7 @@ impl<K: Hash + Eq + Clone> MultiSet<K> {
     /// upstream's own order (`set` on `b` before `delete` of `a`), which
     /// matters when `a === b`: the multiplicity is doubled and then the
     /// (now sole) entry is deleted outright. `dimension` is **never**
-    /// touched here, matching upstream exactly (NOTES.md BUG-MULTI-SET-3) even though
+    /// touched here, matching upstream exactly (BUG-MULTI-SET-3) even though
     /// a real key can disappear (when `b` already existed).
     pub fn edit(&mut self, a: K, b: K) {
         let am = self.multiplicity(&a);

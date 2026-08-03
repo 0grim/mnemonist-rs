@@ -1,4 +1,4 @@
-//! Rust half of the matched benchmark harness (DESIGN.md 5.1–5.2).
+//! Rust half of the matched benchmark harness `bench/methodology.md`–5.2).
 //!
 //! Deliberately *not* criterion. §5.2 Problem 1: criterion has no Node
 //! counterpart, so a criterion-vs-hand-rolled-loop table is two methodologies
@@ -25,7 +25,7 @@
 //! `--kind` selects the loop within a module. `mixed` is the op-stream
 //! workload every module has; `sparse-set` adds `drain`, which measures
 //! iteration and is the only benchmark that puts the cursor machinery of
-//! DESIGN.md 3.4 on the clock.
+//! `docs/DECISIONS.md`'s iteration section on the clock.
 
 mod bit_set;
 mod harness;
@@ -352,7 +352,7 @@ fn main() -> ExitCode {
         // by the materialised op arrays (~9 MB, identical on both sides),
         // which hides the part of the memory story that is actually about the
         // port -- and on some modules that part is a regression, so hiding it
-        // would be exactly the thing DESIGN.md 5.1 warns against.
+        // would be exactly the thing `bench/methodology.md` warns against.
         let size = match size_flag(&flags) {
             Ok(size) => size,
             Err(message) => return fail(&message),
@@ -551,9 +551,9 @@ fn drain(
 /// `MixedFn`, K = 1000 batching (this crate's own `BATCH_K`), same as gate 10
 /// -- but single-process and non-interleaved, because there is no second
 /// runtime on the other side of this comparison to interleave against. Rule 4
-/// of DESIGN.md 5.1 (A/B/A/B) exists to cancel drift between two *processes*;
+/// of `bench/methodology.md` (A/B/A/B) exists to cancel drift between two *processes*;
 /// here both variants run in the same process moments apart, which is the
-/// closer analogue of DESIGN.md 5.1's own warmup rationale, not a relaxation
+/// closer analogue of `bench/methodology.md`'s own warmup rationale, not a relaxation
 /// of it.
 struct RefcellProbeRun {
     checksum: u64,

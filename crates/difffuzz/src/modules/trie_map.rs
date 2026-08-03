@@ -2,7 +2,7 @@
 //!
 //! # The grammar exists to reach one state: shared prefixes
 //!
-//! DESIGN.md's own warning, restated for this module by the porting brief:
+//! This port's own warning, which applies with particular force here:
 //! a trie fuzzed with long random strings proves only that the structure can
 //! store unrelated words — every `set` lands on a fresh branch, `has` on a
 //! partial key is always false, and `delete` never has a sibling to leave

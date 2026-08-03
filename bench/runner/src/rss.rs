@@ -1,6 +1,6 @@
 //! Peak RSS, measured in-process.
 //!
-//! DESIGN.md 12c.2 point 3 supersedes the `/usr/bin/time -v` suggestion in §5:
+//! RSS is read in-process rather than with `/usr/bin/time -v`:
 //! GNU `time` is not the shell builtin and Debian slim does not ship it, so the
 //! Docker bench stage would need an extra package for a number both runtimes
 //! can report about themselves. `getrusage` here, `process.resourceUsage()` on
@@ -31,7 +31,7 @@ pub fn peak_kb() -> u64 {
     };
 
     // Linux reports kilobytes. (macOS reports bytes; irrelevant here — the
-    // benchmark is Linux-only per DESIGN.md 11.5 — but worth knowing before
+    // benchmark is Linux-only per  — but worth knowing before
     // anyone ports this.)
     usage.ru_maxrss.max(0) as u64
 }

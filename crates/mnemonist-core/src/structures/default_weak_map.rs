@@ -80,7 +80,7 @@
 //! `undefined`, and [`DefaultWeakMap::has`] still reports that key present the
 //! whole time, because `has` asks the `WeakMap` about the key and `get`'s
 //! bug asks about the value. Confirmed against Node 24.18.1 and recorded as
-//! **BUG-DEFAULT-WEAK-MAP-1** in NOTES.md — the same defect, a different file, one fewer
+//! **BUG-DEFAULT-WEAK-MAP-1** — the same defect, a different file, one fewer
 //! symptom.
 //!
 //! [`DefaultWeakMap::write_from_factory`] and [`DefaultWeakMap::set`] both

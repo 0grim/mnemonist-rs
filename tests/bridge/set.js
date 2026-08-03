@@ -8,7 +8,7 @@
 // This is not the usual one-line `module.exports = addon.Something`, because
 // `set.js` exports no constructor -- fourteen free functions, into an addon
 // whose exports are one flat namespace. Two adaptations, both of them export
-// shape rather than semantics (DESIGN.md 2.3, Problem 2):
+// shape rather than semantics `docs/METHODOLOGY.md`'s gate 3, Problem 2):
 //
 //   1. NAMES. `union` and `add` at the top level of an addon that will
 //      eventually carry forty modules' worth of helpers would be indefensible,

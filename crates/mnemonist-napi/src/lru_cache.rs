@@ -26,7 +26,7 @@
 //!   [`JsSlot`](crate::js_slot::JsSlot) — see [`stored_key_of`].
 //!
 //! Only strings and numbers reach either index in the original suite (the
-//! same audit DESIGN.md §3.8 makes for the rest of T3), so [`JsKey`] — already
+//! same audit `docs/DECISIONS.md`'s iteration section makes for the rest of T3), so [`JsKey`] — already
 //! built for the `Map`-backed pair — is reused as the classification for
 //! **both** families rather than building a second, wider key parser. Concrete
 //! consequence: an object key is rejected for `lru-cache` too, where upstream

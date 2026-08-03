@@ -35,7 +35,7 @@
 //! allocated word — is **accepted**: `size` counts the bit, while `rank`,
 //! `select` and iteration all stop at `length` and cannot see it. Measured:
 //! `new BitSet(10); s.set(20)` gives `size === 1`, `rank(10) === 0` and
-//! `select(1) === undefined`. See NOTES.md BUG-UTILS-BITWISE-1.
+//! `select(1) === undefined`. See BUG-UTILS-BITWISE-1.
 //!
 //! # Example
 //!

@@ -1,6 +1,6 @@
 //! xorshift32, the matched PRNG.
 //!
-//! DESIGN.md 5.1: both sides must execute the *identical* op sequence, or the
+//! `bench/methodology.md`: both sides must execute the *identical* op sequence, or the
 //! benchmark is partly a comparison of two PRNGs. The mechanism specified there
 //! is a matched generator rather than a serialised workload file — a 1e6-op
 //! `workload.jsonl` would be ~30 MB and would drag JSON parsing into the

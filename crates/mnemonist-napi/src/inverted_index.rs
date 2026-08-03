@@ -247,7 +247,7 @@ impl JsInvertedIndex {
         Ok(self.inner.borrow().get(&tokens))
     }
 
-    /// Upstream's `forEach`. See the module docs and NOTES.md BUG-INVERTED-INDEX-1: this
+    /// Upstream's `forEach`. See the module docs and BUG-INVERTED-INDEX-1: this
     /// walks `InvertedIndex::for_each`'s cursor, which core freezes at
     /// length zero unconditionally, so the loop body below runs zero times
     /// on every call, regardless of `size`.

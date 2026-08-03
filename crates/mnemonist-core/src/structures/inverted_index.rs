@@ -101,7 +101,7 @@
 //!
 //! See [`InvertedIndex::for_each`]'s own docs for the mechanism —
 //! `this.documents.length` reads a **method's** arity, not an array's
-//! length — and NOTES.md BUG-INVERTED-INDEX-1 for the confirmed repro against Node
+//! length — and BUG-INVERTED-INDEX-1 for the confirmed repro against Node
 //! 24.18.1. Reproduced here as a cursor frozen at length zero, so a walk
 //! against it is a no-op by construction rather than a hand-written empty
 //! callback list standing in for the same effect through a different route.
@@ -230,7 +230,7 @@ impl<Doc, Tok> InvertedIndex<Doc, Tok> {
     /// Verified against Node 24.18.1
     /// (`~/upstream-mnemonist/inverted-index.js`):
     /// `InvertedIndex.from(['a b', 'b c'], s => s.split(' ')).forEach(cb)`
-    /// calls `cb` zero times. Recorded as **BUG-INVERTED-INDEX-1** in NOTES.md.
+    /// calls `cb` zero times. Recorded as **BUG-INVERTED-INDEX-1**.
     ///
     /// The original suite's own `forEach` block (`test/inverted-index.js`,
     /// `'should be possible to iterate using #.forEach'`) asserts properties

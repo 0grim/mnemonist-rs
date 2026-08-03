@@ -12,7 +12,7 @@
 //! `TypeError: Cannot read properties of undefined (reading 'length')`. Sent
 //! straight through with that same message text, so a caller two layers up
 //! sees the identical crash upstream's own missing capacity guard produces
-//! — see the core module's docs, part 1, for the full mechanism and NOTES.md
+//! — see the core module's docs, part 1, for the full mechanism, and
 //! BUG-FIXED-CRITBIT-TREE-MAP-1/BUG-FIXED-CRITBIT-TREE-MAP-2.
 //!
 //! # No `delete`

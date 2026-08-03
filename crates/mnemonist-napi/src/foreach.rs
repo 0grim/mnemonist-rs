@@ -1,4 +1,4 @@
-//! `obliterator/foreach`, ported to the boundary (DESIGN.md §3.4, §3.5, DIV-QUEUE-1).
+//! `obliterator/foreach`, ported to the boundary `docs/DECISIONS.md`'s iteration section, §3.5, DIV-QUEUE-1).
 //!
 //! Thirty of the forty-four upstream modules import this one function, and a
 //! grep of every call site shows all of them are `forEach(iterable, cb)` inside
@@ -379,7 +379,7 @@ fn is_strictly_true(env: &Env, value: &Unknown) -> Result<bool> {
 /// `iterables.isArrayLike(target)` — `Array.isArray(t) || typed.isTypedArray(t)`.
 ///
 /// Lives here rather than in a `utils/iterables` module of its own for the
-/// reason DESIGN.md 3.5 gives: it is a JavaScript-value question, asked only
+/// reason `docs/ARCHITECTURE.md`'s boundary rule gives: it is a JavaScript-value question, asked only
 /// from `.from()`-shaped entry points, and `mnemonist-core` never hears it.
 ///
 /// Note the asymmetry with branch 1 of the dispatch below: `isArrayLike` does

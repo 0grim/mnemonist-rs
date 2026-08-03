@@ -4,7 +4,7 @@
  *
  * `forEach` is the one primitive with no Rust-testable core: it is a
  * JavaScript-value coercion, so its semantics only exist where JavaScript
- * values do (DESIGN.md §3.5, DIV-QUEUE-1). `cargo test` cannot reach it. These specs
+ * values do `docs/ARCHITECTURE.md`'s boundary rule, DIV-QUEUE-1). `cargo test` cannot reach it. These specs
  * are therefore the gate-7 "what upstream does not test" coverage for the
  * dispatch, and they live outside `tests/original/` because nothing upstream
  * tests obliterator at all — mnemonist's suite exercises it only incidentally,

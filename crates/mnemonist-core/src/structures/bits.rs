@@ -34,7 +34,7 @@
 //! s.rank(32)      // 0        -- because rank early-returns on size === 0
 //! ```
 //!
-//! Three no-op resets take `size` to `-2`. That is NOTES.md BUG-SPARSE-QUEUE-SET-2, and it is
+//! Three no-op resets take `size` to `-2`. That is BUG-SPARSE-QUEUE-SET-2, and it is
 //! reproduced here, which is why [`Words::size`] is an `i64` rather than a
 //! `usize`: a `usize` could not hold the state upstream reaches.
 //!
@@ -50,7 +50,7 @@
 //!
 //! `p` only moves inside the inner loop, so every all-zero word before the
 //! answer costs the result 32. Measured: a `BitSet(64)` with only bit 40 set
-//! answers `select(1) === 8`. NOTES.md BUG-SPARSE-QUEUE-SET-3, likewise present in both files.
+//! answers `select(1) === 8`. BUG-SPARSE-QUEUE-SET-3, likewise present in both files.
 //!
 //! # The last word's width, and why a length of 0 is not empty
 //!
@@ -60,7 +60,7 @@
 //! non-empty array yields 32 bits**. Unreachable for `BitSet`, whose array is
 //! empty when its length is; reachable for `BitVector`, where capacity outlives
 //! length. Measured: `new BitVector(); v.grow();` then `forEach` calls back 32
-//! times on a vector of length 0. NOTES.md BUG-BIT-SET-2.
+//! times on a vector of length 0. BUG-BIT-SET-2.
 //!
 //! # Why the words live behind `Rc<RefCell<…>>`
 //!

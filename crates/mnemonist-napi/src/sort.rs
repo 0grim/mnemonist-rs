@@ -9,7 +9,7 @@
 //! That shape has one consequence worth stating: **the addon's exports are a
 //! flat namespace**, so `inplaceQuickSort` and friends sit next to `Stack` and
 //! `BitSet` rather than under a `sort/quick` object. Re-assembling upstream's
-//! two-file export shape is the shim's job — DESIGN.md §2.3's Problem 2, which
+//! two-file export shape is the shim's job — `docs/METHODOLOGY.md`'s gate 3's Problem 2, which
 //! is exactly the case it describes — and `tests/bridge/sort.js` does it.
 //!
 //! # What the port accepts, and what upstream accepts
@@ -22,7 +22,7 @@
 //!
 //! 1. Strings, objects and mixed arrays are rejected with an error naming the
 //!    limit, where upstream would sort them by JavaScript's relational
-//!    comparison. Supporting them is DESIGN.md §3.3's T2 tier (callbacks into
+//!    comparison. Supporting them is 's T2 tier (callbacks into
 //!    JS mid-algorithm), which this unit deliberately does not reach for.
 //! 2. It follows that **BUG-SORT-1 and BUG-SORT-2 are unreachable here.** Both upstream
 //!    bugs need an element whose comparison re-enters the sorter, which needs a

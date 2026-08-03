@@ -1,4 +1,4 @@
-//! Cursor semantics, ported from `obliterator` v2.0.5 (DESIGN.md 3.4, 3.6, 3.7).
+//! Cursor semantics, ported from `obliterator` v2.0.5 `docs/DECISIONS.md`'s iteration section, 3.6, 3.7).
 //!
 //! Roughly 30 upstream modules hand out iterators, and every one of them is an
 //! `obliterator/iterator` instance built the same way. This module is that
@@ -35,7 +35,7 @@
 //! that shrinks mid-iteration is read past its new end and JS yields
 //! `{done: false, value: undefined}` — `undefined` values rather than
 //! termination. [`Step::Gap`] is that state, kept distinct from
-//! [`Step::Done`]. That is DIV-SPARSE-SET-1 / DESIGN.md 3.7 Option A.
+//! [`Step::Done`]. That is DIV-SPARSE-SET-1 / `docs/DECISIONS.md`'s iteration section Option A.
 //!
 //! # Where the gap can and cannot happen
 //!
@@ -54,7 +54,7 @@ use std::fmt;
 /// Three states rather than [`Option`], because upstream has three: a value, a
 /// *hole* inside the frozen length that the source can no longer fill, and the
 /// end. Collapsing the middle one into `Done` is exactly the Option B
-/// divergence DESIGN.md 3.7 rejected.
+/// divergence `docs/DECISIONS.md`'s iteration section rejected.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Step<T> {
     /// The source supplied an element.

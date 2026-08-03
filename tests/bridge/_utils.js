@@ -7,7 +7,7 @@
 // decorative, and `tests/verify.sh` gate 3 looks for a shim named after the
 // unit; the unit is `_utils`.
 //
-// Two adaptations, both export shape rather than semantics (DESIGN.md 2.3,
+// Two adaptations, both export shape rather than semantics `docs/METHODOLOGY.md`'s gate 3,
 // Problem 2):
 //
 //   1. NAMES. The addon exports one flat namespace, so most of these are

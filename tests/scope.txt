@@ -30,7 +30,7 @@ sort
 #                RefCell<Core>; the repro prints MATCH) and re-fuzzed with the new
 #                $forEach op, two seeds, zero divergences. What is missing is gate 10:
 #                the RefCell adds a borrow flag check to every access and nobody has
-#                measured it. Benchmarks need an idle machine (DESIGN.md 7.3), so the
+#                measured it. Benchmarks need an idle machine , so the
 #                figure has to come from the quiet serial pass, not from a run taken
 #                while agents are working. Re-add after that pass, not before.
 #

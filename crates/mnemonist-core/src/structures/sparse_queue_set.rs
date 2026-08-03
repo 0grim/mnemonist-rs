@@ -38,7 +38,7 @@
 //! dropped, `size` still increments, `start` climbs forever because
 //! `start === capacity` is never true, and iteration yields `undefined` per
 //! phantom member. That is the [`Step::Gap`](crate::cursor::Step::Gap) window
-//! of DESIGN.md 3.7, reached here in two calls. See BUG-SPARSE-QUEUE-SET-3.
+//! of `docs/DECISIONS.md`'s iteration section, reached here in two calls. See BUG-SPARSE-QUEUE-SET-3.
 //!
 //! # Example
 //!

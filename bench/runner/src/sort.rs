@@ -65,7 +65,7 @@ pub fn run_drain(size: u32, seed: u32, passes: usize) -> (Vec<u64>, u64, usize) 
     let mut rng = XorShift32::new(seed);
 
     // Materialised before any timing, one draw per element -- exactly the
-    // "op array" discipline DESIGN.md 5.1 asks for, applied to sort's input
+    // "op array" discipline `bench/methodology.md` asks for, applied to sort's input
     // rather than to an op-kind stream.
     let mut buffer: Vec<u32> = (0..size * passes).map(|_| rng.below(VALUE_BOUND)).collect();
 

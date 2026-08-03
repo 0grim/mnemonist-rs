@@ -64,7 +64,7 @@
 //! any multiple of 32 as a full final word, zero included. `BitSet` cannot reach
 //! it — its array is empty when its length is — but a `BitVector` whose capacity
 //! outlives its length can: `new BitVector(); v.grow();` then `forEach` calls
-//! back **32 times** on a vector of length 0. NOTES.md BUG-BIT-SET-2.
+//! back **32 times** on a vector of length 0. BUG-BIT-SET-2.
 //!
 //! # Example
 //!

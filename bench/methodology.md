@@ -1,6 +1,6 @@
 # Benchmark methodology
 
-Implements DESIGN.md §5.1–5.2. Everything below is enforced by
+Implements `bench/methodology.md`–5.2. Everything below is enforced by
 `bench/drive.js`, not merely intended; where a rule can be checked
 mechanically, it is, and the check aborts the run rather than warning.
 
@@ -90,7 +90,7 @@ once.
 walk of the set rather than 1000 elements, and `batch_k` carries the number of
 members yielded per walk instead of a constant 1000 — so `ns / batch_k` still
 means nanoseconds per element. The reason is that a cursor costs something *per
-walk* as well as per element: it freezes state at creation (DESIGN.md §3.4).
+walk* as well as per element: it freezes state at creation (`docs/DECISIONS.md`'s iteration section).
 Splitting a walk across samples would bury that fixed cost in whichever sample
 happened to contain the creation, and hide exactly the thing this workload
 exists to measure. Both sides compute `batch_k` from their own set and the
@@ -102,7 +102,7 @@ driver's checksum gate would fail if they disagreed.
 Both return peak RSS in kilobytes. Not `/usr/bin/time -v` — it is GNU `time`,
 not the shell builtin, Debian slim does not ship it, and asking two runtimes to
 report about themselves is uniform where an external tool is merely comparable
-(DESIGN.md §12c.2 point 3 supersedes the tool list in §5).
+(in-process, rather than the external `/usr/bin/time -v` the tooling notes first suggested).
 
 A **no-op baseline** is measured for each runtime, because Node carries ~42 MB
 of V8 before a single element exists. Reporting "18 MB vs 85 MB" as a
@@ -159,7 +159,7 @@ Recorded in `results.json` as `checksum` per workload.
 
 Every metric published is lower-is-better, so `bench/drive.js` derives the
 `regressions` array mechanically: any metric where the port's number exceeds
-upstream's is listed with its ratio. DESIGN.md §5.1 is explicit that hiding a
+upstream's is listed with its ratio. `bench/methodology.md` is explicit that hiding a
 regression scores worse than disclosing one; a field nobody has to remember to
 fill in cannot be quietly left out on a bad day.
 

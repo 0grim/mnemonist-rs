@@ -20,7 +20,7 @@
 //!
 //! 3. **Values are JS numbers.** The core is generic over the value type, and
 //!    the bridge instantiates it at `f64` — every JS number, and nothing else.
-//!    Storing a string or an object is DESIGN.md 3.3's T3 tier (arbitrary JS
+//!    Storing a string or an object is 's T3 tier (arbitrary JS
 //!    values, which need a per-slot `Ref` and an `Env` to drop it), and this
 //!    module does not reach for it. The upstream test file stores only numbers.
 //!

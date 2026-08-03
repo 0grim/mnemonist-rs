@@ -38,7 +38,7 @@
 //!
 //! `intersection` and `union` are variadic upstream and napi has no variadic
 //! parameter. They take a `Vec` here and `tests/bridge/set.js` spreads into
-//! it — arity glue in the shim, which is DESIGN.md §2.3's Problem 2 again and
+//! it — arity glue in the shim, which is `docs/METHODOLOGY.md`'s gate 3's Problem 2 again and
 //! the same role `crate::statics` plays for `X.of`. The arity check itself
 //! stays in core, so the message and the threshold are upstream's.
 //!

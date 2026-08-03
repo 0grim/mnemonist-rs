@@ -5,7 +5,7 @@
 //!
 //! # Scope note: this is infrastructure, not a unit
 //!
-//! DESIGN.md §1.1 defines a unit as the require-closure of one upstream *test
+//! `docs/METHODOLOGY.md` defines a unit as the require-closure of one upstream *test
 //! file*. There is no `test/binary-search.js`. The only file that exercises
 //! these functions is `test/_utils.js`, whose closure also needs `merge` and
 //! `iterables`, neither of which is ported yet — so not one of its assertions

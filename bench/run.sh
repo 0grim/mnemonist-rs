@@ -5,7 +5,7 @@
 #
 # Everything methodological lives in bench/drive.js and bench/methodology.md;
 # this only builds the Rust side and hands over. Unattended and resumable by
-# design (DESIGN.md 5.2, "Driver"): results.json is merged, not overwritten, so
+# design `bench/methodology.md`, "Driver"): results.json is merged, not overwritten, so
 # per-module runs accumulate.
 #
 # Usage:  bench/run.sh [module]

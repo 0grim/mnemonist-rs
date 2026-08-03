@@ -47,7 +47,7 @@
 //! `observe()` already calls whichever kind a name resolves to.
 //!
 //! `size` is a signed `i64` on both sides of this comparison — see
-//! `mnemonist_core::structures::fibonacci_heap`'s own docs and NOTES.md
+//! `mnemonist_core::structures::fibonacci_heap`'s own docs and
 //! BUG-FIBONACCI-HEAP-1: a `fibClearer` comparator firing from inside a `pop`'s
 //! `consolidate` drives `this.size` to `-1` upstream, and the port
 //! reproduces that value exactly rather than clamping it to `0`.
@@ -302,7 +302,7 @@ impl ModuleSpec for FibonacciHeapSpec {
     }
 }
 
-/// `#.pop`, with NOTES.md BUG-FIBONACCI-HEAP-1/BUG-FIBONACCI-HEAP-3's follow-on crashes caught and
+/// `#.pop`, with BUG-FIBONACCI-HEAP-1/BUG-FIBONACCI-HEAP-3's follow-on crashes caught and
 /// re-encoded.
 ///
 /// Once a `fibClearer` comparator has driven the heap into one of two

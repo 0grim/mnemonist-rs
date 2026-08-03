@@ -19,7 +19,7 @@ ADDON="$WORK/node_modules/@port/addon"
 
 # 2. Build the bridge (cargo is incremental). Skipped when PM_NO_BUILD=1: the
 #    Docker `parity` image has no Rust toolchain -- the compiled .so already
-#    arrived from the `builder` stage (DESIGN.md 12c, amendment 1).
+#    arrived from the `builder` stage.
 [ "${PM_NO_BUILD:-}" = 1 ] \
   || cargo build --release -p mnemonist-napi --manifest-path "$ROOT/Cargo.toml" >/dev/null
 
@@ -55,7 +55,7 @@ printf '{"name":"@port/addon","main":"addon.node"}' > "$ADDON/package.json"
 # 6. Default to every spec we have a shim for. "all" is accepted as an alias
 #    for the default: every ported module already has a shim (42/42 upstream
 #    test files), so there is currently no repo-wide/in-scope split left to
-#    make -- unlike the scope.txt-filtered selection sketched in DESIGN.md 2.3,
+#    make -- unlike the scope.txt-filtered selection sketched in `docs/METHODOLOGY.md`'s gate 3,
 #    which would matter once a module is deliberately excluded from scope.txt
 #    while its shim still exists. Revisit if that ever happens.
 cd "$WORK"

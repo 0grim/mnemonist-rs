@@ -13,7 +13,7 @@
 // when it loads, from `crates/mnemonist-napi/src/fibonacci_heap.rs`'s
 // `install_fibonacci_heap_statics`. The prototype assignment is a semantic
 // (it is what makes `new FibonacciHeap() instanceof MaxFibonacciHeap` true
-// upstream, NOTES.md BUG-FIBONACCI-HEAP-2) and a shim that added it separately would mean
+// upstream, BUG-FIBONACCI-HEAP-2) and a shim that added it separately would mean
 // `require('@port/addon').FibonacciHeap` was incomplete without the test
 // harness -- exactly backwards.
 module.exports = require('@port/addon').FibonacciHeap;

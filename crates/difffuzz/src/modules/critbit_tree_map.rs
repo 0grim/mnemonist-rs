@@ -3,7 +3,7 @@
 //! # The grammar exists to reach two states: shared prefixes, and deep
 //! critical-bit positions
 //!
-//! DESIGN.md's own warning, restated for this module by the porting brief: a
+//! This port's own warning, which applies with particular force here: a
 //! crit-bit tree fuzzed with long random strings proves only that the
 //! structure can store unrelated words — every critical bit lands near byte
 //! index zero, and the tree never gets deep enough to exercise its own

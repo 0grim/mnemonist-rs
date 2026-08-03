@@ -232,7 +232,7 @@ impl SparseSet {
     ///   [`add`](SparseSet::add), the walk runs off the end of `dense` and
     ///   produces [`crate::cursor::Step::Gap`] — JS `{done: false, value:
     ///   undefined}`. This is the only module in the port so far where the
-    ///   shrink window of DESIGN.md 3.7 is reachable at all, and it is
+    ///   shrink window of `docs/DECISIONS.md`'s iteration section is reachable at all, and it is
     ///   reachable through the *public* API.
     pub fn values(&self) -> Cursor<'_, Self> {
         Cursor::new(self)

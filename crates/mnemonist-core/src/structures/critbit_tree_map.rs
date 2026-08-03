@@ -34,7 +34,7 @@
 //! `find_critical_bit`'s doc comment for the mechanism). No test in either
 //! original suite ever supplies a key outside that range, so this port
 //! narrows to bytes and does not attempt to reproduce the wide-character
-//! case — see DIV-CRITBIT-TREE-MAP-1 in DECISIONS-CANDIDATES.md.
+//! case — see DIV-CRITBIT-TREE-MAP-1 in `docs/modules/critbit-tree-map.md`.
 //!
 //! [`msb8`] and [`mask_for`] are the literal `bitwise.js` functions,
 //! specialised to `u8` (Rust's `!x` on a `u8` already truncates to 8 bits, so

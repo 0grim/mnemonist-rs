@@ -1,5 +1,5 @@
 //! Port of upstream `lru-cache.js`, `lru-map.js`, `lru-cache-with-delete.js`
-//! and `lru-map-with-delete.js` (one unit — DESIGN.md §1.1: `test/lru-cache.js`
+//! and `lru-map-with-delete.js` (one unit — `docs/METHODOLOGY.md`: `test/lru-cache.js`
 //! requires all four).
 //!
 //! A doubly-linked list over static index arrays (`forward`/`backward`), so

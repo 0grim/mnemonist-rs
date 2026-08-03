@@ -1,6 +1,6 @@
 //! Workload generation and the timed loop.
 //!
-//! Two rules from DESIGN.md 5.1–5.2 are structural here rather than incidental:
+//! Two rules from `bench/methodology.md`–5.2 are structural here rather than incidental:
 //!
 //! * **The op array is materialised before the timed region.** Generation is
 //!   never measured.

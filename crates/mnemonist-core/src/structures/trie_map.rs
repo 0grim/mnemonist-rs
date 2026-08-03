@@ -24,7 +24,7 @@
 //! write on it is a silent no-op in sloppy mode, and the loop's local `node`
 //! ends up rebinding to a chain of fresh, unlinked `{}` objects that vanish
 //! with the call. `size` still increments, because the final orphan object
-//! genuinely has no `SENTINEL` property of its own. See BUG-TRIE-MAP-1 in NOTES.md.
+//! genuinely has no `SENTINEL` property of its own. See BUG-TRIE-MAP-1.
 //!
 //! Reproducing this exactly would mean modelling JavaScript's primitive/object
 //! duality — a plain value that is sometimes indexable and sometimes not —
@@ -35,7 +35,7 @@
 //! separate fields instead of one shared keyspace, which makes a token equal
 //! to the sentinel string an utterly ordinary token here — stored, retrieved
 //! and iterated like any other, never colliding with anything. This is a
-//! deliberate, disclosed divergence: DIV-TRIE-MAP-1 in DECISIONS-CANDIDATES.md.
+//! deliberate, disclosed divergence: DIV-TRIE-MAP-1 in `docs/modules/trie-map.md`.
 //!
 //! # Enumeration order, which the test suite depends on
 //!
@@ -68,7 +68,7 @@
 //!   value, where this port's path-based walk finds nothing at that path and
 //!   moves on. Confirmed against real Node 24.18.1 — no test in either
 //!   original suite interleaves a `delete` with an open walk over the deleted
-//!   region. See DECISIONS-CANDIDATES.md.
+//!   region. See `docs/modules/trie-map.md`.
 //! * **DIV-TRIE-MAP-3**: `Object.keys` order for a plain object special-cases
 //!   integer-like keys (`"0"`, `"1"`, …), enumerating them ascending *before*
 //!   any other key regardless of insertion order. [`Node`] does not reproduce

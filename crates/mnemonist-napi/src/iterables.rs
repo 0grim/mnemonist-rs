@@ -5,7 +5,7 @@
 //! question. `isArrayLike` asks `Array.isArray || ArrayBuffer.isView`;
 //! `guessLength` reads two properties and checks their `typeof`; `toArray`
 //! preallocates a JS array and drives `obliterator/foreach`. None of that has a
-//! Rust meaning, so by DESIGN.md §3.5 it lives here rather than in
+//! Rust meaning, so by `docs/ARCHITECTURE.md`'s boundary rule it lives here rather than in
 //! `mnemonist-core`, exactly as `forEach` does — and it is built **on**
 //! [`crate::foreach`], not on a second copy of the dispatch.
 //!

@@ -7,7 +7,7 @@
  * hash-tables + iterables + merge, ~1,166 LOC) is out of scope — so **every
  * assertion below is coverage upstream does not have**, and gate 7 for this
  * module has nowhere else to live: like `forEach`, it is a JavaScript-value
- * coercion and `cargo test` cannot reach it (DESIGN.md §3.5, DIV-QUEUE-1).
+ * coercion and `cargo test` cannot reach it `docs/ARCHITECTURE.md`'s boundary rule, DIV-QUEUE-1).
  *
  * ## Why the reference implementation is inlined
  *

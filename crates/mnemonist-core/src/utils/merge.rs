@@ -56,7 +56,7 @@
 //! `merge.unionUnique([1, 2], [], [3, 4], [5, 6])` both throw; the *two-array*
 //! path and `intersectionUnique`'s k-way fold (which returns `[]` on the
 //! first empty array, before any heap exists) are both immune. Recorded as
-//! NOTES.md BUG-UTILS-1.
+//! BUG-UTILS-1.
 //!
 //! Not one case in `test/_utils.js`'s own `'should properly merge k arrays.'`
 //! /`'should properly perform the union of k unique arrays.'` blocks includes
@@ -88,7 +88,7 @@
 //! `crates/difffuzz/src/modules/_utils.rs`): zero divergences, where the
 //! linear-scan cut disagreed with upstream inside its first few hundred
 //! generated cases on exactly this shape (`merge([3], [2, -5], [2])`, see
-//! NOTES.md's `_utils` section and the pre-fix campaign note in
+//! `docs/modules/log/_utils.md` and the pre-fix campaign note in
 //! `fuzz/log.txt`).
 
 use std::cell::RefCell;
@@ -686,8 +686,7 @@ mod tests {
 
     // -------------------------------------------------------------- DIV-UTILS-2
 
-    /// The exact case that found DIV-UTILS-2 (`docs/modules/_utils.md`, NOTES.md's
-    /// `_utils` section): three arrays, one of them (`[2, -5]`) genuinely
+    /// The exact case that found DIV-UTILS-2 (`docs/modules/_utils.md`): three arrays, one of them (`[2, -5]`) genuinely
     /// unsorted -- upstream never validates sortedness, and this is where a
     /// tie-break disagreement actually shows up in the output, not merely in
     /// theory. Traced against upstream's real algorithm by hand (`push(0)`,
