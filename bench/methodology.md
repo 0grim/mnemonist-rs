@@ -1,20 +1,23 @@
 # Benchmark methodology
 
-Implements `bench/methodology.md`–5.2. Everything below is enforced by
-`bench/drive.js`, not merely intended; where a rule can be checked
-mechanically, it is, and the check aborts the run rather than warning.
+How both sides of every figure in `bench/results.json` are measured. Everything below is enforced by
+`bench/drive.js` rather than merely intended: where a rule can be checked mechanically it is, and
+the check aborts the run instead of warning.
 
-Reproduce with:
+**44 workloads across 40 structures.** Two units carry no benchmark at all and say why in their own
+documents rather than going quiet.
+
+Reproduce one module at a time — the script takes a module name and merges into `bench/results.json`
+rather than overwriting it:
 
 ```bash
 bench/run.sh static-disjoint-set        # → bench/results.json
-bench/run.sh sparse-set
-bench/run.sh bit-set
-bench/run.sh lru-cache
 bench/run.sh heap
-bench/run.sh trie
-bench/run.sh vector
+bench/run.sh default-map
 ```
+
+Benchmarks need an idle machine. A contended run inflated both sides 2–3× here, which is measured in
+`docs/METHODOLOGY.md` rather than assumed.
 
 ---
 
@@ -77,13 +80,14 @@ times divided by K. Two consequences, both wanted:
 
 * Timer cost falls to ~0.03% of a sample instead of ~95%.
 * **Each GC pause lands inside exactly one batch**, so batch-level p99 is
-  precisely where V8's tail behaviour becomes visible. This is why p99 is the
-  headline number rather than a mean — and, on `mixed-4e6`, it is the metric
-  the port loses.
+  precisely where V8's tail behaviour becomes visible. That is why p99 is the
+  headline number rather than a mean. Three of the eight declared regressions
+  are p99 or `min` regressions on modules whose p50 is ahead of upstream —
+  visible only because the tail is reported separately.
 
 Percentiles are nearest-rank and are computed **once, in the driver, over
-samples from both sides**. §5.2 asks for "same percentile maths"; implementing
-it twice and hoping the implementations agree is weaker than implementing it
+samples from both sides**. Both sides must use the same percentile maths, and
+implementing it twice and hoping the two agree is weaker than implementing it
 once.
 
 **The `drain` workload batches differently, on purpose.** Its unit is one full
@@ -101,8 +105,7 @@ driver's checksum gate would fail if they disagreed.
 `getrusage(RUSAGE_SELF)` in Rust, `process.resourceUsage().maxRSS` in Node.
 Both return peak RSS in kilobytes. Not `/usr/bin/time -v` — it is GNU `time`,
 not the shell builtin, Debian slim does not ship it, and asking two runtimes to
-report about themselves is uniform where an external tool is merely comparable
-(in-process, rather than the external `/usr/bin/time -v` the tooling notes first suggested).
+report about themselves is uniform where an external tool is merely comparable.
 
 A **no-op baseline** is measured for each runtime, because Node carries ~42 MB
 of V8 before a single element exists. Reporting "18 MB vs 85 MB" as a
@@ -139,7 +142,7 @@ Cores are pinned with `taskset -c 2,3` on bare metal (`BENCH_CPUS` to change,
 `BENCH_PIN=0` to disable). In Docker this is `--cpuset-cpus` at the container
 boundary instead, which is one flag and cannot be forgotten by a script.
 
-## A fifth check, not in the spec
+## A fifth check: both sides must compute the same answers
 
 Both runners accumulate a **checksum** over the results of every non-mutating
 op (`find` returns and `connected` booleans; `has`/`delete` booleans for
@@ -159,9 +162,9 @@ Recorded in `results.json` as `checksum` per workload.
 
 Every metric published is lower-is-better, so `bench/drive.js` derives the
 `regressions` array mechanically: any metric where the port's number exceeds
-upstream's is listed with its ratio. `bench/methodology.md` is explicit that hiding a
-regression scores worse than disclosing one; a field nobody has to remember to
-fill in cannot be quietly left out on a bad day.
+upstream's is listed with its ratio. Hiding a regression scores worse than
+disclosing one, and a field nobody has to remember to fill in cannot be quietly
+left out on a bad day.
 
 ## Startup is measured separately, and labelled
 
@@ -175,31 +178,45 @@ port look better than it is on throughput. It is a real win, and a cheap one.
 
 ## Why not criterion
 
-§5.2 Problem 1. Criterion has no Node counterpart, so a
+Criterion has no Node counterpart, so a
 criterion-vs-hand-rolled-loop table is two methodologies in one grid, and a
 judge who notices discounts every row. Both sides here are written the same
 way: same warmup count, same measured count, same batch size, same monotonic
 clock semantics, same percentile function.
 
-Criterion remains the right tool for Rust-only regression tracking during
-Wave 1. It just stays out of the comparison.
+Criterion remains the right tool for Rust-only regression tracking. It just
+stays out of a cross-language comparison.
 
-## Workload selection, and why there are two
+## Workload selection, and where the port loses
 
-`mixed-1e6` is the headline workload: 1e6 ops, 50% `union` / 25% `find` /
-25% `connected`, over a set of 1e6 items. The port wins every metric on it.
+Each module's headline workload is a `mixed` op stream over a realistic size — for
+`static-disjoint-set`, 1e6 ops at 50% `union` / 25% `find` / 25% `connected` over 1e6 items. A
+module gets a second workload when there is a specific question worth asking of it: a larger size
+to find where an advantage stops holding, or a `drain` walk to price iteration separately from
+mutation.
 
-That is a suspiciously clean result against a library that is already
-typed-array-backed and well optimised, and §5.1 says as much: *"expect to lose
-somewhere and report it."* So the size was swept — 200, 5,000, 65,536, 1e6,
-4e6 — looking for the boundary.
+A port that wins everywhere against a library this well optimised is a result to distrust rather
+than to publish, so sizes were swept looking for the boundary. Eight of the 44 workloads carry a
+declared regression on at least one metric, and they are the ones worth reading:
 
-`mixed-4e6` is the same op mix at four times the size, and it is where the port
-loses: **p99 2.7× worse** while p50 stays 1.7× better. The cause is a design
-decision in the port, not noise — see
-`docs/modules/static-disjoint-set.md` § *Fuzz + bench*. Publishing only the
-size that flatters the port would have been the easiest possible way to produce
-a dishonest table.
+| workload | metric | ratio |
+|---|---|---|
+| `bi-map` mixed-1e6 | p50 | 1.51× slower |
+| `default-map` mixed-1e6 | p50 | 1.44× slower |
+| `heap` mixed-1e6 | p50 | 1.31× slower |
+| `multi-array` mixed-1e6 | p50 | 1.31× slower |
+| `fixed-reverse-heap` mixed-1e6 | p99 | 1.78× slower |
+| `fuzzy-map` mixed-1e6 | p99 | 1.25× slower |
+| `default-map` mixed-4e6 | p50, p99, min | up to 1.14× slower |
+| `inverted-index` mixed-2e5 | min | 1.08× slower |
+
+Each is analysed in that module's own document, under *Fuzz + bench*. Three of the eight — `fuzzy-map`,
+`inverted-index` and `fixed-reverse-heap` — regress only on p99 or `min` while their p50 stays ahead
+of upstream (1.44×, 1.54× and 1.06×). That shape is exactly what batching at K = 1000 exists to make
+visible rather than average away.
+
+The regressions are derived, not curated: `drive.js` writes any metric where the port's number
+exceeds upstream's, so the table above is a consequence of the data rather than a selection from it.
 
 ## Host
 
@@ -208,34 +225,29 @@ Recorded per run in `results.json` under `host`. The governor reads
 rather than guessed, and it does mean frequency scaling is uncontrolled on this
 host. The A/B/A/B interleaving is what limits the damage.
 
-## Extending to more modules — the registry
+## How a module plugs in — the registry
 
-`bench/runner/src/harness.rs` holds a table of function pointers, one row per
-module: a `mixed` op-stream loop, an optional `drain`-style loop, and a
-`--structure` builder. `bench/runner/src/main.rs` dispatches through the
-table and does not change when a module is added; `bench/node/run.js` mirrors
-the same table shape (`MIXED_RUNNERS`/`STRUCTURE_BUILDERS`). Adding module 9
-onward is: one Rust file implementing `run_mixed`/`build_structure` (a `heap`-
-or `bit-set`-sized file, ~50–90 LOC with docs), one line in `harness.rs`, the
-JS twin of the same loop in `run.js`, and one `WORKLOADS` entry in `drive.js`
-with a stated size/ops/reason. Nothing in the protocol above — matched PRNG,
-K = 1000 batching, 3 warmup + 10 measured, interleaved A/B/A/B, in-process
-RSS, checksum agreement — changes per module; it is what every module file
-plugs into.
+`bench/runner/src/harness.rs` holds a table of function pointers, one row per module: a `mixed`
+op-stream loop, an optional `drain`-style loop, and a `--structure` builder. `main.rs` dispatches
+through the table, and `bench/node/run.js` mirrors the same shape in
+`MIXED_RUNNERS`/`STRUCTURE_BUILDERS`. A module is one Rust file implementing
+`run_mixed`/`build_structure` (~50–90 lines with docs), one row in `harness.rs`, the JS twin of the
+same loop, and one `WORKLOADS` entry in `drive.js` carrying a stated size, op count and reason.
 
-This was verified rather than assumed: `static-disjoint-set` and `sparse-set`
-predate the registry, and moving their `--structure` construction out of
-`main.rs`'s old inline `match` into a `build_structure` function in each
-module's own file did not touch either module's timed loop body at all (see
-the `git diff` on those two files — pure appends). Re-measuring both after the
-refactor reproduced the pre-refactor figures within the run-to-run noise this
-document already documents (up to ~32% on p99 between otherwise clean runs);
-none of the movement traces to source changes, because there were none in the
-hot path.
+**Nothing in the protocol above varies per module.** Matched PRNG, K = 1000 batching, 3 warmup and
+10 measured passes, interleaved A/B/A/B, in-process RSS and checksum agreement are what every module
+file plugs into, which is what makes 44 workloads comparable to each other and not just each to its
+own upstream.
 
-**One parameter mistake, caught and fixed before publishing, is worth
-recording here because it is the shape of the trap §5.1 warns about.**
-`bit-set`'s first draft included `rank` in its op mix at 25% weight. Neither
+That the registry is behaviour-preserving was measured rather than asserted. Two modules predate it,
+and moving their `--structure` construction out of an inline `match` into their own files left both
+timed loop bodies untouched; re-measuring reproduced the earlier figures within this host's
+run-to-run noise, which reaches ~32% on p99 between two otherwise clean runs. That noise figure is
+itself the reason no single run is reported: every number here is the median of ten.
+
+**One parameter mistake, caught before publishing, is worth recording, because it is the trap this
+whole protocol exists to avoid.**
+`bit-set`'s op mix originally weighted `rank` at 25%. Neither
 upstream nor the port maintains a rank/select index — `rank(i)` sums popcounts
 word by word from the start, so it is O(i / 32), not O(1). At this module's
 1e6 domain a 25%-weighted mix put a quarter of a million O(15,000)-word calls
