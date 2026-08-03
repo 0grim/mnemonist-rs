@@ -56,17 +56,23 @@ counted here. Re-derive any of it with `scripts/loc.sh`:
 
 | crate | code | tests | rustdoc | comments + blank | total |
 |---|---:|---:|---:|---:|---:|
-| `mnemonist-core` — the port itself, zero dependencies | 9,971 | 16,287 | 8,007 | 3,353 | 37,618 |
-| `mnemonist-napi` — the N-API bridge | 11,441 | 109 | 4,700 | 3,512 | 19,762 |
-| `difffuzz` — differential fuzzing harness | 8,718 | 1,103 | 3,209 | 2,523 | 15,553 |
+| `mnemonist-core` — the port itself, zero dependencies | 9,973 | 16,282 | 8,160 | 3,306 | 37,721 |
+| `mnemonist-napi` — the N-API bridge | 11,451 | 109 | 4,766 | 3,443 | 19,769 |
+| `difffuzz` — differential fuzzing harness | 8,718 | 1,103 | 3,206 | 2,371 | 15,398 |
 | `bench-runner` — the matched benchmark harness | 2,878 | — | 1,916 | 984 | 5,778 |
-| **workspace** | **33,008** | **17,499** | **17,832** | **10,372** | **78,711** |
+| **workspace** | **33,020** | **17,494** | **18,048** | **10,104** | **78,666** |
 
 Two figures are worth reading rather than skimming. `mnemonist-core` carries **more test code than
-implementation code** — 16,287 lines against 9,971 — which is the shape a compatibility port should
+implementation code** — 16,282 lines against 9,973 — which is the shape a compatibility port should
 have. And `mnemonist-napi` has almost no Rust tests by design: its tests are JavaScript, because
 what it has to be correct about is what JavaScript sees, so they live in `tests/bridge/` and
 `tests/boundary/` and run under Node.
+
+`mnemonist-core` denies `missing_docs`, so every public item in it is documented and the compiler
+keeps it that way. `mnemonist-napi` enforces the same lint on the ten modules with a genuine Rust
+surface; its per-structure `#[napi]` methods are deliberately exempt, because their only consumer is
+JavaScript and their contract is upstream's API. `crates/mnemonist-napi/src/lib.rs` states that
+split rather than leaving it to be inferred.
 
 ## Documentation
 
