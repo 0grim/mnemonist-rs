@@ -46,9 +46,16 @@
 //!   message — but only for `k == 0`; `usize` cannot carry the negative or
 //!   fractional values JS's untyped `k` could, and nothing in the upstream
 //!   suite exercises either.
-//! * **`dimensions == 0`.** `(d + 1) % dimensions` divides by zero on both
-//!   sides (JS produces `NaN`; Rust panics); no test constructs a zero-
-//!   dimensional tree.
+//! * **`dimensions == 0`.** Upstream's `(d + 1) % dimensions` is `NaN` and
+//!   its `axes[NaN]` is `undefined`, neither of which is an error in
+//!   JavaScript: it builds a degenerate one-node tree for a single row and
+//!   throws `TypeError: Cannot read properties of undefined (reading '0')`
+//!   from two rows up. Rust has no `NaN` index and `% 0` panics, so both are
+//!   branched around: the throw is reproduced by message, and the axis step
+//!   is left at `0` on a path where upstream's own `NaN` is never read back.
+//!   Verified against Node 24.18.1. No upstream test constructs a
+//!   zero-dimensional tree; this used to panic, and through the bridge that
+//!   aborted the host process.
 
 use crate::sort::quick::inplace_quick_sort_indices;
 use crate::structures::fixed_reverse_heap::FixedReverseHeap;
@@ -127,15 +134,34 @@ fn build_tree(
     axes: &[Vec<f64>],
     mut ids: PointerVec,
     n: usize,
-) -> (PointerVec, PointerVec, PointerVec) {
+) -> Result<(PointerVec, PointerVec, PointerVec), Thrown> {
     if n == 0 {
         let width = get_pointer_array(1.0).expect("one always fits the narrowest width");
 
-        return (
+        return Ok((
             PointerVec::zeroed(width, 0),
             PointerVec::zeroed(width, 0),
             PointerVec::zeroed(width, 0),
-        );
+        ));
+    }
+
+    // `dimensions == 0` leaves upstream with an empty `axes`, and its loop
+    // body runs `inplaceQuickSortIndices(axes[d], ...)` on `undefined` and
+    // then `d = (d + 1) % dimensions`, which is `NaN`. Neither is an error in
+    // JavaScript. With one item the window is a single element, the sort
+    // never dereferences its array, no child window is pushed, and `NaN` is
+    // never used again -- so upstream returns a degenerate one-node tree.
+    // With two or more, the sort does reach into `undefined` and upstream
+    // throws. Verified against Node 24.18.1: `KDTree.from(rows, 0)` builds
+    // for `rows.length <= 1` and throws `TypeError: Cannot read properties
+    // of undefined (reading '0')` from two rows up.
+    //
+    // Rust has neither a `NaN` index nor a `% 0`, so both are branched around
+    // rather than reproduced. Before this guard existed, `axes[d]` panicked
+    // and, through the bridge, aborted the host Node process on an input
+    // upstream accepts.
+    if dimensions == 0 && n >= 2 {
+        return Err(Thrown("Cannot read properties of undefined (reading '0')"));
     }
 
     // `+1` because node index `0` doubles as the "no child" sentinel in
@@ -152,7 +178,12 @@ fn build_tree(
     let mut i = 0usize;
 
     while let Some((d, lo, hi, parent, is_right)) = stack.pop() {
-        inplace_quick_sort_indices(&axes[d], &mut ids, lo, hi);
+        // Skipped only when there are no axes at all, which the guard above
+        // has already narrowed to the single-item case -- where a sort over
+        // one element is a no-op in either language.
+        if dimensions > 0 {
+            inplace_quick_sort_indices(&axes[d], &mut ids, lo, hi);
+        }
 
         let window_len = hi - lo;
         let median = lo + (window_len >> 1);
@@ -168,7 +199,15 @@ fn build_tree(
             }
         }
 
-        let next_d = (d + 1) % dimensions;
+        // `% 0` panics in Rust where JS yields `NaN`. Reached only on the
+        // single-item zero-dimension path, where no child window is pushed
+        // and upstream's `NaN` is never read back either, so the value is
+        // unobservable rather than merely unlikely.
+        let next_d = if dimensions == 0 {
+            0
+        } else {
+            (d + 1) % dimensions
+        };
 
         // Right
         if median != lo && median != hi - 1 {
@@ -183,30 +222,33 @@ fn build_tree(
         i += 1;
     }
 
-    (pivots, lefts, rights)
+    Ok((pivots, lefts, rights))
 }
 
 impl<L: Clone> KdTree<L> {
     /// `KDTree.from(iterable, dimensions)` -- `rows` is upstream's `[label,
     /// [x, y, ...]]` shape already materialised (the bridge's job is turning
     /// the JS iterable into this).
-    pub fn from_rows(rows: Vec<(L, Vec<f64>)>, dimensions: usize) -> Self {
+    pub fn from_rows(rows: Vec<(L, Vec<f64>)>, dimensions: usize) -> Result<Self, Thrown> {
         let n = rows.len();
         let mut axes = vec![vec![0.0f64; n]; dimensions];
         let mut labels = Vec::with_capacity(n);
 
         for (i, (label, point)) in rows.into_iter().enumerate() {
-            for d in 0..dimensions {
-                axes[d][i] = point[d];
+            // `axis[i] = row[1][d]` past the end of the point stores
+            // `undefined` into a `Float64Array`, which is `NaN`. Not a throw
+            // upstream, and previously an index-out-of-bounds panic here.
+            for (d, axis) in axes.iter_mut().enumerate() {
+                axis[i] = point.get(d).copied().unwrap_or(f64::NAN);
             }
             labels.push(label);
         }
 
         let ids =
             crate::utils::typed_arrays::indices(n as f64).expect("n items always addressable");
-        let (pivots, lefts, rights) = build_tree(dimensions, &axes, ids, n);
+        let (pivots, lefts, rights) = build_tree(dimensions, &axes, ids, n)?;
 
-        Self {
+        Ok(Self {
             dimensions,
             axes,
             labels,
@@ -214,22 +256,22 @@ impl<L: Clone> KdTree<L> {
             lefts,
             rights,
             size: n,
-        }
+        })
     }
 
     /// `KDTree.fromAxes(axes, labels)`. Upstream defaults `labels` to
     /// `typed.indices(axes[0].length)` when omitted; that default is a JS
     /// convenience the bridge applies (numeric labels), not something core
     /// decides, so `labels` is required here.
-    pub fn from_axes(axes: Vec<Vec<f64>>, labels: Vec<L>) -> Self {
+    pub fn from_axes(axes: Vec<Vec<f64>>, labels: Vec<L>) -> Result<Self, Thrown> {
         let dimensions = axes.len();
         let n = labels.len();
 
         let ids =
             crate::utils::typed_arrays::indices(n as f64).expect("n items always addressable");
-        let (pivots, lefts, rights) = build_tree(dimensions, &axes, ids, n);
+        let (pivots, lefts, rights) = build_tree(dimensions, &axes, ids, n)?;
 
-        Self {
+        Ok(Self {
             dimensions,
             axes,
             labels,
@@ -237,7 +279,7 @@ impl<L: Clone> KdTree<L> {
             lefts,
             rights,
             size: n,
-        }
+        })
     }
 
     pub fn size(&self) -> usize {
@@ -307,7 +349,13 @@ impl<L: Clone> KdTree<L> {
         }
 
         let dx = self.axes[d][pivot] - query[d];
-        let next_d = (d + 1) % self.dimensions;
+        // See `build_tree`: `% 0` panics where JS yields `NaN`, and a
+        // zero-dimension tree has at most one node, so no descent uses it.
+        let next_d = if self.dimensions == 0 {
+            0
+        } else {
+            (d + 1) % self.dimensions
+        };
 
         if dx > 0.0 {
             if left != 0 {
@@ -387,7 +435,13 @@ impl<L: Clone> KdTree<L> {
         let point = query[d];
         let split = self.axes[d][pivot];
         let dx = point - split;
-        let next_d = (d + 1) % self.dimensions;
+        // See `build_tree`: `% 0` panics where JS yields `NaN`, and a
+        // zero-dimension tree has at most one node, so no descent uses it.
+        let next_d = if self.dimensions == 0 {
+            0
+        } else {
+            (d + 1) % self.dimensions
+        };
 
         if point < split {
             if left != 0 {
@@ -501,7 +555,7 @@ mod tests {
 
     #[test]
     fn builds_the_tree_upstream_pins() {
-        let tree = KdTree::from_rows(data(), 2);
+        let tree = KdTree::from_rows(data(), 2).unwrap();
 
         for (label, point) in data() {
             assert_eq!(tree.nearest_neighbor(&point), Some(&label));
@@ -523,7 +577,7 @@ mod tests {
             rows.iter().map(|(_, p)| p[1]).collect::<Vec<f64>>(),
         ];
 
-        let tree = KdTree::from_axes(axes, labels);
+        let tree = KdTree::from_axes(axes, labels).unwrap();
 
         for (label, point) in data() {
             assert_eq!(tree.nearest_neighbor(&point), Some(&label));
@@ -543,7 +597,7 @@ mod tests {
         ];
         let labels: Vec<usize> = (0..rows.len()).collect();
 
-        let tree = KdTree::from_axes(axes, labels);
+        let tree = KdTree::from_axes(axes, labels).unwrap();
 
         for (i, (_, point)) in data().into_iter().enumerate() {
             assert_eq!(tree.nearest_neighbor(&point), Some(&i));
@@ -553,7 +607,7 @@ mod tests {
 
     #[test]
     fn k_nearest_neighbors_matches_brute_force_membership() {
-        let tree = KdTree::from_rows(data(), 2);
+        let tree = KdTree::from_rows(data(), 2).unwrap();
 
         for (_, point) in data() {
             assert_eq!(
@@ -579,7 +633,7 @@ mod tests {
 
     #[test]
     fn linear_k_nearest_neighbors_matches_upstreams_pinned_case() {
-        let tree = KdTree::from_rows(data(), 2);
+        let tree = KdTree::from_rows(data(), 2).unwrap();
 
         for (_, point) in data() {
             assert_eq!(
@@ -596,7 +650,7 @@ mod tests {
 
     #[test]
     fn k_is_clamped_to_size_rather_than_padding_with_nothing() {
-        let tree = KdTree::from_rows(data(), 2);
+        let tree = KdTree::from_rows(data(), 2).unwrap();
 
         assert_eq!(tree.k_nearest_neighbors(100, &[0.0, 0.0]).unwrap().len(), 6);
         assert_eq!(
@@ -609,7 +663,7 @@ mod tests {
 
     #[test]
     fn zero_k_is_rejected_with_upstreams_message() {
-        let tree = KdTree::from_rows(data(), 2);
+        let tree = KdTree::from_rows(data(), 2).unwrap();
 
         assert_eq!(
             tree.k_nearest_neighbors(0, &[0.0, 0.0]),
@@ -623,7 +677,7 @@ mod tests {
 
     #[test]
     fn an_empty_tree_builds_cleanly_and_answers_no_queries() {
-        let tree: KdTree<&str> = KdTree::from_rows(Vec::new(), 2);
+        let tree: KdTree<&str> = KdTree::from_rows(Vec::new(), 2).unwrap();
 
         assert_eq!(tree.size(), 0);
         assert_eq!(tree.nearest_neighbor(&[0.0, 0.0]), None);
@@ -654,7 +708,7 @@ mod tests {
         let rows: Vec<(usize, Vec<f64>)> = (0..side * side)
             .map(|i| (i as usize, vec![(i % side) as f64, (i / side) as f64]))
             .collect();
-        let tree = KdTree::from_rows(rows.clone(), 2);
+        let tree = KdTree::from_rows(rows.clone(), 2).unwrap();
 
         let mut state = 0x9E3779B97F4A7C15u64;
         let mut next = move || {
@@ -689,5 +743,46 @@ mod tests {
                 "tree's nearest_neighbor must be exactly as close as brute force's for {query:?}"
             );
         }
+    }
+
+    // ------------------------------------------------------------------
+    // Malformed rows and zero dimensions. Every expectation below was taken
+    // from real upstream in Node 24.18.1, not from reading kd-tree.js: each
+    // of these inputs used to panic here, and through the bridge a panic
+    // aborts the host process rather than throwing.
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn a_point_shorter_than_dimensions_pads_with_nan() {
+        // Upstream: `axis[i] = row[1][d]` reads past the end, stores
+        // `undefined` into a `Float64Array`, and gets `NaN`. It does not
+        // throw: `KDTree.from([['a', [1]]], 2)` builds.
+        let tree = KdTree::from_rows(vec![("a", vec![1.0])], 2).unwrap();
+
+        assert_eq!(tree.axes[0][0], 1.0);
+        assert!(
+            tree.axes[1][0].is_nan(),
+            "the missing component must be NaN"
+        );
+    }
+
+    #[test]
+    fn a_zero_dimension_tree_of_one_item_builds() {
+        // Upstream's `axes[NaN]` is `undefined` and its one-element window
+        // never dereferences it, so a single row builds a degenerate tree.
+        let tree = KdTree::from_rows(vec![("a", vec![1.0, 2.0])], 0).unwrap();
+
+        assert_eq!(tree.size, 1);
+        assert_eq!(tree.dimensions, 0);
+        assert!(tree.axes.is_empty());
+    }
+
+    #[test]
+    fn a_zero_dimension_tree_of_two_items_raises_upstreams_type_error() {
+        // From two rows up, upstream's sort really does reach into
+        // `undefined` and throws.
+        let error = KdTree::from_rows(vec![("a", vec![1.0]), ("b", vec![2.0])], 0).unwrap_err();
+
+        assert_eq!(error.0, "Cannot read properties of undefined (reading '0')");
     }
 }

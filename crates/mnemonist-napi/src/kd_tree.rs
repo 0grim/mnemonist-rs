@@ -55,24 +55,55 @@ fn rows_from_iterable(
         // here reproduces as a catchable error rather than a panic.
         let row_array = unsafe { row_value.cast::<Array>()? };
 
-        let label: Unknown = row_array
-            .get(0)?
-            .expect("index 0 of an array always resolves, to `undefined` at worst");
-        let label_slot = JsSlot::new(env, &label)?;
+        // `Array::get` answers `Ok(None)` for any index past the array's
+        // length -- it bounds-checks before it ever calls into V8 -- so
+        // `undefined` and "absent" are the same answer here, and neither is
+        // an error. Every `expect` on these three reads was wrong: each one
+        // panicked on a short row, and a panic crossing N-API aborts the host
+        // process instead of throwing. Verified against Node 24.18.1 for what
+        // upstream does with each shape.
+        //
+        // Upstream reads `row[1][d]` *before* `labels[i] = row[0]`, and both
+        // live inside `for (d = 0; d < dimensions; d++)`, so a row missing
+        // index 1 throws before the label is ever read, and a zero-dimension
+        // tree reads neither.
+        let point_value: Option<Unknown> = row_array.get(1)?;
 
-        let point_value: Unknown = row_array
-            .get(1)?
-            .expect("index 1 of an array always resolves, to `undefined` at worst");
-        // SAFETY: same reasoning as the row cast above.
-        let point_array = unsafe { point_value.cast::<Array>()? };
+        let point = match point_value {
+            Some(value) => {
+                // SAFETY: same reasoning as the row cast above.
+                let point_array = unsafe { value.cast::<Array>()? };
+                let mut point = Vec::with_capacity(dimensions);
 
-        let mut point = Vec::with_capacity(dimensions);
-        for d in 0..dimensions as u32 {
-            let component: f64 = point_array
-                .get(d)?
-                .expect("index below `dimensions` always resolves, to `undefined` at worst");
-            point.push(component);
-        }
+                for d in 0..dimensions as u32 {
+                    // A component past the end of the point is `undefined`,
+                    // which upstream stores into a `Float64Array` as `NaN`.
+                    // `KDTree.from([['a', [1]]], 2)` builds upstream; it used
+                    // to abort the process here.
+                    point.push(point_array.get(d)?.unwrap_or(f64::NAN));
+                }
+
+                point
+            }
+            // `row[1][d]` on a row with no index 1 is a read off `undefined`,
+            // which throws upstream -- but only if the dimension loop runs at
+            // all.
+            None if dimensions > 0 => {
+                return Err(foreach::type_error(
+                    env,
+                    "Cannot read properties of undefined (reading '0')",
+                ))
+            }
+            None => Vec::new(),
+        };
+
+        // Reachable only past the check above, so either the row has an index
+        // 1 -- and therefore an index 0 -- or `dimensions` is 0, where
+        // upstream leaves `labels` a hole and never reads this either.
+        let label_slot = match row_array.get::<Unknown>(0)? {
+            Some(label) => JsSlot::new(env, &label)?,
+            None => JsSlot::Undefined,
+        };
 
         rows.push((label_slot, point));
     }
@@ -142,7 +173,8 @@ impl JsKdTree {
         let rows = rows_from_iterable(&env, iterable, dimensions)?;
 
         Ok(Self {
-            inner: CoreTree::from_rows(rows, dimensions),
+            inner: CoreTree::from_rows(rows, dimensions)
+                .map_err(|thrown| foreach::type_error(&env, thrown.0))?,
         })
     }
 
@@ -153,7 +185,11 @@ impl JsKdTree {
     /// real napi value, since a `JsSlot` needs no live handle for a
     /// primitive.
     #[napi(factory, js_name = "fromAxes")]
-    pub fn from_axes(axes: Vec<Vec<f64>>, labels: Option<Vec<JsUnknownLabel>>) -> Result<Self> {
+    pub fn from_axes(
+        env: Env,
+        axes: Vec<Vec<f64>>,
+        labels: Option<Vec<JsUnknownLabel>>,
+    ) -> Result<Self> {
         let n = axes.first().map(Vec::len).unwrap_or(0);
 
         let labels: Vec<JsSlot> = match labels {
@@ -162,7 +198,8 @@ impl JsKdTree {
         };
 
         Ok(Self {
-            inner: CoreTree::from_axes(axes, labels),
+            inner: CoreTree::from_axes(axes, labels)
+                .map_err(|thrown| foreach::type_error(&env, thrown.0))?,
         })
     }
 }

@@ -131,7 +131,7 @@ impl ModuleSpec for KdTreeSpec {
             })
             .collect();
 
-        CoreTree::from_rows(rows, DIMENSIONS)
+        CoreTree::from_rows(rows, DIMENSIONS).expect("a fixed positive DIMENSIONS never raises")
     }
 
     fn apply(&self, instance: &mut Self::Instance, op: &Op) -> Value {
@@ -230,7 +230,8 @@ mod tests {
             })
             .collect();
 
-        let tree = CoreTree::from_rows(points.clone(), DIMENSIONS);
+        let tree = CoreTree::from_rows(points.clone(), DIMENSIONS)
+            .expect("a fixed positive DIMENSIONS never raises");
 
         let mut across_plane = 0u32;
         let mut ties = 0u32;

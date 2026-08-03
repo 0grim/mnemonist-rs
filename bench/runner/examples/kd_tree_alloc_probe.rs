@@ -110,7 +110,7 @@ fn scattered_points(size: u32) -> (Vec<Vec<f64>>, Vec<u32>) {
 
 fn main() {
     let (axes, labels) = scattered_points(SIZE);
-    let tree = KdTree::from_axes(axes, labels);
+    let tree = KdTree::from_axes(axes, labels).expect("a benchmark tree is well-formed");
 
     let mut query_rng = Rng(7);
     let queries: Vec<[f64; 2]> = (0..CALLS)

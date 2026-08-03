@@ -105,7 +105,7 @@ fn scattered_points(size: u32) -> (Vec<Vec<f64>>, Vec<u32>) {
 /// workload in batches of `k`.
 pub fn run_mixed(workload: &Workload, k: usize) -> (Vec<u64>, u64) {
     let (axes, labels) = scattered_points(workload.size);
-    let tree = KdTree::from_axes(axes, labels);
+    let tree = KdTree::from_axes(axes, labels).expect("a benchmark tree is well-formed");
 
     let ops = workload.len();
     let mut batches = Vec::with_capacity(ops.div_ceil(k));
@@ -150,7 +150,7 @@ pub fn run_mixed(workload: &Workload, k: usize) -> (Vec<u64>, u64) {
 /// `run_mixed` itself uses.
 pub fn build_structure(size: u32) {
     let (axes, labels) = scattered_points(size);
-    let tree = KdTree::from_axes(axes, labels);
+    let tree = KdTree::from_axes(axes, labels).expect("a benchmark tree is well-formed");
 
     std::hint::black_box(&tree);
 }
