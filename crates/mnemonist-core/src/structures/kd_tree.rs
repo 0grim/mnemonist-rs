@@ -56,20 +56,29 @@ use crate::structures::heap::{Store, VecStore};
 use crate::utils::comparators::{create_tuple_comparator, Comparator, Thrown, TupleComparator};
 use crate::utils::typed_arrays::{get_pointer_array, PointerVec};
 
-/// [`TupleComparator`] compares `Vec<f64>` directly; [`FixedReverseHeap`]'s
-/// backing [`VecStore`] holds `Option<Vec<f64>>` slots (a JS array's
+/// [`TupleComparator`] compares `[f64; N]` directly; [`FixedReverseHeap`]'s
+/// backing [`VecStore`] holds `Option<[f64; N]>` slots (a JS array's
 /// possible holes -- see `heap.rs`'s own docs). This lifts the comparator
 /// over that `Option` the same way `vp_tree.rs`'s `NeighborComparator` does:
 /// a hole is never actually produced here (nothing pushed to this heap ever
 /// shrinks it from a comparator, unlike a re-entrant JS one could), so the
 /// `_` arm is unreached in practice rather than a modelled JS behaviour.
+///
+/// `N` is the tuple width -- 3 for `k_nearest_neighbors`'s `[dist, visited,
+/// pivot]`, 2 for `linear_k_nearest_neighbors`'s `[dist, i]`. Fixed-size
+/// rather than `Vec<f64>`: every tuple this heap ever holds is created once,
+/// per node visited, and `Store::get`/`set` clone the slot on every sift
+/// step, so a `Vec<f64>` here meant a fresh heap allocation on nearly every
+/// comparison. `[f64; N]` is `Copy`, so the same clone is a stack copy. See
+/// `utils/comparators.rs`'s array `Comparator` impl for why this changes
+/// nothing about the comparison itself.
 #[derive(Debug, Clone, Copy)]
-struct TupleOfOption(TupleComparator);
+struct TupleOfOption<const N: usize>(TupleComparator);
 
-impl Comparator<Option<Vec<f64>>, Thrown> for TupleOfOption {
-    fn compare(&self, a: &Option<Vec<f64>>, b: &Option<Vec<f64>>) -> Result<f64, Thrown> {
+impl<const N: usize> Comparator<Option<[f64; N]>, Thrown> for TupleOfOption<N> {
+    fn compare(&self, a: &Option<[f64; N]>, b: &Option<[f64; N]>) -> Result<f64, Thrown> {
         match (a, b) {
-            (Some(a), Some(b)) => Comparator::<Vec<f64>, Thrown>::compare(&self.0, a, b),
+            (Some(a), Some(b)) => Comparator::<[f64; N], Thrown>::compare(&self.0, a, b),
             _ => Ok(0.0),
         }
     }
@@ -335,8 +344,8 @@ impl<L: Clone> KdTree<L> {
             return Ok(self.nearest_neighbor(query).into_iter().cloned().collect());
         }
 
-        let comparator = TupleOfOption(create_tuple_comparator(3));
-        let heap = FixedReverseHeap::new(VecStore::<Vec<f64>>::new(), comparator, k);
+        let comparator = TupleOfOption::<3>(create_tuple_comparator(3));
+        let heap = FixedReverseHeap::new(VecStore::<[f64; 3]>::new(), comparator, k);
         let mut visited = 0usize;
 
         self.recurse_knn(0, 0, query, &heap, &mut visited, k);
@@ -361,7 +370,7 @@ impl<L: Clone> KdTree<L> {
         d: usize,
         node: usize,
         query: &[f64],
-        heap: &FixedReverseHeap<VecStore<Vec<f64>>, TupleOfOption>,
+        heap: &FixedReverseHeap<VecStore<[f64; 3]>, TupleOfOption<3>>,
         visited: &mut usize,
         k: usize,
     ) {
@@ -371,7 +380,7 @@ impl<L: Clone> KdTree<L> {
 
         let dist = squared_distance(self.dimensions, &self.axes, pivot, query);
 
-        heap.push(Some(vec![dist, *visited as f64, pivot as f64]))
+        heap.push(Some([dist, *visited as f64, pivot as f64]))
             .expect("VecStore never fails");
         *visited += 1;
 
@@ -420,14 +429,14 @@ impl<L: Clone> KdTree<L> {
             return Ok(Vec::new());
         }
 
-        let comparator = TupleOfOption(create_tuple_comparator(2));
-        let heap = FixedReverseHeap::new(VecStore::<Vec<f64>>::new(), comparator, k);
+        let comparator = TupleOfOption::<2>(create_tuple_comparator(2));
+        let heap = FixedReverseHeap::new(VecStore::<[f64; 2]>::new(), comparator, k);
 
         for i in 0..self.size {
             let pivot = self.pivots.get(i) as usize;
             let dist = squared_distance(self.dimensions, &self.axes, pivot, query);
 
-            heap.push(Some(vec![dist, i as f64]))
+            heap.push(Some([dist, i as f64]))
                 .expect("VecStore never fails");
         }
 

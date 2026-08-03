@@ -342,6 +342,44 @@ impl<E, T: Relational<E>> Comparator<Vec<T>, E> for TupleComparator {
     }
 }
 
+/// The same lexicographic rule as the `Vec<T>` impl above, over a fixed-size
+/// array instead of a heap-allocated one.
+///
+/// `kd-tree.rs`'s `k_nearest_neighbors`/`linear_k_nearest_neighbors` build a
+/// fresh tuple for every node visited during a query — `[dist, visited,
+/// pivot]` or `[dist, i]`, always exactly `N` long — and previously boxed each
+/// one as a `Vec<f64>`, which a `Store::get`/`set` clone (every sift step)
+/// turned into a fresh heap allocation. `[T; N]` is `Copy` for `T: Copy`, so
+/// the same clone is a stack copy instead. Behaviourally this impl is
+/// identical to the `Vec<T>` one: both tuples here are always exactly `N`
+/// elements, matching the comparator's own `size`, so the "shorter than `N`"
+/// case the `Vec` impl's doc comment calls out is never reached by either.
+/// `[T; N]::get` auto-derefs to the slice method and answers `None` past the
+/// end the same way `Vec::get` does, so nothing about the "past the end is
+/// `undefined`" behaviour changes either.
+impl<E, T: Relational<E>, const N: usize> Comparator<[T; N], E> for TupleComparator {
+    fn compare(&self, a: &[T; N], b: &[T; N]) -> Result<f64, E> {
+        let mut i = 0;
+
+        while i < self.size {
+            let left = a.get(i);
+            let right = b.get(i);
+
+            if left.js_lt(&right)? {
+                return Ok(-1.0);
+            }
+
+            if left.js_gt(&right)? {
+                return Ok(1.0);
+            }
+
+            i += 1;
+        }
+
+        Ok(0.0)
+    }
+}
+
 /// `Option<&T>` needs the same rule as `Option<T>`; a blanket impl over
 /// references would collide with the macro above.
 impl<E, T: Relational<E>> Relational<E> for &T {

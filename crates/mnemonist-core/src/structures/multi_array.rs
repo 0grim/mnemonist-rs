@@ -53,8 +53,7 @@
 //!
 //! Upstream additionally picks a narrow unsigned pointer width for
 //! `tails`/`lengths`/(fixed-mode) `pointers`, purely as a memory
-//! optimisation over what a real `Array` would cost. This port keeps that
-//! bookkeeping as plain `usize` regardless of mode: nothing in
+//! optimisation over what a real `Array` would cost. Nothing in
 //! `test/multi-array.js` or the differential fuzzer can observe the
 //! *internal* representation of an index-to-position mapping, only the
 //! *values* a bucket yields — which are still width-narrowed exactly where
@@ -62,6 +61,25 @@
 //! same category of simplification `crate::structures::multi_map`'s
 //! `dimension()` makes (a derived count instead of a tracked one): cheaper,
 //! and behaviourally identical on every reachable input.
+//!
+//! This bookkeeping is kept as `u32` rather than upstream's own
+//! per-capacity-chosen width (which can be as narrow as `u8`) or a native
+//! `usize`: `u32` is simple (one type, no runtime width dispatch the way
+//! [`crate::utils::typed_arrays::PointerVec`] needs for the item backing
+//! itself), safely covers every domain this port or its fuzzer reaches
+//! (`test/multi-array.js`'s largest case and the benchmark's 20,000-index,
+//! 1,000,000-op workload both sit many orders of magnitude below
+//! `u32::MAX`, and a `Vec<f64>` of `u32::MAX` items would need on the order
+//! of 34 GB before the question could even arise), and is half the width of
+//! `usize` on every platform this crate targets. `pointers` in particular is
+//! read once per step of every bucket walk (`get`/`values_at`), so halving
+//! its element width halves the bytes that walk has to bring in from memory
+//! per step -- a plausible reduction in the cache-miss cost of a
+//! semi-random walk over a multi-megabyte array, in the same vein as
+//! `default-map.rs`'s already-confirmed cache-miss cause, but **not itself
+//! confirmed here**: no profiler or cache-counter measurement was taken, so
+//! this is recorded as a hypothesis, not a finding, per CLAUDE.md's rule
+//! against overclaiming performance causation.
 
 use crate::utils::typed_arrays::{PointerVec, PointerWidth, TypedValue};
 
@@ -114,15 +132,16 @@ pub struct MultiArray {
     dimension: usize,
     /// Per-index tail position, grown to `dimension` on demand (`Vector.grow`
     /// and `.resize`, in both upstream modes — see the module docs on why
-    /// this is plain `usize` regardless of `capacity`).
-    tails: Vec<usize>,
+    /// this is `u32` rather than `usize` or upstream's own per-capacity
+    /// width).
+    tails: Vec<u32>,
     /// Per-index bucket length, same growth discipline as `tails`.
-    lengths: Vec<usize>,
+    lengths: Vec<u32>,
     /// Per-item "previous position in this bucket" link. Preallocated to
     /// `capacity` and zero-filled in [`Storage::Fixed`] mode (upstream never
     /// writes to it in `push`, relying on that zero-fill); grown by one
     /// `push` per new item in [`Storage::Dynamic`] mode.
-    pointers: Vec<usize>,
+    pointers: Vec<u32>,
     storage: Storage,
     capacity: Option<usize>,
 }
@@ -149,7 +168,7 @@ impl MultiArray {
             dimension: 0,
             tails: Vec::new(),
             lengths: Vec::new(),
-            pointers: vec![0; capacity],
+            pointers: vec![0u32; capacity],
             storage: Storage::Fixed(PointerVec::zeroed(width, capacity)),
             capacity: Some(capacity),
         }
@@ -226,7 +245,7 @@ impl MultiArray {
             self.lengths[index] += 1;
         }
 
-        self.tails[index] = pointer;
+        self.tails[index] = pointer as u32;
         self.storage.push_or_write(pointer, item);
         self.size += 1;
 
@@ -262,7 +281,7 @@ impl MultiArray {
         }
 
         self.lengths.push(1);
-        self.tails.push(pointer);
+        self.tails.push(pointer as u32);
         self.dimension += 1;
         self.size += 1;
 
@@ -281,7 +300,7 @@ impl MultiArray {
         if index >= self.dimension {
             0
         } else {
-            self.lengths[index]
+            self.lengths[index] as usize
         }
     }
 
@@ -295,13 +314,13 @@ impl MultiArray {
 
         let length = self.lengths[index];
         let mut pointer = self.tails[index];
-        let mut out = vec![0.0; length];
+        let mut out = vec![0.0; length as usize];
         let mut i = length;
 
         while i != 0 {
             i -= 1;
-            out[i] = self.storage.get(pointer);
-            pointer = self.pointers[pointer];
+            out[i as usize] = self.storage.get(pointer as usize);
+            pointer = self.pointers[pointer as usize];
         }
 
         Some(out)
@@ -317,11 +336,11 @@ impl MultiArray {
 
         let length = self.lengths[index];
         let mut pointer = self.tails[index];
-        let mut out = Vec::with_capacity(length);
+        let mut out = Vec::with_capacity(length as usize);
 
         for _ in 0..length {
-            out.push(self.storage.get(pointer));
-            pointer = self.pointers[pointer];
+            out.push(self.storage.get(pointer as usize));
+            pointer = self.pointers[pointer as usize];
         }
 
         out
