@@ -9,7 +9,7 @@ Bridge: `crates/mnemonist-napi/src/sparse_set.rs`, `crates/mnemonist-napi/src/cu
 
 This is the first module in the port with a real iterator surface, which is why it was chosen to
 land immediately after the cursor machinery. It is also, unexpectedly, the module that makes the
-`undefined` shrink window reachable through the **public API** in two calls — see D-09, below.
+`undefined` shrink window reachable through the **public API** in two calls — see DIV-SPARSE-SET-1, below.
 
 ---
 
@@ -88,9 +88,9 @@ and never exercised by the original suite.
     *length* is a snapshot, its *elements* are not. So an element write mid-walk *is* visible and a
     length change is *not*. Neither half is tested.
 13. **A cursor is never re-drained.** `obliterator.take` exhausts it once, so the
-    non-restartability of D-06 is unobserved.
+    non-restartability of DIV-STACK-1 is unobserved.
 14. **`[...set]` is never used.** The suite reaches the cursor only through `set.values()`, so the
-    collection-level `Symbol.iterator` — the *factory* half of D-07, and the half napi does not
+    collection-level `Symbol.iterator` — the *factory* half of DIV-STACK-2, and the half napi does not
     provide for free — has **zero** upstream coverage despite being the last line of the upstream
     module.
 15. **`values()` on an empty set, or after `clear`, is never called.**
@@ -144,7 +144,7 @@ code runs.
 
 ## Bugs this found
 
-**B-8 — `add(member)` with `member >= length` corrupts the set, three defects deep.**
+**BUG-SPARSE-SET-1 — `add(member)` with `member >= length` corrupts the set, three defects deep.**
 Verified against Node 24.18.1. Upstream never validates `member`, and neither guard in
 `add` fires for an out-of-range one, because `sparse[member]` is `undefined` and every comparison
 against `undefined` is false. What follows is three separate silent failures in three lines:
@@ -159,7 +159,7 @@ Measured on real Node: `new SparseSet(10)` then `add(300)` gives `size === 1`,
 `dense === [44, 0, …]`, `sparse` untouched, and `has(300) === has(44) === false`. The member is
 stored, counted, iterable, and unfindable under either name.
 
-**B-9 — and therefore `size` can exceed `length`, which makes upstream's own iterator yield
+**BUG-SPARSE-SET-2 — and therefore `size` can exceed `length`, which makes upstream's own iterator yield
 `undefined`.** Verified against Node 24.18.1. This is the second-order consequence and
 the more interesting half. `values()` freezes `size`, and `dense` is a fixed-length typed array, so
 once (3) above has pushed `size` past `length` the cursor reads off the end:
@@ -170,7 +170,7 @@ u.add(100); u.add(101); u.add(102); u.add(103);   // size 4, length 2
 [...u]  // → [100, 101, undefined, undefined]
 ```
 
-That is the shrink window (D-09, below), reached **through the public API in four calls**, on a
+That is the shrink window (DIV-SPARSE-SET-1, below), reached **through the public API in four calls**, on a
 module whose test file never passes an out-of-range member. Option A (reproduce the
 `undefined` gap) was chosen over Option B (terminate cleanly) on the grounds that no upstream *test*
 reaches the window — true, and it is why Option B was measured as costing zero on the 40% axis. This
@@ -179,7 +179,7 @@ module shows the window is not exotic: **two calls reach it**
 it in 0.3 seconds when the port takes Option B. Option A was the right call for a stronger reason
 than the one recorded.
 
-**B-10 — `delete` past capacity writes a string-keyed expando onto a typed array.**
+**BUG-SPARSE-SET-3 — `delete` past capacity writes a string-keyed expando onto a typed array.**
 Verified against Node 24.18.1. Upstream's swap is
 
 ```js
@@ -198,13 +198,13 @@ and `sparse.undefined = 1`. Reproduced exactly, including the expando; pinned by
 
 **What the fuzzer found in the port: nothing new.** Two campaigns, 2.94 M operations, zero
 divergences. As with `static-disjoint-set`, that is the expected outcome — a faithful port
-reproduces upstream's bugs, so differential fuzzing structurally cannot find them. B-8, B-9 and B-10
+reproduces upstream's bugs, so differential fuzzing structurally cannot find them. BUG-SPARSE-SET-1, BUG-SPARSE-SET-2 and BUG-SPARSE-SET-3
 were all found by reading the file statement by statement and confirming each step against Node.
 What the fuzzer is for is the other direction, and it is sharper than the original suite by a wide
 margin — see "Fuzz + bench".
 
 **The bridge held a bare core value behind `&self`**, which LLVM was entitled to compile as a
-`noalias readonly` pointer and hoist reads across a re-entrant JS callback (B-31). It now holds
+`noalias readonly` pointer and hoist reads across a re-entrant JS callback (PORTBUG-1). It now holds
 `RefCell<Core>`, which is not `Freeze`, and every `&mut self` method borrows via `borrow_mut()`
 taken per step and released before the callback runs, so a re-entrant callback never meets an
 outstanding borrow. See `crates/mnemonist-napi/src/cursor.rs`'s `CellCursor`. Full history in the
@@ -215,10 +215,10 @@ log.
 | # | Divergence | Why |
 |---|---|---|
 | — | **Out-of-range members are reproduced, not guarded.** | The opposite call to `static-disjoint-set`, whose bridge raises a `RangeError`. The difference is upstream's behaviour, not a change of mind: there, upstream propagates `NaN` through arithmetic and no honest Rust reproduction exists; here every step is a well-defined read, a truncating store or a dropped store, so the faithful port *is* expressible — and it is cheaper than a guard as well as more useful. |
-| D-09 | **The shrink window is reproduced (Option A), not collapsed.** | `Step` has three states, not two: `Gap` is `{done: false, value: undefined}` and is distinct from `Done`. Reachable in two public calls on this module; falsified below. |
+| DIV-SPARSE-SET-1 | **The shrink window is reproduced (Option A), not collapsed.** | `Step` has three states, not two: `Gap` is `{done: false, value: undefined}` and is distinct from `Done`. Reachable in two public calls on this module; falsified below. |
 | — | **`Yield` is `Either<u32, Undefined>`, not `Option<u32>`.** | It was left open whether napi can express `undefined` in a yield slot. It can, but **not** through `Option`: napi renders `None` as `null`, and `null` is not `undefined` to `deepStrictEqual`. `Either::B(())` is a real `undefined`, which frees `Option` to keep its own meaning — `None` is `{done: true}`. |
-| D-06 | **No collection implements `IntoIterator`.** | It would hand out a fresh iterator per `for` loop and silently restart, where upstream's cursor continues from where it stopped. Collections expose `values()`; the `Cursor` is the stateful thing. |
-| D-07 | **`Symbol.iterator` is installed from Rust, not from the shim.** | The factory half is the one napi does not provide. It runs from napi's module-export hook, driven by a table, so `require('@port/addon').SparseSet` is spreadable on its own. A shim that added semantics would mean the addon was incomplete without the test harness. |
+| DIV-STACK-1 | **No collection implements `IntoIterator`.** | It would hand out a fresh iterator per `for` loop and silently restart, where upstream's cursor continues from where it stopped. Collections expose `values()`; the `Cursor` is the stateful thing. |
+| DIV-STACK-2 | **`Symbol.iterator` is installed from Rust, not from the shim.** | The factory half is the one napi does not provide. It runs from napi's module-export hook, driven by a table, so `require('@port/addon').SparseSet` is spreadable on its own. A shim that added semantics would mean the addon was incomplete without the test harness. |
 | — | **The Rust-side `Iterator` impl skips gaps rather than stopping.** | Rust has no `undefined` to yield, and stopping would turn a shrink into an early end — the exact divergence Option A exists to avoid. Skipping gives a Rust caller the same sequence of *real* elements a JS caller filtering `undefined` would see. The faithful three-way primitive is `step()`; the `Iterator` impl is the convenience built on it. |
 | — | **`add` returns `bool` in core; the bridge returns `this`.** | Core reports whether the member was newly inserted, which upstream exposes only through `size`. The bridge drops it so the JS surface matches exactly. |
 | — | **`dense` and `sparse` are not exposed to JS.** | They are public typed arrays upstream and a JS caller can write *through* them. napi can only hand out a copy of a Rust `Vec`, so exposing them would silently break write-through — worse than their absence. They are exposed in Rust, and the differential fuzzer compares both slot for slot on every op, so the representation is verified rather than merely hidden. |
@@ -250,7 +250,7 @@ therefore the only route to the `undefined` window. Full grammar: evidence file.
 The `$` ops are protocol rather than methods (`fuzz/oracle.js`): `$iter` opens the one cursor each
 side holds, `$next` steps it against whatever the set has become since, and `$spread` is
 `Array.from(set)` — going through the *collection's* `Symbol.iterator` and so constructing a fresh
-cursor every time. `$spread` is kept separate from `$next` on purpose: the factory half of D-07 is
+cursor every time. `$spread` is kept separate from `$next` on purpose: the factory half of DIV-STACK-2 is
 only observable by comparing an op that must restart against one that must not, and folding them
 together would leave every non-interleaved program still passing. This is the first grammar in the
 repo that interleaves cursor stepping with mutation throughout.
@@ -272,7 +272,7 @@ which `usize` cannot express and the core does not model. Disclosed in `fuzz/log
 **The fuzzer was falsified twice, once per half of the grammar, and both sabotages leave the
 original upstream test file green.** Sabotage A treats `delete`'s two swap stores as if they behaved
 alike past capacity — writing `sparse[0]` where upstream writes an expando, the mistake the port
-actually made first (B-10) — and is caught in 1,416 cases (6.6 s), shrunk to seven ops. Sabotage B
+actually made first (BUG-SPARSE-SET-3) — and is caught in 1,416 cases (6.6 s), shrunk to seven ops. Sabotage B
 returns `Step::Done` where the faithful port returns `Step::Gap`, exactly the rejected Option B, and
 is caught in 352 cases (0.3 s), shrunk to two ops. Both were reverted; both seeds are committed with
 provenance in `crates/difffuzz/proptest-regressions/sparse-set.txt`, replayed before any novel case

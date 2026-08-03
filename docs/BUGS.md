@@ -5,6 +5,13 @@ identified by reading its source line by line and by differentially fuzzing it a
 port. Every claim below is independently reproducible: paste the code block into `node` and compare
 against the stated output.
 
+**Bug IDs.** Each defect carries a `BUG-<MODULE>-<n>` tag naming the upstream module it lives in.
+The same tag identifies it in `docs/modules/<module>.md`, which carries the full analysis: how the
+existing test suite missed it, what the port does about it, and which test or fuzz seed pins it.
+So `BUG-BI-MAP-1` below is `BUG-BI-MAP-1` there, and nowhere else. Two related tags appear in the
+module docs but never here: `PORTBUG-n` is a bug in *this port*, not upstream's, and `DIV-<MODULE>-<n>`
+is a deliberate divergence rather than a defect.
+
 **Verification.** Every repro in this document was executed directly, moments before writing it,
 against `mnemonist@0.40.4` and `obliterator@2.0.4` (the exact versions this port targets) on Node
 v24.18.1. Each code block is a transcript of an actual run, not inferred from reading the source
@@ -29,7 +36,7 @@ surprising the mechanism is.
 
 ---
 
-## 1. `SparseMap.delete` moves the key and leaves the value behind
+## 1. [BUG-SPARSE-MAP-1] `SparseMap.delete` moves the key and leaves the value behind
 
 **File:** `sparse-map.js` · **Severity:** silent value corruption, no out-of-range input needed.
 
@@ -74,7 +81,7 @@ swap-with-last on the key/index arrays, leaving the value array's stale slot in 
 
 ---
 
-## 2. `SuffixArray`'s radix sort silently narrows to 8 bits
+## 2. [BUG-SUFFIX-ARRAY-1] `SuffixArray`'s radix sort silently narrows to 8 bits
 
 **File:** `suffix-array.js` · **Severity:** silently wrong output, measured 81% of inputs wrong over
 a realistic distribution.
@@ -111,7 +118,7 @@ computation and inherits the identical narrowing.
 
 ---
 
-## 3. `murmurhash3`'s 32-bit adder is broken, and a swapped constant hides it exactly
+## 3. [BUG-BLOOM-FILTER-1] `murmurhash3`'s 32-bit adder is broken, and a swapped constant hides it exactly
 
 **File:** `utils/murmurhash3.js` · **Severity:** latent — correct today only by numeric coincidence.
 
@@ -169,7 +176,7 @@ alone.
 
 ---
 
-## 4. `SparseSet.add()` past capacity corrupts the set three different ways at once
+## 4. [BUG-SPARSE-SET-1] `SparseSet.add()` past capacity corrupts the set three different ways at once
 
 **File:** `sparse-set.js` · **Severity:** silent corruption plus a broken invariant (`size` can
 exceed `length`).
@@ -219,7 +226,7 @@ and cheaper to implement than adding a guard upstream itself doesn't have.
 
 ---
 
-## 5. `DefaultMap.get` tests the *value*, not the key — an unbounded, self-healing size drift
+## 5. [BUG-DEFAULT-MAP-1] `DefaultMap.get` tests the *value*, not the key — an unbounded, self-healing size drift
 
 **File:** `default-map.js` · **Severity:** silent, unbounded state corruption; masks its own
 evidence.
@@ -277,7 +284,7 @@ which is exactly why it had to be checked against the real behaviour rather than
 
 ---
 
-## 6. A token equal to the trie's own sentinel silently deletes the word it names
+## 6. [BUG-TRIE-MAP-1] A token equal to the trie's own sentinel silently deletes the word it names
 
 **File:** `trie-map.js` (and `trie.js`, same engine) · **Severity:** silent, permanent data loss;
 `size` counts the loss as a gain.
@@ -321,7 +328,7 @@ shared keyspace, so both operations in the sequence above succeed and are indepe
 
 ---
 
-## 7. `LRUCache.setpop` silently drops the eviction report for a falsy evicted key
+## 7. [BUG-LRU-CACHE-1] `LRUCache.setpop` silently drops the eviction report for a falsy evicted key
 
 **File:** `lru-cache.js`, `lru-map.js`, and both `-with-delete` siblings · **Severity:** silent, and
 the trigger (`0`, `''`, `false`, `NaN`, `null`, `undefined` as a key) is realistic production input,
@@ -369,7 +376,7 @@ gating whether the eviction is reported at all.
 
 ---
 
-## 8. `BiMap.clear()` resets only one of its two size counters
+## 8. [BUG-BI-MAP-1] `BiMap.clear()` resets only one of its two size counters
 
 **File:** `bi-map.js` · **Severity:** silent, self-healing counter drift.
 
@@ -412,7 +419,7 @@ eventual port only resyncs on an actual removal, matching upstream's own conditi
 
 ---
 
-## 9. `SuffixArray` loses its DC3 recursion sentinel at specific lengths
+## 9. [BUG-SUFFIX-ARRAY-2] `SuffixArray` loses its DC3 recursion sentinel at specific lengths
 
 **File:** `suffix-array.js` · **Severity:** silently wrong output; 12% of inputs wrong at the
 affected residue class.
@@ -448,7 +455,7 @@ omission.
 
 ---
 
-## 10. `FixedCritBitTreeMap` has no capacity guard at all
+## 10. [BUG-FIXED-CRITBIT-TREE-MAP-2] `FixedCritBitTreeMap` has no capacity guard at all
 
 **File:** `fixed-critbit-tree-map.js` · **Severity:** silent corruption that later becomes a crash
 with a misleading message. Upstream's own source names the gap in a comment.
@@ -495,7 +502,7 @@ would abort the whole Node process instead of throwing a catchable exception.
 
 ---
 
-## 11. A re-entrant `clear()` drives `FibonacciHeap`'s size negative, then crashes the next call —
+## 11. [BUG-FIBONACCI-HEAP-1 / BUG-FIBONACCI-HEAP-3] A re-entrant `clear()` drives `FibonacciHeap`'s size negative, then crashes the next call —
 ## two different ways, from two different methods
 
 **File:** `fibonacci-heap.js` · **Severity:** state corruption (`size` becomes a real, JavaScript-
@@ -565,7 +572,7 @@ reproduced as a Rust panic carrying upstream's exact `TypeError` text.
 
 ---
 
-## 12. `StaticDisjointSet.union` compares the ranks of the *items*, not their *roots*
+## 12. [BUG-STATIC-DISJOINT-SET-1] `StaticDisjointSet.union` compares the ranks of the *items*, not their *roots*
 
 **File:** `static-disjoint-set.js` · **Severity:** the union-by-rank heuristic is silently disabled;
 results stay correct, but `find()` can degrade toward O(n).
@@ -624,57 +631,57 @@ Every row below was independently confirmed against real Node 24.18.1 while prep
 buggy behaviour on purpose; "narrowed" means the port makes the triggering state harder or impossible
 to reach without changing observable behaviour on any input upstream's own tests cover.
 
-| Bug | File | What happens | Port disposition |
-|---|---|---|---|
-| `SparseSet.delete` past capacity | `sparse-set.js` | writes a string-keyed expando (`sparse.undefined`) onto what should be a typed-array index, rather than landing on a numeric index | Reproduced — caught the port's own first draft, which wrote the "obvious" wrong index |
-| `SparseQueueSet.dequeue`'s absence sentinel doesn't fit its own array | `sparse-queue-set.js` | at capacity exactly 256 or 65536, the "member is absent" sentinel truncates to a live slot value, producing a false-positive `has()` that can never be re-enqueued | Reproduced |
-| `SparseQueueSet.enqueue` never checks the ring is full | `sparse-queue-set.js` | one out-of-range `enqueue` silently evicts a legitimately queued member and leaves `size` above `capacity` | Reproduced |
-| `SparseQueueSet` with `capacity === 0` | `sparse-queue-set.js` | modulo-by-zero `NaN` index turns every read/write into a dropped expando write; `start` climbs without bound | Reproduced |
-| `HashedArrayTree.pop` reads the wrong block once more than one block exists | `hashed-array-tree.js` | returns a stale/wrong element and can return the same value twice | Reproduced |
-| `HashedArrayTree`'s bounds guard admits `index === length` | `hashed-array-tree.js` | `get(0)` on a brand-new tree returns `0`, not `undefined`; `set(length, v)` writes without growing `length` | Reproduced |
-| `BitSet`/`BitVector.reset` omits the `>>> 0` that `set`/`flip` apply | `bit-set.js`, `bit-vector.js` | `size` can drift to a negative number after resetting an already-clear high bit | Reproduced |
-| `BitSet`/`BitVector.select` doesn't advance across skipped all-zero words | `bit-set.js`, `bit-vector.js` | answers off by a multiple of 32 whenever a query crosses a zero word | Reproduced |
-| `bitwise.msb32` | `utils/bitwise.js` | reports "no bits set" (`0`) for every 32-bit input with the sign bit set | Reproduced |
-| `bitwise.criticalBit32Mask` | `utils/bitwise.js` | a stray `& 0xffffffff` re-signs its own unsigned result (`criticalBit32Mask(1,2) === -3`) | Reproduced |
-| `BitVector.pop`/`push(0)` | `bit-vector.js` | `pop` never decrements `size`; `push(0)` never clears the released slot, so a popped bit can resurface | Reproduced |
-| `length % 32 \|\| 32` on length zero | `bit-set.js`, `bit-vector.js` | a zero-length `BitVector` with spare capacity iterates 32 phantom bits | Reproduced |
-| `BitSet.set` past `length` but inside the last word | `bit-set.js` | `size` counts a bit that `rank`/`select`/iteration can never see | Reproduced |
-| `binary-search.lowerBoundIndices` defaults `hi` from the wrong array | `utils/binary-search.js` | walks off the end of a shorter `indices` array when `array` is longer | Reproduced |
-| `binary-search.search` with an out-of-range `hi` | `utils/binary-search.js` | reports a "match" at whatever midpoint the bad range computes to | Reproduced |
-| `hash-tables.linearProbing` on a zero-length table | `utils/hash-tables.js` | `get`/`has`/`set` loop forever (a real DoS, confirmed by timeout) | NOT reproduced — a port that hangs on demand is not a behaviour worth carrying; the port guards all three entry points |
-| `hash-tables`: key `0` occupies a slot that still reads as empty | `utils/hash-tables.js` | an entry stored under key `0` is silently overwritten by any later key that collides with slot 0 | Reproduced |
-| `BloomFilter` with zero hash functions | `bloom-filter.js` | `test()` answers `true` for every input, vacuously — the filter accepts, e.g., `errorRate: 0.5` despite its own error message demanding an integer | Reproduced |
-| `BloomFilter` hashes every non-string item identically | `bloom-filter.js` | numbers, booleans and `''` all hash as the empty byte sequence and are indistinguishable in the filter | Reproduced |
-| `BloomFilter` with `errorRate > 1` | `bloom-filter.js` | throws a `RangeError` at large capacity, but silently builds an always-true filter (same root cause as above) at small capacity — same invalid input, two different failure modes depending on an unrelated parameter | Reproduced |
-| `StaticIntervalTree` on zero intervals | `static-interval-tree.js` | crashes three stack frames deep with a `TypeError` naming neither "empty" nor "interval" | Narrowed — the port raises a named `EmptyIntervals` error instead of letting a Rust panic cross the FFI boundary, where it would abort the process rather than throw |
-| `Vector.get`/`set` admit `index === length` | `vector.js` | writes/reads one slot past the logical end without growing `length` | Reproduced |
-| `Vector`'s growth carries a popped slot's stale data forward | `vector.js` | combined with the bug above, a value already `pop()`ped can resurface after the vector grows | Reproduced |
-| Heap: a throwing comparator leaves `size` one behind `items.length` (`push`) | `heap.js` | every later `pop` under-reports by one; `#.consume` over-returns | Reproduced |
-| Heap: `nsmallest`/`nlargest(1, empty-or-typed-source)` | `heap.js` | answers with the internal `Infinity`/`-Infinity` sentinel itself, not "nothing found"; on a typed array the sentinel narrows to a plausible-looking `0` | Reproduced |
-| Heap: an `Infinity`-valued element resets the sentinel | `heap.js` | with a custom comparator, an `Infinity` element can silently overwrite the true answer | Reproduced |
-| `FixedReverseHeap`'s capacity guard is `&&` where `\|\|` was needed | `fixed-reverse-heap.js` | `new FixedReverseHeap(Array, 0)` is accepted and then silently discards every `push` | Reproduced |
-| `FixedReverseHeap#clear` leaves `items` in place | `fixed-reverse-heap.js` | `peek()` after `clear()` returns a discarded item; `consume()`/`toArray()` correctly see it as gone | Reproduced |
-| `MaxHeap.prototype = Heap.prototype` | `heap.js` | `instanceof` cannot distinguish a min-heap from a max-heap; `.constructor` is always `Heap` | Reproduced |
-| `#.consume` zeroes `size` before draining | `heap.js` | a throwing comparator mid-consume leaves the heap reporting empty while still holding items | Reproduced |
-| Heap comparator return values are coerced, never checked | `heap.js` | a comparator returning a `BigInt` sorts correctly; one returning a non-numeric string makes every comparison "equal" silently | Reproduced |
-| A falsy comparator argument silently takes the default | `heap.js`, `fixed-reverse-heap.js` | `new Heap(0)`/`new Heap(null)` are accepted as "use the default"; `new Heap('x')` throws — the type guard only ever sees a truthy non-function | Reproduced |
-| `Heap.nsmallest(cmp, -Infinity, arrayLike)` | `heap.js` | the scan loop's index never advances (`-Infinity + 1 === -Infinity`); hangs forever | NOT reproduced, same reasoning as the hash-tables infinite loop |
-| `sort/insertion.js` declares its loop counter as an undeclared global | `sort/insertion.js` | a comparator that re-enters the sorter mid-comparison (via `valueOf`) corrupts the outer sort's counter; confirmed: `[1, 2, 3, 5]` expected, `[1, 5, 3, 2]` produced | Reproduced |
-| `sort/quick.js`'s partition stack is shared module state | `sort/quick.js` | a re-entrant comparator corrupts a concurrent sort's partition bounds; measured 38 of 40 elements out of order | Reproduced |
-| `X.from(iterable)` calls an `iterables.forEach` that doesn't exist | `fixed-stack.js`, `fixed-deque.js`, `circular-buffer.js` | `FixedStack.from(new Set(...))` throws `TypeError: iterables.forEach is not a function` — the documented "any iterable" API only ever works for arrays and typed arrays | Reproduced |
-| `FixedStack.prototype.forEach` walks capacity, not `size` | `fixed-stack.js` | an under-full stack's callback is invoked `capacity` times, fed unused slots first | Reproduced |
-| `FixedDeque.prototype.get` is bounded by capacity, has no lower bound | `fixed-deque.js`, `circular-buffer.js` | returns already-popped or already-shifted-out elements instead of `undefined` | Reproduced |
-| `X.from` with a `DataView` | `fixed-stack.js`, `fixed-deque.js`, `circular-buffer.js` | `isArrayLike` accepts it via `ArrayBuffer.isView`, but a `DataView` has no `.length` — `size` becomes `undefined` and `toArray()` returns one spurious `undefined` element | Narrowed — a Rust `usize` cannot hold `undefined`, so this specific state is not reachable |
-| `CircularBuffer.from` bypasses its own overwrite semantics | `circular-buffer.js` | can leave `size > capacity` on the one class that exists to prevent that | Reproduced |
-| k-way `merge`/`unionUnique` throw when filtering an empty array out leaves ≥3 arrays | `utils/merge.js` | `merge([], [1,2,3],[4,5,6],[4,7])` throws `TypeError` from a stale cached length | Reproduced (as a named error at the FFI boundary, not a panic) |
-| `lru-map.js`'s own `.from` names the wrong module in its error | `lru-map.js:241` | the thrown message says `mnemonist/lru-cache.from`, not `lru-map.from` | Reproduced |
-| Trie: an open `values`/`prefixes`/`keys`/`entries` walk can still yield a word `delete` just removed | `trie-map.js`, `trie.js` | pruning an ancestor doesn't touch the orphaned node object the walk already holds a live reference to | Not reproduced — the port's walk re-navigates from the root by token path rather than holding a live object reference, a documented structural divergence forced by the FFI boundary |
-| `InvertedIndex.prototype.forEach` never calls its callback | `inverted-index.js` | `this.documents` inside `forEach` refers to the zero-argument method, not the `items` property — `.length` is always `0` | Reproduced |
-| `LinkedList.prototype.shift` never updates `tail` | `linked-list.js` | emptying a list via `shift()` leaves `last()` returning the just-removed item until the next insert | Reproduced |
-| `DefaultWeakMap.prototype.get` tests the value, not key presence | `default-weak-map.js` | the factory re-runs on every `get` of a key whose stored value is `undefined`, even though `has()` correctly reports it present | Reproduced |
-| `FixedCritBitTreeMap.root` is `0` fresh off the constructor, `null` after `clear()` | `fixed-critbit-tree-map.js` | two different JS values both mean "empty tree," assigned by two places that never agree; behaviourally unobservable except by reading `.root` directly | Reproduced |
-| `forEach` on a truthy primitive dies inside the `in` operator | `obliterator/foreach.js` | `forEach(5, cb)` throws `TypeError: Cannot use 'in' operator to search for 'Symbol(Symbol.iterator)' in 5` — a caller sees an error naming V8's operator, not the library | Reproduced |
-| `toArray` produces a sparse array when its length guess is wrong | `mnemonist/utils/iterables.js` | `toArray({length: 5})` returns `[5, <4 empty items>]` — the plain-object `forEach` branch enumerates `length` itself as a property | Reproduced |
+| ID | Bug | File | What happens | Port disposition |
+|---|---|---|---|---|
+| `BUG-SPARSE-SET-3` | `SparseSet.delete` past capacity | `sparse-set.js` | writes a string-keyed expando (`sparse.undefined`) onto what should be a typed-array index, rather than landing on a numeric index | Reproduced — caught the port's own first draft, which wrote the "obvious" wrong index |
+| `BUG-SPARSE-QUEUE-SET-1` | `SparseQueueSet.dequeue`'s absence sentinel doesn't fit its own array | `sparse-queue-set.js` | at capacity exactly 256 or 65536, the "member is absent" sentinel truncates to a live slot value, producing a false-positive `has()` that can never be re-enqueued | Reproduced |
+| `BUG-SPARSE-QUEUE-SET-2` | `SparseQueueSet.enqueue` never checks the ring is full | `sparse-queue-set.js` | one out-of-range `enqueue` silently evicts a legitimately queued member and leaves `size` above `capacity` | Reproduced |
+| `BUG-SPARSE-QUEUE-SET-3` | `SparseQueueSet` with `capacity === 0` | `sparse-queue-set.js` | modulo-by-zero `NaN` index turns every read/write into a dropped expando write; `start` climbs without bound | Reproduced |
+| `BUG-HASHED-ARRAY-TREE-1` | `HashedArrayTree.pop` reads the wrong block once more than one block exists | `hashed-array-tree.js` | returns a stale/wrong element and can return the same value twice | Reproduced |
+| `BUG-HASHED-ARRAY-TREE-2` | `HashedArrayTree`'s bounds guard admits `index === length` | `hashed-array-tree.js` | `get(0)` on a brand-new tree returns `0`, not `undefined`; `set(length, v)` writes without growing `length` | Reproduced |
+| `BUG-BIT-SET-1` | `BitSet`/`BitVector.reset` omits the `>>> 0` that `set`/`flip` apply | `bit-set.js`, `bit-vector.js` | `size` can drift to a negative number after resetting an already-clear high bit | Reproduced |
+| `BUG-BIT-SET-2` | `BitSet`/`BitVector.select` doesn't advance across skipped all-zero words | `bit-set.js`, `bit-vector.js` | answers off by a multiple of 32 whenever a query crosses a zero word | Reproduced |
+| `BUG-UTILS-BITWISE-1` | `bitwise.msb32` | `utils/bitwise.js` | reports "no bits set" (`0`) for every 32-bit input with the sign bit set | Reproduced |
+| `BUG-UTILS-BITWISE-2` | `bitwise.criticalBit32Mask` | `utils/bitwise.js` | a stray `& 0xffffffff` re-signs its own unsigned result (`criticalBit32Mask(1,2) === -3`) | Reproduced |
+| `BUG-BIT-VECTOR-1` | `BitVector.pop`/`push(0)` | `bit-vector.js` | `pop` never decrements `size`; `push(0)` never clears the released slot, so a popped bit can resurface | Reproduced |
+| `BUG-BIT-VECTOR-2` | `length % 32 \|\| 32` on length zero | `bit-set.js`, `bit-vector.js` | a zero-length `BitVector` with spare capacity iterates 32 phantom bits | Reproduced |
+| `BUG-BIT-SET-3` | `BitSet.set` past `length` but inside the last word | `bit-set.js` | `size` counts a bit that `rank`/`select`/iteration can never see | Reproduced |
+| `BUG-UTILS-BINARY-SEARCH-1` | `binary-search.lowerBoundIndices` defaults `hi` from the wrong array | `utils/binary-search.js` | walks off the end of a shorter `indices` array when `array` is longer | Reproduced |
+| `BUG-UTILS-BINARY-SEARCH-2` | `binary-search.search` with an out-of-range `hi` | `utils/binary-search.js` | reports a "match" at whatever midpoint the bad range computes to | Reproduced |
+| `BUG-UTILS-HASH-TABLES-1` | `hash-tables.linearProbing` on a zero-length table | `utils/hash-tables.js` | `get`/`has`/`set` loop forever (a real DoS, confirmed by timeout) | NOT reproduced — a port that hangs on demand is not a behaviour worth carrying; the port guards all three entry points |
+| `BUG-UTILS-HASH-TABLES-2` | `hash-tables`: key `0` occupies a slot that still reads as empty | `utils/hash-tables.js` | an entry stored under key `0` is silently overwritten by any later key that collides with slot 0 | Reproduced |
+| `BUG-BLOOM-FILTER-2` | `BloomFilter` with zero hash functions | `bloom-filter.js` | `test()` answers `true` for every input, vacuously — the filter accepts, e.g., `errorRate: 0.5` despite its own error message demanding an integer | Reproduced |
+| `BUG-BLOOM-FILTER-3` | `BloomFilter` hashes every non-string item identically | `bloom-filter.js` | numbers, booleans and `''` all hash as the empty byte sequence and are indistinguishable in the filter | Reproduced |
+| `BUG-BLOOM-FILTER-4` | `BloomFilter` with `errorRate > 1` | `bloom-filter.js` | throws a `RangeError` at large capacity, but silently builds an always-true filter (same root cause as above) at small capacity — same invalid input, two different failure modes depending on an unrelated parameter | Reproduced |
+| `BUG-STATIC-INTERVAL-TREE-1` | `StaticIntervalTree` on zero intervals | `static-interval-tree.js` | crashes three stack frames deep with a `TypeError` naming neither "empty" nor "interval" | Narrowed — the port raises a named `EmptyIntervals` error instead of letting a Rust panic cross the FFI boundary, where it would abort the process rather than throw |
+| `BUG-VECTOR-1` | `Vector.get`/`set` admit `index === length` | `vector.js` | writes/reads one slot past the logical end without growing `length` | Reproduced |
+| `BUG-VECTOR-2` | `Vector`'s growth carries a popped slot's stale data forward | `vector.js` | combined with the bug above, a value already `pop()`ped can resurface after the vector grows | Reproduced |
+| `BUG-HEAP-1` | Heap: a throwing comparator leaves `size` one behind `items.length` (`push`) | `heap.js` | every later `pop` under-reports by one; `#.consume` over-returns | Reproduced |
+| `BUG-HEAP-2` | Heap: `nsmallest`/`nlargest(1, empty-or-typed-source)` | `heap.js` | answers with the internal `Infinity`/`-Infinity` sentinel itself, not "nothing found"; on a typed array the sentinel narrows to a plausible-looking `0` | Reproduced |
+| `BUG-HEAP-3` | Heap: an `Infinity`-valued element resets the sentinel | `heap.js` | with a custom comparator, an `Infinity` element can silently overwrite the true answer | Reproduced |
+| `BUG-FIXED-REVERSE-HEAP-1` | `FixedReverseHeap`'s capacity guard is `&&` where `\|\|` was needed | `fixed-reverse-heap.js` | `new FixedReverseHeap(Array, 0)` is accepted and then silently discards every `push` | Reproduced |
+| `BUG-FIXED-REVERSE-HEAP-2` | `FixedReverseHeap#clear` leaves `items` in place | `fixed-reverse-heap.js` | `peek()` after `clear()` returns a discarded item; `consume()`/`toArray()` correctly see it as gone | Reproduced |
+| `BUG-HEAP-4` | `MaxHeap.prototype = Heap.prototype` | `heap.js` | `instanceof` cannot distinguish a min-heap from a max-heap; `.constructor` is always `Heap` | Reproduced |
+| `BUG-HEAP-6` | `#.consume` zeroes `size` before draining | `heap.js` | a throwing comparator mid-consume leaves the heap reporting empty while still holding items | Reproduced |
+| `BUG-HEAP-7` | Heap comparator return values are coerced, never checked | `heap.js` | a comparator returning a `BigInt` sorts correctly; one returning a non-numeric string makes every comparison "equal" silently | Reproduced |
+| `BUG-HEAP-8` | A falsy comparator argument silently takes the default | `heap.js`, `fixed-reverse-heap.js` | `new Heap(0)`/`new Heap(null)` are accepted as "use the default"; `new Heap('x')` throws — the type guard only ever sees a truthy non-function | Reproduced |
+| `BUG-HEAP-9` | `Heap.nsmallest(cmp, -Infinity, arrayLike)` | `heap.js` | the scan loop's index never advances (`-Infinity + 1 === -Infinity`); hangs forever | NOT reproduced, same reasoning as the hash-tables infinite loop |
+| `BUG-SORT-1` | `sort/insertion.js` declares its loop counter as an undeclared global | `sort/insertion.js` | a comparator that re-enters the sorter mid-comparison (via `valueOf`) corrupts the outer sort's counter; confirmed: `[1, 2, 3, 5]` expected, `[1, 5, 3, 2]` produced | Reproduced |
+| `BUG-SORT-2` | `sort/quick.js`'s partition stack is shared module state | `sort/quick.js` | a re-entrant comparator corrupts a concurrent sort's partition bounds; measured 38 of 40 elements out of order | Reproduced |
+| `BUG-UTILS-ITERABLES-2` | `X.from(iterable)` calls an `iterables.forEach` that doesn't exist | `fixed-stack.js`, `fixed-deque.js`, `circular-buffer.js` | `FixedStack.from(new Set(...))` throws `TypeError: iterables.forEach is not a function` — the documented "any iterable" API only ever works for arrays and typed arrays | Reproduced |
+| `BUG-FIXED-STACK-1` | `FixedStack.prototype.forEach` walks capacity, not `size` | `fixed-stack.js` | an under-full stack's callback is invoked `capacity` times, fed unused slots first | Reproduced |
+| `BUG-CIRCULAR-BUFFER-1` | `FixedDeque.prototype.get` is bounded by capacity, has no lower bound | `fixed-deque.js`, `circular-buffer.js` | returns already-popped or already-shifted-out elements instead of `undefined` | Reproduced |
+| `BUG-FIXED-STACK-2` | `X.from` with a `DataView` | `fixed-stack.js`, `fixed-deque.js`, `circular-buffer.js` | `isArrayLike` accepts it via `ArrayBuffer.isView`, but a `DataView` has no `.length` — `size` becomes `undefined` and `toArray()` returns one spurious `undefined` element | Narrowed — a Rust `usize` cannot hold `undefined`, so this specific state is not reachable |
+| `BUG-UTILS-ITERABLES-2` | `CircularBuffer.from` bypasses its own overwrite semantics | `circular-buffer.js` | can leave `size > capacity` on the one class that exists to prevent that | Reproduced |
+| `BUG-UTILS-1` | k-way `merge`/`unionUnique` throw when filtering an empty array out leaves ≥3 arrays | `utils/merge.js` | `merge([], [1,2,3],[4,5,6],[4,7])` throws `TypeError` from a stale cached length | Reproduced (as a named error at the FFI boundary, not a panic) |
+| `BUG-LRU-CACHE-2` | `lru-map.js`'s own `.from` names the wrong module in its error | `lru-map.js:241` | the thrown message says `mnemonist/lru-cache.from`, not `lru-map.from` | Reproduced |
+| `BUG-TRIE-MAP-2` | Trie: an open `values`/`prefixes`/`keys`/`entries` walk can still yield a word `delete` just removed | `trie-map.js`, `trie.js` | pruning an ancestor doesn't touch the orphaned node object the walk already holds a live reference to | Not reproduced — the port's walk re-navigates from the root by token path rather than holding a live object reference, a documented structural divergence forced by the FFI boundary |
+| `BUG-INVERTED-INDEX-1` | `InvertedIndex.prototype.forEach` never calls its callback | `inverted-index.js` | `this.documents` inside `forEach` refers to the zero-argument method, not the `items` property — `.length` is always `0` | Reproduced |
+| `BUG-LINKED-LIST-1` | `LinkedList.prototype.shift` never updates `tail` | `linked-list.js` | emptying a list via `shift()` leaves `last()` returning the just-removed item until the next insert | Reproduced |
+| `BUG-DEFAULT-WEAK-MAP-1` | `DefaultWeakMap.prototype.get` tests the value, not key presence | `default-weak-map.js` | the factory re-runs on every `get` of a key whose stored value is `undefined`, even though `has()` correctly reports it present | Reproduced |
+| `BUG-FIXED-CRITBIT-TREE-MAP-1` | `FixedCritBitTreeMap.root` is `0` fresh off the constructor, `null` after `clear()` | `fixed-critbit-tree-map.js` | two different JS values both mean "empty tree," assigned by two places that never agree; behaviourally unobservable except by reading `.root` directly | Reproduced |
+| `BUG-STACK-1` | `forEach` on a truthy primitive dies inside the `in` operator | `obliterator/foreach.js` | `forEach(5, cb)` throws `TypeError: Cannot use 'in' operator to search for 'Symbol(Symbol.iterator)' in 5` — a caller sees an error naming V8's operator, not the library | Reproduced |
+| `BUG-UTILS-ITERABLES-1` | `toArray` produces a sparse array when its length guess is wrong | `mnemonist/utils/iterables.js` | `toArray({length: 5})` returns `[5, <4 empty items>]` — the plain-object `forEach` branch enumerates `length` itself as a property | Reproduced |
 
 ---
 

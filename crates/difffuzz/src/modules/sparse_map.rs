@@ -23,7 +23,7 @@
 //!
 //! `size`, `length`, `dense`, `sparse` **and `vals`**. All three arrays are
 //! public properties upstream. `vals` is the one that matters most here:
-//! `delete` moves the key and deliberately leaves the value behind (B-11), so a
+//! `delete` moves the key and deliberately leaves the value behind (BUG-SPARSE-MAP-1), so a
 //! port that "tidied that up" would still agree on `size`, on `dense`, on
 //! `sparse` and on every `has` — and disagree only on `get` and on `vals`
 //! itself. Comparing the array directly is what makes the defect checkable

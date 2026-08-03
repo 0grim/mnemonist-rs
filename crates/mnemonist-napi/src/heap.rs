@@ -10,7 +10,7 @@
 //!    copy-in/copy-out design that is not a different function. See
 //!    [`crate::js_array`].
 //! 2. **The core structure is held in a [`RefCell`], and only ever
-//!    `borrow()`ed.** D-43's reason applies unchanged — a `&self` on a `Freeze`
+//!    `borrow()`ed.** DIV-STACK-5's reason applies unchanged — a `&self` on a `Freeze`
 //!    type is `noalias readonly` and JavaScript mutates this object from inside
 //!    a callback. What is *new* here is that the callback is a **comparator**,
 //!    running in the middle of a sift, so `borrow_mut()` would deadlock against
@@ -18,7 +18,7 @@
 //!    shared borrows below nest safely when a comparator re-enters.
 //! 3. **`MaxHeap` is installed as JavaScript.** Upstream's is
 //!    `MaxHeap.prototype = Heap.prototype`, which makes every `Heap` an
-//!    `instanceof MaxHeap` and vice versa (NOTES B-75). A second `#[napi]` class
+//!    `instanceof MaxHeap` and vice versa (NOTES BUG-HEAP-4). A second `#[napi]` class
 //!    would have its own prototype and would quietly *fix* that, so `MaxHeap` is
 //!    upstream's four lines, evaluated once at load — the same call
 //!    [`crate::statics`] makes for `X.of`.

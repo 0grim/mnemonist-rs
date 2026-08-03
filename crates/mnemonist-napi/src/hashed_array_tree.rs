@@ -118,7 +118,7 @@ impl JsHashedArrayTree {
     /// `undefined` past `length`; see the core docs for why `index == length`
     /// is not past it.
     ///
-    /// `Either<u32, Undefined>` rather than `Option<u32>` — D-39, which this
+    /// `Either<u32, Undefined>` rather than `Option<u32>` — DIV-FIXED-STACK-1, which this
     /// module re-learned the hard way: napi renders `None` as `null`, and
     /// `assert.strictEqual(array.get(2), undefined)` fails against `null`.
     #[napi]
@@ -155,7 +155,7 @@ impl JsHashedArrayTree {
     }
 }
 
-/// A missing value as JS `undefined`, never as `null`. See D-39.
+/// A missing value as JS `undefined`, never as `null`. See DIV-FIXED-STACK-1.
 fn maybe(value: Option<u32>) -> Either<u32, Undefined> {
     match value {
         Some(value) => Either::A(value),

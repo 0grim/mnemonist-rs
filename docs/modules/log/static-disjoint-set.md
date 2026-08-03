@@ -45,7 +45,7 @@ footprint: 4e6 items meant 16 MB + 16 MB = 32 MB of structure against upstream's
 20 MB, straddling this CPU's 32 MB L3. If that were the mechanism, resident memory should have
 dropped by ~12 MB. **It did not: `structure_rss_delta_mb` moved 12.8 → 13.0.**
 
-The reason is that `ranks` is `vec![0; n]` and, because of the rank bug (B-7), almost every entry is
+The reason is that `ranks` is `vec![0; n]` and, because of the rank bug (BUG-STATIC-DISJOINT-SET-1), almost every entry is
 *never written* — only roots are ever bumped. Linux does not fault in untouched zero pages, so the
 extra 12 MB was never resident and never appeared in RSS in the first place. The footprint argument
 was measuring something that did not exist. **Verdict: refuted.**

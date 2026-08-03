@@ -37,9 +37,9 @@ Characterising the shape of that coverage:
   the bridge had to solve `ArrayClass` properly rather than whitelisting one width.
 * **The `forEach` block builds a capacity-3 stack and pushes exactly three items.** This is the
   single shape in which `items.length === size`, and it is the only shape the file's `forEach`
-  coverage takes. See B-61.
+  coverage takes. See BUG-FIXED-STACK-1.
 * **Every `from` call passes an array or a typed array.** The other branch of `from` is never
-  reached. See B-60.
+  reached. See BUG-UTILS-ITERABLES-2.
 * **No `from` call is oversized.** `capacity` is always ≥ the iterable's length, so `size` never
   runs past the array.
 * **Iterators are drained immediately.** `iterator.next()` four times in a row, with no mutation in
@@ -56,7 +56,7 @@ and never exercised by the original suite.
 
 1. **`forEach` on a stack that is not exactly full is never called.** Its loop bound is
    `this.items.length`, not `this.size`, so an under-full stack invokes the callback *capacity*
-   times and the first `capacity - size` calls receive unused slots. See B-61. The one block that
+   times and the first `capacity - size` calls receive unused slots. See BUG-FIXED-STACK-1. The one block that
    calls `forEach` builds `size === capacity`, where the defect is invisible.
 2. **`forEach` on an empty stack is never called** — which on a capacity-5 stack means five
    callback invocations, all with `undefined`.
@@ -70,7 +70,7 @@ and never exercised by the original suite.
 **`from` — the branch that cannot work**
 
 6. **`from` is never called with a non-array-like iterable.** A `Set`, a `Map`, a generator or a
-   string all reach `iterables.forEach`, which **does not exist**. See B-60. This is a `TypeError`
+   string all reach `iterables.forEach`, which **does not exist**. See BUG-UTILS-ITERABLES-2. This is a `TypeError`
    on every version of the library that has this file.
 7. **`from` is never called with an iterable longer than the capacity**, which is the only way
    `size` runs past the backing array, and it behaves *differently per array class*.
@@ -99,9 +99,9 @@ and never exercised by the original suite.
 
 **Iteration**
 
-16. **A cursor is never re-drained**, so the non-restartability of D-06 is unobserved.
+16. **A cursor is never re-drained**, so the non-restartability of DIV-STACK-1 is unobserved.
 17. **`[...stack]` is never used.** The suite reaches the cursor through `values()`, `entries()` and
-    one `for…of`, so the *factory* half of D-07 has coverage only through the `for…of`.
+    one `for…of`, so the *factory* half of DIV-STACK-2 has coverage only through the `for…of`.
 18. **Mutation during iteration is never performed**, so neither half of the hybrid capture — the
     frozen length, the live elements — is tested. See `docs/modules/sparse-set.md`, which states it
     in full.
@@ -124,17 +124,17 @@ file.
 reduces to, which is what gaps 7 and 13 turn on.
 
 `tests/boundary/iterables.js` — 19 specs for the `utils/iterables` half of the closure, which has
-**no upstream test file at all**: `guessLength`'s refusal to validate, `toArray`'s holes (B-2),
+**no upstream test file at all**: `guessLength`'s refusal to validate, `toArray`'s holes (BUG-UTILS-ITERABLES-1),
 `isArrayLike` saying no to `{length: 2}`, and `getPointerArray` throwing before `new Array(l)` does.
 
 **Differential probes against the vendored upstream**, 28 cases, recorded because they are the
-evidence for the bridge half and are not otherwise visible: B-60 for `Set` and for a string; B-61
+evidence for the bridge half and are not otherwise visible: BUG-UTILS-ITERABLES-2 for `Set` and for a string; BUG-FIXED-STACK-1
 for both classes; coercion for `Uint8Array`/`Int8Array`/`Float64Array`; `toArray`'s class;
 oversized `from` for both classes; all five constructor error paths; `toString`; `toJSON`;
 `[...s]` twice; a cursor re-drained; `break` then `next()`; a mutating `forEach`; `from` on a
-`DataView` (the one disagreement, D-66/B-63); and `new FixedStack(Object, 3)` — where upstream
+`DataView` (the one disagreement, DIV-FIXED-STACK-7/BUG-FIXED-STACK-2); and `new FixedStack(Object, 3)` — where upstream
 produces a `Number` object carrying a `'0'` property, and so does the port. All agree except the
-`DataView` case, which is D-66. Full case list: evidence file.
+`DataView` case, which is DIV-FIXED-STACK-7. Full case list: evidence file.
 
 **Still untested, stated rather than glossed:** gap 21 (`inspect`, not ported — a Node display
 convenience with no upstream assertion), gap 4 in its `arguments.length` form (see the divergence
@@ -142,7 +142,7 @@ table), and gap 15 for typed classes, which is a deliberate divergence rather th
 
 ## Bugs this found
 
-**B-60 — `X.from(iterable, ...)` calls `iterables.forEach`, which does not exist.**
+**BUG-UTILS-ITERABLES-2 — `X.from(iterable, ...)` calls `iterables.forEach`, which does not exist.**
 Verified against Node 24.18.1. `utils/iterables.js` exports exactly four functions —
 `isArrayLike`, `guessLength`, `toArray`, `toArrayWithIndices` — and no `forEach`. All three
 fixed-capacity modules end their `from` static with
@@ -165,10 +165,10 @@ array-like fast path and returns before the last line. The fix upstream would be
 `iterables.forEach` → the `obliterator/foreach` these files already have a sibling of — which is
 what makes the age of the defect notable: the branch has never run.
 
-Reproduced rather than repaired (D-64). A port that quietly made it work would pass every upstream
+Reproduced rather than repaired (DIV-FIXED-STACK-6). A port that quietly made it work would pass every upstream
 test and be a different library.
 
-**B-61 — `FixedStack.prototype.forEach` walks `items.length`, not `this.size`.**
+**BUG-FIXED-STACK-1 — `FixedStack.prototype.forEach` walks `items.length`, not `this.size`.**
 Verified against Node 24.18.1. Every other method in the file is written against
 `this.size`; `forEach` alone is written against the array's length, which is the capacity:
 
@@ -197,7 +197,7 @@ writing `self.size` — **stays green through the entire original suite**. It wa
 cases once the grammar had a `forEach` op, and by two native tests written from the source rather
 than from the tests.
 
-**B-63 — `from` assigns `size` from `iterable.length` without checking it is a number.**
+**BUG-FIXED-STACK-2 — `from` assigns `size` from `iterable.length` without checking it is a number.**
 Verified against Node 24.18.1. The array-like branch of the shared `from` ends with
 
 ```js
@@ -225,7 +225,7 @@ A `DataView` is the only reachable input: every value `Array.isArray` accepts ha
 
 Found by probing the port against upstream, not by reading, and it is the one place among the three
 fixed-capacity modules where the port does *not* reproduce upstream: a `usize` cannot hold `undefined`, and a structure
-whose `size` is `undefined` poisons every method downstream. See D-66.
+whose `size` is `undefined` poisons every method downstream. See DIV-FIXED-STACK-7.
 
 **What the fuzzer found: nothing new.** 2.81 M operations, zero divergences. That is the expected
 outcome: a faithful port reproduces upstream's bugs, so differential fuzzing structurally
@@ -237,20 +237,20 @@ than the original suite by a wide margin — see "Fuzz + bench".
 
 | # | Divergence | Why |
 |---|---|---|
-| D-60 | **`toArray`'s sparse-array behaviour is reproduced, not fixed**. | The array is really allocated by calling the realm's own `Array` constructor, so an overstated `guessLength` leaves real holes and an invalid one throws V8's own `RangeError`. `napi_create_array_with_length` would have differed on both. |
-| D-61 | **An omitted argument and an explicit `undefined` are the same thing.** | napi generates `CallbackInfo::new(.., None, ..)`, so it does not enforce arity and a missing argument arrives as `undefined`. `new FixedStack(Array, undefined)` therefore raises upstream's *arity* error where upstream raises its *capacity* error. `null` is distinguished correctly — the parameters are `Unknown`, not `Option<Unknown>`, precisely because napi maps `null` to `None` and `new FixedStack(Array, null)` must throw about the number. |
-| D-62 | **A fractional, `NaN` or infinite capacity always raises `RangeError: Invalid array length`.** | Upstream passes the raw number to the class and lets it decide, so `new FixedStack(Array, 2.5)` throws while `new FixedStack(Uint8Array, 2.5)` succeeds with `capacity === 2.5` against an `items.length` of 2 — after which the wrap arithmetic compares indices against 2.5. The port requires an integral capacity and raises the `Array` form for every class. The `Array` case is exact; the typed case is the divergence. |
-| D-63 | **The array class is probed, not listed.** | Coercion is `scratch[0] = v; scratch[0]` through a real one-element instance of the caller's class, and the backing is decided by `0 in new ArrayClass(1)`. That is exact for every array class, including ones nobody has written yet, where a name whitelist (the `hashed-array-tree` approach) diverges for nine of the twelve built-in typed arrays. **Cost, stated:** two extra one-element constructions of the caller's class per structure, invisible for `Array` and the typed arrays and observable for a constructor with side effects. |
-| D-66 | **`from` on a `DataView` gives `size === 0`, not `size === undefined`.** | B-63, and the one behaviour among the three fixed-capacity modules the port does not reproduce. Upstream assigns `size` from `iterable.length` without a type check, and a `DataView` passes `isArrayLike` while having no `.length` — so upstream produces a structure whose `size` is `undefined` and whose every later method is arithmetic on `NaN`. A `usize` cannot hold that, and the rule "reproduce where reproducible, raise where not" leaves a choice between two inexact answers. `0` was chosen over a throw because *nothing was copied* is true and upstream does not throw either; a `RangeError` would break a caller upstream does not break. Reachable only through `X.from(dataView, ArrayClass, capacity)` — with no capacity, `guessLength` throws first. |
-| D-64 | **B-60 is reproduced.** | See above. The `TypeError` is raised with V8's exact wording, from the same point in the sequence — after `guessLength`, after the capacity guards, after `isArrayLike` says no. |
+| DIV-FIXED-STACK-2 | **`toArray`'s sparse-array behaviour is reproduced, not fixed**. | The array is really allocated by calling the realm's own `Array` constructor, so an overstated `guessLength` leaves real holes and an invalid one throws V8's own `RangeError`. `napi_create_array_with_length` would have differed on both. |
+| DIV-FIXED-STACK-3 | **An omitted argument and an explicit `undefined` are the same thing.** | napi generates `CallbackInfo::new(.., None, ..)`, so it does not enforce arity and a missing argument arrives as `undefined`. `new FixedStack(Array, undefined)` therefore raises upstream's *arity* error where upstream raises its *capacity* error. `null` is distinguished correctly — the parameters are `Unknown`, not `Option<Unknown>`, precisely because napi maps `null` to `None` and `new FixedStack(Array, null)` must throw about the number. |
+| DIV-FIXED-STACK-4 | **A fractional, `NaN` or infinite capacity always raises `RangeError: Invalid array length`.** | Upstream passes the raw number to the class and lets it decide, so `new FixedStack(Array, 2.5)` throws while `new FixedStack(Uint8Array, 2.5)` succeeds with `capacity === 2.5` against an `items.length` of 2 — after which the wrap arithmetic compares indices against 2.5. The port requires an integral capacity and raises the `Array` form for every class. The `Array` case is exact; the typed case is the divergence. |
+| DIV-FIXED-STACK-5 | **The array class is probed, not listed.** | Coercion is `scratch[0] = v; scratch[0]` through a real one-element instance of the caller's class, and the backing is decided by `0 in new ArrayClass(1)`. That is exact for every array class, including ones nobody has written yet, where a name whitelist (the `hashed-array-tree` approach) diverges for nine of the twelve built-in typed arrays. **Cost, stated:** two extra one-element constructions of the caller's class per structure, invisible for `Array` and the typed arrays and observable for a constructor with side effects. |
+| DIV-FIXED-STACK-7 | **`from` on a `DataView` gives `size === 0`, not `size === undefined`.** | BUG-FIXED-STACK-2, and the one behaviour among the three fixed-capacity modules the port does not reproduce. Upstream assigns `size` from `iterable.length` without a type check, and a `DataView` passes `isArrayLike` while having no `.length` — so upstream produces a structure whose `size` is `undefined` and whose every later method is arithmetic on `NaN`. A `usize` cannot hold that, and the rule "reproduce where reproducible, raise where not" leaves a choice between two inexact answers. `0` was chosen over a throw because *nothing was copied* is true and upstream does not throw either; a `RangeError` would break a caller upstream does not break. Reachable only through `X.from(dataView, ArrayClass, capacity)` — with no capacity, `guessLength` throws first. |
+| DIV-FIXED-STACK-6 | **BUG-UTILS-ITERABLES-2 is reproduced.** | See above. The `TypeError` is raised with V8's exact wording, from the same point in the sequence — after `guessLength`, after the capacity guards, after `isArrayLike` says no. |
 | — | **`items` is not exposed to JS.** | It is a public property upstream and a JS caller can write *through* it; napi can only hand out a copy, which would silently break the write-through. Same call as the `SparseSet` and `HashedArrayTree` bridges. It is exposed in Rust, and the differential fuzzer compares it slot for slot after every operation. |
 | — | **`toArray()`'s hole-vs-`undefined` distinction is the fast path's.** | Upstream writes every index of the result explicitly, so a missing slot is an own `undefined` property rather than a hole; the port leaves it unwritten, which is a hole in an `Array` and the class zero in a typed array. The two differ only under `in`/`hasOwnProperty`, and for `FixedStack` the case is unreachable anyway — every index below `size` that a plain `Array` can hold has been written. Reachable for `FixedDeque`, where it is the same call. |
-| — | **`capacity` is a `usize` in core.** | Upstream's `capacity` is a JS number and can be non-integral (D-62). The bridge refuses that, so the core type is exact for everything the bridge admits. |
+| — | **`capacity` is a `usize` in core.** | Upstream's `capacity` is a JS number and can be non-integral (DIV-FIXED-STACK-4). The bridge refuses that, so the core type is exact for everything the bridge admits. |
 | — | **A huge capacity really allocates.** | `new Array(1e9)` upstream is a cheap hole array; the port allocates `1e9` slots. No test or benchmark reaches it, and a lazy representation would complicate `Backing` for a case upstream's own `items` property makes visible anyway. Stated, not fixed. |
-| D-06 | **No collection implements `IntoIterator`.** | It would hand out a fresh iterator per `for` loop and silently restart, where upstream's cursor continues from where it stopped. |
-| D-07 | **`Symbol.iterator` is installed from Rust, not from the shim.** | The factory half is the one napi does not provide. `require('@port/addon').FixedStack` is spreadable on its own. |
-| D-39 | **`Yield` is `Either<JsSlot, Undefined>`, not `Option<JsSlot>`.** | napi renders `None` as `null`, and the shrink window needs a real `undefined`. |
-| D-43 | **`inner` is a `RefCell` from the first commit.** | `&self` on a `Freeze` type is `noalias readonly` to LLVM, which hoisted a read out of exactly this kind of loop once before (B-31). `forEach` here re-reads the array on every step and a callback may mutate, so the hazard is live in this module rather than hypothetical. |
+| DIV-STACK-1 | **No collection implements `IntoIterator`.** | It would hand out a fresh iterator per `for` loop and silently restart, where upstream's cursor continues from where it stopped. |
+| DIV-STACK-2 | **`Symbol.iterator` is installed from Rust, not from the shim.** | The factory half is the one napi does not provide. `require('@port/addon').FixedStack` is spreadable on its own. |
+| DIV-FIXED-STACK-1 | **`Yield` is `Either<JsSlot, Undefined>`, not `Option<JsSlot>`.** | napi renders `None` as `null`, and the shrink window needs a real `undefined`. |
+| DIV-STACK-5 | **`inner` is a `RefCell` from the first commit.** | `&self` on a `Freeze` type is `noalias readonly` to LLVM, which hoisted a read out of exactly this kind of loop once before (PORTBUG-1). `forEach` here re-reads the array on every step and a callback may mutate, so the hazard is live in this module rather than hypothetical. |
 | — | **`inspect()` is not ported.** | A Node display convenience with no upstream assertion and no Rust equivalent. |
 | — | **`forEach(cb, undefined)` binds `this` to the stack.** | Upstream keys off `arguments.length > 1`, which napi's typed signature cannot see. The omitted case — the only one the original suite uses — is exact, and passing a real scope object is exact. |
 
@@ -279,14 +279,14 @@ evidence file.
 predecessors.** Every earlier grammar drives iteration through `$iter`/`$next`, which is enough for
 an obliterator *cursor* — a cursor freezes its state at creation. It is not enough for
 `#.forEach`, which freezes only its loop bound and re-reads the backing array on every step, so a
-callback that mutates the collection is visible to the reads after it. **B-31, this port's own
+callback that mutates the collection is visible to the reads after it. **PORTBUG-1, this port's own
 worst bug, was reachable only through a mutating `forEach` and survived 2.94 M operations because
 no grammar had one.** The op takes a nullary non-throwing mutation and the callback index to fire
 it at, and both sides record `[index, value, this === self]` per invocation.
 
 **The fuzzer was falsified twice, once per half of the grammar, and both leave the original upstream
 suite green.** Sabotage A makes `items_len()` return `self.size` — the tidy-up a naive port makes on
-noticing B-61 — caught in 57 cases (0.0 s), shrunk to two lines. Sabotage B makes `Sequence::freeze`
+noticing BUG-FIXED-STACK-1 — caught in 57 cases (0.0 s), shrunk to two lines. Sabotage B makes `Sequence::freeze`
 capture `items.len()` instead of `self.size`, the mirror-image mistake, also caught in 57 cases
 (0.0 s). Both reverted; seed A is committed with provenance in
 `crates/difffuzz/proptest-regressions/fixed-stack.txt`. Full repro code: evidence file.
@@ -300,7 +300,7 @@ sabotage, `Sequence::slot` for `FixedStack` reading `items[ordinal]` instead of
 (9 passing, 3 failing; the other two failures are the `entries` iterator and the `for…of` block,
 which reach the same code); reverted, confirmed green again (12 passing).
 
-**Why not sabotage B-61 for gate 6.** The most plausible mis-port of this module — `items_len()`
+**Why not sabotage BUG-FIXED-STACK-1 for gate 6.** The most plausible mis-port of this module — `items_len()`
 returning `self.size` — was rejected as a gate-6 sabotage *before being run*, on the grounds that the
 suite's only `forEach` block builds `size === capacity`. Confirmed by running it anyway: the
 original suite stays fully green. That is the gate-6 lesson in its purest form — the sabotage that

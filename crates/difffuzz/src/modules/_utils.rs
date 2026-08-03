@@ -9,7 +9,7 @@
 //!
 //! # What the grammar reaches that `test/_utils.js` does not
 //!
-//! * **B-180.** `merge`/`unionUnique` with three-or-more arrays where at
+//! * **BUG-UTILS-1.** `merge`/`unionUnique` with three-or-more arrays where at
 //!   least one is empty and two-or-more are not — `test/_utils.js`'s own
 //!   k-array cases never mix an empty array in, so gate 4 cannot see this.
 //!   The array-count strategy below (2 to 5 arrays, each independently 0 to 5
@@ -142,7 +142,7 @@ impl ModuleSpec for UtilsSpec {
             4 => arrays_op("merge", true),
             4 => arrays_op("unionUnique", true),
             // `false`: `intersectionUnique`'s k-way path has its own,
-            // separate, already-documented `NaN` gap that D-105 never
+            // separate, already-documented `NaN` gap that DIV-UTILS-2 never
             // touched — see `arrays_op`'s own docs.
             3 => arrays_op("intersectionUnique", false),
             3 => search_op("search"),
@@ -204,9 +204,9 @@ impl ModuleSpec for UtilsSpec {
 // ------------------------------------------------------------- merge/union/intersection
 
 /// 2 to 5 number arrays, each independently 0 to 5 elements. The 0-length
-/// case is not filtered out — it is the whole point (B-180).
+/// case is not filtered out — it is the whole point (BUG-UTILS-1).
 ///
-/// # WIDENED — D-105 is closed, so ties are back in the k-way pool
+/// # WIDENED — DIV-UTILS-2 is closed, so ties are back in the k-way pool
 ///
 /// This grammar used to narrow the k-way generator to globally distinct
 /// values (`k_way_arrays_op` below) specifically because
@@ -215,14 +215,14 @@ impl ModuleSpec for UtilsSpec {
 /// disagreed on ties (see the history recorded on [`k_way_arrays_op`] and
 /// NOTES.md's `_utils` section for the exact pre-widening divergence this
 /// campaign's first runs found). Now that `fibonacci-heap` is a ported unit
-/// and `merge.rs`'s k-way `merge`/`unionUnique` drive the real thing (D-105,
+/// and `merge.rs`'s k-way `merge`/`unionUnique` drive the real thing (DIV-UTILS-2,
 /// `docs/modules/_utils.md`), that narrowing excuse is gone for those two —
 /// CLAUDE.md is explicit that a narrowed grammar must not stay narrowed once
 /// the reason for narrowing it is fixed.
 ///
 /// `allow_nan_in_k_way` stays `false` for `intersectionUnique` alone: see
 /// [`k_way_arrays_op`]'s own docs for why that is a genuinely different,
-/// still-open gap D-105 never touched, not a re-narrowing of this one.
+/// still-open gap DIV-UTILS-2 never touched, not a re-narrowing of this one.
 fn arrays_op(name: &'static str, allow_nan_in_k_way: bool) -> BoxedStrategy<Op> {
     prop_oneof![
         2 => two_arrays_op(name),
@@ -267,8 +267,8 @@ fn two_arrays_op(name: &'static str) -> BoxedStrategy<Op> {
 ///   `consolidate` restructures the tree across pops, which node that ends
 ///   up being depends on the heap's internal degree-bucket merging, not on
 ///   insertion order alone. Porting `fibonacci-heap` (this repository's own
-///   T2 unit) closed this gap — D-105, `docs/modules/_utils.md` — and
-///   `merge_k_matches_upstreams_real_heap_on_the_case_that_found_d_105`
+///   T2 unit) closed this gap — DIV-UTILS-2, `docs/modules/_utils.md` — and
+///   `merge_k_matches_upstreams_real_heap_on_the_case_that_found_div_utils_2`
 ///   (`mnemonist_core::utils::merge`'s own tests) pins this exact case
 ///   directly.
 /// * `merge([-5], [NaN], [-1])` diverged too (`port: [-5, NaN, -1]`,
@@ -285,16 +285,16 @@ fn two_arrays_op(name: &'static str) -> BoxedStrategy<Op> {
 /// `intersection_unique_k`'s own module docs) — it folds running bounds
 /// seeded from JS's `-Infinity`/`Infinity` sentinels, which this port seeds
 /// from `Option<T>` instead. That is a **separate, pre-existing, already
-/// documented divergence D-105 never claimed to close.** It was unreachable
+/// documented divergence DIV-UTILS-2 never claimed to close.** It was unreachable
 /// by this grammar only as a side effect of `NaN` being excluded from every
-/// k-way group; reinstating `NaN` broadly (rather than only where D-105
+/// k-way group; reinstating `NaN` broadly (rather than only where DIV-UTILS-2
 /// actually applies) reached it immediately on this widening's own first
 /// verification run: `intersectionUnique([-1], [NaN], [-5])` — `port: [-5]`,
 /// `upstream: []`. Recorded rather than silently re-narrowed: `allow_nan` is
 /// `false` for `intersectionUnique` specifically, which widens exactly what
-/// D-105 asked for (ties, for the two functions D-105 is about) without
+/// DIV-UTILS-2 asked for (ties, for the two functions DIV-UTILS-2 is about) without
 /// papering over a different, older, still-open gap under the same commit.
-/// B-180 does not depend on value content at all (it is a pure index-count
+/// BUG-UTILS-1 does not depend on value content at all (it is a pure index-count
 /// bug) and stays fully reachable through this strategy's own 0-length
 /// arrays regardless of `allow_nan`.
 fn k_way_arrays_op(name: &'static str, allow_nan: bool) -> BoxedStrategy<Op> {

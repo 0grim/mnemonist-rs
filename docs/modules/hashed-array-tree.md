@@ -35,7 +35,7 @@ Ten `it` blocks. Characterising the shape rather than restating them:
 1. **No element outside block 0 is ever read back.** `array.get(34)` after 250 pushes into
    128-element blocks is the only read, and 34 is in the first block. So the `index >> blockMask` /
    `index & offsetMask` split is never checked against an index that needs it.
-2. **`pop` never crosses a block boundary**, which is why defect B-15 below survives.
+2. **`pop` never crosses a block boundary**, which is why defect BUG-HASHED-ARRAY-TREE-1 below survives.
 3. **`blockMask` and `offsetMask` are never asserted**, only `capacity`.
 4. **A `blockSize` of 1** — every element its own block — is never constructed.
 
@@ -78,8 +78,8 @@ Ten `it` blocks. Characterising the shape rather than restating them:
 ## What we test in addition
 
 `crates/mnemonist-core/src/structures/hashed_array_tree.rs` — 15 tests, closing every gap above
-except 16 and 17: a 1:1 reproduction of all ten upstream blocks as a baseline, B-15 pinned value by
-value against Node (both directly and reached via a shrinking resize), B-16's read and write halves,
+except 16 and 17: a 1:1 reproduction of all ten upstream blocks as a baseline, BUG-HASHED-ARRAY-TREE-1 pinned value by
+value against Node (both directly and reached via a shrinking resize), BUG-HASHED-ARRAY-TREE-2's read and write halves,
 the exact `TypeError` at `index === capacity` across all three widths, truncating stores, the index
 split constants derived from the block size, a bare `grow` adding exactly one block, a shrinking
 resize keeping its blocks and contents, a push after a shrinking resize overwriting the stale slot,
@@ -99,7 +99,7 @@ table), and non-integer lengths, which `usize` cannot hold.
 
 ## Bugs this found
 
-**B-15 — `pop` reads the last *block*, not the block holding the popped index.**
+**BUG-HASHED-ARRAY-TREE-1 — `pop` reads the last *block*, not the block holding the popped index.**
 Verified against Node 24.18.1. The sharpest defect in the file:
 
 ```js
@@ -125,7 +125,7 @@ so only the return value is wrong — which is why nothing downstream notices. A
 reaches the same defect without any growth at all, because `resize` never deallocates:
 `push 7,8,9,10; resize(1); pop()` gives `9`, not `7`.
 
-**B-16 — the `set`/`get` bounds guard is `length < index`, admitting `index === length`.**
+**BUG-HASHED-ARRAY-TREE-2 — the `set`/`get` bounds guard is `length < index`, admitting `index === length`.**
 Verified against Node 24.18.1. Three consequences:
 
 * `get(length)` returns the raw block slot rather than `undefined`. A **brand-new tree answers
@@ -155,7 +155,7 @@ on the next line rather than misrepresenting the shift.
 | — | **`new HashedArrayTree(undefined)` throws.** | Upstream's guard is `arguments.length < 1`, and napi's typed signature cannot tell an omitted argument from one passed as `undefined`. Upstream leaves `ArrayClass` undefined and only fails later, if it ever allocates. The omitted case — the only one the original suite uses — is exact. |
 | — | **Non-integer lengths are truncated.** | `resize(3.5)` really does leave `length === 3.5` on Node. A `usize` cannot hold it; truncating toward zero is the closest honest reading. No upstream call site or test passes one. |
 | — | **`blocks` is not exposed to JS.** | A public array of typed arrays upstream, writable *through*. napi can only hand out a copy, which would silently break write-through — worse than its absence. Same call as the `SparseSet` bridge makes for `dense`/`sparse`. It is exposed in Rust, and the fuzzer compares it block for block after every op. |
-| — | **`get`/`pop` yield `Either<u32, Undefined>`, not `Option<u32>`.** | D-39, re-learned here: napi renders `None` as `null`, and both `assert.strictEqual(…, undefined)` assertions in the original file fail against `null`. This is the second module to hit it; it is now a checklist item, not a discovery. |
+| — | **`get`/`pop` yield `Either<u32, Undefined>`, not `Option<u32>`.** | DIV-FIXED-STACK-1, re-learned here: napi renders `None` as `null`, and both `assert.strictEqual(…, undefined)` assertions in the original file fail against `null`. This is the second module to hit it; it is now a checklist item, not a discovery. |
 | — | **`Error` is an enum whose `Display` is upstream's message.** | The `set` message embeds the array class and the `TypeError` embeds the block offset, so a `&'static str` could not carry either. `Display` renders exactly what upstream throws, which is also what makes the fuzzer's `$throw` comparison meaningful. |
 | — | **`inspect()` is not ported.** | A Node display convenience with no upstream assertion and no Rust equivalent. |
 | — | **The V8 `TypeError` text is reproduced verbatim.** | `Cannot set properties of undefined (setting '0')` is V8's phrasing, not the language's. Reproducing it is what lets the fuzzer compare thrown messages in full; it also ties these campaigns to Node 24.18.1, which is stated rather than hidden. |
@@ -221,7 +221,7 @@ uniformly random *existing* index, modulo the current length), `Uint32Array` blo
 1024-element block size: the port is 1.6× faster at p50 (5.5 vs 8.6 ns/op), 2.6× faster at p99
 (10.0 vs 26.4), 1.7× faster at min. No regressions. Full table: evidence file.
 
-`pop`'s upstream defect (B-11, reading the last allocated block rather than the block the popped
+`pop`'s upstream defect (BUG-SPARSE-MAP-1, reading the last allocated block rather than the block the popped
 index actually falls in) is reproduced bug-for-bug and contributes to the checksum exactly as
 everything else does — the checksum matching on both sides is itself evidence the port takes the same wrong
 branch upstream does, at the same block boundaries, not merely that both sides returned *a* number.

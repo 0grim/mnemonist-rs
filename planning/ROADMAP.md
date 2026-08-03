@@ -56,11 +56,11 @@ yet.
 
 | # | batch | lines | bug IDs | status |
 |---|---|---|---|---|
-| 1 | `fibonacci-heap` + close D-105 | 115 | B-220–239 | merged |
-| 2 | `default-weak-map`, `linked-list`, `inverted-index` | 325 | B-240–259 | merged |
-| 3 | `critbit-tree-map`, `fixed-critbit-tree-map` | 294 | B-260–279 | **in flight** |
-| 4 | `vp-tree`, `kd-tree` | 344 | B-280–299 | not started |
-| 5 | `passjoin-index`, `symspell`, `multi-array` | 639 | B-300–319 | not started |
+| 1 | `fibonacci-heap` + close DIV-UTILS-2 | 115 | BUG-FIBONACCI-HEAP-1–239 | merged |
+| 2 | `default-weak-map`, `linked-list`, `inverted-index` | 325 | BUG-INVERTED-INDEX-1–259 | merged |
+| 3 | `critbit-tree-map`, `fixed-critbit-tree-map` | 294 | BUG-FIXED-CRITBIT-TREE-MAP-1–279 | **in flight** |
+| 4 | `vp-tree`, `kd-tree` | 344 | DIV-PROJ-62–299 | not started |
+| 5 | `passjoin-index`, `symspell`, `multi-array` | 639 | DIV-PROJ-63–319 | not started |
 
 Then: **benchmark pass** (gate 10, idle machine), scope the benched units, re-scope `sparse-set`,
 and the submission — README, `DECISIONS.md`, demo, Dockerfile, CI. `DESIGN.md` §12 has the specs.
@@ -147,7 +147,7 @@ principle paid off for the cursor and for `forEach`.
 
 ## Known blockers, not just work
 
-**B-31 — RESOLVED.** Six bridges converted to `inner: RefCell<Core>`; `static_disjoint_set` and
+**PORTBUG-1 — RESOLVED.** Six bridges converted to `inner: RefCell<Core>`; `static_disjoint_set` and
 `hashed_array_tree` verified immune against the real precondition (can JS run while a `&self`
 method is on the stack), not against "has no `forEach`". Repro falsified both ways: pre-fix
 `[1,2,3,4]`, post-fix `[1,2]`. `tests/boundary/reentrancy.js` pins it with 22 specs, 8 of which
@@ -159,7 +159,7 @@ Kept below because the *shape* recurs: any new bridge taking a callback has the 
 
 <details><summary>original entry</summary>
 
-**B-31 is systemic across the bridge, not a `sparse-set` defect.** A `#[napi]` method taking `&self`
+**PORTBUG-1 is systemic across the bridge, not a `sparse-set` defect.** A `#[napi]` method taking `&self`
 on a `Freeze` type is `noalias readonly`, so LLVM hoists reads across a re-entrant JS callback. Two
 agents reached this independently from opposite directions — one by probing `queue`'s `forEach`,
 one by reasoning about `&self`/`&mut self` aliasing in the T3 bridge. **Every class with a
@@ -173,7 +173,7 @@ collected; Rust cannot observe JS GC. Holding napi `Reference`s means entries ne
 divergence with no faithful alternative. 60 test lines. Plan: documented divergence or honest
 exclusion, not a heroic attempt.
 
-**D-38 — pointer-chasing cursors are missing machinery, not another module.** `trie`, `trie-map`
+**DIV-PROJ-36 — pointer-chasing cursors are missing machinery, not another module.** `trie`, `trie-map`
 and `linked-list` walk by pointer, and `Sequence` requires position to be an ordinal. Second cursor
 abstraction needed before any of T4's 1,036 lines are reachable.
 
@@ -239,7 +239,7 @@ wave boundaries in §6:
   protocol-reconciliation in **133k** and found *three* defects where one was specified.
   **Sonnet for template-following ports against an existing reference, doc writing and registry
   plumbing. Opus for a genuinely new capability tier.** The expensive design work — cursor,
-  `forEach`, `JsKey`, B-31 — is done, so most remaining work is the former.
+  `forEach`, `JsKey`, PORTBUG-1 — is done, so most remaining work is the former.
 - **Tier-first ordering compounds.** Merging `foreach` + `iterables` + `fixed-stack` took eight
   modules from blocked to available in a single step (`vector`, `static-interval-tree`, `bi-map`,
   `fuzzy-map`, `lru-cache`, `bk-tree`, `symspell`, `passjoin-index` — 1,659 test lines, 21% of the

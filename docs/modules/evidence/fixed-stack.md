@@ -25,7 +25,7 @@ smoke test):
 | `an_overwrite_ahead_of_the_cursor_is_visible` | 18 — the live half |
 | `a_clear_during_iteration_is_invisible_because_clear_does_nothing_to_the_array` | 18 |
 | `a_capacity_of_one_and_an_empty_stack_both_behave` | 19 |
-| `from_array_like_accepts_any_iterator` | D-03 |
+| `from_array_like_accepts_any_iterator` | DIV-QUEUE-1 |
 | `duplicates_are_kept` | — a stack is not a set |
 | `error_text_is_upstreams` | — the three message constants, verbatim |
 
@@ -35,17 +35,17 @@ reduces to, which is what gaps 7 and 13 turn on.
 ## `tests/boundary/iterables.js` — 19 specs
 
 For the `utils/iterables` half of the closure, which has no upstream test file at all:
-`guessLength`'s refusal to validate, `toArray`'s holes (B-2), `isArrayLike` saying no to
+`guessLength`'s refusal to validate, `toArray`'s holes (BUG-UTILS-ITERABLES-1), `isArrayLike` saying no to
 `{length: 2}`, and `getPointerArray` throwing before `new Array(l)` does.
 
 ## Differential probes against the vendored upstream — 28 cases
 
-B-60 for `Set` and for a string; B-61 for both classes; coercion for
+BUG-UTILS-ITERABLES-2 for `Set` and for a string; BUG-FIXED-STACK-1 for both classes; coercion for
 `Uint8Array`/`Int8Array`/`Float64Array`; `toArray`'s class; oversized `from` for both classes; all
 five constructor error paths; `toString`; `toJSON`; `[...s]` twice; a cursor re-drained; `break`
-then `next()`; a mutating `forEach`; `from` on a `DataView` (the one disagreement, D-66/B-63); and
+then `next()`; a mutating `forEach`; `from` on a `DataView` (the one disagreement, DIV-FIXED-STACK-7/BUG-FIXED-STACK-2); and
 `new FixedStack(Object, 3)` — where upstream produces a `Number` object carrying a `'0'` property,
-and so does the port. All agree except the `DataView` case, which is D-66.
+and so does the port. All agree except the `DataView` case, which is DIV-FIXED-STACK-7.
 
 ## Fuzz grammar
 
@@ -64,7 +64,7 @@ and so does the port. All agree except the `DataView` case, which is D-66.
 ### Fuzzer falsification
 
 **A — the `forEach` half.** Sabotage: `items_len()` returning `self.size`, which is the tidy-up a
-naive port makes on noticing B-61. Caught in **57 cases (0.0 s)**, shrunk from 200 ops to two
+naive port makes on noticing BUG-FIXED-STACK-1. Caught in **57 cases (0.0 s)**, shrunk from 200 ops to two
 lines:
 
 ```js
@@ -102,7 +102,7 @@ being that assertion with `actual` `1` against `expected` `3`; the other two are
 iterator and the `for…of` block, which reach the same code. Reverted; **confirmed green again**:
 `12 passing`.
 
-**Why not sabotage B-61.** The most plausible mis-port of this module is `items_len()` returning
+**Why not sabotage BUG-FIXED-STACK-1.** The most plausible mis-port of this module is `items_len()` returning
 `self.size`, and it was rejected as a gate-6 sabotage *before being run*, on the grounds that the
 suite's only `forEach` block builds `size === capacity`. Confirmed by running it anyway: the
 original suite stays fully green.

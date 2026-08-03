@@ -25,7 +25,7 @@
 //! the stack cannot exceed `log2(hi - lo)` entries — 64 slots cover every
 //! window a 64-bit machine can address.
 //!
-//! # B-81: upstream's stack is shared between calls, and corrupts under one
+//! # BUG-SORT-2: upstream's stack is shared between calls, and corrupts under one
 //!
 //! Because `LOS`/`HIS` are module scope, all four exported sorts share them —
 //! `inplaceQuickSort` and `inplaceQuickSortIndices` included. `>=` invokes
@@ -35,7 +35,7 @@
 //! 40-element array whose first compared element re-enters comes back with 38
 //! of its 40 elements out of order.
 //!
-//! The stack here is a local, so the port has no such state. Like B-80 the
+//! The stack here is a local, so the port has no such state. Like BUG-SORT-1 the
 //! divergence is unreachable through the bridge, which accepts numbers and
 //! nothing that can carry a `valueOf`; see `docs/modules/sort.md`.
 

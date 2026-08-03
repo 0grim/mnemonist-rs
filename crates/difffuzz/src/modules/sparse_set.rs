@@ -3,17 +3,17 @@
 //! # Grammar, and what it deliberately includes
 //!
 //! This is the first module whose grammar exercises **iteration interleaved
-//! with mutation** (D-21), which is what DESIGN.md 3.7 was written for and
+//! with mutation** (DIV-PROJ-21), which is what DESIGN.md 3.7 was written for and
 //! what `static-disjoint-set` had no surface to reach. Three ops beyond the
 //! plain methods:
 //!
 //! * `$iter("values")` opens a cursor and keeps it. Both sides hold exactly
 //!   one.
 //! * `$next()` steps it, against whatever the set has become since — which is
-//!   the hybrid capture (D-08) under test.
+//!   the hybrid capture (DIV-PROJ-10) under test.
 //! * `$spread()` is `Array.from(set)`, going through the *collection's*
 //!   `Symbol.iterator` and therefore constructing a fresh cursor each time.
-//!   Separate from `$next` on purpose: the factory half of D-07 is only
+//!   Separate from `$next` on purpose: the factory half of DIV-STACK-2 is only
 //!   observable by comparing an op that must restart against one that must
 //!   not.
 //! * `$forEach(method, rule, limit)` walks the set with a callback that calls

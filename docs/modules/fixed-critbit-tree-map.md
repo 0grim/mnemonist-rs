@@ -36,7 +36,7 @@ works around; it is the reason the interesting behaviour below is untested by ga
 
 ## What upstream does NOT test
 
-**Anything past capacity.** See "Bugs this found" (B-261) for the full, measured mechanism: a
+**Anything past capacity.** See "Bugs this found" (BUG-FIXED-CRITBIT-TREE-MAP-2) for the full, measured mechanism: a
 silent corruption on the key that pushes past capacity, then a crash on a later `set` that walks
 through it. Untestable by the original suite by construction, reached in essentially every program
 this unit's own fuzz grammar generates (see "Fuzz + bench").
@@ -46,7 +46,7 @@ in `test/fixed-critbit-tree-map.js` is the tell; there is no `FixedCritBitTreeMa
 in the source at all. This port has none either.
 
 **`root` read directly.** No test reads `tree.root`; the only reference in the original suite is
-inside a commented-out `printTree` debug helper. See B-260.
+inside a commented-out `printTree` debug helper. See BUG-FIXED-CRITBIT-TREE-MAP-1.
 
 **Deep critical-bit positions and non-Latin-1 keys.** Identical reasoning to `critbit-tree-map`'s
 own gaps; see that file's docs.
@@ -55,17 +55,17 @@ own gaps; see that file's docs.
 
 `crates/mnemonist-core/src/structures/fixed_critbit_tree_map.rs` — 10 tests, closing every gap
 above: a baseline reproduction of the four upstream blocks, the gate-6 falsification target within
-capacity, B-261 measured at two different capacities (including a capacity of one corrupting on its
-second key), B-260's `root` value fresh versus after a clear, and the port bug found by this unit's
+capacity, BUG-FIXED-CRITBIT-TREE-MAP-2 measured at two different capacities (including a capacity of one corrupting on its
+second key), BUG-FIXED-CRITBIT-TREE-MAP-1's `root` value fresh versus after a clear, and the port bug found by this unit's
 own fuzzer (below).
 
 **Differential fuzzer** — see "Fuzz + bench". Capacity is drawn deliberately small (`2..=5`) against
-an 8-key pool specifically so it is exceeded, and B-261's crash reached, in most generated programs
+an 8-key pool specifically so it is exceeded, and BUG-FIXED-CRITBIT-TREE-MAP-2's crash reached, in most generated programs
 rather than merely capable of it — measured directly, not assumed.
 
 ## Bugs this found
 
-### B-261 — no capacity guard at all: exceeding it silently corrupts, then crashes
+### BUG-FIXED-CRITBIT-TREE-MAP-2 — no capacity guard at all: exceeding it silently corrupts, then crashes
 
 The constructor's own comment: `// TODO: yell if capacity is already full!`. `lefts`/`rights` are
 real, fixed-size typed arrays (`capacity - 1` slots); `critbits` is sized `capacity` — one slot
@@ -77,7 +77,7 @@ reachable only through that node then silently returns `undefined`. The 6th dist
 `TypeError: Cannot read properties of undefined (reading 'length')`. Full transcript and mechanism
 in this port's own module doc comment, part 1.
 
-Reproduced as `Error::Corrupted`, with upstream's own message text (D-246, below).
+Reproduced as `Error::Corrupted`, with upstream's own message text (DIV-FIXED-CRITBIT-TREE-MAP-1, below).
 Measured, not assumed, that this campaign actually reaches it:
 `pool_self_check_capacity_is_actually_exceeded_and_hits_the_crash` samples 500 real constructed
 instances driven by real generated programs and asserts both "size exceeded capacity" and
@@ -90,7 +90,7 @@ branch writes to literal slot `lefts[0]`/`rights[0]` rather than to the node act
 creation, so the branch's own guard never fires), and reproduced verbatim anyway. See the module doc
 comment, part 2.
 
-### B-260 — `root` is `0` fresh off the constructor, but `null` right after a `clear`
+### BUG-FIXED-CRITBIT-TREE-MAP-1 — `root` is `0` fresh off the constructor, but `null` right after a `clear`
 
 Verified against Node 24.18.1, confirmed in the source (`fixed-critbit-tree-map.js:99` vs `:120`):
 the constructor sets `this.root = 0`; `clear` sets `this.root = null`. No method's *behaviour*
@@ -111,9 +111,9 @@ overwrites low indices post-`clear` instead of always pushing.
 
 ## Deliberate divergences
 
-* **D-245**, inherited from `critbit-tree-map`: keys truncated to bytes at the bridge. Identical
+* **DIV-CRITBIT-TREE-MAP-1**, inherited from `critbit-tree-map`: keys truncated to bytes at the bridge. Identical
   reasoning; see that file's docs.
-* **D-246**: B-261's crash is a Rust `Result::Err` carrying upstream's own
+* **DIV-FIXED-CRITBIT-TREE-MAP-1**: BUG-FIXED-CRITBIT-TREE-MAP-2's crash is a Rust `Result::Err` carrying upstream's own
   message text, not a panic modelling JavaScript's `NaN`-as-array-index cascade. `mnemonist-core`
   forbids `unsafe_code` and has no analogue of a typed-array read past its end silently returning
   `undefined`; a `panic!` would abort the whole Node process at the FFI boundary where upstream
@@ -131,7 +131,7 @@ module=fixed-critbit-tree-map   seed=20260801 cases=10061  ops=1025762  wall=60.
 
 `crates/difffuzz/src/modules/fixed_critbit_tree_map.rs`, sharing
 `crate::modules::critbit_tree_map::PREFIX_POOL` directly. `capacity` is drawn from `2..=5` against
-the same 8-key pool specifically so B-261's overflow is reached in most generated programs, not
+the same 8-key pool specifically so BUG-FIXED-CRITBIT-TREE-MAP-2's overflow is reached in most generated programs, not
 merely capable of it — see "Bugs this found" for the measured evidence. Ops: `set`, `get`, `has`,
 `clear`. No `delete` (upstream has none).
 
@@ -144,7 +144,7 @@ distinction matters directly below.
 
 **What this grammar deliberately does not cover:** `delete` (does not exist upstream); `forEach`
 (no op drives it — see the falsification section for why that specifically matters here, unlike in
-the unbounded variant); non-Latin-1 keys (D-245).
+the unbounded variant); non-Latin-1 keys (DIV-CRITBIT-TREE-MAP-1).
 
 ### Falsification (gate 6)
 

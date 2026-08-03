@@ -26,7 +26,7 @@
 //! * **`inspect()` is not ported.** It returns the inner `Map`, which does not
 //!   exist here, and nothing asserts on it.
 //! * **A re-entrant `forEach` callback and a re-entrant factory are both
-//!   supported**, where both were undefined behaviour before — see B-31 and
+//!   supported**, where both were undefined behaviour before — see PORTBUG-1 and
 //!   [`crate::cursor::CellCursor`]. Holding the core map in a [`RefCell`] is
 //!   what fixes them, and the rule the fix imposes is that **no borrow may be
 //!   alive across a call that can run JavaScript**. `forEach` re-borrows per
@@ -63,7 +63,7 @@ fn items(map: &Core) -> &OrderedMap<JsKey, Option<Retained>> {
 ///
 /// The second argument is `f64`, not an integer, for two reasons: JavaScript
 /// numbers are doubles, and `size` here is upstream's *drifting* counter
-/// (B-40), which is not bounded by the entry count.
+/// (BUG-DEFAULT-MAP-1), which is not bounded by the entry count.
 type Factory = FunctionRef<FnArgs<(JsKey, f64)>, Received>;
 
 /// Upstream's constructor message, matched by the original test's `/function/`.
@@ -101,7 +101,7 @@ impl JsDefaultMap {
     /// Upstream's `size` **property**.
     ///
     /// A drifting counter, not the entry count. See
-    /// `mnemonist_core::structures::default_map` and B-40.
+    /// `mnemonist_core::structures::default_map` and BUG-DEFAULT-MAP-1.
     #[napi(getter)]
     pub fn size(&self) -> f64 {
         self.inner.borrow().size() as f64
@@ -239,7 +239,7 @@ impl JsDefaultMap {
         // The borrow is taken per step, inside `step`, and dropped before the
         // callback runs: a callback that `set`s or `delete`s through the same
         // object never meets an outstanding borrow — and, more to the point,
-        // the walk sees what it did rather than a hoisted snapshot (B-31).
+        // the walk sees what it did rather than a hoisted snapshot (PORTBUG-1).
         let mut step = || {
             let inner = self.inner.borrow();
 

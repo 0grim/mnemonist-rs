@@ -30,7 +30,7 @@
 //! and they reproduce both operators' upstream semantics exactly, including
 //! where the two disagree on `NaN`.
 //!
-//! # B-180 — the k-way algorithms drop entries when filtering removes any
+//! # BUG-UTILS-1 — the k-way algorithms drop entries when filtering removes any
 //!
 //! `kWayMergeArrays` and `kWayUnionUniqueArrays` build a `filtered` array that
 //! skips empty inputs, then reassign `arrays = filtered` — but the loop that
@@ -56,7 +56,7 @@
 //! `merge.unionUnique([1, 2], [], [3, 4], [5, 6])` both throw; the *two-array*
 //! path and `intersectionUnique`'s k-way fold (which returns `[]` on the
 //! first empty array, before any heap exists) are both immune. Recorded as
-//! NOTES.md B-180.
+//! NOTES.md BUG-UTILS-1.
 //!
 //! Not one case in `test/_utils.js`'s own `'should properly merge k arrays.'`
 //! /`'should properly perform the union of k unique arrays.'` blocks includes
@@ -66,7 +66,7 @@
 //! has no exceptions, so the divergence is a `Result`, matching the
 //! `TABLE_IS_FULL` convention in [`crate::utils::hash_tables`].
 //!
-//! # D-105 CLOSED — the k-way scan now drives a real `FibonacciHeap`
+//! # DIV-UTILS-2 CLOSED — the k-way scan now drives a real `FibonacciHeap`
 //!
 //! Upstream's `kWayMergeArrays`/`kWayUnionUniqueArrays` construct
 //! `new FibonacciHeap(function (a, b) { a = arrays[a][pointers[a]]; b =
@@ -79,7 +79,7 @@
 //! heap.pop(); ...; if (pointers[p] < arrays[p].length) heap.push(p); }`
 //! verbatim.
 //!
-//! This closes D-105 (`planning/DECISIONS-CANDIDATES.md`, `docs/modules/
+//! This closes DIV-UTILS-2 (`planning/DECISIONS-CANDIDATES.md`, `docs/modules/
 //! _utils.md`): the previous cut of this file picked the minimum head by a
 //! **linear scan** that kept the earliest array on a tie, where upstream's
 //! heap updates `min` with `<=` — favouring the most recently *pushed* node,
@@ -265,14 +265,14 @@ pub fn intersection_unique_two<T: Clone + PartialOrd>(a: &[T], b: &[T]) -> Vec<T
     out
 }
 
-/// The message upstream's k-way merge/union throws, verbatim (B-180).
+/// The message upstream's k-way merge/union throws, verbatim (BUG-UTILS-1).
 pub const STALE_LENGTH_TYPE_ERROR: &str =
     "Cannot read properties of undefined (reading 'undefined')";
 
 /// The one failure mode of the k-way merge/union algorithms.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KWayError {
-    /// B-180: at least one input was empty (and therefore filtered out)
+    /// BUG-UTILS-1: at least one input was empty (and therefore filtered out)
     /// while three or more remained live, which upstream cannot survive.
     StaleLengthMismatch,
 }
@@ -281,13 +281,13 @@ pub enum KWayError {
 ///
 /// `kWayMergeArrays(arrays)`. `arrays` is the *unfiltered* input list, exactly
 /// as upstream receives its `arguments` object -- filtering empties out is
-/// this function's own first step, and B-180 is a property of that step, not
+/// this function's own first step, and BUG-UTILS-1 is a property of that step, not
 /// something a caller can dodge by pre-filtering differently than upstream
 /// does.
 ///
 /// # Errors
 ///
-/// [`KWayError::StaleLengthMismatch`] -- see the module docs, B-180.
+/// [`KWayError::StaleLengthMismatch`] -- see the module docs, BUG-UTILS-1.
 pub fn merge_k<T: Clone + PartialOrd>(arrays: &[&[T]]) -> Result<Vec<T>, KWayError> {
     let original_len = arrays.len();
     let filtered: Vec<&[T]> = arrays.iter().copied().filter(|a| !a.is_empty()).collect();
@@ -308,12 +308,12 @@ pub fn merge_k<T: Clone + PartialOrd>(arrays: &[&[T]]) -> Result<Vec<T>, KWayErr
 
 /// Union of `k` sorted, duplicate-free array-likes.
 ///
-/// `kWayUnionUniqueArrays(arrays)`, same contract and same B-180 as
+/// `kWayUnionUniqueArrays(arrays)`, same contract and same BUG-UTILS-1 as
 /// [`merge_k`].
 ///
 /// # Errors
 ///
-/// [`KWayError::StaleLengthMismatch`] -- see the module docs, B-180.
+/// [`KWayError::StaleLengthMismatch`] -- see the module docs, BUG-UTILS-1.
 pub fn union_unique_k<T: Clone + PartialOrd>(arrays: &[&[T]]) -> Result<Vec<T>, KWayError> {
     let original_len = arrays.len();
     let filtered: Vec<&[T]> = arrays.iter().copied().filter(|a| !a.is_empty()).collect();
@@ -375,7 +375,7 @@ impl<T: PartialOrd> Comparator<usize, Thrown> for KWayKeyComparator<'_, T> {
 }
 
 /// `kWayMergeArrays`/`kWayUnionUniqueArrays`'s shared body, once the
-/// stale-length check (B-180) has passed: seed a [`FibonacciHeap`] with one
+/// stale-length check (BUG-UTILS-1) has passed: seed a [`FibonacciHeap`] with one
 /// entry per array, then repeatedly pop the index whose current head is
 /// smallest, hand its value to `sink`, and re-push that index if its array
 /// has more left — upstream's own `while (heap.size) { p = heap.pop(); v =
@@ -430,7 +430,7 @@ where
 /// intersection is empty. No stale-length variable exists to go wrong, and
 /// empirically (Node 24.18.1) this is the one of the three k-way functions
 /// that does not throw when an input is empty -- it returns `[]` before ever
-/// reaching the fold, which is *why* B-180 does not apply here.
+/// reaching the fold, which is *why* BUG-UTILS-1 does not apply here.
 ///
 /// # Stated divergence: `NaN` at the very first scanned bound
 ///
@@ -684,9 +684,9 @@ mod tests {
         assert_eq!(intersection_unique_k(&arrays4), vec![3, 4]);
     }
 
-    // -------------------------------------------------------------- D-105
+    // -------------------------------------------------------------- DIV-UTILS-2
 
-    /// The exact case that found D-105 (`docs/modules/_utils.md`, NOTES.md's
+    /// The exact case that found DIV-UTILS-2 (`docs/modules/_utils.md`, NOTES.md's
     /// `_utils` section): three arrays, one of them (`[2, -5]`) genuinely
     /// unsorted -- upstream never validates sortedness, and this is where a
     /// tie-break disagreement actually shows up in the output, not merely in
@@ -696,12 +696,12 @@ mod tests {
     /// index 2 win, so index 2's lone element pops first, then index 1 pops
     /// its own tied `2`, exposing its unsorted second element `-5` next, and
     /// only then index 0's `3`): upstream's real output is `[2, 2, -5, 3]`,
-    /// which is what this test pins now that D-105 is closed. The linear-scan
+    /// which is what this test pins now that DIV-UTILS-2 is closed. The linear-scan
     /// cut this file used to have gave `[2, -5, 2, 3]` instead -- see this
     /// test's sibling `ties_across_arrays_do_not_affect_the_merged_multiset`
     /// for why that only matters once a tie meets an unsorted array.
     #[test]
-    fn merge_k_matches_upstreams_real_heap_on_the_case_that_found_d_105() {
+    fn merge_k_matches_upstreams_real_heap_on_the_case_that_found_div_utils_2() {
         let a: [i32; 1] = [3];
         let b: [i32; 2] = [2, -5];
         let c: [i32; 1] = [2];
@@ -710,9 +710,9 @@ mod tests {
         assert_eq!(merge_k(&arrays), Ok(vec![2, 2, -5, 3]));
     }
 
-    // ---------------------------------------------------------------- B-180
+    // ---------------------------------------------------------------- BUG-UTILS-1
 
-    /// B-180, isolated at its sharpest: three non-empty arrays plus one empty
+    /// BUG-UTILS-1, isolated at its sharpest: three non-empty arrays plus one empty
     /// one. `filtered.len() == 3` (still the heap path) but the original
     /// argument count was 4, so upstream's stale `l` seeds the heap with one
     /// index too many and crashes. `test/_utils.js`'s own k-array cases never
@@ -741,7 +741,7 @@ mod tests {
         assert_eq!(union_unique_k(&arrays), Err(KWayError::StaleLengthMismatch));
     }
 
-    /// The one place B-180 does NOT reach: filtering down to exactly two or
+    /// The one place BUG-UTILS-1 does NOT reach: filtering down to exactly two or
     /// fewer live arrays takes the early-return branches, which run *before*
     /// `arrays = filtered` and the stale `l` are ever consulted.
     #[test]
@@ -760,7 +760,7 @@ mod tests {
     /// `intersection_unique_k` is immune: it returns `[]` on the first empty
     /// array, before the fold (and before any stale-length variable) exists.
     #[test]
-    fn intersection_unique_k_is_immune_to_b_180() {
+    fn intersection_unique_k_is_immune_to_bug_utils_1() {
         let empty: [i32; 0] = [];
         let a = [1, 2, 3];
         let b = [4, 5, 6];
@@ -795,10 +795,10 @@ mod tests {
     /// implementation breaks it: whichever array's `3` the heap pops first,
     /// the emitted value is still `3`, so the tie-break choice cannot change
     /// what a caller sees. This is NOT the same claim as "ties never matter"
-    /// -- see the module docs' D-105 section: once tied *unsorted* arrays
+    /// -- see the module docs' DIV-UTILS-2 section: once tied *unsorted* arrays
     /// interleave with distinct later values, which array wins a tie
     /// genuinely changes the output, which is exactly what made the
-    /// pre-heap linear-scan cut of this file (D-105, now closed) diverge
+    /// pre-heap linear-scan cut of this file (DIV-UTILS-2, now closed) diverge
     /// from upstream on `merge([3], [2, -5], [2])`.
     #[test]
     fn ties_across_arrays_do_not_affect_the_merged_multiset() {

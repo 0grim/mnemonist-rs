@@ -21,7 +21,7 @@
 //! Note that the pre-existing `thrown: Rc<RefCell<…>>` field did **not** buy
 //! that — an `Rc` reaches its `UnsafeCell` through a pointer, so `Rc<RefCell<T>>`
 //! is itself `Freeze`. The cell has to be inline. See
-//! [`crate::cursor::CellCursor`] and B-31.
+//! [`crate::cursor::CellCursor`] and PORTBUG-1.
 //!
 //! # This is the one module where the borrow cannot be kept off the JS call
 //!
@@ -58,7 +58,7 @@ use crate::cursor::BridgeBitCursor;
 const REENTRANT_POLICY: &str = "mnemonist-rs/BitVector: the growth policy called back into the \
      vector while it was growing. Upstream serves such a call from a half-grown \
      vector; this port refuses it, because the vector is mid-operation and cannot \
-     answer honestly. See the module docs and B-31.";
+     answer honestly. See the module docs and PORTBUG-1.";
 
 /// A growable bit vector over a `Uint32Array`.
 #[napi(js_name = "BitVector")]
@@ -134,7 +134,7 @@ impl JsBitVector {
         Ok(self.read()?.length() as u32)
     }
 
-    /// Upstream's `size` counter. Signed; see B-13 and the `push`/`pop` defects.
+    /// Upstream's `size` counter. Signed; see BUG-SPARSE-QUEUE-SET-2 and the `push`/`pop` defects.
     #[napi(getter)]
     pub fn size(&self) -> Result<i64> {
         Ok(self.read()?.size())
@@ -176,7 +176,7 @@ impl JsBitVector {
     }
 
     /// `undefined` strictly past `length`; `index == length` reads the capacity
-    /// region. `Either<_, Undefined>` rather than `Option` — D-39.
+    /// region. `Either<_, Undefined>` rather than `Option` — DIV-FIXED-STACK-1.
     #[napi]
     pub fn get(&self, index: i64) -> Result<Either<u32, Undefined>> {
         Ok(match self.read()?.get(index) {

@@ -37,7 +37,7 @@ Characterising the shape of that coverage:
 * **Every key is a string literal.** `'one'`, `'two'`, `'unknown'`, `'test'`, `'test2'`. Nothing
   else — no numbers, no objects, no `NaN`, no `-0`, no `null`, no `undefined`.
 * **Every stored value is defined.** An array from the factory, a number from `autoIncrement`, or
-  a literal. **`undefined` is never stored**, which turns out to be the whole ballgame — see B-40.
+  a literal. **`undefined` is never stored**, which turns out to be the whole ballgame — see BUG-DEFAULT-MAP-1.
 * **A key is never overwritten.** `set` is only ever called on a key that does not yet exist.
 * **A key is never deleted and re-added.** The one `delete` block deletes `'one'` and stops.
 * **No map ever holds more than three entries**, and the largest is built in three calls.
@@ -53,7 +53,7 @@ Everything below is reachable through the public API and never exercised by the 
 
 **The `size` counter, which is upstream's one real defect**
 
-1. **`undefined` is never stored as a value**, so the entire B-40 chain is unreachable: `get`
+1. **`undefined` is never stored as a value**, so the entire BUG-DEFAULT-MAP-1 chain is unreachable: `get`
    testing the *value* rather than the *key*, the factory re-running on every read of such a key,
    and `size` drifting away from `items.size` without bound.
 2. **`size` is never compared against `items.size`.** They are asserted to be equal only in cases
@@ -71,9 +71,9 @@ Everything below is reachable through the public API and never exercised by the 
    reported `{done: true}` stays detached even if the map grows — have zero coverage.
 6. **`clear()` under a live iterator is never done.** Nor is the sequel: `clear()` then `set()`
    then `next()`, which yields the *new* entry.
-7. **A cursor is never re-drained**, so the non-restartability of D-06 is unobserved.
+7. **A cursor is never re-drained**, so the non-restartability of DIV-STACK-1 is unobserved.
 8. **`[...map]` is never used**, so the collection-level `Symbol.iterator` — the *factory* half of
-   D-07, the half napi does not provide for free, and the one upstream aliases to `entries` rather
+   DIV-STACK-2, the half napi does not provide for free, and the one upstream aliases to `entries` rather
    than to `values` — has **zero** upstream coverage despite being the last line of the module.
 9. **No map is ever large enough to compact.** The port's tombstone reclamation, and the cursor
    relocation that has to survive it, are unreachable at three entries.
@@ -145,7 +145,7 @@ infinities as keys distinct from each other, and the primitive shapes (`0`, `'0'
 **27 side-by-side probes** against the real upstream module, run through the built addon and the
 vendored `bench/upstream/default-map.js` in one process, comparing JSON-serialised results. All 27
 agree. They cover, end to end through the bridge, what the Rust tests cover in core — value
-identity across a round trip, the B-40 drift and its resynchronisation, delete-then-reinsert order,
+identity across a round trip, the BUG-DEFAULT-MAP-1 drift and its resynchronisation, delete-then-reinsert order,
 overwrite position, `NaN`/`-0` as keys, mixed primitive keys, `null` versus `undefined` as values,
 all three liveness rules, `clear`-then-`set` under a cursor, non-restartability next to collection
 restartability, `forEach` liveness and both `scope` bindings, `autoIncrement` independence, the
@@ -161,7 +161,7 @@ form (a deliberate divergence, below), gap 19 in its `arguments.length` form (sa
 
 ## Bugs this found
 
-**B-40 — `DefaultMap.get` tests the *value*, not the *key*, and then increments a counter instead
+**BUG-DEFAULT-MAP-1 — `DefaultMap.get` tests the *value*, not the *key*, and then increments a counter instead
 of reading one. `size` drifts without bound on a map holding one entry.** Verified against
 Node 24.18.1.
 
@@ -219,12 +219,12 @@ the log.
 
 **What the fuzzer found in the port: nothing.** Two campaigns, 4.37 M operations, zero divergences.
 As with `sparse-set`, that is the expected outcome — a faithful port reproduces upstream's bugs, so
-differential fuzzing structurally cannot find them. B-40 was found by reading the file line by line
+differential fuzzing structurally cannot find them. BUG-DEFAULT-MAP-1 was found by reading the file line by line
 and confirming each step against Node. What the fuzzer is for is the other direction, and here it is
 sharper than the original suite by a wide margin — see "Fuzz + bench".
 
 **The bridge held a bare core value behind `&self`**, which LLVM was entitled to compile as a
-`noalias readonly` pointer and hoist reads across a re-entrant JS callback (B-31). It now holds
+`noalias readonly` pointer and hoist reads across a re-entrant JS callback (PORTBUG-1). It now holds
 `RefCell<Core>`, which is not `Freeze`, and every `&mut self` method borrows via `borrow_mut()`
 taken per step and released before the callback runs, so a re-entrant callback never meets an
 outstanding borrow. See `crates/mnemonist-napi/src/cursor.rs`'s `CellCursor`. Full history in the
@@ -240,14 +240,14 @@ log.
 | — | **`forEach(cb, undefined)` binds `this` to the map.** | Upstream keys off `arguments.length > 1`, which napi's typed signature cannot see: "omitted" and "passed as `undefined`" are the same value. Identical to `SparseSet::for_each` and recorded the same way. The omitted-argument case — the only one the original suite uses — is exact, and passing a real scope object is exact. |
 | — | **`inspect()` is not ported.** | It returns the inner `Map`, which does not exist in this port, and nothing asserts on it. |
 | — | **The key is stored twice.** | `OrderedMap` keeps a `HashMap<K, usize>` index alongside the entry vector. `indexmap` avoids the second copy with `hashbrown`'s raw-entry API; the core crate is zero-dependency by declaration and `std`'s `HashMap` exposes no equivalent on stable. Mitigated rather than hidden: the bridge's string keys are `Rc<str>`, so the second copy is a refcount, not the text. |
-| — | **`undefined` is spelled `None`.** | Core has no JavaScript values, so `DefaultMap<K, V>` stores `Option<V>` and `None` *is* `undefined`. This is what makes B-40 expressible and testable from pure Rust, and it gets `peek` right for free — upstream's `peek` cannot distinguish a missing key from a key holding `undefined` either. |
+| — | **`undefined` is spelled `None`.** | Core has no JavaScript values, so `DefaultMap<K, V>` stores `Option<V>` and `None` *is* `undefined`. This is what makes BUG-DEFAULT-MAP-1 expressible and testable from pure Rust, and it gets `peek` right for free — upstream's `peek` cannot distinguish a missing key from a key holding `undefined` either. |
 | — | **The factory is not stored in core.** | Upstream keeps it on the instance; here it is a per-call argument to `get_or_insert_with`, and the bridge holds the `FunctionRef`. The constructor's `typeof factory !== 'function'` check is a JavaScript type test and belongs at the boundary — its message is kept verbatim. A stored `F` would also put a JS callback inside a crate that must not know JavaScript exists. |
-| D-06 | **No collection implements `IntoIterator`.** | Unchanged from `sparse-set`: it would hand out a fresh iterator per `for` loop and silently restart. |
-| D-07 | **`Symbol.iterator` is installed from Rust, not from the shim.** | Unchanged — but note the table row is `("DefaultMap", "entries")`, not `values`. Upstream's last line aliases `entries`, so spreading a `DefaultMap` yields `[key, value]` pairs. A table that assumed `values` for every module would have been wrong on the second module it met. |
+| DIV-STACK-1 | **No collection implements `IntoIterator`.** | Unchanged from `sparse-set`: it would hand out a fresh iterator per `for` loop and silently restart. |
+| DIV-STACK-2 | **`Symbol.iterator` is installed from Rust, not from the shim.** | Unchanged — but note the table row is `("DefaultMap", "entries")`, not `values`. Upstream's last line aliases `entries`, so spreading a `DefaultMap` yields `[key, value]` pairs. A table that assumed `values` for every module would have been wrong on the second module it met. |
 | — | **`MapCursor` is not `crate::cursor::Sequence`.** | The `obliterator` cursor freezes a length at construction and reads elements lazily; a `Map` cursor owns its entry list, skips tombstones, and sees appends. Both are faithful — to different things. One abstraction over both would get one of them wrong, so there are two. |
 
 A re-entrant factory or `forEach` callback is fully supported (it was a stated divergence during
-initial development; see the log for how B-31 forced the fix). Verified differentially in
+initial development; see the log for how PORTBUG-1 forced the fix). Verified differentially in
 `tests/boundary/reentrancy.js`.
 
 ## Fuzz + bench
@@ -266,14 +266,14 @@ Reproduce with `target/release/difffuzz --module default-map --seed 42 --cases 2
 The op alphabet covers `get`/`set`/`delete`/`peek`/`has`/`clear`, the three iterator kinds plus
 `$next`, `$spread`, and `$forEach` (a callback that mutates the map it is walking — see below).
 Observable state is `size` **and** `items`, compared separately after every op, because they
-disagree by design once B-40 fires. Keys are drawn from a deliberately small pool that includes
+disagree by design once BUG-DEFAULT-MAP-1 fires. Keys are drawn from a deliberately small pool that includes
 `0`/`'0'`/`-0`/`NaN` so that collisions, overwrites and SameValueZero edge cases are constant rather
-than lucky; values are weighted toward `undefined`, the only route to B-40. Full grammar, weights
+than lucky; values are weighted toward `undefined`, the only route to BUG-DEFAULT-MAP-1. Full grammar, weights
 and rationale: `docs/modules/evidence/default-map.md`.
 
 **The fuzzer was falsified twice, and this is the headline result for this unit: both sabotages
 leave the original upstream test file completely green.** Sabotage A resynchronises `size` from
-`items` instead of incrementing it — the tidier reading that deletes B-40, and the single most
+`items` instead of incrementing it — the tidier reading that deletes BUG-DEFAULT-MAP-1, and the single most
 plausible mis-port of this module; upstream's 7 assertions all still pass. Sabotage B makes
 `OrderedMap::set` re-insert an existing key instead of overwriting it in place, so an overwrite
 moves the key to the end; upstream's 7 assertions again all still pass (though three of the native
@@ -288,7 +288,7 @@ walk is the one that differs from every other in the port: a `Map` iteration is 
 directions, so an entry the callback adds *is* visited and one it deletes ahead of the cursor is
 *not*; `set` overwrites rather than adds, which matters here and nowhere else, because a growing
 walk here would never terminate. What it does not reach: `difffuzz` compares `mnemonist-core`
-against upstream JS, and B-31's hoisted read lived in the napi bridge, outside that loop — no op
+against upstream JS, and PORTBUG-1's hoisted read lived in the napi bridge, outside that loop — no op
 alphabet run against core can catch that class of bug. `tests/boundary/reentrancy.js` covers it
 instead, driving the real addon with real JS callbacks. One deliberate narrowing, mirrored on both
 sides: a selected callback argument that is `undefined` skips the mutation, because the alternative
@@ -301,7 +301,7 @@ Disclosed in `fuzz/log.txt`.
 Host: AMD Ryzen 5 7600X, 12 threads, WSL2, Node 24.18.1, rustc 1.97.1, quiet serial pass.
 
 **`mixed-1e6`** — 1e6 mixed `set`/`get-or-insert`/`delete` (50/25/25) over the full 1e6-key domain
-(`IK = K = V = u32`; the factory always returns `Some`, so B-40's `size` drift never fires in this
+(`IK = K = V = u32`; the factory always returns `Some`, so BUG-DEFAULT-MAP-1's `size` drift never fires in this
 workload): the port is **1.42× slower at p50, 1.15× slower at p99**, while using far less memory
 (67.0 MB RSS delta versus 220.6 MB). Re-checked at 4× domain (`mixed-4e6`) before trusting a single
 data point: **1.17× slower at p50, 1.27× at p99** — the loss holds at both sizes and never flips

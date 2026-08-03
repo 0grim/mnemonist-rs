@@ -133,7 +133,7 @@ var s = new Stack(); var jt = s.values(); s.push(0);    jt.next();   // {done: t
 
 Not filed upstream: there is no defect, only an inconsistency, and "these two files disagree about
 whether to freeze a length" is a code-review note rather than an issue. It is exactly the kind of
-thing a port normalises by accident, which is why `Sequence::limit` exists (D-42).
+thing a port normalises by accident, which is why `Sequence::limit` exists (DIV-STACK-4).
 
 The three **port** defects found while bridging this module — the `noalias` hoist, napi's latching
 `#.return`, and `napi_create_reference` rejecting primitives — are documented in
@@ -148,15 +148,15 @@ expected outcome for a faithful port.
 
 | # | Divergence | Why |
 |---|---|---|
-| D-42 | **`Sequence` gained a `limit` method, and `Queue` overrides it.** | `Queue.prototype.values` re-reads `items.length` every step; `Stack.prototype.values` freezes it. Defaulting to the frozen length leaves every other source unchanged. Normalising the two would have silently terminated a walk that upstream resumes. |
-| D-41 | **The backing store is `Rc<RefCell<Vec<T>>>`, not `Vec<T>`.** | The compaction and `clear()` both **rebind** `this.items`, and a cursor holds the array it captured. A `Vec` cannot express the difference between rebinding and mutating in place. |
+| DIV-STACK-4 | **`Sequence` gained a `limit` method, and `Queue` overrides it.** | `Queue.prototype.values` re-reads `items.length` every step; `Stack.prototype.values` freezes it. Defaulting to the frozen length leaves every other source unchanged. Normalising the two would have silently terminated a walk that upstream resumes. |
+| DIV-STACK-3 | **The backing store is `Rc<RefCell<Vec<T>>>`, not `Vec<T>`.** | The compaction and `clear()` both **rebind** `this.items`, and a cursor holds the array it captured. A `Vec` cannot express the difference between rebinding and mutating in place. |
 | — | **`dequeue` returns a clone.** | Upstream leaves the element in the array; moving it out would leave a hole upstream does not have, and a cursor with an older frozen offset can still legitimately yield it. |
-| D-43 | **The bridge holds `RefCell<CoreQueue<JsSlot>>`.** | `&self` is `noalias readonly` for a `Freeze` type, and JS mutates through the same pointer from inside a `forEach` callback. Measured on this module: the port answered `1, 2, 3, 4` where upstream answers `1, 4, undefined, undefined`. |
-| D-44 | **Values are a `JsSlot` enum, not one `napi_ref` each.** | `napi_create_reference` rejects primitives for a version-8 module. Exact, because primitives are immutable and compared by value. |
-| D-45 | **`Queue.of` is installed as evaluated JavaScript.** | napi-rs has no variadic parameter and `arguments` has no Rust representation. |
-| D-46 | **napi's generator `#.return` is deleted from every cursor.** | Upstream cursors have none, so `break` leaves the walk resumable. |
-| D-06 / D-07 | **No `IntoIterator`; `Symbol.iterator` installed from Rust.** | As `stack`, and for the same reasons. |
-| D-03 | **`forEach` lives in `mnemonist-napi`, not core.** | As `stack`. |
+| DIV-STACK-5 | **The bridge holds `RefCell<CoreQueue<JsSlot>>`.** | `&self` is `noalias readonly` for a `Freeze` type, and JS mutates through the same pointer from inside a `forEach` callback. Measured on this module: the port answered `1, 2, 3, 4` where upstream answers `1, 4, undefined, undefined`. |
+| DIV-STACK-6 | **Values are a `JsSlot` enum, not one `napi_ref` each.** | `napi_create_reference` rejects primitives for a version-8 module. Exact, because primitives are immutable and compared by value. |
+| DIV-STACK-7 | **`Queue.of` is installed as evaluated JavaScript.** | napi-rs has no variadic parameter and `arguments` has no Rust representation. |
+| DIV-STACK-8 | **napi's generator `#.return` is deleted from every cursor.** | Upstream cursors have none, so `break` leaves the walk resumable. |
+| DIV-STACK-1 / DIV-STACK-2 | **No `IntoIterator`; `Symbol.iterator` installed from Rust.** | As `stack`, and for the same reasons. |
+| DIV-QUEUE-1 | **`forEach` lives in `mnemonist-napi`, not core.** | As `stack`. |
 | — | **`offset` is exposed to JS.** | It is a public property upstream, and unlike `SparseSet`'s typed arrays it is a plain number, so handing it over loses nothing — and it is what makes the compaction observable at all. |
 | — | **`inspect()` is not ported.** | A Node display convenience with no upstream assertion. |
 | — | **`forEach(cb, undefined)` binds `this` to the queue.** | Upstream keys off `arguments.length > 1`, which napi's typed signature cannot see. The omitted-argument case is exact. |

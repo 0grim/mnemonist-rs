@@ -42,7 +42,7 @@ Consequences, stated plainly:
   schedule is not something either side controls), and a flaky check is worse than an absent one.
 * **What *is* observable, and is fuzzed:** everything about a *still-referenced* key's behaviour —
   identity comparison (two different objects are two different keys, the same object is always
-  the same key), the `get`/`peek`/`has`/`delete`/`set`/`clear` state machine per key, and the B-242
+  the same key), the `get`/`peek`/`has`/`delete`/`set`/`clear` state machine per key, and the BUG-DEFAULT-WEAK-MAP-1
   defect below, which only concerns values, not key lifetime.
 
 ## What upstream tests
@@ -66,7 +66,7 @@ Characterising the shape of that coverage:
   across `it` blocks, and no two keys in the same block are ever the same object.
 * **Every stored value is defined** — an array from the factory, or a literal. `undefined` is never
   stored as a value in the original suite, which is the same shape `default-map.md` describes for
-  the identical reason: it is the whole route to B-242 (below), and it is untested.
+  the identical reason: it is the whole route to BUG-DEFAULT-WEAK-MAP-1 (below), and it is untested.
 * **A key is never overwritten** by `set` after already being present.
 * **No object other than a genuine plain object is ever used as a key** — no function, no symbol,
   no primitive.
@@ -75,9 +75,9 @@ Characterising the shape of that coverage:
 
 ## What upstream does NOT test
 
-**The one real defect (B-242) and its consequences**
+**The one real defect (BUG-DEFAULT-WEAK-MAP-1) and its consequences**
 
-1. **`undefined` is never stored as a value**, so B-242 (the factory re-running on every `get` of
+1. **`undefined` is never stored as a value**, so BUG-DEFAULT-WEAK-MAP-1 (the factory re-running on every `get` of
    such a key) is unreachable in the original suite.
 2. **`has` vs. `get`'s disagreement on a stored `undefined` is never checked.**
 
@@ -102,7 +102,7 @@ Characterising the shape of that coverage:
 ## What we test in addition
 
 `crates/mnemonist-core/src/structures/default_weak_map.rs` — 12 tests, closing gaps 1, 2, 3 and 5
-in addition to reproducing all four upstream blocks as a baseline: B-242 pinned call-by-call, that
+in addition to reproducing all four upstream blocks as a baseline: BUG-DEFAULT-WEAK-MAP-1 pinned call-by-call, that
 a defined value written by the factory ends the re-run, that a re-triggered factory overwrites in
 place rather than duplicating the key's identity, `has`/`peek` disagreeing on a stored `undefined`,
 `delete` distinguishing a missing key from a stored `undefined`, `clear` dropping every entry, and
@@ -126,7 +126,7 @@ argument with a non-object value its own signature refuses to carry.
 
 ## Bugs this found
 
-**B-242 — `DefaultWeakMap.get` tests the *value*, not the key, so the factory re-runs on every
+**BUG-DEFAULT-WEAK-MAP-1 — `DefaultWeakMap.get` tests the *value*, not the key, so the factory re-runs on every
 read of a key holding `undefined`.**
 Verified against Node 24.18.1.
 
@@ -141,8 +141,8 @@ DefaultWeakMap.prototype.get = function(key) {
 };
 ```
 
-The identical defect class as `default-map.js`'s B-40 — line 1 cannot distinguish "no such key"
-from "the key is present and holds `undefined`" — but **without** B-40's `size++` side effect,
+The identical defect class as `default-map.js`'s BUG-DEFAULT-MAP-1 — line 1 cannot distinguish "no such key"
+from "the key is present and holds `undefined`" — but **without** BUG-DEFAULT-MAP-1's `size++` side effect,
 because a `WeakMap` has no `size` to drift. The consequence that remains: the factory keeps
 re-running, and `has()` reports the key present the whole time even though `get()` behaves as if
 it were not:
@@ -185,12 +185,12 @@ the original suite's own third block) was isolated. Fixed by having `delete` han
 
 | # | Divergence | Why |
 |---|---|---|
-| D-306 | **Only plain objects are accepted as keys; functions and symbols are rejected**, with a message naming the limit. A real `WeakMap` accepts all three. `test/default-weak-map.js` never constructs a key any way but `{}`. Implementing napi's function/symbol reference paths for a distinction nothing here exercises would be unverifiable scope — the same judgement call `js_key.rs` makes for object keys in the `Map` family, mirrored in the opposite direction: there, object keys are out of scope because nothing tests them; here, they are the *entire point*, and it is function/symbol keys that are out of scope for the identical reason. |
-| D-307 | **A non-object key given to `get` is rejected immediately, before the factory runs — upstream runs the factory first and only fails at the internal `items.set`.** Verified against Node 24.18.1: `get(1)` on a fresh map calls the factory (with whatever side effects it has) and *then* throws `TypeError: Invalid value used as weak map key`. Reproducing that exact order would mean calling this port's typed factory (`FunctionRef<FnArgs<(JsSlot,)>, Received>`) with a value its own signature has no slot for. `peek`/`has`/`delete` all match upstream exactly for a non-object key (a quiet miss, never a throw, because a real `WeakMap.prototype.get`/`.has`/`.delete` don't throw for one either) — only `get`'s *ordering*, on the one path no upstream test reaches, differs. |
-| D-308 | **A collected key's entry is never proactively released.** No finalizer is registered per key to notice the moment of collection; a dead `WeakKey` (one whose `napi_ref` upgrade fails) simply never matches any future candidate again — the correct answer, since a caller could not present that exact object as an argument again either — but its stored *value* stays retained, taking a slot in the linear scan, until the whole `DefaultWeakMap` itself is finalized. Nothing upstream exposes can distinguish this from prompt reclamation (there is no `size`, no iteration), so this is a memory-shape divergence, not a behavioural one — and implementing per-key finalization for a distinction nothing can observe would be exactly the "building machinery no test can reach" `js_key.rs` warns against. |
-| D-309 | **`WeakKey` is a linear scan (O(n)), not a hash table.** `crate::structures::default_weak_map::DefaultWeakMap` takes an identity predicate per call rather than requiring `K: Hash + Eq`, because JS object identity has no Rust-expressible hash — the same conclusion `js_key.rs` reaches and declines to act on for `Map` keys (out of scope there); here it is unavoidable, because identity comparison is the entire reason this structure exists. Correct, not fast, and nothing about a 60-line test file or a `WeakMap`'s own contract asks for anything faster. |
-| D-310 | **`undefined` is spelled `None`**, exactly as in `default-map`, for the identical reason: it is what makes B-242 expressible and testable from pure Rust, and it gets `peek` right for free. |
-| D-311 | **`inspect()` is not ported.** It returns the inner `WeakMap`, which does not exist in this port, and nothing asserts on it. |
+| DIV-DEFAULT-WEAK-MAP-1 | **Only plain objects are accepted as keys; functions and symbols are rejected**, with a message naming the limit. A real `WeakMap` accepts all three. `test/default-weak-map.js` never constructs a key any way but `{}`. Implementing napi's function/symbol reference paths for a distinction nothing here exercises would be unverifiable scope — the same judgement call `js_key.rs` makes for object keys in the `Map` family, mirrored in the opposite direction: there, object keys are out of scope because nothing tests them; here, they are the *entire point*, and it is function/symbol keys that are out of scope for the identical reason. |
+| DIV-DEFAULT-WEAK-MAP-2 | **A non-object key given to `get` is rejected immediately, before the factory runs — upstream runs the factory first and only fails at the internal `items.set`.** Verified against Node 24.18.1: `get(1)` on a fresh map calls the factory (with whatever side effects it has) and *then* throws `TypeError: Invalid value used as weak map key`. Reproducing that exact order would mean calling this port's typed factory (`FunctionRef<FnArgs<(JsSlot,)>, Received>`) with a value its own signature has no slot for. `peek`/`has`/`delete` all match upstream exactly for a non-object key (a quiet miss, never a throw, because a real `WeakMap.prototype.get`/`.has`/`.delete` don't throw for one either) — only `get`'s *ordering*, on the one path no upstream test reaches, differs. |
+| DIV-DEFAULT-WEAK-MAP-3 | **A collected key's entry is never proactively released.** No finalizer is registered per key to notice the moment of collection; a dead `WeakKey` (one whose `napi_ref` upgrade fails) simply never matches any future candidate again — the correct answer, since a caller could not present that exact object as an argument again either — but its stored *value* stays retained, taking a slot in the linear scan, until the whole `DefaultWeakMap` itself is finalized. Nothing upstream exposes can distinguish this from prompt reclamation (there is no `size`, no iteration), so this is a memory-shape divergence, not a behavioural one — and implementing per-key finalization for a distinction nothing can observe would be exactly the "building machinery no test can reach" `js_key.rs` warns against. |
+| DIV-DEFAULT-WEAK-MAP-4 | **`WeakKey` is a linear scan (O(n)), not a hash table.** `crate::structures::default_weak_map::DefaultWeakMap` takes an identity predicate per call rather than requiring `K: Hash + Eq`, because JS object identity has no Rust-expressible hash — the same conclusion `js_key.rs` reaches and declines to act on for `Map` keys (out of scope there); here it is unavoidable, because identity comparison is the entire reason this structure exists. Correct, not fast, and nothing about a 60-line test file or a `WeakMap`'s own contract asks for anything faster. |
+| DIV-DEFAULT-WEAK-MAP-5 | **`undefined` is spelled `None`**, exactly as in `default-map`, for the identical reason: it is what makes BUG-DEFAULT-WEAK-MAP-1 expressible and testable from pure Rust, and it gets `peek` right for free. |
+| DIV-DEFAULT-WEAK-MAP-6 | **`inspect()` is not ported.** It returns the inner `WeakMap`, which does not exist in this port, and nothing asserts on it. |
 
 ## Fuzz + bench
 
@@ -211,7 +211,7 @@ as `FuzzKey(u8)` — an index, not an object, since `mnemonist-napi` is a `cdyli
 linked into this binary. `fuzz/oracle.js`'s `WEAK_KEY_POOL` is the real-object side: eight plain
 objects, created once at oracle start-up and held by a module-level array for the process's entire
 life, so none of them is ever eligible for collection during any campaign — see "What is and is not
-observable". Values are `undefined` (weighted, the only route to B-242), `null`, small integers and
+observable". Values are `undefined` (weighted, the only route to BUG-DEFAULT-WEAK-MAP-1), `null`, small integers and
 `'v'`. Observable state is empty (`observations()` returns nothing — see above); every comparison is
 a return value, which is the entire observable surface, not a narrowed one. Deliberately excluded:
 any observation of key collection/reclamation (impossible to fuzz honestly), structurally-equal
@@ -223,7 +223,7 @@ construction). Full grammar: evidence file.
 **Falsification (gate 6).** The assertion named first was the probe script's `calls === 3`
 (mirroring the core Rust test `b_242_the_factory_re_runs_on_every_get_of_a_stored_undefined_value`'s
 own assertion), run against the real compiled addon rather than against core directly — because the
-bridge is where B-242's *composition* (peek-miss triggers the factory) actually lives. The sabotage —
+bridge is where BUG-DEFAULT-WEAK-MAP-1's *composition* (peek-miss triggers the factory) actually lives. The sabotage —
 `get` changed to check `has()` before running the factory, instead of `peek()`, the "fix" a careful
 porter would reach for — is confirmed red on a direct script (`calls === 0`, not `3`).
 
@@ -232,7 +232,7 @@ stayed green (4 passing): it never counts factory invocations, so it cannot see 
 either way. **The differential fuzzer *also* stayed green** (500 cases, 49,416 ops, 0 divergences) —
 and this is not a miss, it is a structural fact: the differential fuzzer compares `mnemonist-core`
 against upstream JS, and the napi bridge is not in that loop at all, so a bridge-only composition
-bug is invisible to it by construction, the same way B-31 was before this port started holding core
+bug is invisible to it by construction, the same way PORTBUG-1 was before this port started holding core
 state in a `RefCell`. Reverted; confirmed green again on the direct script and the original suite.
 Full record: evidence file.
 

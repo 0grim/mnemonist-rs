@@ -38,7 +38,7 @@ use crate::lru_cache::{
 const NOT_POSITIVE: &str = "mnemonist/lru-cache: capacity should be positive number.";
 const NOT_INTEGER: &str = "mnemonist/lru-cache: capacity should be a finite positive integer.";
 /// Verbatim from `lru-cache-with-delete.js`'s own `.from` — this one gets the
-/// module name right, unlike `lru-map.js`'s (B-142).
+/// module name right, unlike `lru-map.js`'s (BUG-LRU-CACHE-2).
 const CANNOT_GUESS: &str = "mnemonist/lru-cache.from: could not guess iterable length. \
      Please provide desired capacity as last argument.";
 
@@ -164,7 +164,7 @@ impl JsLruCacheWithDelete {
                 key,
                 value,
             }),
-            // B-140: see `crate::lru_cache::is_js_truthy`'s doc comment.
+            // BUG-LRU-CACHE-1: see `crate::lru_cache::is_js_truthy`'s doc comment.
             SetPop::Evicted { key, value } if is_js_truthy(&key) => Some(SetPopOutcome {
                 evicted: true,
                 key,

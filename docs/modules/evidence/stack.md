@@ -13,7 +13,7 @@ record, full benchmark table.
 | `push_returns_the_new_size` | 1 |
 | `popping_an_empty_stack_does_not_move_the_size` | 2 |
 | `size_and_the_backing_length_track_each_other` | the two quantities upstream keeps separate |
-| `cursors_do_not_restart_but_the_stack_can_be_walked_again` | 8, 9 — both levels of D-07 in one test |
+| `cursors_do_not_restart_but_the_stack_can_be_walked_again` | 8, 9 — both levels of DIV-STACK-2 in one test |
 | `a_push_during_iteration_is_not_visible_to_the_cursor` | 6 |
 | `a_pop_during_iteration_opens_a_gap_at_the_top_of_the_walk` | 5 — the `undefined` window |
 | `clear_rebinds_the_array_and_leaves_an_open_cursor_untouched` | 4 — the one a `Vec<T>` cannot express |
@@ -21,7 +21,7 @@ record, full benchmark table.
 | `for_each_reads_the_live_array_where_the_cursor_reads_the_capture` | 7 — the third behaviour |
 | `peek_is_a_pure_read` | — |
 | `an_empty_stack_iterates_zero_times` | — |
-| `from_iter_accepts_any_iterator` | D-03: core takes any `IntoIterator` |
+| `from_iter_accepts_any_iterator` | DIV-QUEUE-1: core takes any `IntoIterator` |
 | `duplicates_are_kept` | — |
 
 `crates/mnemonist-core/src/cursor/mod.rs` — 3 new tests for `Sequence::limit`

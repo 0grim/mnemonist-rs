@@ -3,7 +3,7 @@
 Chronological. See `docs/modules/bi-map.md` for the current-state document and
 `docs/modules/evidence/bi-map.md` for the gate artifacts.
 
-## B-120 found and fixed in two rounds
+## BUG-BI-MAP-1 found and fixed in two rounds
 
 1. The initial port derived both `size()`/`inverse_size()` from `OrderedMap::len()`, so `clear()`
    incidentally zeroed both — a real defect (more correct than upstream). Caught in **18 cases
@@ -38,8 +38,8 @@ strategy is running, so an unrelated module failing at the same case count under
 
 Replaying it directly against the current build (`difffuzz --module bi-map --seed 42 --cases 60`)
 answered the question: the seed decodes to exactly the program in its own comment, and that program
-diverges — B-120, round one, verbatim. It was a real, previously uncaptured divergence, not
-noise — an earlier run (or an ad hoc run of the already-registered CLI binary) had found B-120
+diverges — BUG-BI-MAP-1, round one, verbatim. It was a real, previously uncaptured divergence, not
+noise — an earlier run (or an ad hoc run of the already-registered CLI binary) had found BUG-BI-MAP-1
 and never got the chance to report it. The corpus file now carries a provenance block explaining
 both entries; the campaign in the current document is clean against the fixed tree, including both
 persisted seeds replayed first.

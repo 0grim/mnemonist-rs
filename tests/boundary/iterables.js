@@ -7,7 +7,7 @@
  * hash-tables + iterables + merge, ~1,166 LOC) is out of scope — so **every
  * assertion below is coverage upstream does not have**, and gate 7 for this
  * module has nowhere else to live: like `forEach`, it is a JavaScript-value
- * coercion and `cargo test` cannot reach it (DESIGN.md §3.5, D-03).
+ * coercion and `cargo test` cannot reach it (DESIGN.md §3.5, DIV-QUEUE-1).
  *
  * ## Why the reference implementation is inlined
  *
@@ -121,7 +121,7 @@ function outcome(implementation, name, make) {
 /**
  * A description that distinguishes everything this module can produce: a hole
  * is not `undefined`, a `Uint8Array` is not an `Array`, and a length longer
- * than the filled prefix is the entire point of B-2.
+ * than the filled prefix is the entire point of BUG-UTILS-ITERABLES-1.
  */
 function describe_(value) {
   if (Array.isArray(value)) {
@@ -267,7 +267,7 @@ describe('mnemonist/utils/iterables', function () {
       agree('toArray', function () { return new Map([['k', 'v']]); });
     });
 
-    it('an overstated length leaves HOLES, not undefined (B-2).', function () {
+    it('an overstated length leaves HOLES, not undefined (BUG-UTILS-ITERABLES-1).', function () {
       var result = agree('toArray', function () { return liar(5, [1, 2]); }).value;
 
       assert.strictEqual(result.length, 5);
@@ -293,7 +293,7 @@ describe('mnemonist/utils/iterables', function () {
         'RangeError: Invalid array length');
     });
 
-    it('the sharpest form of B-2: a bare {length: n} enumerates its own length.', function () {
+    it('the sharpest form of BUG-UTILS-ITERABLES-1: a bare {length: n} enumerates its own length.', function () {
       // No `forEach` on the target, so `forEach` falls through to branch 5 and
       // enumerates own properties -- `length` among them.
       var result = agree('toArray', function () { return {length: 5}; }).value;

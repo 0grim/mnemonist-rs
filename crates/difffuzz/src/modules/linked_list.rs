@@ -22,7 +22,7 @@
 //!
 //! # Observable state
 //!
-//! `size`, `first()`, `last()` (the pair B-241 depends on — see the module
+//! `size`, `first()`, `last()` (the pair BUG-LINKED-LIST-1 depends on — see the module
 //! docs), and `toArray()`.
 //!
 //! # Deliberately excluded
@@ -157,7 +157,7 @@ impl ModuleSpec for LinkedListSpec {
             },
             // `Array.from(list)` -- the COLLECTION's Symbol.iterator, aliased
             // to `values` upstream, so a fresh cursor every call (the factory
-            // half of D-07), unlike `$next`, which must never restart.
+            // half of DIV-STACK-2), unlike `$next`, which must never restart.
             "$spread" => {
                 let mut cursor = instance.list.values();
                 let mut items = Vec::new();

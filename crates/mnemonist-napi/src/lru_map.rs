@@ -7,7 +7,7 @@
 //! step at all. See `crate::lru_cache`'s module docs for the shared design
 //! this reuses wholesale.
 //!
-//! # A confirmed upstream inconsistency (B-142)
+//! # A confirmed upstream inconsistency (BUG-LRU-CACHE-2)
 //!
 //! `lru-map.js`'s own `LRUMap.from` throws
 //! `'mnemonist/lru-cache.from: could not guess iterable length. ...'` on an
@@ -39,7 +39,7 @@ const NOT_POSITIVE: &str = "mnemonist/lru-map: capacity should be positive numbe
 /// Verbatim from `lru-map.js`.
 const NOT_INTEGER: &str = "mnemonist/lru-map: capacity should be a finite positive integer.";
 /// Verbatim from `lru-map.js` — **not** `mnemonist/lru-map.from`. See the
-/// module docs (B-142).
+/// module docs (BUG-LRU-CACHE-2).
 const CANNOT_GUESS: &str = "mnemonist/lru-cache.from: could not guess iterable length. \
      Please provide desired capacity as last argument.";
 
@@ -166,7 +166,7 @@ impl JsLruMap {
                 key,
                 value,
             }),
-            // B-140: see `crate::lru_cache::is_js_truthy`'s doc comment.
+            // BUG-LRU-CACHE-1: see `crate::lru_cache::is_js_truthy`'s doc comment.
             SetPop::Evicted { key, value } if is_js_truthy(&key) => Some(SetPopOutcome {
                 evicted: true,
                 key,

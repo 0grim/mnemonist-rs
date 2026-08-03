@@ -23,7 +23,7 @@
 //! Like [`crate::queue`] and [`crate::stack`], the core structure is held in a
 //! [`RefCell`] so that `&self` is not `noalias readonly` and a JS callback's
 //! mutation is actually seen. See [`crate::cursor::CellCursor`] for the
-//! measured failure; B-31 is this module's instance of it.
+//! measured failure; PORTBUG-1 is this module's instance of it.
 
 use std::cell::RefCell;
 
@@ -87,7 +87,7 @@ impl JsSparseSet {
 
     /// A fresh cursor over the members, in `dense` order.
     ///
-    /// This is the *factory* half of D-07: every call constructs a new cursor
+    /// This is the *factory* half of DIV-STACK-2: every call constructs a new cursor
     /// object, so `[...set]` works repeatedly, while each cursor is
     /// individually non-restartable. `crate::cursor::install_iterator_factories`
     /// aliases `Symbol.iterator` onto this method, exactly as upstream's last
@@ -98,7 +98,7 @@ impl JsSparseSet {
         // the core structure and keeps the instance alive for the cursor's
         // whole life. The projection deliberately stops at the cell rather
         // than at the set: `CellCursor` re-borrows on every `step`, so element
-        // writes during iteration are visible (D-08) *and* the borrow is never
+        // writes during iteration are visible (DIV-PROJ-10) *and* the borrow is never
         // outstanding while JS is on the stack.
         let source = this.share_with(env, |set| Ok(&set.inner))?;
 
@@ -139,7 +139,7 @@ impl JsSparseSet {
         // callback may `add`, `delete` or `clear` through the same object, and
         // an outstanding borrow would turn upstream's ordinary behaviour into
         // a `BorrowMutError`. The `RefCell` is also what stops LLVM hoisting
-        // the `size` read out of this loop entirely (B-31).
+        // the `size` read out of this loop entirely (PORTBUG-1).
         while index < self.inner.borrow().size() {
             // `undefined` past the end of `dense` reaches the callback as
             // `undefined` upstream; the loop bound makes that unreachable for
@@ -166,7 +166,7 @@ impl JsSparseSet {
 
 /// The cursor `SparseSet.prototype.values()` hands out.
 ///
-/// `#[napi(iterator)]` supplies the identity half of D-07 for free: this
+/// `#[napi(iterator)]` supplies the identity half of DIV-STACK-2 for free: this
 /// object's own `Symbol.iterator` returns itself, so it is non-restartable,
 /// and partial consumption followed by a spread continues rather than
 /// restarting. Verified pre-kickoff against Node 24 (DESIGN.md 11.3).

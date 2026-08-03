@@ -10,7 +10,7 @@
 //!
 //! Members are drawn in range (`workload.a[i]` is already `rng.below(size)`),
 //! so this measures the structure rather than upstream's out-of-range
-//! corruption path (B-8) — that path is exhaustively covered by the
+//! corruption path (BUG-SPARSE-SET-1) — that path is exhaustively covered by the
 //! differential fuzzer, where it belongs, exactly as `sparse-set`'s own
 //! mixed workload documents.
 

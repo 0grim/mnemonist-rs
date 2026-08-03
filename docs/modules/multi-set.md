@@ -47,17 +47,17 @@ Upstream's own guard is `if (count === 0) return false;`, where `count` is `this
 fires**: no live entry's multiplicity is ever exactly `0` (every method here deletes an item outright
 rather than leaving a zero multiplicity behind). The fall-through does `this.size -= undefined`
 (`NaN`), decrements `dimension` unconditionally, and still returns `true` — see "Bugs this found",
-B-161.
+BUG-MULTI-SET-2.
 
 **`#.edit(a, b)` where `b` already exists as a distinct key.** The file's own third `edit` case
 (`set.add('c'); set.edit('b', 'c');`) exercises exactly this shape but never reads `.dimension`
 afterwards — only `multiplicities()`. `edit` never touches `dimension` at all, even though a real key
-(`b`, absorbed into... no, `a`, deleted) disappears from `items`. See "Bugs this found", B-162.
+(`b`, absorbed into... no, `a`, deleted) disappears from `items`. See "Bugs this found", BUG-MULTI-SET-3.
 
 **`#.set` called twice on the same key with two *positive* counts.** The file's own double-`.set`
 case (`set.set('hello', 4); set.set('hello', -34);`) follows a positive `set` with a
 **non-positive** one, which takes the early delete branch — never two positive calls in a row. See
-"Bugs this found", B-160.
+"Bugs this found", BUG-MULTI-SET-1.
 
 **A fractional or `NaN` count**, from a real JS `number`. `typeof count !== 'number'` is upstream's
 only type guard; it never checks integrality. `add('a', 1.5)` is legal upstream and leaves
@@ -70,8 +70,8 @@ original suite.
 ## What we test in addition
 
 `crates/mnemonist-core/src/structures/multi_set.rs` — 16 tests, covering every upstream block as a
-baseline plus B-161 (deleting an absent item corrupting `size`/`dimension` while reporting `true`),
-B-162 (`edit` into an existing key not adjusting `dimension`), B-160 (`set` on an existing item
+baseline plus BUG-MULTI-SET-2 (deleting an absent item corrupting `size`/`dimension` while reporting `true`),
+BUG-MULTI-SET-3 (`edit` into an existing key not adjusting `dimension`), BUG-MULTI-SET-1 (`set` on an existing item
 adding rather than replacing), and the `A === B` identity shortcut for `isSubset`/`isSuperset`.
 
 `fold_falsy`'s `NaN`-folds-to-`1` behaviour and the fractional-count permissiveness are exercised
@@ -88,7 +88,7 @@ that counts multiplicity-above-one and drain-to-zero states directly.
 Three upstream defects, all confirmed by reading (each is a straightforward consequence of the
 source, not a runtime ambiguity), none reachable through gate 4 alone.
 
-### B-160 — `#.set` on an existing item **adds**, it does not replace
+### BUG-MULTI-SET-1 — `#.set` on an existing item **adds**, it does not replace
 
 `multi-set.js`'s `set`:
 
@@ -115,7 +115,7 @@ gate 4 cannot see this. Reproduced faithfully in `MultiSet::set` — a "correcte
 version would be *more correct than upstream* and therefore wrong per this port's bug-for-bug
 fidelity rule. Pinned by `set_replaces_a_missing_item_but_adds_to_an_existing_one`.
 
-### B-161 — `#.delete` on an absent item corrupts `size` to `NaN`, decrements `dimension`, and reports `true`
+### BUG-MULTI-SET-2 — `#.delete` on an absent item corrupts `size` to `NaN`, decrements `dimension`, and reports `true`
 
 `multi-set.js`'s `delete`:
 
@@ -143,7 +143,7 @@ still reports `true`, indistinguishable from a real deletion. Reproduced bug-for
 silently *fix* this defect instead of reproducing it. Pinned by
 `b_161_deleting_an_absent_item_corrupts_size_and_dimension_but_reports_true`.
 
-### B-162 — `#.edit` never adjusts `dimension`, even when it removes a real key
+### BUG-MULTI-SET-3 — `#.edit` never adjusts `dimension`, even when it removes a real key
 
 `multi-set.js`'s `edit`:
 
@@ -169,10 +169,10 @@ gate 4 cannot see the drift. Reproduced bug-for-bug: `MultiSet::edit` does not t
 
 | # | Divergence | Why |
 |---|---|---|
-| D-163 | **`dimension` is a tracked `i64` counter, not derived from `items.len()`.** | The one place `multi-map`'s equivalent simplification (derive it) would be *wrong*: B-161 and B-162 both make upstream's own counter diverge from the real distinct-key count, and a derived counter cannot reproduce either divergence. `i64` rather than `usize` because B-161 can drive it negative. |
-| D-164 | **`add`'s/`remove`'s return-value inconsistency (`this` vs. `undefined`, depending on which branch of the sign-flip delegation ran) is not modelled at the bridge.** | Untested by `test/multi-set.js`, which never checks either method's return value; the bridge always returns `this` for chaining. The differential fuzzer's own spec *does* model this exactly (see "Fuzz + bench" — comparing raw return values against upstream needed it), which is where the asymmetry was actually confirmed empirically rather than only by reading. |
-| D-165 | **Counts are `f64` throughout, including a fractional one repeating a `values()`/`forEach` item `ceil(multiplicity)` times via `i < multiplicity`.** | Not a divergence from upstream — this *is* upstream's own behaviour, faithfully reproduced rather than rounded away — but stated because it is easy to assume a "count" is an integer. See `MultiSet`'s module docs. |
-| D-166 | **`edit`'s execution order (`set` on `b` before `delete` of `a`) is preserved even when `a === b`**, which doubles the multiplicity and then deletes the (now sole) entry outright. | Untested upstream; reproduced because nothing here should special-case a shape the source itself does not guard against. |
+| DIV-MULTI-SET-1 | **`dimension` is a tracked `i64` counter, not derived from `items.len()`.** | The one place `multi-map`'s equivalent simplification (derive it) would be *wrong*: BUG-MULTI-SET-2 and BUG-MULTI-SET-3 both make upstream's own counter diverge from the real distinct-key count, and a derived counter cannot reproduce either divergence. `i64` rather than `usize` because BUG-MULTI-SET-2 can drive it negative. |
+| DIV-MULTI-SET-2 | **`add`'s/`remove`'s return-value inconsistency (`this` vs. `undefined`, depending on which branch of the sign-flip delegation ran) is not modelled at the bridge.** | Untested by `test/multi-set.js`, which never checks either method's return value; the bridge always returns `this` for chaining. The differential fuzzer's own spec *does* model this exactly (see "Fuzz + bench" — comparing raw return values against upstream needed it), which is where the asymmetry was actually confirmed empirically rather than only by reading. |
+| DIV-MULTI-SET-3 | **Counts are `f64` throughout, including a fractional one repeating a `values()`/`forEach` item `ceil(multiplicity)` times via `i < multiplicity`.** | Not a divergence from upstream — this *is* upstream's own behaviour, faithfully reproduced rather than rounded away — but stated because it is easy to assume a "count" is an integer. See `MultiSet`'s module docs. |
+| DIV-MULTI-SET-4 | **`edit`'s execution order (`set` on `b` before `delete` of `a`) is preserved even when `a === b`**, which doubles the multiplicity and then deletes the (now sole) entry outright. | Untested upstream; reproduced because nothing here should special-case a shape the source itself does not guard against. |
 
 ## Fuzz + bench
 
@@ -191,7 +191,7 @@ The op alphabet covers `add`/`remove`/`set`/`edit`/`delete`/`has`/`multiplicity`
 plus a bounded `top(n)` (`n` in `1..=5`, so it never hits its own arity guard — out of scope for a
 core-level campaign). The item pool is three items; the count pool mixes positive (so multiplicities
 build up), zero (a documented no-op) and negative (the sign-flip delegation between `add` and
-`remove`) values — fractional and `NaN` counts are deliberately not in this grammar, see D-165.
+`remove`) values — fractional and `NaN` counts are deliberately not in this grammar, see DIV-MULTI-SET-3.
 Observable state is `size`, `dimension`, `items` (`[item, count]` pairs, in insertion order). Full
 grammar: evidence file.
 
@@ -219,7 +219,7 @@ Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 10,0
 
 **`mixed-1e6`** — 1e6 mixed `add`/`multiplicity`/`remove` (50/25/25) over a 20,000-item domain
 (`add`/`remove` deliberately used rather than `delete`/`set`, which carry reproduced-bug-for-bug
-corruption — B-160/B-161 — on paths this workload would otherwise hit constantly), ~12.5 net
+corruption — BUG-MULTI-SET-1/BUG-MULTI-SET-2 — on paths this workload would otherwise hit constantly), ~12.5 net
 multiplicity per item on average by the run's end: the port is 1.36× faster at p50 (16.2 vs 22.3
 ns/op), 1.2× faster at p99, about 1.13× slower at min. Full table and the p50 fix history: evidence
 file and log.

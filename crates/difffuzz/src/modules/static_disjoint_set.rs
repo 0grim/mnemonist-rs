@@ -22,7 +22,7 @@
 //!
 //! * it straddles 256, where `getPointerArray` switches `parents` from 8-bit to
 //!   16-bit while `ranks` — sized from `log2(size)` — stays 8-bit; and
-//! * it is large enough for the B-7 rank bug to drive one root's rank past 255
+//! * it is large enough for the BUG-STATIC-DISJOINT-SET-1 rank bug to drive one root's rank past 255
 //!   and wrap it inside a `Uint8Array`, the compounding-bugs case in NOTES.md
 //!   that a `Vec<u32>` port would silently get wrong.
 

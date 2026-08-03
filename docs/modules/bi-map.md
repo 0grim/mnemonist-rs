@@ -36,7 +36,7 @@ Twelve `it` blocks, and every one of them is a happy path:
 
 ## What upstream does NOT test
 
-**The exact gap that let B-120 through the door.** `clear`'s own `it` block asserts `map.size` and
+**The exact gap that let BUG-BI-MAP-1 through the door.** `clear`'s own `it` block asserts `map.size` and
 `map.has`, never `map.inverse.size`. Upstream's shared `clear` function resets only the counter
 belonging to whichever side called it (`this.size = 0`), leaving the other stale — invisible to a
 suite that only ever calls `clear()` from the forward side and only ever checks the forward
@@ -61,7 +61,7 @@ counter afterwards.
 ## What we test in addition
 
 `crates/mnemonist-core/src/structures/bi_map.rs` — 12 tests, starting with a 1:1 port of all
-twelve upstream blocks as a baseline. They close B-120 in both directions plus the
+twelve upstream blocks as a baseline. They close BUG-BI-MAP-1 in both directions plus the
 healing-on-next-mutation property (gap 1), a `set` that rebinds both sides of the bijection in one
 call (gap 2), `delete` on a missing key (gap 3), reinsertion order (gap 4), the inverse view's full
 method set exercised directly rather than only read through (gap 5), and iteration on an empty map
@@ -73,7 +73,7 @@ Gaps 7 and 8 are stated rather than closed — see "Deliberate divergences".
 
 ## Bugs this found
 
-### B-120 — `BiMap.prototype.clear` resets only ONE of its two size counters
+### BUG-BI-MAP-1 — `BiMap.prototype.clear` resets only ONE of its two size counters
 
 Verified against Node 24.18.1; found by differential fuzzing on the first campaign run against this
 module.
@@ -124,7 +124,7 @@ evidence that the code behind it does that.
 | # | Divergence | Why |
 |---|---|---|
 | — | **`InverseMap` is a view, not a second value.** | Upstream constructs a real second object whose six generic methods delegate to `Map.prototype[name].apply(this.items, ...)`. One `BiMap<K>` backs both directions here; the bridge's `JsBiMapInverse` holds a `SharedReference` to the *same* `RefCell<Core>` the `JsBiMap` owns, so a write through either object is visible to the other, exactly as upstream's shared `Map`s are. |
-| — | **`size`/`inverse_size` are real stored counters, not `OrderedMap::len()`.** | Required to reproduce B-120 at all — a derived counter cannot desync from anything. |
+| — | **`size`/`inverse_size` are real stored counters, not `OrderedMap::len()`.** | Required to reproduce BUG-BI-MAP-1 at all — a derived counter cannot desync from anything. |
 | — | **`inspect()` is not ported.** | A Node display convenience with no upstream assertion, the same call made for `bit-set`. |
 | — | **`forEach`'s third callback argument** is the bridge object, not upstream's inner `Map`. | Same divergence made once for the whole `Map`-backed family (`docs/modules/default-map.md`); there is no Rust equivalent to hand out. |
 
@@ -136,7 +136,7 @@ evidence that the code behind it does that.
 module=bi-map seed=42  cases=11778  ops=1178193  wall=90.0s  divergences=0
 ```
 
-**1.18M operations, zero divergences**, on the tree with B-120 fixed. Reproduce with
+**1.18M operations, zero divergences**, on the tree with BUG-BI-MAP-1 fixed. Reproduce with
 `target/release/difffuzz --module bi-map --seed 42 --cases 11778`.
 
 Keys and values share one six-item pool, mixed strings and numbers, so `set` collides with an
@@ -147,7 +147,7 @@ collision handling is the entire point of the module. Observable state is `size`
 
 **Falsified (gate 6):** the sabotage removed `self.inverse_size = 0;` from `clear` — reintroducing
 the exact "more correct than upstream" defect fuzzing first caught. Confirmed red at the named
-assertion in `clear_desyncs_size_from_inverse_size_b_120` (`left: 0, right: 1`); reverted and
+assertion in `clear_desyncs_size_from_inverse_size_bug_bi_map_1` (`left: 0, right: 1`); reverted and
 confirmed green again across all 11 `bi_map` unit tests and a clean `cargo test --workspace`.
 
 ### Bench
@@ -157,7 +157,7 @@ Host: AMD Ryzen 5 7600X, 12 threads, WSL2, Node 24.18.1, rustc 1.97.1, quiet ser
 
 **`mixed-1e6`** — 1e6 mixed `set`/`get`/`delete` (50/25/25) over a shared 1e6-value domain for both
 key and value (drawing both from one domain makes `set`'s four-branch constraint resolution —
-B-120's own subject — fire under load rather than only on the cheap "brand new pair" path):
+BUG-BI-MAP-1's own subject — fire under load rather than only on the cheap "brand new pair" path):
 the port is slower on both p50 and p99, and uses far less memory (60.1 MB RSS delta versus 212.8
 MB). **This is the least trustworthy p50 figure in the port**: across six runs it has ranged from
 1.14× to 1.59× slower, where every other module's ratio reproduces to about 1% — read it as

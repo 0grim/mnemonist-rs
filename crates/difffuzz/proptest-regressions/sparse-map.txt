@@ -16,7 +16,7 @@
 #
 # Upstream's delete is SparseSet's swap-with-last, copied verbatim: the last
 # MEMBER is moved into the hole and the last VALUE is not, so the moved member
-# inherits the deleted member's value (B-11). The sabotage was to move the
+# inherits the deleted member's value (BUG-SPARSE-MAP-1). The sabotage was to move the
 # value too -- which is not a typo but the change a reader makes on purpose,
 # having decided the omission was an oversight.
 #

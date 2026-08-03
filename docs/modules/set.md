@@ -121,7 +121,7 @@ campaigns, zero divergences.
 **None in upstream.** `set.js` is 356 lines of straightforward code with no shared mutable state, no
 typed arrays, no index arithmetic and no re-entrancy, and reading it statement by statement turned
 up nothing to file. That is worth recording as an outcome rather than omitting: two of the three
-units read closely this way produced verified upstream bugs (B-80 and B-81 in `sort`), and this
+units read closely this way produced verified upstream bugs (BUG-SORT-1 and BUG-SORT-2 in `sort`), and this
 one genuinely does not.
 
 Three things that *look* like bugs and are not, each checked against Node 24.18.1:
@@ -155,7 +155,7 @@ member is seen a second time. Measured, and now the subject of
 
 ## Deliberate divergences
 
-### D-85 — the four mutating functions replay `add`/`delete` rather than rebuilding
+### DIV-SET-1 — the four mutating functions replay `add`/`delete` rather than rebuilding
 
 Core returns the `SetOp` trace it applied, in upstream's own call order, and the bridge makes
 exactly those calls on the caller's object. The alternative — computing the final member list and
@@ -166,7 +166,7 @@ the first call, so a member's own side effects cannot divert the rest of the tra
 resolves `A.add` on every call and so could be diverted. Nothing in the original suite goes either
 way, and one lookup is the honest reading of `A.add(x)` repeated in a loop.
 
-### D-86 — object members are refused
+### DIV-SET-2 — object members are refused
 
 `JsKey`'s existing limit, unchanged: `Set` compares objects by identity and no identity hash for a
 JS object is reachable from Rust. The two implementable designs — a hidden `Symbol` tag, or an
@@ -175,7 +175,7 @@ association list probed with `napi_strict_equals` — each cost something real, 
 The refusal names the limitation rather than silently conflating two distinct objects, which is what
 a port keyed on anything weaker would do.
 
-### D-87 — the variadic pair goes through an array, and the arity check stays in core
+### DIV-SET-3 — the variadic pair goes through an array, and the arity check stays in core
 
 napi has no variadic parameter. `intersection` and `union` take a `Vec` and `tests/bridge/set.js`
 spreads into it — arity glue in the shim, and the same role
@@ -183,7 +183,7 @@ spreads into it — arity glue in the shim, and the same role
 `mnemonist-core`, so upstream's threshold and its exact message live in one place and the shim
 forwards whatever it was handed, including nothing.
 
-### D-88 — upstream's three `===` shortcuts are implemented, and unreachable from JavaScript
+### DIV-SET-4 — upstream's three `===` shortcuts are implemented, and unreachable from JavaScript
 
 `intersection` skips `set.has(item)` when `set === smallestSet`; `isSubset` returns `true` when
 `A === B`; `intersectionSize` returns `A.size` on the same test. Core implements all three with

@@ -15,14 +15,14 @@
 //! The core structure is held in a [`RefCell`] for the same reason as every
 //! other bridge in this port past `default-map`: `&self` on a bare core value
 //! is `noalias readonly`, and a `forEach`/factory callback that calls back
-//! into the same list must not meet an outstanding borrow (B-31).
+//! into the same list must not meet an outstanding borrow (PORTBUG-1).
 //!
 //! # The three iterators share one core cursor
 //!
 //! `values()`, `entries()` and `forEach` all drive
 //! `mnemonist_core::structures::linked_list::ListCursor` — see that module's
 //! docs for why one primitive covers all three here, unlike `lru-cache`'s
-//! split between `Sequence` and `ForEachWalk` (D-90).
+//! split between `Sequence` and `ForEachWalk` (DIV-LRU-CACHE-2).
 
 use std::cell::RefCell;
 
@@ -76,7 +76,7 @@ impl JsLinkedList {
     /// Upstream's `last`.
     ///
     /// See `mnemonist_core::structures::linked_list`'s module docs for
-    /// B-241: after `shift()` has emptied the list, this reproduces
+    /// BUG-LINKED-LIST-1: after `shift()` has emptied the list, this reproduces
     /// upstream's stale answer (the just-removed item) rather than
     /// `undefined`, because core's `last()` does — nothing bridge-specific
     /// is needed to reach the bug, which is the point of fixing it at the

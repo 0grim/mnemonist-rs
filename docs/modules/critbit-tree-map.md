@@ -70,18 +70,18 @@ value" panic caught the mismatch, minimised by proptest to
 `set("a", undefined); delete("a"); set("a", undefined)`. Fixed by capturing the real pushed index.
 
 No upstream bug was found in this unit specifically — both of upstream's genuine defects in this
-engine are in the **fixed** variant's typed-array bookkeeping (B-260, B-261; see
+engine are in the **fixed** variant's typed-array bookkeeping (BUG-FIXED-CRITBIT-TREE-MAP-1, BUG-FIXED-CRITBIT-TREE-MAP-2; see
 `docs/modules/fixed-critbit-tree-map.md`), which has no equivalent in the unbounded, garbage-
 collected version.
 
 ## Deliberate divergences
 
-* **D-245**: keys are truncated to their low 8 bits at the bridge
+* **DIV-CRITBIT-TREE-MAP-1**: keys are truncated to their low 8 bits at the bridge
   (`mnemonist_napi::critbit_tree_map::decode_key`), rather than reproducing upstream's own masked
   critical-bit arithmetic for UTF-16 code points ≥ 256. A no-op for every key either original suite
   supplies (all Latin-1/ASCII); sidesteps re-deriving which of several interacting masked bitwise
   operations upstream's own bug would produce, for zero test-suite benefit. Same judgement call as
-  trie's D-200.
+  trie's DIV-TRIE-MAP-1.
 * This port uses an **arena of indices** (`Ptr`, `keys`/`values`/`internals` vectors) rather than
   `Box`-linked nodes the way a naive translation of upstream's object graph would suggest. An
   implementation-technique difference with no observable consequence — see the module's own doc
@@ -120,7 +120,7 @@ what turns a critical-bit computation bug into a `root` mismatch rather than onl
 and it is exactly what caught gate 6's sabotage below. Full grammar: evidence file.
 
 **What this grammar deliberately does not cover:** `forEach` (no op drives it; its ordering is
-covered instead by the native test and by gate 4), and non-Latin-1 keys (D-245, above).
+covered instead by the native test and by gate 4), and non-Latin-1 keys (DIV-CRITBIT-TREE-MAP-1, above).
 
 ### Falsification (gate 6)
 

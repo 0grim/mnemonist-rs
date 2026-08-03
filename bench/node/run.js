@@ -723,7 +723,7 @@ function runMixedBitVector(BitVector, workload, k) {
 
 // Twin of bench/runner/src/default_map.rs. 50% set (mutating), 25%
 // get-or-insert (mutating and a read -- the factory always returns a
-// defined value, so this never triggers B-40's `size` drift), 25% delete.
+// defined value, so this never triggers BUG-DEFAULT-MAP-1's `size` drift), 25% delete.
 function runMixedDefaultMap(DefaultMap, workload, k) {
   const map = new DefaultMap(function(key) { return key; });
   const ops = workload.kind.length;
@@ -827,7 +827,7 @@ function runMixedMultiMap(MultiMap, workload, k) {
 // multiplicity (pure read), 25% remove (mutating, no contribution --
 // `MultiSet#.remove` returns nothing, matching `#.set`'s convention
 // elsewhere in this batch). `delete`/`set` are excluded on purpose -- see
-// that file's own module docs on B-160/B-161.
+// that file's own module docs on BUG-MULTI-SET-1/BUG-MULTI-SET-2.
 function runMixedMultiSet(MultiSet, workload, k) {
   const set = new MultiSet();
   const ops = workload.kind.length;
@@ -2064,7 +2064,7 @@ function runDrain(SparseSet, size, seed, passes) {
     const clock = process.hrtime.bigint();
 
     // A fresh iterator per pass: the collection's Symbol.iterator is a factory
-    // (D-07), and reusing one would measure an exhausted cursor from pass 2 on.
+    // (DIV-STACK-2), and reusing one would measure an exhausted cursor from pass 2 on.
     const iterator = set.values();
     let step = iterator.next();
 
@@ -2119,7 +2119,7 @@ function runDrainSort(Sort, size, seed, passes) {
 // Twin of bench/runner/src/suffix_array.rs. Same drain shape as `sort`: one
 // measured sample per CONSTRUCTION. A four-symbol alphabet, generated fresh
 // per pass from the matched stream so the recursive case (repeated triples)
-// is exercised rather than avoided -- see that file's own docs on B-91.
+// is exercised rather than avoided -- see that file's own docs on BUG-SUFFIX-ARRAY-2.
 function runDrainSuffixArray(SuffixArray, size, seed, passes) {
   const rng = new XorShift32(seed);
   const codes = new Array(size * passes);

@@ -16,15 +16,15 @@
 //!    upstream. Reproduced by matching on the JS value's type rather than
 //!    coercing it.
 //! 3. **`size` and `rank` return `i64`**, because upstream's `size` counter can
-//!    go negative (B-13) and a `u32` could not carry the state upstream
+//!    go negative (BUG-SPARSE-QUEUE-SET-2) and a `u32` could not carry the state upstream
 //!    reaches.
 //! 4. **`select` yields `Either<i64, Undefined>`.** Upstream returns `-1`, a
 //!    position, or falls out of its loop and returns `undefined` — three
-//!    outcomes, and D-39 says `Option` renders the third as `null`.
+//!    outcomes, and DIV-FIXED-STACK-1 says `Option` renders the third as `null`.
 //!
 //! Like [`crate::queue`] and [`crate::stack`], the core structure is held in a
 //! [`RefCell`] so that `&self` is not `noalias readonly` and a JS callback's
-//! mutation is actually seen — see [`crate::cursor::CellCursor`] and B-31.
+//! mutation is actually seen — see [`crate::cursor::CellCursor`] and PORTBUG-1.
 //! `forEach` is this module's re-entry point; the cursors need no cell,
 //! because they own everything they read.
 
@@ -56,7 +56,7 @@ impl JsBitSet {
         self.inner.borrow().length() as u32
     }
 
-    /// Upstream's `size` counter — see B-13 for why this is signed.
+    /// Upstream's `size` counter — see BUG-SPARSE-QUEUE-SET-2 for why this is signed.
     #[napi(getter)]
     pub fn size(&self) -> i64 {
         self.inner.borrow().size()
@@ -164,7 +164,7 @@ impl JsBitSet {
         Ok(())
     }
 
-    /// A fresh cursor over the bits — the factory half of D-07.
+    /// A fresh cursor over the bits — the factory half of DIV-STACK-2.
     ///
     /// Unlike `SparseSet::values`, this needs no `SharedReference`: upstream's
     /// closure captures the array *object* and never touches `this` again, so

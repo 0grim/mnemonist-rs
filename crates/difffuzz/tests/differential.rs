@@ -592,7 +592,7 @@ fn set_matches_upstream() {
 
 /// `bloom-filter` is the only module whose op arguments are deliberately
 /// ill-typed: `add` and `test` take numbers and booleans as well as strings,
-/// because every non-string collapses onto the empty sequence upstream (B-98)
+/// because every non-string collapses onto the empty sequence upstream (BUG-BLOOM-FILTER-3)
 /// and that is only reachable if the grammar can express one.
 #[test]
 fn bloom_filter_matches_upstream() {
@@ -683,7 +683,7 @@ fn fixed_reverse_heap_matches_upstream() {
 // agent's hunk.
 
 /// `bi-map` — this campaign's own regression corpus carries two REAL
-/// divergences (B-120), not sabotages; see the corpus file's provenance block
+/// divergences (BUG-BI-MAP-1), not sabotages; see the corpus file's provenance block
 /// and `docs/modules/bi-map.md`.
 #[test]
 fn bi_map_matches_upstream() {
@@ -864,7 +864,7 @@ fn multi_map_matches_upstream() {
 
 /// `multi-set` — a three-item pool over `add`/`remove`/`set`/`edit`/`delete`,
 /// small counts including zero and negative (the sign-flip delegation), and
-/// a bounded `top`. See the spec's module docs for B-161/B-162's coverage
+/// a bounded `top`. See the spec's module docs for BUG-MULTI-SET-2/BUG-MULTI-SET-3's coverage
 /// here.
 #[test]
 fn multi_set_matches_upstream() {

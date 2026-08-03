@@ -73,7 +73,7 @@
 //! merging, which node ends up at the root after several pops depends on the
 //! heap's internal tree shape, not on insertion order alone — this is
 //! exactly the tie-break `utils/merge.js`'s k-way algorithms depend on (see
-//! `crate::utils::merge`'s module docs, D-105) and the earlier linear-scan
+//! `crate::utils::merge`'s module docs, DIV-UTILS-2) and the earlier linear-scan
 //! substitute there could not reproduce.
 
 use std::cell::{Cell, RefCell};
@@ -188,7 +188,7 @@ pub struct FibonacciHeap<T, C, E = Thrown> {
     min: Cell<Option<NodeId>>,
     /// `this.size`.
     ///
-    /// `i64`, not `usize` -- see NOTES.md B-220. `pop`'s `this.size--` runs
+    /// `i64`, not `usize` -- see NOTES.md BUG-FIBONACCI-HEAP-1. `pop`'s `this.size--` runs
     /// AFTER `consolidate`, so a comparator that calls `clear()` (which sets
     /// `this.size = 0`) from inside that `consolidate` leaves the pending
     /// decrement to compute `0 - 1`. JavaScript has no unsigned integers:
@@ -231,7 +231,7 @@ impl<T: Clone, C, E> FibonacciHeap<T, C, E> {
     }
 
     /// `this.size`. `i64`, not `usize` -- see the field's own docs, NOTES.md
-    /// B-220.
+    /// BUG-FIBONACCI-HEAP-1.
     pub fn size(&self) -> i64 {
         self.size.get()
     }
@@ -417,7 +417,7 @@ impl<T: Clone, C, E> FibonacciHeap<T, C, E> {
 
 impl<T: Clone, E, C: Comparator<T, E>> FibonacciHeap<T, C, E> {
     /// `#.push` — returns `++this.size`. `i64`, matching [`size`](Self::size)
-    /// — see that field's own docs, NOTES.md B-220.
+    /// — see that field's own docs, NOTES.md BUG-FIBONACCI-HEAP-1.
     pub fn push(&self, item: T) -> Result<i64, E> {
         let node = self.create_node(item);
 
@@ -450,9 +450,9 @@ impl<T: Clone, E, C: Comparator<T, E>> FibonacciHeap<T, C, E> {
     pub fn pop(&self) -> Result<Option<T>, E> {
         // `if (!this.size) return undefined;` -- a JS falsy check, which
         // only a `size` of exactly `0` (or `NaN`, unreachable here) passes.
-        // A NEGATIVE `size` (NOTES.md B-220) is truthy and does NOT satisfy
+        // A NEGATIVE `size` (NOTES.md BUG-FIBONACCI-HEAP-1) is truthy and does NOT satisfy
         // this guard, so a `pop()` that follows the exact re-entrant-`clear`
-        // sequence B-220 describes proceeds past this point with `this.min`
+        // sequence BUG-FIBONACCI-HEAP-1 describes proceeds past this point with `this.min`
         // already `null` -- upstream's next line, `z.child`, is then a
         // `TypeError: Cannot read properties of null (reading 'child')`.
         // Reproduced below as a panic rather than a `Result::Err`: both
@@ -460,7 +460,7 @@ impl<T: Clone, E, C: Comparator<T, E>> FibonacciHeap<T, C, E> {
         // building a raised-message channel for a state reachable only
         // through this one adversarial re-entrancy is disproportionate to
         // what any caller -- fuzzer included -- can otherwise reach. See
-        // NOTES.md B-220 and `docs/modules/fibonacci-heap.md`.
+        // NOTES.md BUG-FIBONACCI-HEAP-1 and `docs/modules/fibonacci-heap.md`.
         if self.size.get() == 0 {
             return Ok(None);
         }
@@ -531,25 +531,25 @@ impl<T: Clone, E, C: Comparator<T, E>> FibonacciHeap<T, C, E> {
     /// in 0..captured_size`, which would silently diverge under exactly
     /// that re-entrant case.
     ///
-    /// # NOTES.md B-222 — `root` can be `null` here too, from a DIFFERENT
-    /// re-entrant path than B-220's
+    /// # NOTES.md BUG-FIBONACCI-HEAP-3 — `root` can be `null` here too, from a DIFFERENT
+    /// re-entrant path than BUG-FIBONACCI-HEAP-1's
     ///
     /// `pop`'s caller only reaches this method when `z.right !== z` held —
     /// "more than one root existed", checked against `z`'s own (frozen)
     /// `right` pointer. That field is never touched by `clear()`, which only
     /// resets the *heap's* `root`/`min`/`size`. So a `clear()` that fires
     /// from inside a **`push`'s** tie-break comparison (not a `pop`'s
-    /// `consolidate` — a different call site than B-220's) can leave
+    /// `consolidate` — a different call site than BUG-FIBONACCI-HEAP-1's) can leave
     /// `heap.root` `null` while `heap.min` is restored to a real node
     /// immediately afterward, by the same `push`'s own `this.min = node`
     /// line. A later `pop` then reads a perfectly real `z` (no crash at the
-    /// B-220 site at all), walks past it, and reaches *this* method with
+    /// BUG-FIBONACCI-HEAP-1 site at all), walks past it, and reaches *this* method with
     /// `heap.root` still `null`. Upstream's `consumeLinkedList(null)` pushes
     /// `null` into its own accumulator on its first iteration and then reads
-    /// `null.right` — a `TypeError`, one property name over from B-220's.
+    /// `null.right` — a `TypeError`, one property name over from BUG-FIBONACCI-HEAP-1's.
     /// Verified by tracing upstream's own deterministic control flow
     /// (`~/upstream-mnemonist/fibonacci-heap.js`'s `consumeLinkedList`), the
-    /// same way B-220 was. Reproduced the same way: the panic message below
+    /// same way BUG-FIBONACCI-HEAP-1 was. Reproduced the same way: the panic message below
     /// IS the exact upstream text.
     fn consolidate(&self) -> Result<(), E> {
         let root = self
@@ -591,7 +591,7 @@ impl<T: Clone, E, C: Comparator<T, E>> FibonacciHeap<T, C, E> {
         }
 
         // `i64`, matching `size`: if a re-entrant `clear` has driven `size`
-        // negative (B-220), `0 < size` is false immediately and this loop
+        // negative (BUG-FIBONACCI-HEAP-1), `0 < size` is false immediately and this loop
         // runs zero times, exactly as upstream's `for (i = 0; i <
         // heap.size; i++)` does.
         let mut i: i64 = 0;
@@ -990,7 +990,7 @@ mod tests {
             "the clear's trigger point must have been reached from inside this pop"
         );
 
-        // NOTES.md B-220: `this.size--` runs AFTER `consolidate`, so the
+        // NOTES.md BUG-FIBONACCI-HEAP-1: `this.size--` runs AFTER `consolidate`, so the
         // clear's `size = 0` is what the decrement actually sees --
         // `0 - 1 == -1`, not `0`. A heap "helpfully" clamped to `0` here
         // would be MORE correct than upstream, which is exactly the
@@ -998,11 +998,11 @@ mod tests {
         assert_eq!(
             heap.size(),
             -1,
-            "B-220: this.size-- after a mid-consolidate clear() lands on -1, not 0"
+            "BUG-FIBONACCI-HEAP-1: this.size-- after a mid-consolidate clear() lands on -1, not 0"
         );
     }
 
-    /// NOTES.md B-220's second half: once `size` is negative, `pop`'s own
+    /// NOTES.md BUG-FIBONACCI-HEAP-1's second half: once `size` is negative, `pop`'s own
     /// `if (!this.size)` guard no longer catches "nothing left", because a
     /// negative number is truthy in JavaScript. Upstream proceeds into
     /// `z.child` with `z` (`this.min`) already `null` and crashes with a

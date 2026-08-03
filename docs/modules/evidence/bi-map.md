@@ -10,7 +10,7 @@ full benchmark table.
 | Test | Closes gap |
 |---|---|
 | `reproduces_the_upstream_suite` | 1:1 port of all twelve upstream blocks, as a baseline |
-| `clear_desyncs_size_from_inverse_size_b_120` | 1 — B-120, both directions, plus the healing-on-next-mutation property |
+| `clear_desyncs_size_from_inverse_size_bug_bi_map_1` | 1 — BUG-BI-MAP-1, both directions, plus the healing-on-next-mutation property |
 | `clear_called_on_the_inverse_view_also_empties_the_forward_map` | 1 — the underlying-maps half (both empty regardless of direction) |
 | `set_can_rebind_both_sides_of_the_bijection_in_one_call` | 2 |
 | `delete_on_a_missing_key_reports_it_and_changes_nothing` | 3 |
@@ -28,7 +28,7 @@ full benchmark table.
 * **Keys and values share one six-item pool**, mixed strings and numbers, so `set` collides with an
   existing key, an existing value, or both far more often than a wide space would by chance — that
   collision handling is the entire point of the module. `clear`/`delete` are weighted in because
-  B-120's reinsert-after-delete-and-clear interactions are easiest to reach right after one.
+  BUG-BI-MAP-1's reinsert-after-delete-and-clear interactions are easiest to reach right after one.
 * **Observable state:** `size`, `items` (the real `Map`), and `inverse` — `{size, items: {$map:
   [...]}, inverse: {$self: true}}`, because `instance.inverse.inverse === instance` and the oracle's
   generic `encode()` special-cases exactly that circular reference. No oracle change was needed.
@@ -40,8 +40,8 @@ full benchmark table.
 
 ## Falsification record (gate 6)
 
-**Named first:** `clear_desyncs_size_from_inverse_size_b_120`'s assertion
-`assert_eq!(forward.inverse_size(), 1, "clear() must NOT resync inverse_size — B-120")`.
+**Named first:** `clear_desyncs_size_from_inverse_size_bug_bi_map_1`'s assertion
+`assert_eq!(forward.inverse_size(), 1, "clear() must NOT resync inverse_size — BUG-BI-MAP-1")`.
 
 **The sabotage:** `BiMap::clear` given back the line round 1 (pre-fix) was missing —
 `self.inverse_size = 0;` alongside `self.size = 0;` — reintroducing the exact "more correct than

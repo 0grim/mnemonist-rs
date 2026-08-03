@@ -37,7 +37,7 @@ impl fmt::Display for Op {
 ///
 /// # Why this op exists
 ///
-/// B-31 was reachable only through a `forEach` whose callback mutated the
+/// PORTBUG-1 was reachable only through a `forEach` whose callback mutated the
 /// collection, and no module's alphabet had a `forEach` at all — so 2.94M
 /// generated operations could not express the program that breaks it. An
 /// alphabet that omits a method omits every bug reachable only through it, and
@@ -52,12 +52,12 @@ impl fmt::Display for Op {
 /// and getting one of them wrong is exactly the kind of thing a hand-written
 /// loop does.
 ///
-/// It does **not** reach B-31 itself. The differential fuzzer compares
+/// It does **not** reach PORTBUG-1 itself. The differential fuzzer compares
 /// `mnemonist-core` against upstream JS; the napi bridge, where the hoisted
 /// read lived, is not in that loop at all. Those specs are
 /// `tests/boundary/reentrancy.js`, which needs the real addon and a real JS
 /// callback. Stated here rather than left to be assumed, because "we added a
-/// forEach op" would otherwise read as "B-31 is now fuzz-covered".
+/// forEach op" would otherwise read as "PORTBUG-1 is now fuzz-covered".
 #[derive(Debug, Clone, Copy)]
 pub struct ForEach<'a> {
     /// Method the callback calls back into, or `None` for a plain walk.

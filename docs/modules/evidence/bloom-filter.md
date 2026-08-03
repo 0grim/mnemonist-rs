@@ -33,8 +33,8 @@ falsification record, full benchmark table.
 | what | sabotage | must break | result |
 |---|---|---|---|
 | the original test suite (gate 4) | `hash = sum32(hash, N)` → `hash = hash + N` in `murmurhash3` | `assert.deepStrictEqual(Array.from(filter.data), [128, 0, 86, 65])` in `'should be possible to add items to the filter.'` | **red**: 4 passing, 2 failing, that assertion among them. Reverted: 6 passing. |
-| the fuzz spec | an early `if hash_functions == 0 { return false }` in `test`, i.e. "fixing" B-97 | a return-value divergence on a filter whose `hashFunctions` truncated to zero | **red**, minimised to two lines: `new BloomFilter({capacity: 21, errorRate: 0.98}).test(...)`, divergence on op #0. Reverted: clean. |
-| **control**, to check the B-93 cancellation rather than assert it | `hash = sum32(hash, N)` → `hash = hash + 0xe6546b64`, the **unswapped** constant | **nothing** — if the cancellation is real, all six stay green | **green**, 6 passing. The cancellation is real. |
+| the fuzz spec | an early `if hash_functions == 0 { return false }` in `test`, i.e. "fixing" BUG-BLOOM-FILTER-2 | a return-value divergence on a filter whose `hashFunctions` truncated to zero | **red**, minimised to two lines: `new BloomFilter({capacity: 21, errorRate: 0.98}).test(...)`, divergence on op #0. Reverted: clean. |
+| **control**, to check the BUG-BLOOM-FILTER-1 cancellation rather than assert it | `hash = sum32(hash, N)` → `hash = hash + 0xe6546b64`, the **unswapped** constant | **nothing** — if the cancellation is real, all six stay green | **green**, 6 passing. The cancellation is real. |
 
 The first sabotage is worth one more sentence. `'should be possible to test items'` stayed **green**
 under it — because it only checks self-consistency (`add x`, then `test x` is true and `test y` is

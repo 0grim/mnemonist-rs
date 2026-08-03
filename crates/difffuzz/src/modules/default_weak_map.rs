@@ -148,7 +148,7 @@ impl ModuleSpec for DefaultWeakMapSpec {
     fn op_strategy(&self, _ctor: &[Value]) -> BoxedStrategy<Op> {
         let key = (0..KEY_POOL).prop_map(key_at);
         // `undefined` weighted in rather than rare: it is the only route to
-        // B-242, and once stored, every following `get` on that key re-runs
+        // BUG-DEFAULT-WEAK-MAP-1, and once stored, every following `get` on that key re-runs
         // the factory.
         let value = prop_oneof![
             2 => Just(json!({"$undefined": true})),

@@ -681,7 +681,7 @@
     "default-map": {
       "workloads": {
         "mixed-1e6": {
-          "workload": "1e6 mixed set/get-or-insert/delete (50/25/25); factory always defined, so B-40's size drift never fires here over size 1e6, xorshift32 seed 42, ops materialised before the timed region",
+          "workload": "1e6 mixed set/get-or-insert/delete (50/25/25); factory always defined, so BUG-DEFAULT-MAP-1's size drift never fires here over size 1e6, xorshift32 seed 42, ops materialised before the timed region",
           "checksum": 124921671380,
           "checksum_note": "identical on both sides: same ops, same answers, upstream bugs included",
           "structure_note": "structure_rss_delta_mb constructs size 1e6 and nothing else, isolating the structure from the op arrays both sides materialise",
@@ -721,7 +721,7 @@
           ]
         },
         "mixed-4e6": {
-          "workload": "1e6 mixed set/get-or-insert/delete (50/25/25); factory always defined, so B-40's size drift never fires here over size 4e6, xorshift32 seed 42, ops materialised before the timed region",
+          "workload": "1e6 mixed set/get-or-insert/delete (50/25/25); factory always defined, so BUG-DEFAULT-MAP-1's size drift never fires here over size 4e6, xorshift32 seed 42, ops materialised before the timed region",
           "checksum": 500071760619,
           "checksum_note": "identical on both sides: same ops, same answers, upstream bugs included",
           "structure_note": "structure_rss_delta_mb constructs size 4e6 and nothing else, isolating the structure from the op arrays both sides materialise",

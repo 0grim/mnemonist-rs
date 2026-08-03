@@ -1,4 +1,4 @@
-//! `obliterator/foreach`, ported to the boundary (DESIGN.md §3.4, §3.5, D-03).
+//! `obliterator/foreach`, ported to the boundary (DESIGN.md §3.4, §3.5, DIV-QUEUE-1).
 //!
 //! Thirty of the forty-four upstream modules import this one function, and a
 //! grep of every call site shows all of them are `forEach(iterable, cb)` inside
@@ -18,7 +18,7 @@
 //! | 4 | `typeof iterable.next === 'function'` → drain | an own counter, a **number** |
 //! | 5 | plain object → `for…in` + `hasOwnProperty` | the key, a **string** |
 //!
-//! Three traps, all of them load-bearing (D-10, D-11, D-12):
+//! Three traps, all of them load-bearing (DIV-PROJ-11, DIV-PROJ-12, DIV-PROJ-13):
 //!
 //! * **Branch 2 preempts 3 and 4.** A JS `Map` owns a `.forEach`, so it never
 //!   reaches the iterator path — and a host `forEach` passes `(value, key)`.
@@ -28,11 +28,11 @@
 //!   `forEach('', cb)` throws while `forEach('a', cb)` iterates; likewise `0`,
 //!   `false`, `NaN` and `0n`.
 //! * **`toString()` is invoked on an arbitrary user value during type
-//!   dispatch** (NOTES B-5). It can throw, and it can return
+//!   dispatch** (NOTES DIV-PROJ-7). It can throw, and it can return
 //!   `'[object Arguments]'` and hijack branch 1. Both are reproduced.
 //!
 //! And one behaviour that is not in the table because it is not in the comments
-//! either — see [`for_each`] and NOTES B-30: a *truthy primitive* reaches the
+//! either — see [`for_each`] and NOTES BUG-STACK-1: a *truthy primitive* reaches the
 //! `in` operator in branch 3, and `in` requires an object, so `forEach(5, cb)`
 //! dies with a `TypeError` from V8 rather than with obliterator's own guard.
 //!
@@ -55,7 +55,7 @@ use napi_derive::napi;
 
 use crate::js_slot::JsSlot;
 
-/// Verbatim, and asserted verbatim by `tests/boundary/foreach.js` (D-14).
+/// Verbatim, and asserted verbatim by `tests/boundary/foreach.js` (DIV-PROJ-15).
 const INVALID_ITERABLE: &str = "obliterator/forEach: invalid iterable.";
 const EXPECTING_CALLBACK: &str = "obliterator/forEach: expecting a callback.";
 
@@ -80,7 +80,7 @@ pub fn js_for_each(env: Env, iterable: Unknown, callback: Unknown) -> Result<()>
 /// its own message, and letting napi reject the argument first would replace
 /// that message with napi's.
 pub fn for_each<'env>(env: &Env, iterable: Unknown<'env>, callback: Unknown<'env>) -> Result<()> {
-    // `if (!iterable) throw` — JS truthiness, not a null check (D-12).
+    // `if (!iterable) throw` — JS truthiness, not a null check (DIV-PROJ-13).
     if !is_truthy(env, &iterable)? {
         return Err(Error::new(Status::GenericFailure, INVALID_ITERABLE));
     }
@@ -104,7 +104,7 @@ pub fn for_each<'env>(env: &Env, iterable: Unknown<'env>, callback: Unknown<'env
         return each_indexed(env, &iterable, &callback);
     }
 
-    // `iterable.toString()`. NOTES B-5: an arbitrary user value is being asked
+    // `iterable.toString()`. NOTES DIV-PROJ-7: an arbitrary user value is being asked
     // for a string in the middle of type dispatch.
     if has_arguments_tag(env, &iterable)? {
         return each_indexed(env, &iterable, &callback);
@@ -120,7 +120,7 @@ pub fn for_each<'env>(env: &Env, iterable: Unknown<'env>, callback: Unknown<'env
     //
     // Before the iterator branches, deliberately. A `Map` never reaches
     // branch 3, and the callback it receives is invoked by the host with
-    // `(value, key)` — the polymorphic second argument of D-11, at its most
+    // `(value, key)` — the polymorphic second argument of DIV-PROJ-12, at its most
     // visible.
     let host_for_each: Unknown = target.get_named_property_unchecked("forEach")?;
 
@@ -140,7 +140,7 @@ pub fn for_each<'env>(env: &Env, iterable: Unknown<'env>, callback: Unknown<'env
     // the falsy guard and branch 1, so it arrives here and V8 throws. That is
     // upstream behaviour, not ours: obliterator has no guard for it, and the
     // error a caller sees names the `in` operator rather than the library.
-    // NOTES B-30.
+    // NOTES BUG-STACK-1.
     if !matches!(value_type, ValueType::Object | ValueType::Function) {
         return Err(type_error(
             env,
@@ -205,7 +205,7 @@ pub fn for_each<'env>(env: &Env, iterable: Unknown<'env>, callback: Unknown<'env
     // string-keyed — which is precisely what `napi_get_all_property_names`
     // returns under these filters, **in the engine's own order**: integer-like
     // keys ascending, then the rest in insertion order. Reimplementing that
-    // order in Rust would be pure downside risk (D-15).
+    // order in Rust would be pure downside risk (DIV-PROJ-16).
     let keys = drained_object.get_all_property_names(
         KeyCollectionMode::OwnOnly,
         KeyFilter::AllProperties,
@@ -425,7 +425,7 @@ pub(crate) fn is_array_buffer_view(env: &Env, value: &Unknown) -> Result<bool> {
 
 /// `iterable.toString() === '[object Arguments]'`.
 ///
-/// Faithful down to the failure modes (NOTES B-5): a missing or non-callable
+/// Faithful down to the failure modes (NOTES DIV-PROJ-7): a missing or non-callable
 /// `toString` throws the `TypeError` V8 throws, naming obliterator's own
 /// variable, and a `toString` that returns the tag hijacks branch 1.
 fn has_arguments_tag(env: &Env, value: &Unknown) -> Result<bool> {

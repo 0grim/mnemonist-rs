@@ -16,16 +16,16 @@
 //!    then only the present slots are written, so a missing one is a hole in an
 //!    `Array` and the class zero in a typed array — which is exactly what
 //!    upstream's `array[i] = undefined` produces.
-//! 4. **`from` reproduces NOTES B-60.** `iterables.forEach` does not exist, so
+//! 4. **`from` reproduces NOTES BUG-UTILS-ITERABLES-2.** `iterables.forEach` does not exist, so
 //!    every iterable that is not array-like dies with a `TypeError` naming it.
 //!    That is upstream, verified on Node 24.18.1, and it is the reason
 //!    `FixedStack.from(new Set([1, 2, 3]), Array, 3)` throws.
-//! 5. **`forEach` walks `items.length`** — B-61 — and re-reads the array on
+//! 5. **`forEach` walks `items.length`** — BUG-FIXED-STACK-1 — and re-reads the array on
 //!    every step, so a callback that mutates is visible to the reads after it.
 //! 6. **The core structure is held in a [`RefCell`].** Not for interior
 //!    mutability's sake but because a `&self` on a `Freeze` type is `noalias
 //!    readonly` to LLVM, which hoisted a read out of exactly this loop once
-//!    before. See `crate::cursor::CellCursor` (D-43, B-31).
+//!    before. See `crate::cursor::CellCursor` (DIV-STACK-5, PORTBUG-1).
 //!
 //! `inspect` is not ported: a Node display convenience with no upstream
 //! assertion.
@@ -46,7 +46,7 @@ use crate::iterables;
 use crate::js_slot::JsSlot;
 
 /// What `iterables.forEach(...)` raises, because `utils/iterables.js` exports
-/// no `forEach`. Verbatim from Node 24.18.1; see NOTES B-60.
+/// no `forEach`. Verbatim from Node 24.18.1; see NOTES BUG-UTILS-ITERABLES-2.
 pub(crate) const NO_ITERABLES_FOREACH: &str = "iterables.forEach is not a function";
 
 /// What V8 says when `FixedStack`'s `ArrayClass` is not a constructor.
@@ -81,7 +81,7 @@ impl JsFixedStack {
     /// `new FixedStack(Array, null)` about the *number*. napi passes
     /// `undefined` for a missing argument and does not enforce arity
     /// (`CallbackInfo::new(.., None, ..)`), so "absent" and "explicitly
-    /// `undefined`" collapse — the one divergence, recorded as D-61.
+    /// `undefined`" collapse — the one divergence, recorded as DIV-FIXED-STACK-3.
     #[napi(constructor)]
     pub fn new(env: Env, array_class: Unknown, capacity: Unknown) -> Result<Self> {
         // `arguments.length < 2`, as far as napi can see it.
@@ -173,7 +173,7 @@ impl JsFixedStack {
     ///
     /// Two fidelity notes:
     ///
-    /// * The bound is the array's length, not `this.size` (B-61), so an
+    /// * The bound is the array's length, not `this.size` (BUG-FIXED-STACK-1), so an
     ///   under-full stack hands the callback its unused slots first. The loop
     ///   bound is captured once and `this.items` is re-read every iteration, so
     ///   a callback that pushes or pops is visible to the reads that follow.
@@ -213,7 +213,7 @@ impl JsFixedStack {
     }
 
     /// A fresh cursor over the values, newest first — the *factory* half of
-    /// D-07. `crate::cursor::install_iterator_factories` aliases
+    /// DIV-STACK-2. `crate::cursor::install_iterator_factories` aliases
     /// `Symbol.iterator` onto this.
     #[napi]
     pub fn values(&self, env: Env, this: Reference<JsFixedStack>) -> Result<JsFixedStackValues> {
@@ -277,7 +277,7 @@ impl JsFixedStack {
 /// iterables.forEach(iterable, function (value) { x.push(value); });
 /// ```
 ///
-/// The last line is **NOTES B-60**: `utils/iterables.js` exports `isArrayLike`,
+/// The last line is **NOTES BUG-UTILS-ITERABLES-2**: `utils/iterables.js` exports `isArrayLike`,
 /// `guessLength`, `toArray` and `toArrayWithIndices`, and no `forEach`. So the
 /// branch that would handle a `Set`, a `Map`, a generator or a string is not a
 /// slow path — it is a `TypeError`, and it has been one since the modules were
@@ -288,7 +288,7 @@ impl JsFixedStack {
 /// TypeError: iterables.forEach is not a function
 /// ```
 ///
-/// Reproduced rather than repaired (D-64). A port that quietly made the branch
+/// Reproduced rather than repaired (DIV-FIXED-STACK-6). A port that quietly made the branch
 /// work would pass every upstream test and be a different library.
 ///
 /// Note also the *order*: the structure is constructed — so a bad capacity
@@ -307,8 +307,8 @@ impl JsFixedStack {
 ///                                             …and .toArray()      // [ undefined ]
 /// ```
 ///
-/// That is NOTES B-63, and it is the one behaviour here the port does not
-/// reproduce (D-66): a `usize` cannot hold `undefined`, and every later method
+/// That is NOTES BUG-FIXED-STACK-2, and it is the one behaviour here the port does not
+/// reproduce (DIV-FIXED-STACK-7): a `usize` cannot hold `undefined`, and every later method
 /// would be arithmetic on `NaN`. [`iterables::array_like_values`] yields
 /// nothing for such a target and `size` becomes `0` — "nothing was copied",
 /// which is at least true. Reachable only with an explicit capacity; without
@@ -321,7 +321,7 @@ pub(crate) fn from_parts(
     capacity: &Unknown,
     messages: &Messages,
 ) -> Result<(ArrayClass, usize, Vec<JsSlot>)> {
-    // `arguments.length < 3`, as far as napi can see it (D-61).
+    // `arguments.length < 3`, as far as napi can see it (DIV-FIXED-STACK-3).
     let capacity = if capacity.get_type()? == ValueType::Undefined {
         match iterables::guess_length(env, iterable)? {
             Some(length) => length,
@@ -383,7 +383,7 @@ pub struct JsFixedStackValues {
 
 impl Generator for JsFixedStackValues {
     /// `Either<_, Undefined>` rather than `Option<_>`: napi renders `None` as
-    /// `null`, and the shrink window needs a real `undefined` (D-39).
+    /// `null`, and the shrink window needs a real `undefined` (DIV-FIXED-STACK-1).
     type Yield = Either<JsSlot, Undefined>;
     type Next = ();
     type Return = ();

@@ -22,7 +22,7 @@
 //! not noise: upstream's `stringToByteArray` reads `.length`, gets `undefined`,
 //! and produces an **empty** `Uint16Array`, so every one of them hashes as the
 //! empty sequence and they all collide with each other and with `''`. That is
-//! B-98, and it is only fuzzable if the grammar can express a non-string item.
+//! BUG-BLOOM-FILTER-3, and it is only fuzzable if the grammar can express a non-string item.
 //! `null` and `undefined` are excluded: upstream throws a `TypeError` from the
 //! property read, and the oracle compares thrown messages verbatim, which would
 //! turn an engine-wording difference into a false divergence.
@@ -38,13 +38,13 @@
 //! negative, and for a large enough capacity `new Uint8Array(-59)` throws from
 //! the *constructor* — which reaches the oracle's `init` rather than an op, and
 //! an `init` failure is apparatus failure by protocol, aborting the campaign
-//! instead of reporting anything. That is B-99, it is documented in
+//! instead of reporting anything. That is BUG-BLOOM-FILTER-4, it is documented in
 //! `docs/modules/bloom-filter.md` and pinned by a native test, so fuzzing it
 //! would only re-report a known decision (DESIGN.md §3.7).
 //!
 //! Every `errorRate` below 1 is safe: `ln(x) < 0` makes `bits` positive, so the
 //! allocation length is never negative. The **zero-hash-function** region — the
-//! one where `test` returns `true` for everything, B-97 — is *not* excluded and
+//! one where `test` returns `true` for everything, BUG-BLOOM-FILTER-2 — is *not* excluded and
 //! is reached routinely, because an `errorRate` near 1 gets there without
 //! throwing.
 
@@ -74,7 +74,7 @@ pub struct BloomFilterSpec;
 fn item_strategy() -> BoxedStrategy<Value> {
     prop_oneof![
         // Weighted towards strings: that is what a caller passes, and the
-        // non-strings all collapse onto one hash (B-98) so more of them buys
+        // non-strings all collapse onto one hash (BUG-BLOOM-FILTER-3) so more of them buys
         // nothing.
         8 => proptest::collection::vec(proptest::sample::select(ALPHABET), 0..=MAX_ITEM)
             .prop_map(|chars| Value::String(chars.into_iter().collect())),
@@ -87,7 +87,7 @@ fn item_strategy() -> BoxedStrategy<Value> {
 /// The UTF-16 code units upstream's `stringToByteArray` would produce.
 ///
 /// A non-string has no `length`, so `new Uint16Array(undefined)` is empty and
-/// the loop never runs. B-98, reproduced on this side of the comparison too —
+/// the loop never runs. BUG-BLOOM-FILTER-3, reproduced on this side of the comparison too —
 /// getting it "right" here would report a divergence that is upstream's
 /// behaviour, not the port's.
 fn item_units(value: &Value) -> Vec<u16> {

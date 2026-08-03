@@ -37,7 +37,7 @@
 //! call — see `crates/mnemonist-napi/src/bit_vector.rs`), so an `Err` upstream
 //! would reach as a thrown `TypeError` is the faithful *outcome*, even though
 //! the *mechanism* (index-into-`undefined`) has no honest Rust expression.
-//! Recorded as B-100 in `docs/modules/static-interval-tree.md`.
+//! Recorded as BUG-STATIC-INTERVAL-TREE-1 in `docs/modules/static-interval-tree.md`.
 //!
 //! # Getters are resolved once, not re-invoked per query
 //!

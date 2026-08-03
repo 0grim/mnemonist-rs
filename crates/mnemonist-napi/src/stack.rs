@@ -153,7 +153,7 @@ impl JsStack {
 
     /// A fresh cursor over the values, newest first.
     ///
-    /// The *factory* half of D-07: every call constructs a new cursor object,
+    /// The *factory* half of DIV-STACK-2: every call constructs a new cursor object,
     /// so `[...stack]` works repeatedly while each cursor is individually
     /// non-restartable. `crate::cursor::install_iterator_factories` aliases
     /// `Symbol.iterator` onto this, exactly as upstream's `stack.js` does on
@@ -204,7 +204,7 @@ pub struct JsStackValues {
 
 impl Generator for JsStackValues {
     /// `Either<_, Undefined>` rather than `Option<_>`: napi renders `None` as
-    /// `null`, and the shrink window needs a real `undefined` (D-39).
+    /// `null`, and the shrink window needs a real `undefined` (DIV-FIXED-STACK-1).
     type Yield = Either<JsSlot, Undefined>;
     type Next = ();
     type Return = ();

@@ -7,13 +7,13 @@
 #
 # PROVENANCE OF THE ENTRIES BELOW -- read before assuming either recorded a
 # real port defect. Neither did. Both were produced by deliberate
-# falsifications of the fuzzer (D-32): a fuzzer that has never been seen to
+# falsifications of the fuzzer (DIV-PROJ-30): a fuzzer that has never been seen to
 # fail is just a second green light. Both sabotages were reverted; both seeds
 # are replayed before any novel case on every run.
 #
 # Note what both sabotages have in common: each makes the port strictly MORE
 # correct than upstream. That is the only direction differential fuzzing can
-# work in on a bug-for-bug port (D-33), and this module has two independent
+# work in on a bug-for-bug port (DIV-PROJ-31), and this module has two independent
 # defects to demonstrate it with.
 #
 # --- A: pop() reading the block that actually holds the popped index ---

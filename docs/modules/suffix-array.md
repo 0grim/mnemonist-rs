@@ -37,7 +37,7 @@ against an independently computed suffix array.
    expectation. This is not hypothetical — see "Bugs this found", where two of the four tested
    inputs happen to sit off the failure modes by luck rather than by design.
 2. **Any character above U+007F.** The whole alphabet exercised is ASCII, so the entire high half of
-   `charCodeAt`'s range is untested — which is exactly where B-90 lives.
+   `charCodeAt`'s range is untested — which is exactly where BUG-SUFFIX-ARRAY-1 lives.
 3. **Lengths.** Four inputs, of lengths 6, 22, 13 and 13. Two of the three residues of `l % 3` are
    represented (0 and 1); the one input at the residue that fails (22) survives only because its
    triples are all distinct and the recursion never fires.
@@ -74,7 +74,7 @@ The naive reference is the load-bearing piece. It is what turns "matches the fro
 Both were found by running **upstream** — not the port — against the naive reference on Node
 24.18.1, over random inputs. Both are reachable from the documented public API. Both are reproduced.
 
-### B-90 — the radix sort silently narrows to 8 bits
+### BUG-SUFFIX-ARRAY-1 — the radix sort silently narrows to 8 bits
 
 `sort()` picks its radix width by scanning for the largest symbol:
 
@@ -113,7 +113,7 @@ Measured incidence over 10,000 random inputs of length 1..30 with a two-symbol a
 members share a low byte (`'A'` / `'Ł'`): **81% wrong** at `length % 3 == 0`. Pure-ASCII alphabets
 are unaffected, because ASCII fits in the low byte and the padding `0` is not a letter.
 
-### B-91 — the reduced string has no separator when `l % 3 == 1`
+### BUG-SUFFIX-ARRAY-2 — the reduced string has no separator when `l % 3 == 1`
 
 DC3 splits positions into three classes, ranks the ≡1 and ≡2 groups, concatenates those two rank
 arrays into a reduced string, and recurses. The concatenation is only sound if the first group ends
@@ -148,12 +148,12 @@ is itself a token and gets an ordinary alphabet number rather than a guaranteed-
 disabled, so it is not asserted here either way; the port reproduces whatever upstream does, and the
 skipped test stays skipped (`tests/run.sh` reports "1 pending").
 
-Neither B-90 nor B-91 is the same defect: both fire on plain string input where issue #196 needs
+Neither BUG-SUFFIX-ARRAY-1 nor BUG-SUFFIX-ARRAY-2 is the same defect: both fire on plain string input where issue #196 needs
 tokens.
 
 ## Deliberate divergences
 
-**D-48 — tokens are `String`, and their identity is their string form.** Upstream builds the token
+**DIV-SUFFIX-ARRAY-1 — tokens are `String`, and their identity is their string form.** Upstream builds the token
 alphabet by using each token as a *property key*, i.e. through `ToString`, but compares tokens inside
 `longestCommonSubsequence` with `!==`, i.e. by identity. For two distinct objects with the same
 `toString` those disagree: same alphabet symbol, different `!==`. Representing a token as a `String`
@@ -161,18 +161,18 @@ collapses the two. Every token in upstream's suite, and every token any sane cal
 already a string or a number, where the two coincide. The bridge coerces with `String(x)`, which is
 exactly what the alphabet does.
 
-**D-49 — a mixed member list is refused.** `new GeneralizedSuffixArray(['ab', ['c', 'd']])` upstream
+**DIV-SUFFIX-ARRAY-2 — a mixed member list is refused.** `new GeneralizedSuffixArray(['ab', ['c', 'd']])` upstream
 takes `strings[0]`'s kind and applies it to everything, so the array member is `join`ed into
 `"c,d"`; the reverse case spreads a string into its characters via `push.apply`. Neither is a
 behaviour any caller wants and neither is documented. The port returns an error. Stated rather than
 silently supported, because "upstream would have done something" is not the same as "upstream
 defined something".
 
-**D-50 — an empty member list is an error, not a `TypeError` from a property read.** Upstream reads
+**DIV-SUFFIX-ARRAY-3 — an empty member list is an error, not a `TypeError` from a property read.** Upstream reads
 `strings[0].length` unguarded. The core returns `Err`; the bridge surfaces it as a JS error. A panic
 would cross the FFI boundary and take the host process down.
 
-**D-51 — `SuffixArray.GeneralizedSuffixArray` is aliased in the shim, not in the addon.** Upstream's
+**DIV-SUFFIX-ARRAY-4 — `SuffixArray.GeneralizedSuffixArray` is aliased in the shim, not in the addon.** Upstream's
 last-but-one line is `SuffixArray.GeneralizedSuffixArray = GeneralizedSuffixArray`. That is
 CommonJS *namespacing*, not behaviour: the addon exports both classes at top level, so
 `require('@port/addon').GeneralizedSuffixArray` works and nothing is missing from the addon. Compare
@@ -185,11 +185,11 @@ concurrently by several agents, and a merge conflict boundary landing inside a f
 already broken this tree three times. If the hook ever becomes safe to extend, moving the alias into
 it would be strictly better.
 
-**D-52 — `inspect` is not ported.** A Node display convenience (`util.inspect.custom`) with no
+**DIV-SUFFIX-ARRAY-5 — `inspect` is not ported.** A Node display convenience (`util.inspect.custom`) with no
 upstream assertion and no Rust equivalent.
 
-**D-53 — the core reads every sequence through a `Sparse`, not a slice.** Both defects above are
-consequences of reading past the end of an array, and B-90 turns on the difference between reading a
+**DIV-SUFFIX-ARRAY-6 — the core reads every sequence through a `Sparse`, not a slice.** Both defects above are
+consequences of reading past the end of an array, and BUG-SUFFIX-ARRAY-1 turns on the difference between reading a
 *zero* and reading *`undefined`* — the first still sorts correctly, the second poisons `Math.max`.
 So a port that indexed with `[]` would panic where upstream computes an answer, and one that clamped
 to `0` would be quietly more correct than the library it ports. `compare()` returns `f64` for the
@@ -210,18 +210,18 @@ evidence file.
 The input alphabet is picked for collisions rather than realism: `U+0000` equals `convert`'s padding
 value, `U+0001` equals the generalized separator, and `U+0100` / `U+0141` / `U+0201` have low bytes
 `0x00` / `0x41` / `0x01`, colliding respectively with the padding, with `'A'` and with the separator
-under B-90's 8-bit radix. Lengths run to 45, covering all three residues of `l % 3`, several
+under BUG-SUFFIX-ARRAY-1's 8-bit radix. Lengths run to 45, covering all three residues of `l % 3`, several
 recursion depths, and the point where a reduced string's ranks exceed 255.
 
 Deliberately excluded: an **empty** member list (upstream throws from the
 constructor, which the oracle protocol classifies as apparatus failure, and the port refuses it —
-see D-50) and **mixed** member kinds (D-49). Both are documented divergences, so fuzzing them would
+see DIV-SUFFIX-ARRAY-3) and **mixed** member kinds (DIV-SUFFIX-ARRAY-2). Both are documented divergences, so fuzzing them would
 only re-report a known decision.
 
 **Falsification, three separate runs, each with its target named before it was performed.** Removing
 the `.rev()` from the radix gather in `sort()` (making the LSD sort unstable) must break the original
 suite's `'SuffixArray should produce the correct array.'` — confirmed red (0 passing, 5 failing),
-reverted (5 passing, 1 pending). "Fixing" B-90's `bits` fall-through must break a state divergence in
+reverted (5 passing, 1 pending). "Fixing" BUG-SUFFIX-ARRAY-1's `bits` fall-through must break a state divergence in
 `array`/`toJSON`/`toString` against the `suffix-array` fuzz spec — confirmed red after 400 cases,
 minimised to a 42-character input mixing U+0141 with U+0100; reverted, clean. Weakening LCS's second
 guard (`>` to `>=`) must break a divergence in `longestCommonSubsequence`'s return value against the
@@ -246,10 +246,10 @@ passes, xorshift32 seed 42. A **four-symbol alphabet** (`A`–`D` by code point)
 suffix-array workloads skew toward small alphabets (genomic text is the textbook case) and because a
 large alphabet would make every suffix comparison resolve in one step — the easy case, not the one
 the algorithm exists for. A fresh text is drawn for every pass so the recursive case (repeated
-triples) is exercised rather than avoided, which is exactly the condition B-91 needs to fire. The
+triples) is exercised rather than avoided, which is exactly the condition BUG-SUFFIX-ARRAY-2 needs to fire. The
 checksum is **position-weighted** (`Σ (index+1) × array[index]`), the same reasoning as `sort`'s:
 `array()`'s positions are a permutation of `0..size` regardless of whether the order is right, so a
-plain sum cannot tell a correct construction from a B-90/B-91-shaped wrong one apart — checksum
+plain sum cannot tell a correct construction from a BUG-SUFFIX-ARRAY-1/BUG-SUFFIX-ARRAY-2-shaped wrong one apart — checksum
 agreement here is evidence the port reproduces both defects bug-for-bug, at the same recursion
 depths, not merely that both sides produced *a* permutation of the same numbers.
 
@@ -259,7 +259,7 @@ evidence file.
 
 Plausible mechanism, unconfirmed: DC3's recursion allocates several intermediate arrays per level
 (the reduced string, the rank arrays, the merge buffers), and upstream's `Sparse`-shaped reads (this
-module's own docs: `undefined` past a hole or the array's end, load-bearing for B-90/B-91) mean
+module's own docs: `undefined` past a hole or the array's end, load-bearing for BUG-SUFFIX-ARRAY-1/BUG-SUFFIX-ARRAY-2) mean
 several of those upstream arrays are plain `Array`s rather than typed arrays, carrying V8's general
 object-array overhead through every recursive level. The port's own `Sparse` type
 (`Vec<Option<i64>>`) is a flatter allocation with none of that indirection. Not isolated by

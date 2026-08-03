@@ -100,7 +100,7 @@ pub fn run_drain(size: u32, seed: u32, passes: usize) -> (Vec<u64>, u64, usize) 
         let clock = std::time::Instant::now();
 
         // A fresh cursor per pass, which is what `[...set]` does: the
-        // collection's Symbol.iterator is a factory (D-07). Reusing one would
+        // collection's Symbol.iterator is a factory (DIV-STACK-2). Reusing one would
         // measure an exhausted cursor from pass 2 onwards.
         for member in set.values() {
             checksum += u64::from(member);
@@ -123,7 +123,7 @@ pub fn build_structure(size: u32) {
     std::hint::black_box(&set);
 }
 
-/// The reason `sparse-set` is descoped (B-31, `tests/scope.txt`): the napi
+/// The reason `sparse-set` is descoped (PORTBUG-1, `tests/scope.txt`): the napi
 /// bridge (`crates/mnemonist-napi/src/sparse_set.rs`) holds its `CoreSet` in a
 /// `RefCell` and calls `.borrow()` for `has` / `.borrow_mut()` for
 /// `add`/`delete` on every single access — one borrow-flag check and

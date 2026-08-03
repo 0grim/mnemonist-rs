@@ -340,7 +340,7 @@ const NOT_A_CONSTRUCTOR: &str = "Keys is not a constructor";
 ///
 /// napi cannot see `arguments.length`; an omitted trailing argument and an
 /// explicit `undefined` there collapse, the same divergence `FixedStack`'s
-/// `ArrayClass` already accepts (D-61) — `values_arg` (the second formal
+/// `ArrayClass` already accepts (DIV-FIXED-STACK-3) — `values_arg` (the second formal
 /// parameter, matching upstream's own "< 2") being `undefined` stands in for
 /// "fewer than two arguments were passed", i.e. `new Cache(capacity)`.
 pub fn resolve_construction(
@@ -567,7 +567,7 @@ pub fn step_entry<Owner: 'static, IK: Hash + Eq + 'static>(
 /// re-borrow once for the read and once more for the advance, so a re-entrant
 /// `set`/`delete` from inside the callback is never fighting an outstanding
 /// borrow -- the same discipline `default_map`'s `forEach` uses, and for the
-/// same reason (B-31).
+/// same reason (PORTBUG-1).
 ///
 /// `ForEachWalk`, not `CursorState`: advancing the walk's pointer has to
 /// happen *after* `callback.apply` returns, reading `forward` as it stands
@@ -646,7 +646,7 @@ pub fn cache_to_index(stored: &JsSlot) -> PropertyKey {
 /// (called `coerce` here) only ever produces the [`JsKey`]-classified shapes
 /// this matches on.
 ///
-/// Exists for B-140: upstream's `setpop` silently reports `null` — as if
+/// Exists for BUG-LRU-CACHE-1: upstream's `setpop` silently reports `null` — as if
 /// nothing were evicted — whenever the EVICTED key happens to be JS-falsy
 /// (`0`, `""`, `false`, `NaN`, `null`, `undefined`), even though an eviction
 /// genuinely occurred and the caller's new entry really did displace it. Both
@@ -828,7 +828,7 @@ impl JsLruCache {
                 key,
                 value,
             }),
-            // B-140: upstream's `if (oldKey) { return {evicted: true, ...}; }
+            // BUG-LRU-CACHE-1: upstream's `if (oldKey) { return {evicted: true, ...}; }
             // else { return null; }` -- a falsy evicted key silently
             // suppresses the report. See `is_js_truthy`.
             SetPop::Evicted { key, value } if is_js_truthy(&key) => Some(SetPopOutcome {

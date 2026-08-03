@@ -23,7 +23,7 @@ falsification record, full benchmark table.
 | `a_wrapped_deque_walks_front_to_back` | 4, 18 |
 | `unshift_from_the_zero_start_wraps_to_the_last_slot` | — the `start === 0` wrap, reached here from an *empty* deque rather than a full one |
 | `a_capacity_of_one_and_an_empty_deque_both_behave` | 17 |
-| `from_array_like_accepts_any_iterator` | D-03 |
+| `from_array_like_accepts_any_iterator` | DIV-QUEUE-1 |
 | `error_text_is_upstreams` | — the message constants, verbatim |
 
 ## Fuzz grammar
@@ -34,11 +34,11 @@ falsification record, full benchmark table.
 * **Observable state, compared after every op:** `size`, `capacity`, **`start`**, `items`,
   `toArray()`. `start` is in the set because the upstream file asserts on it and because it is the
   one number a wrong wrap moves first.
-* **`get` indices run 0..=11 against capacities of 1..=8**, so both clauses of B-62's guard are
+* **`get` indices run 0..=11 against capacities of 1..=8**, so both clauses of BUG-CIRCULAR-BUFFER-1's guard are
   exercised constantly: past the size (debris) and past the capacity (the guard that fires).
 * **Both backing classes**, capacities 1..=8, values to 320.
 * **Deliberately excluded:** `from` (a static cannot appear in an op sequence; covered by the
-  original test and the differential probes), `forEach`'s `scope` (D-61), and a **negative** `get`
+  original test and the differential probes), `forEach`'s `scope` (DIV-FIXED-STACK-3), and a **negative** `get`
   index — the fuzzer drives `mnemonist-core`, whose `get` takes a `usize`, and the negative path is
   the bridge's. It is covered by four differential probes instead, and this exclusion is the reason
   they are recorded above rather than left as scratch work.
@@ -48,7 +48,7 @@ falsification record, full benchmark table.
 ### Fuzzer falsification
 
 Sabotage: `get`'s guard changed from `index >= self.capacity` to `index >= self.size` — the
-"obvious correction" of B-62, and the change any reader who has not checked upstream would make.
+"obvious correction" of BUG-CIRCULAR-BUFFER-1, and the change any reader who has not checked upstream would make.
 Caught in **823 cases (1.2 s)**, shrunk to five lines:
 
 ```js

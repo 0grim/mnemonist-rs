@@ -9,7 +9,7 @@
 //! # 1. A key is read as bytes, not as a full UTF-16 string
 //!
 //! [`decode_key`] takes each UTF-16 code unit of the JS string and truncates
-//! it to its low 8 bits. That is a real, disclosed divergence (D-245 in
+//! it to its low 8 bits. That is a real, disclosed divergence (DIV-CRITBIT-TREE-MAP-1 in
 //! DECISIONS-CANDIDATES.md) from upstream, which runs its critical-bit
 //! arithmetic against the untruncated code unit — arithmetic that masks
 //! with `0xff` at nearly every step anyway (see the core module's own
@@ -26,7 +26,7 @@
 //! re-enter — but `RefCell` is used anyway (matching `default_map`'s and
 //! `trie_map`'s own reasoning) because a `&self` on a `Freeze`d type is
 //! `noalias readonly` to LLVM, which has hoisted a read out of a loop it
-//! should not have once already (B-31); see `crate::cursor::CellCursor`'s
+//! should not have once already (PORTBUG-1); see `crate::cursor::CellCursor`'s
 //! docs.
 
 use std::cell::RefCell;

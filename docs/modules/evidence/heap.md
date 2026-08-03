@@ -13,7 +13,7 @@ record, full benchmark tables.
 | `push_pop_is_ascending`, `to_array_leaves_the_heap_intact`, `consume_empties_the_heap`, `a_max_heap_reverses_the_comparator`, `heapify_then_consume_sorts` | the upstream blocks, as a baseline |
 | `a_comparator_that_grows_the_array_mid_sift_does_not_panic` | 1 — and the assertion is that it *completes*, which an algorithm holding `&mut Vec` could not |
 | `a_comparator_that_shrinks_the_array_makes_the_walk_read_undefined` | 1 — the frozen `endIndex` half |
-| `clear_detaches_an_in_flight_sift` | 1 — the rebinding half (D-41) |
+| `clear_detaches_an_in_flight_sift` | 1 — the rebinding half (DIV-STACK-3) |
 | `a_throwing_comparator_desynchronises_size_from_the_array` | 2 |
 | `sort_with_is_stable`, `sort_with_puts_undefined_last_without_comparing_it` | the two `Array.prototype.sort` properties `nsmallest` depends on |
 | `nsmallest_over_an_array_like`, `nlargest_over_an_iterable` | 13–18, the paths |
@@ -47,7 +47,7 @@ module=heap seed=42       cases=12589 ops=1283659 wall=60.0s  divergences=0   (p
   | `boom` | throws, leaving `items.length` one ahead of `size` |
 
 * **Observable state, compared after every op:** `size` and `items`. They are separate quantities
-  upstream and B-70 makes them genuinely disagree, so comparing both is what pins it.
+  upstream and BUG-HEAP-1 makes them genuinely disagree, so comparing both is what pins it.
 * **Values:** `0..24`, small enough that duplicates are frequent — a heap's tie-breaking is
   observable through `toArray`, and `sift_up`'s `>= 0` is the only thing that decides it.
 
@@ -55,7 +55,7 @@ module=heap seed=42       cases=12589 ops=1283659 wall=60.0s  divergences=0   (p
 
 ### Fuzzer falsification
 
-Sabotage: `Heap::clear` truncating the backing array in place instead of rebinding it — the D-41
+Sabotage: `Heap::clear` truncating the backing array in place instead of rebinding it — the DIV-STACK-3
 collapse, and the most plausible way a future cleanup breaks this port, because `set_length(0)` and
 `allocate(0)` leave an **identical** observable state for every program whose comparator has no side
 effects.

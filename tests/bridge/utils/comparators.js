@@ -4,7 +4,7 @@
 // so the module has to exist one directory *below* the specs -- which is why
 // this shim lives in a subdirectory. `tests/run.sh` copies `tests/bridge/.`
 // into the work tree root, so the path is preserved. The default spec glob is
-// non-recursive (D-22), so nothing here is mistaken for a spec.
+// non-recursive (DIV-PROJ-22), so nothing here is mistaken for a spec.
 //
 // All four upstream exports are re-exported. Two are `#[napi]` functions backed
 // by `mnemonist_core::utils::comparators`; the other two *return* functions,

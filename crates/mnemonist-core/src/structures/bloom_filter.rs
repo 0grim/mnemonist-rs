@@ -24,7 +24,7 @@
 //!
 //! # Three upstream defects, all reproduced
 //!
-//! **B-97 — a filter with zero hash functions says yes to everything.**
+//! **BUG-BLOOM-FILTER-2 — a filter with zero hash functions says yes to everything.**
 //! `hashFunctions` is `(length * 8 / capacity * Math.LN2) | 0`, and nothing
 //! checks the result. When it truncates to `0`, [`BloomFilter::add`] writes no
 //! bits and [`BloomFilter::test`] returns `true` vacuously — the loop it would
@@ -33,12 +33,12 @@
 //! validation, which only requires `typeof capacity === 'number' && capacity > 0`
 //! despite the error message saying "positive **integer**".
 //!
-//! **B-98 — every non-string item hashes identically.** `string.length` on a
+//! **BUG-BLOOM-FILTER-3 — every non-string item hashes identically.** `string.length` on a
 //! number is `undefined`, `new Uint16Array(undefined)` is empty, and the loop
 //! never runs, so `add(42)` hashes the empty sequence — the same sequence
 //! `add('')` hashes. After `add(42)`, `test(7)` and `test('')` are both `true`.
 //!
-//! **B-99 — an `errorRate` above 1 raises a raw `RangeError`.** `Math.log` of
+//! **BUG-BLOOM-FILTER-4 — an `errorRate` above 1 raises a raw `RangeError`.** `Math.log` of
 //! anything above 1 is positive, `bits` goes negative, and `new Uint8Array(-59)`
 //! throws `RangeError: Invalid typed array length: -59` from the allocator —
 //! not the module's own message, and only for a *large enough* capacity, since
@@ -149,7 +149,7 @@ impl BloomFilter {
     ///
     /// Upstream's `clear` is not merely a reset: it re-derives `hashFunctions`
     /// and reallocates `data` from `capacity` and `errorRate`, so it can throw
-    /// exactly where the constructor can (B-99). Reproduced, including the
+    /// exactly where the constructor can (BUG-BLOOM-FILTER-4). Reproduced, including the
     /// order — `hashFunctions` is assigned before the allocation that fails.
     ///
     /// # Errors
@@ -183,7 +183,7 @@ impl BloomFilter {
 
     /// `#.hashFunctions` — how many bits each item sets.
     ///
-    /// **Zero is reachable and is not an error upstream.** See B-97.
+    /// **Zero is reachable and is not an error upstream.** See BUG-BLOOM-FILTER-2.
     pub fn hash_functions(&self) -> usize {
         self.hash_functions
     }
@@ -212,7 +212,7 @@ impl BloomFilter {
 
     /// `#.add` — record `item`.
     ///
-    /// A filter with zero hash functions records nothing, silently. See B-97.
+    /// A filter with zero hash functions records nothing, silently. See BUG-BLOOM-FILTER-2.
     pub fn add(&mut self, item: &[u16]) {
         for seed in 0..self.hash_functions {
             let index = self.hash(seed, item);
@@ -224,7 +224,7 @@ impl BloomFilter {
     /// `#.test` — whether `item` might have been added.
     ///
     /// Returns `true` for anything at all when there are zero hash functions,
-    /// because the loop that would have returned `false` never runs. See B-97.
+    /// because the loop that would have returned `false` never runs. See BUG-BLOOM-FILTER-2.
     pub fn test(&self, item: &[u16]) -> bool {
         for seed in 0..self.hash_functions {
             let index = self.hash(seed, item);
@@ -336,7 +336,7 @@ mod tests {
 
     // ------------------------------------------------------------ the bugs
 
-    /// **B-97**: `hashFunctions` truncating to zero makes `test` return `true`
+    /// **BUG-BLOOM-FILTER-2**: `hashFunctions` truncating to zero makes `test` return `true`
     /// for everything, and `add` a no-op. Reachable from a filter that passes
     /// every one of upstream's own validations. Values from Node 24.18.1.
     #[test]
@@ -366,7 +366,7 @@ mod tests {
         }
     }
 
-    /// **B-98**: every item without a `length` collapses onto the empty
+    /// **BUG-BLOOM-FILTER-3**: every item without a `length` collapses onto the empty
     /// sequence, so a filter of numbers reports every number present.
     ///
     /// The conversion happens at the bridge, so what the core can pin is the
@@ -385,7 +385,7 @@ mod tests {
         assert_eq!(filter.data(), [1, 1, 0, 0, 64, 128, 0, 0, 0, 0, 1, 17, 0]);
     }
 
-    /// **B-99**: an `errorRate` above 1 makes the sizing negative, and a large
+    /// **BUG-BLOOM-FILTER-4**: an `errorRate` above 1 makes the sizing negative, and a large
     /// enough capacity turns that into an allocation failure rather than an
     /// empty filter. Lengths from Node 24.18.1's own `RangeError` messages.
     #[test]
@@ -408,7 +408,7 @@ mod tests {
         );
 
         // ...but a small capacity truncates the same negative value to zero and
-        // builds a filter that says yes to everything (B-97 again).
+        // builds a filter that says yes to everything (BUG-BLOOM-FILTER-2 again).
         let filter = BloomFilter::new(5.0, Some(2.0)).unwrap();
 
         assert_eq!(filter.data().len(), 0);

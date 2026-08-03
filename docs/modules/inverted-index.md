@@ -41,8 +41,8 @@ Characterising the shape of that coverage:
   asked to be reached, and the original suite already reaches it — just narrowly (three documents,
   seven tokens total).
 * **`forEach`'s block asserts the callback's arguments on every invocation, but never counts how
-  many invocations happened.** This is exactly the gap B-240 (below) hides in, and it means gate 4
-  cannot catch B-240 on its own.
+  many invocations happened.** This is exactly the gap BUG-INVERTED-INDEX-1 (below) hides in, and it means gate 4
+  cannot catch BUG-INVERTED-INDEX-1 on its own.
 * **No document is ever added after `documents()`/`tokens()` is called.** Both iterators in the
   suite are opened on an already-final index and drained immediately; neither cursor's *liveness*
   is exercised at all.
@@ -64,10 +64,10 @@ Characterising the shape of that coverage:
 2. **`clear()`'s own effect on `size`/`dimension`/a subsequent `get`/`add` is never checked at
    all** — the method is never called in the original suite.
 
-**`forEach`'s invocation count — B-240's whole territory**
+**`forEach`'s invocation count — BUG-INVERTED-INDEX-1's whole territory**
 
 3. **The number of times `forEach`'s callback runs is never counted.** Gap 3 alone is why gate 4
-   cannot find B-240; see "Bugs this found."
+   cannot find BUG-INVERTED-INDEX-1; see "Bugs this found."
 
 **Cursor liveness, the other half**
 
@@ -75,7 +75,7 @@ Characterising the shape of that coverage:
    finishes, is never checked** for whether it is visible (it is not — both cursors freeze a
    length/capture the array or map object at open time).
 5. **`Array.from(index)` (the collection's own `Symbol.iterator`, aliased to `documents`) is never
-   used**, so the *factory* half of D-07 has zero coverage here, same gap default-map's own docs
+   used**, so the *factory* half of DIV-STACK-2 has zero coverage here, same gap default-map's own docs
    describe for that module.
 
 **The tokenizer's fallback and error paths, beyond the two blocks that use them**
@@ -97,7 +97,7 @@ Characterising the shape of that coverage:
 
 `crates/mnemonist-core/src/structures/inverted_index.rs` — 19 tests, closing every gap above except
 5–9: a baseline reproduction of all eight blocks (tokenizer replaced by plain whitespace-split — see
-the fuzz spec's own docs on why), B-240 pinned directly on an index of any size and on an empty
+the fuzz spec's own docs on why), BUG-INVERTED-INDEX-1 pinned directly on an index of any size and on an empty
 index, `clear` between two steps of an open cursor for all three walks not panicking and finishing
 the pre-clear data, a document added mid-walk staying invisible because the length is frozen, and
 general correctness (empty query, repeated token dedup, `clear` resetting everything). Full
@@ -119,7 +119,7 @@ bridged).
 
 ## Bugs this found
 
-**B-240 — `forEach` never calls its callback, regardless of how many documents are stored.**
+**BUG-INVERTED-INDEX-1 — `forEach` never calls its callback, regardless of how many documents are stored.**
 Verified against Node 24.18.1.
 
 ```js
@@ -199,8 +199,8 @@ the grammar's actual coverage of the state space in the time it ran, not a proof
 | — | **Tokens are `crate::js_key::JsKey`, not a bespoke type.** `mapping` is a real `Map`, and its keys compare with SameValueZero — the same `Map`-backed reasoning `default_map.rs` documents, reused rather than reinvented. |
 | — | **The `identity` fallback is modelled as `Option::None`, not a materialised JS closure.** Upstream's `function identity(x) { return x; }` is a real function object; this port's `resolve_tokenizer` returns `None` for the falsy-descriptor case and `JsInvertedIndex::tokenize` applies the identical `Array.isArray`-then-convert rule directly to the input, without ever constructing or calling a JS function. Observationally identical — the input is handed back and validated exactly as calling `identity` and validating its return value would be — and avoids the `Function`-lifetime-casting machinery a real closure would need for no behavioural gain. |
 | — | **`inspect()` is not ported.** It returns `this.items.slice()` with a constructor-name trick for Node's REPL; nothing asserts on it. |
-| D-06 | No collection implements `IntoIterator`; unchanged from every other module in this port. |
-| D-07 | `Symbol.iterator` is installed from Rust via `ITERATOR_FACTORIES`, aliased to `documents` — upstream's own last line, matching the table's existing precedent of not assuming `values` for every module (`default-map` aliases `entries`, `Trie` aliases `keys`). |
+| DIV-STACK-1 | No collection implements `IntoIterator`; unchanged from every other module in this port. |
+| DIV-STACK-2 | `Symbol.iterator` is installed from Rust via `ITERATOR_FACTORIES`, aliased to `documents` — upstream's own last line, matching the table's existing precedent of not assuming `values` for every module (`default-map` aliases `entries`, `Trie` aliases `keys`). |
 
 ## Fuzz + bench
 
@@ -215,7 +215,7 @@ module=inverted-index  seed=20260801 cases=9632 ops=967012 wall=60.0s divergence
 ```
 
 Reproduce with `target/release/difffuzz --module inverted-index --seed 42 --cases 9600`. Both this
-fix and B-240 predate these logged campaigns: B-240 is reproduced by construction (see above) rather
+fix and BUG-INVERTED-INDEX-1 predate these logged campaigns: BUG-INVERTED-INDEX-1 is reproduced by construction (see above) rather
 than found by fuzzing, and the `clear()` defect was found by an earlier, unlogged run before the fix
 landed.
 
@@ -246,7 +246,7 @@ the three places this could be caught: the named Rust assertion plus one more it
 (2 failed, 15 passed), and the differential fuzzer, which caught it immediately (148 cases, 58
 operations, 0.2 seconds, minimised to two lines). The original mocha suite stayed green (8 passing),
 correctly: it never counts `forEach` invocations, so it cannot distinguish "ran once" from "ran zero
-times" either way — precisely why B-240 needed the fuzzer's `$forEach` op as continuous evidence
+times" either way — precisely why BUG-INVERTED-INDEX-1 needed the fuzzer's `$forEach` op as continuous evidence
 rather than a single hand-picked assertion. Reverted; confirmed green again (17 passing, 0
 divergences on a 500-case replay). Full record: evidence file.
 

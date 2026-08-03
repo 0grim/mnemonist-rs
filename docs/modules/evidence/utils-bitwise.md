@@ -15,10 +15,10 @@ Gate artifacts for `docs/modules/utils-bitwise.md`: test-to-gap table.
 | `non_integers_truncate_toward_zero_first` | 5 |
 | `values_past_the_32_bit_range_wrap` | 5 — including 2^53 and 1e30, where an `i64` cast would saturate |
 | `non_finite_inputs_become_zero` | 5 |
-| `msb32_returns_zero_for_every_input_with_the_top_bit_set` | 3 — B-19 |
+| `msb32_returns_zero_for_every_input_with_the_top_bit_set` | 3 — BUG-UTILS-BITWISE-1 |
 | `msb32_is_correct_below_the_sign_bit` | 3 — the half that works, over the same word sample |
 | `msb8_is_correct_on_bytes_and_unmasked_above_them` | 3, 4 — all 256 bytes, then the overflow cases |
 | `test_reads_one_bit_and_wraps_the_shift_count` | 6 |
 | `the_byte_wide_critical_bit_helpers_agree_with_each_other` | 7 — the complement property over 4,096 byte pairs |
 | `test_critical_bit8_carries_through_number_arithmetic` | 9 |
-| `critical_bit32_mask_is_negative_because_the_trailing_mask_re_signs_it` | 8 — B-20 |
+| `critical_bit32_mask_is_negative_because_the_trailing_mask_re_signs_it` | 8 — BUG-UTILS-BITWISE-2 |

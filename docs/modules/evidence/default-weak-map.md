@@ -10,7 +10,7 @@ falsification record.
 | Test | Closes gap |
 |---|---|
 | `reproduces_the_upstream_suite` | the four blocks, as a baseline |
-| `b_242_the_factory_re_runs_on_every_get_of_a_stored_undefined_value` | 1 — B-242, pinned call-by-call |
+| `b_242_the_factory_re_runs_on_every_get_of_a_stored_undefined_value` | 1 — BUG-DEFAULT-WEAK-MAP-1, pinned call-by-call |
 | `a_defined_value_written_by_the_factory_ends_the_b_242_re_run` | 1 |
 | `a_re_triggered_factory_overwrites_in_place_rather_than_duplicating_the_key` | 1 — no duplicate identity leaks out of a re-triggered factory |
 | `has_and_peek_disagree_on_a_stored_undefined` | 2 |
@@ -31,7 +31,7 @@ falsification record.
   to `default-map`'s own `FuzzKey`). `fuzz/oracle.js`'s `WEAK_KEY_POOL` is the real-object side:
   eight plain objects, created once at oracle start-up, held by a module-level array for the
   process's entire life, so none of them is ever eligible for collection during any campaign.
-* **Values:** `undefined` (weight 2, the only route to B-242), `null`, small integers, `'v'`.
+* **Values:** `undefined` (weight 2, the only route to BUG-DEFAULT-WEAK-MAP-1), `null`, small integers, `'v'`.
 * **Constructors:** `undefined`/`null` factories, both already in `fuzz/oracle.js`'s shared
   `FACTORIES` table (added for `default-map`) and reused verbatim: both accept upstream's
   one-argument `(key) -> value` signature unchanged, since they ignore every argument they are
@@ -52,7 +52,7 @@ falsification record.
 **The assertion named first:** the probe script's `calls === 3` (mirroring the core Rust test
 `b_242_the_factory_re_runs_on_every_get_of_a_stored_undefined_value`'s own `assert_eq!(calls, 3, ...)`),
 run against the real compiled addon rather than against core directly — because the bridge is
-where B-242's *composition* (peek-miss triggers the factory) actually lives; core's `peek`/
+where BUG-DEFAULT-WEAK-MAP-1's *composition* (peek-miss triggers the factory) actually lives; core's `peek`/
 `write_from_factory` are neutral primitives a caller composes, the same way upstream's own bug is
 a composition of two lines, neither wrong on its own.
 
@@ -70,7 +70,7 @@ already `true` from the `set()` call, so the factory never runs even once.
 is not a miss, it is a structural fact stated up front in this document's own module docs and
 `default_map.rs`'s: *the differential fuzzer compares `mnemonist-core` against upstream JS; the
 napi bridge is not in that loop at all.* A bridge-only composition bug is invisible to it by
-construction, the same way B-31 was before this port started holding core state in a `RefCell`.
+construction, the same way PORTBUG-1 was before this port started holding core state in a `RefCell`.
 
 **Reverted; confirmed green again:** the same script reports `calls === 3`, and the original suite
 still passes (`4 passing`).

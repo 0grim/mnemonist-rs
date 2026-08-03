@@ -48,7 +48,7 @@
 //! Two extra constructions of the caller's class per structure (the scratch and
 //! the probe, both of length one) that upstream does not perform. Invisible for
 //! `Array` and the typed arrays; observable for a constructor with side
-//! effects. Recorded as D-63.
+//! effects. Recorded as DIV-FIXED-STACK-5.
 
 use std::ptr;
 
@@ -244,7 +244,7 @@ fn instantiate<'env>(
 /// **truncates**, leaving `this.capacity === 2.5` against an `items.length` of
 /// 2 — after which the deque's wrap arithmetic compares indices against 2.5.
 /// The port requires an integral capacity and raises the `Array` form of the
-/// error for every class. See D-62.
+/// error for every class. See DIV-FIXED-STACK-4.
 pub fn capacity_of(
     env: &Env,
     value: &Unknown,

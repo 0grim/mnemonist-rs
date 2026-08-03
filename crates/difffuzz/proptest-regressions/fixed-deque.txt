@@ -12,7 +12,7 @@
 # the port has never diverged here.
 #
 #   `FixedDeque::get`'s guard changed from `index >= self.capacity` to
-#   `index >= self.size` -- the "obvious correction" of B-62, and the change
+#   `index >= self.size` -- the "obvious correction" of BUG-CIRCULAR-BUFFER-1, and the change
 #   any reader who has not checked upstream would make. Caught in 823 cases
 #   (1.2s), shrunk to five lines:
 #

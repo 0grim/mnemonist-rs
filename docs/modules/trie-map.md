@@ -46,11 +46,11 @@ is itself a stored word. Pinned by
 `mnemonist_core::structures::trie_map::tests::walk_over_a_prefix_that_does_not_exist_is_empty`.
 
 **`delete` or `clear` while a lazy iterator is still open over the affected region.** This is the
-single biggest gap, and it is where B-201 lives — see "Bugs this found". No test in the file ever
+single biggest gap, and it is where BUG-TRIE-MAP-2 lives — see "Bugs this found". No test in the file ever
 holds a `values()`/`keys()`/`entries()` iterator across a mutation.
 
 **A token equal to `SENTINEL`** (`String.fromCharCode(0)`). Neither this file nor `test/trie.js`
-ever embeds the reserved sentinel character in a real key. See B-200.
+ever embeds the reserved sentinel character in a real key. See BUG-TRIE-MAP-1.
 
 **Digit-shaped tokens.** `Object.keys`' integer-index-sorts-first rule never has anything to apply
 to — every prefix in the file is letters.
@@ -91,7 +91,7 @@ side, since it requires an array-mode starting prefix the fuzz grammar deliberat
 Two upstream defects, both confirmed by direct execution against Node 24.18.1, neither reachable by
 `test/trie.js` or `test/trie-map.js`.
 
-### B-200 — a token equal to `SENTINEL` corrupts the trie
+### BUG-TRIE-MAP-1 — a token equal to `SENTINEL` corrupts the trie
 
 `node[SENTINEL]` (the value slot) and `node[token]` (each child) are properties of the *same* plain
 object. A real token equal to the sentinel string collides with the value slot:
@@ -113,12 +113,12 @@ chain of fresh, unlinked objects that vanish with the call, while `size` increme
 final orphan genuinely has no `SENTINEL` property of its own.
 
 **Not reproduced.** `mnemonist_core::structures::trie_map::Node` keeps the value and the children in
-two separate fields, never a shared keyspace (D-200), so a token equal to whatever the bridge treats
+two separate fields, never a shared keyspace (DIV-TRIE-MAP-1), so a token equal to whatever the bridge treats
 as reserved is an entirely ordinary token here. Reproducing the corruption would mean modelling
 JavaScript's primitive/object duality purely to recreate one write silently going nowhere, for a
 path no test anywhere in the port reaches.
 
-### B-201 — a `delete`/`clear` that prunes a queued cursor frame leaves it still yielding
+### BUG-TRIE-MAP-2 — a `delete`/`clear` that prunes a queued cursor frame leaves it still yielding
 
 `values`/`prefixes`/`keys`/`entries` close over live JS object references already discovered but not
 yet visited. `delete`'s pruning removes a *parent's* reference to a node without necessarily
@@ -138,16 +138,16 @@ Found by reading and confirmed independently by the differential fuzzer's own fi
 this unit — see "Fuzz + bench" for the minimised repro. **Not reproduced**:
 `mnemonist_core::structures::trie_map::Walk` re-navigates from the root by token path rather than
 holding a reference, which is required for it to be resumable from a fresh `&TrieMap` at the FFI
-boundary. See D-201.
+boundary. See DIV-TRIE-MAP-2.
 
 ## Deliberate divergences
 
 | # | Divergence | Why |
 |---|---|---|
-| D-200 | **A token equal to `SENTINEL` does not corrupt the trie.** | See B-200. Reproducing it needs JS primitive/object duality this port has no other use for, and no test reaches the path. |
-| D-201 | **The lazy walk re-navigates by token path, not a live reference**, so it can disagree with upstream when a `delete`/`clear` prunes something an already-open cursor has queued. | Required regardless of B-201: the walk must be resumable at the FFI boundary, which a live Rust borrow cannot express across calls. Confirmed narrow enough that no original test reaches it; the fuzz grammar reached it on contact and now excludes the interaction explicitly (see "Fuzz + bench"). |
-| D-202 | **`Object.keys`' integer-like-keys-sort-first rule is not implemented** — every node enumerates in plain insertion order. | No token in either original suite is ever a digit. The fuzz alphabet is built entirely from letters for the same reason. |
-| — | **Array-mode tokens are coerced with `String(value)`, not full `ToPropertyKey`** (a `Symbol` is not accepted unchanged). | Mirrors D-91's precedent (`lru-cache`'s object keys): no test in either suite ever supplies anything but a plain string as an array-mode token. |
+| DIV-TRIE-MAP-1 | **A token equal to `SENTINEL` does not corrupt the trie.** | See BUG-TRIE-MAP-1. Reproducing it needs JS primitive/object duality this port has no other use for, and no test reaches the path. |
+| DIV-TRIE-MAP-2 | **The lazy walk re-navigates by token path, not a live reference**, so it can disagree with upstream when a `delete`/`clear` prunes something an already-open cursor has queued. | Required regardless of BUG-TRIE-MAP-2: the walk must be resumable at the FFI boundary, which a live Rust borrow cannot express across calls. Confirmed narrow enough that no original test reaches it; the fuzz grammar reached it on contact and now excludes the interaction explicitly (see "Fuzz + bench"). |
+| DIV-TRIE-MAP-3 | **`Object.keys`' integer-like-keys-sort-first rule is not implemented** — every node enumerates in plain insertion order. | No token in either original suite is ever a digit. The fuzz alphabet is built entirely from letters for the same reason. |
+| — | **Array-mode tokens are coerced with `String(value)`, not full `ToPropertyKey`** (a `Symbol` is not accepted unchanged). | Mirrors DIV-LRU-CACHE-3's precedent (`lru-cache`'s object keys): no test in either suite ever supplies anything but a plain string as an array-mode token. |
 | — | **`find`/`values`/`keys`/`entries` return only the *suffix* beyond a given prefix from core**; the bridge concatenates it with the caller's own, uncoerced starting argument. | Verified against real Node: upstream's own `find`/iterators echo the caller's raw prefix value and only ever coerce newly-discovered tokens. Splitting the two at the core/bridge boundary is what lets core stay JS-agnostic while the bridge reproduces this exactly — see `mnemonist_napi::trie_map`'s module docs. |
 
 ## Fuzz + bench
@@ -170,10 +170,10 @@ small integers, one string) so equal values recur constantly, matching every `Ma
 crate. `update` uses one named factory (`trieIncrement`) that increments a stored number, treating
 anything else as `0`.
 
-**The regime split (D-201).** The constructor strategy generates one internal flag deciding whether
+**The regime split (DIV-TRIE-MAP-2).** The constructor strategy generates one internal flag deciding whether
 a program exercises `delete`/`clear` or a persistent `$iter`/`$next` cursor, never both in the same
 program — because the campaign run *without* the split diverged inside a few hundred operations,
-independently rediscovering B-201. `$spread` (`Array.from`) is exempt from the split in both
+independently rediscovering BUG-TRIE-MAP-2. `$spread` (`Array.from`) is exempt from the split in both
 regimes: it opens and fully drains a fresh cursor within a single op, so nothing is ever left queued
 across a later mutation.
 
@@ -183,9 +183,9 @@ verifies structure, while `find`/`$spread`/`$next` sequences (JSON arrays) verif
 
 **What this grammar deliberately does not cover:** array mode entirely (`ToPropertyKey` coercion is
 a bridge-only concern; covered by the original suite's custom-tokens block instead), digit tokens
-(D-202), a starting sub-prefix on the lazy iterators (every walk in this grammar starts at the
+(DIV-TRIE-MAP-3), a starting sub-prefix on the lazy iterators (every walk in this grammar starts at the
 root; covered by a dedicated Rust test and by gate 4), and `delete`/`clear` interleaved with an open
-cursor (D-201, excluded by construction after the campaign showed it was reachable in practice, not
+cursor (DIV-TRIE-MAP-2, excluded by construction after the campaign showed it was reachable in practice, not
 merely in theory). Full grammar: evidence file.
 
 ### Falsification (gate 6)

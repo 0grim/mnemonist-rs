@@ -5,7 +5,7 @@
 //! `default-map` is thin. What is under test is
 //! [`mnemonist_core::map::OrderedMap`] — insertion order, tombstones,
 //! compaction and live cursors — plus the four lines of `default-map.js` that
-//! are not delegation and that hold B-40. So the grammar is built to reach
+//! are not delegation and that hold BUG-DEFAULT-MAP-1. So the grammar is built to reach
 //! those and not to admire the wrapper:
 //!
 //! * **Keys are drawn from a small pool** ([`KEY_POOL`]), so collisions,
@@ -15,20 +15,20 @@
 //! * **The pool contains `NaN` and `-0`**, the only two places SameValueZero
 //!   differs from `===`.
 //! * **`undefined` is in the value alphabet**, and the `undefined` factory is
-//!   in the constructor alphabet. Between them, B-40 — `size` drifting away
+//!   in the constructor alphabet. Between them, BUG-DEFAULT-MAP-1 — `size` drifting away
 //!   from `items.size` — is reached in two operations, and every subsequent
 //!   op is then compared against a *drifted* upstream.
 //! * **Deletes outweigh nothing.** A 200-op program over eight keys deletes
 //!   enough to force several compactions, which is the only way the cursor's
 //!   id-based relocation is exercised at all.
-//! * **Cursor lifecycle ops interleave with mutation** (D-21), across all
+//! * **Cursor lifecycle ops interleave with mutation** (DIV-PROJ-21), across all
 //!   three iterator flavours, because `Map` iterators are live and that
 //!   liveness is invisible to any program that drains without mutating.
 //!
 //! # Observable state
 //!
 //! `size` **and** `items`. Both are public upstream. Comparing them
-//! *separately* is the point: they disagree by design once B-40 fires, so a
+//! *separately* is the point: they disagree by design once BUG-DEFAULT-MAP-1 fires, so a
 //! port that quietly made `size` return the entry count would agree on `items`
 //! and diverge on `size` within a handful of ops. The oracle encodes a JS
 //! `Map` as `{"$map": [[k, v], ...]}` — a list, so entry **order** is compared
@@ -49,7 +49,7 @@
 //! the oracle has no way to send a callback that would notice. Covered by the
 //! original test file and by the probes instead.
 //!
-//! # `$forEach`, added after B-31
+//! # `$forEach`, added after PORTBUG-1
 //!
 //! The line above used to read "**`forEach`.** It takes a callback, and the
 //! oracle protocol has no way to send one." That was true and it was also the
@@ -87,7 +87,7 @@ const KEY_POOL: usize = 8;
 /// The factories a generated `DefaultMap` can be built with.
 ///
 /// Names, matched by a table in `fuzz/oracle.js`. `undefined` is the one that
-/// reaches B-40; `autoIncrement` is upstream's own documented factory and is
+/// reaches BUG-DEFAULT-MAP-1; `autoIncrement` is upstream's own documented factory and is
 /// the only stateful one.
 const FACTORIES: [&str; 5] = ["undefined", "null", "autoIncrement", "key", "size"];
 
@@ -245,7 +245,7 @@ impl ModuleSpec for DefaultMapSpec {
         let key = (0..KEY_POOL).prop_map(key_at);
         // A value alphabet narrow enough to collide and wide enough to tell
         // the three JSON scalar shapes apart. `undefined` is weighted in
-        // rather than rare: it is the only route to B-40.
+        // rather than rare: it is the only route to BUG-DEFAULT-MAP-1.
         let value = prop_oneof![
             2 => Just(json!({"$undefined": true})),
             1 => Just(Value::Null),
@@ -367,7 +367,7 @@ impl ModuleSpec for DefaultMapSpec {
             // `Array.from(map)` goes through the COLLECTION's Symbol.iterator,
             // which upstream aliases to `entries` -- not to `values`, as every
             // other module in the port does. A fresh cursor every time, which
-            // is what makes the factory half of D-07 observable next to
+            // is what makes the factory half of DIV-STACK-2 observable next to
             // `$next`, which must not restart.
             // `this.items.forEach(callback, scope)` — the backing `Map`'s own
             // walk, which is live in both directions. Driven by the same
@@ -439,7 +439,7 @@ impl ModuleSpec for DefaultMapSpec {
             .collect();
 
         // `size` and `items` are compared as two separate observations
-        // because they disagree by design: see B-40.
+        // because they disagree by design: see BUG-DEFAULT-MAP-1.
         let mut state = JsonMap::new();
         state.insert("size".into(), json!(instance.map.size()));
         state.insert("items".into(), json!({"$map": entries}));

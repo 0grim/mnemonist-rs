@@ -75,7 +75,7 @@ Everything below is reachable through the public API and never exercised by the 
 
 **Cursors**
 
-8. **No cursor is ever re-drained**, so D-06's non-restartability is unobserved.
+8. **No cursor is ever re-drained**, so DIV-STACK-1's non-restartability is unobserved.
 9. **No cursor is ever partially consumed and then spread.**
 10. **`break`-ing out of a `for…of` and then calling `next()` is never done.** Upstream cursors
     have no `return` method, so the walk resumes.
@@ -123,7 +123,7 @@ upstream assertion and no Rust equivalent); and `forEach`'s `scope` in its `argu
 anywhere** — mnemonist exercises it only incidentally, through `Stack.from([1, 2, 3])`. It is
 ported into `mnemonist-napi`, not core, because a grep of all 30 importing modules shows every call
 site is `forEach(iterable, cb)` inside a `.from()` static or an iterable-accepting constructor,
-operating on the user-supplied argument (D-03).
+operating on the user-supplied argument (DIV-QUEUE-1).
 
 `tests/boundary/foreach.js` covers all five branches, differentially against the real
 `obliterator/foreach` (a harness devDependency). What that found:
@@ -143,11 +143,11 @@ Three traps, all reproduced and all pinned:
 * **`toString()` is invoked on an arbitrary user value mid-dispatch.** It can throw, it can be
   absent (`Object.create(null)` dies with `TypeError: iterable.toString is not a function`), and it
   can return `'[object Arguments]'` and hijack branch 1.
-* **A truthy primitive reaches the `in` operator and dies there** — see B-30 below.
+* **A truthy primitive reaches the `in` operator and dies there** — see BUG-STACK-1 below.
 
 ## Bugs this found
 
-**B-30 — `forEach` on a truthy primitive dies in the `in` operator, not in its own guard.**
+**BUG-STACK-1 — `forEach` on a truthy primitive dies in the `in` operator, not in its own guard.**
 Verified against Node 24.18.1. A number, boolean, symbol or bigint survives
 `if (!iterable) throw`, is not an indexed sequence and has no `.forEach`, and then meets
 `Symbol.iterator in iterable`. `in` requires an object:
@@ -197,15 +197,15 @@ original suite by a wide margin — see "Fuzz + bench".
 
 | # | Divergence | Why |
 |---|---|---|
-| D-41 | **The backing store is `Rc<RefCell<Vec<T>>>`, not `Vec<T>`.** | A JS array is a reference, and `clear()` **rebinds** it while `pop()` mutates it in place. A `Vec` makes those two indistinguishable and shortens an open walk for both. Mutators still take `&mut self`; this is not interior mutability for convenience. |
-| D-42 | **`Sequence` gained a `limit` method.** | Defaulting to the frozen length, so every existing source is unchanged. `Queue` overrides it; `Stack` does not. Normalising the two would have been an unforced assumption. |
-| D-43 | **The bridge holds `RefCell<CoreStack<JsSlot>>`.** | Because `&self` is `noalias readonly` for a `Freeze` type and JS mutates through the same pointer. The fix is the type, not a barrier — see "Bugs this found" (1). |
-| D-44 | **Values are a `JsSlot` enum, not one `napi_ref` each.** | `napi_create_reference` rejects primitives for a version-8 module. Observationally exact, because primitives are immutable and compared by value: `Object.is` cannot tell a rebuilt `-0` or `NaN` from the original. |
-| D-45 | **`Stack.of` is installed as evaluated JavaScript.** | napi-rs has no variadic parameter and `arguments` has no Rust representation. A fixed literal, evaluated once at load; it is upstream's own line, and it keeps the addon self-contained. Behaviourally identical to a native implementation — measured. |
-| D-46 | **napi's generator `#.return` is deleted from every cursor.** | Upstream cursors have no `return`, so `IteratorClose` finds nothing and a `break` leaves the walk resumable. |
-| D-06 | **No collection implements `IntoIterator`.** | It would hand out a fresh iterator per `for` loop and silently restart. Collections expose `values()`; the `Cursor` is the stateful thing. |
-| D-07 | **`Symbol.iterator` is installed from Rust, not from the shim.** | The factory half is the one napi does not provide. A shim that added semantics would mean the addon was incomplete without the test harness. |
-| D-03 | **`forEach` lives in `mnemonist-napi`, not core.** | Every one of the 30 call sites operates on a user-supplied JS value inside `.from()`. Core takes `IntoIterator`; a Rust caller never meets the dispatch. |
+| DIV-STACK-3 | **The backing store is `Rc<RefCell<Vec<T>>>`, not `Vec<T>`.** | A JS array is a reference, and `clear()` **rebinds** it while `pop()` mutates it in place. A `Vec` makes those two indistinguishable and shortens an open walk for both. Mutators still take `&mut self`; this is not interior mutability for convenience. |
+| DIV-STACK-4 | **`Sequence` gained a `limit` method.** | Defaulting to the frozen length, so every existing source is unchanged. `Queue` overrides it; `Stack` does not. Normalising the two would have been an unforced assumption. |
+| DIV-STACK-5 | **The bridge holds `RefCell<CoreStack<JsSlot>>`.** | Because `&self` is `noalias readonly` for a `Freeze` type and JS mutates through the same pointer. The fix is the type, not a barrier — see "Bugs this found" (1). |
+| DIV-STACK-6 | **Values are a `JsSlot` enum, not one `napi_ref` each.** | `napi_create_reference` rejects primitives for a version-8 module. Observationally exact, because primitives are immutable and compared by value: `Object.is` cannot tell a rebuilt `-0` or `NaN` from the original. |
+| DIV-STACK-7 | **`Stack.of` is installed as evaluated JavaScript.** | napi-rs has no variadic parameter and `arguments` has no Rust representation. A fixed literal, evaluated once at load; it is upstream's own line, and it keeps the addon self-contained. Behaviourally identical to a native implementation — measured. |
+| DIV-STACK-8 | **napi's generator `#.return` is deleted from every cursor.** | Upstream cursors have no `return`, so `IteratorClose` finds nothing and a `break` leaves the walk resumable. |
+| DIV-STACK-1 | **No collection implements `IntoIterator`.** | It would hand out a fresh iterator per `for` loop and silently restart. Collections expose `values()`; the `Cursor` is the stateful thing. |
+| DIV-STACK-2 | **`Symbol.iterator` is installed from Rust, not from the shim.** | The factory half is the one napi does not provide. A shim that added semantics would mean the addon was incomplete without the test harness. |
+| DIV-QUEUE-1 | **`forEach` lives in `mnemonist-napi`, not core.** | Every one of the 30 call sites operates on a user-supplied JS value inside `.from()`. Core takes `IntoIterator`; a Rust caller never meets the dispatch. |
 | — | **`size` and `items.length` are kept as separate quantities.** | They coincide on every public path, but upstream tracks them separately and `values()` is defined against the second. |
 | — | **`inspect()` is not ported.** | A Node display convenience with no upstream assertion and no Rust equivalent. |
 | — | **`forEach(cb, undefined)` binds `this` to the stack.** | Upstream keys off `arguments.length > 1`, which napi's typed signature cannot see. The omitted-argument case — the only one the original suite uses — is exact, and passing a real scope object is exact. |

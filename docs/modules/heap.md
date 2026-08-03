@@ -15,7 +15,7 @@ two are one unit and neither can land alone.
 This is the module that opens the port's **re-entrant comparator callback**: a comparator is a
 JavaScript function called *from inside* a Rust operation, once per comparison, in the middle of a
 sift. That re-entrancy — not the heap algorithm, which is thirty lines — is what the capability is
-about, and it is the same hazard shape as B-31, reached through a different door.
+about, and it is the same hazard shape as PORTBUG-1, reached through a different door.
 
 ---
 
@@ -51,15 +51,15 @@ Everything below is reachable through the public API and never exercised.
 1. **A comparator that mutates the heap.** Three distinct shapes, each answering differently:
    growing the array under an index the sift already chose, shrinking it so the walk reads past its
    own frozen `endIndex`, and **rebinding** it via `clear()` so the sift finishes into a detached
-   array. See B-76.
+   array. See BUG-HEAP-5.
 2. **A comparator that throws.** `push` grows the array before it sifts and `++this.size` never
-   runs, so the two disagree permanently (B-70). There is no `try`/`finally` anywhere in `heap.js`.
+   runs, so the two disagree permanently (BUG-HEAP-1). There is no `try`/`finally` anywhere in `heap.js`.
 3. **A comparator that throws inside `consume()`**, where `this.size = 0` is the *first* statement,
-   so the count leads the array instead of lagging it (B-77).
+   so the count leads the array instead of lagging it (BUG-HEAP-6).
 4. **A comparator returning a non-number.** `'x'` reports "equal" for every pair; `0.5` counts as
-   "greater"; a `BigInt` works where `ToNumber` would throw (B-78).
+   "greater"; a `BigInt` works where `ToNumber` would throw (BUG-HEAP-7).
 5. **A falsy comparator argument.** `new Heap(0)` and `new Heap('')` take the default silently,
-   because the guard is `||` followed by a `typeof` test (B-79). The file asserts the throwing half
+   because the guard is `||` followed by a `typeof` test (BUG-HEAP-8). The file asserts the throwing half
    and not this one.
 6. **`reverseComparator` swapping rather than negating.** For a comparator that is not
    antisymmetric the two differ, and `MaxHeap` is built on it.
@@ -83,9 +83,9 @@ Everything below is reachable through the public API and never exercised.
 **`nsmallest` / `nlargest`**
 
 13. **An empty source is never passed.** `n === 1` then answers with the `Infinity` sentinel itself
-    (B-71), and through a typed array that narrows to a plausible-looking `0`.
+    (BUG-HEAP-2), and through a typed array that narrows to a plausible-looking `0`.
 14. **`Infinity` is never an element.** It is the sentinel, so an element equal to it resets the
-    "nothing seen yet" test and the next element replaces it unconditionally (B-72). Two adjacent
+    "nothing seen yet" test and the next element replaces it unconditionally (BUG-HEAP-3). Two adjacent
     `n` values then give contradictory answers on the same input.
 15. **A typed array is never passed.** `new iterable.constructor(1)` means the `n === 1` path
     returns the source's class; the `n >= length` path sorts a typed-array clone.
@@ -106,7 +106,7 @@ Everything below is reachable through the public API and never exercised.
 
 22. **`MaxHeap.prototype === Heap.prototype`** is never inspected, so nothing notices that
     `new Heap() instanceof MaxHeap` is `true` and that `new MaxHeap().constructor.name` is
-    `'Heap'` (B-75).
+    `'Heap'` (BUG-HEAP-4).
 
 **Never called at all**
 
@@ -128,13 +128,13 @@ divergence in *either* direction, not merely "the port does what I expected".
 
 Thirteen of the cases are a **re-entrancy matrix**: every method that can be on the stack when a
 comparator fires, crossed with twelve re-entrant actions it could take — 145 combinations. What
-they guard is the borrow discipline of D-70/D-43, whose failure mode is a `BorrowMutError` that
+they guard is the borrow discipline of DIV-HEAP-1/DIV-STACK-5, whose failure mode is a `BorrowMutError` that
 aborts the process, so "the loop finished" *is* the assertion. The values were checked separately:
 the same matrix run against the pinned upstream source and diffed came back **byte identical on
 all 145 lines**.
 
 The rest closes gaps 1–6, 10–15, 17, 22, and adds several the Rust side cannot reach: the whole
-delegated-`<` regime of D-72 (mixed types, `valueOf`, `toString`-only objects, BigInt heaps,
+delegated-`<` regime of DIV-HEAP-3 (mixed types, `valueOf`, `toString`-only objects, BigInt heaps,
 UTF-16 string order, a comparator returning a `Symbol`), and that a thrown
 comparator propagates the caller's own error **object** (not a wrapper), and that the ten statics
 coexist with the five prototype methods of the same name.
@@ -145,33 +145,33 @@ coexist with the five prototype methods of the same name.
 `createTupleComparator` beyond its Rust unit tests, since no upstream test file reaches it until
 `kd-tree`.
 
-**One behaviour that is reproduced and cannot be tested:** `Heap.nsmallest(cmp, -Infinity, array)`
-**does not terminate**, upstream or here. The scan is `for (i = n; i < l; i++)` and
-`-Infinity + 1` is `-Infinity`, so the loop reads `iterable[-Infinity]` — `undefined` — forever.
-The port hangs identically, which is bug-for-bug correct and therefore unrunnable in any test or
-fuzz grammar. It is a genuine upstream defect with **no `B-` number**: the range allotted for these
-findings (B-70..B-79) was already spent when it was found, and rather than run past it, it is
-disclosed here without one.
+**One behaviour that is reproduced and cannot be tested — BUG-HEAP-9:**
+`Heap.nsmallest(cmp, -Infinity, array)` **does not terminate**, upstream or here. The scan is
+`for (i = n; i < l; i++)` and `-Infinity + 1` is `-Infinity`, so the loop reads
+`iterable[-Infinity]` — `undefined` — forever. The port hangs identically, which is bug-for-bug
+correct and therefore unrunnable in any test or fuzz grammar: it is disclosed rather than pinned.
 
 ## Bugs this found
 
-Ten upstream defects, **B-70 through B-79**, all verified against Node 24.18.1 and all pinned by
-`tests/boundary/heap.js`. In brief:
+Eleven upstream defects, **BUG-HEAP-1 through BUG-HEAP-9** plus two belonging to
+`fixed-reverse-heap`, all verified against Node 24.18.1. All but BUG-HEAP-9 are pinned by
+`tests/boundary/heap.js`; that one cannot be, for the reason given above. In brief:
 
 | ID | Defect |
 |---|---|
-| B-70 | a comparator that throws leaves `size` one behind `items.length`, permanently |
-| B-71 | `nsmallest(1, [])` answers `[Infinity]` — the sentinel returned as an element |
-| B-72 | the sentinel is a real value, so an `Infinity` element resets it and the next element wins |
-| B-73 | `FixedReverseHeap`'s capacity guard is `&&` where `||` was meant (see that module's doc) |
-| B-74 | `FixedReverseHeap#clear` leaves `items`, so `peek()` is stale (ditto) |
-| B-75 | `MaxHeap.prototype = Heap.prototype`, so `instanceof` cannot tell them apart |
-| B-76 | nothing stops a comparator from mutating the heap it is comparing |
-| B-77 | `#.consume` zeroes `size` first, so a throwing comparator strands the items |
-| B-78 | a comparator's return value is coerced, never checked — `'x'` sorts nothing, `-1n` works |
-| B-79 | a falsy comparator argument takes the default silently |
+| BUG-HEAP-1 | a comparator that throws leaves `size` one behind `items.length`, permanently |
+| BUG-HEAP-2 | `nsmallest(1, [])` answers `[Infinity]` — the sentinel returned as an element |
+| BUG-HEAP-3 | the sentinel is a real value, so an `Infinity` element resets it and the next element wins |
+| BUG-FIXED-REVERSE-HEAP-1 | `FixedReverseHeap`'s capacity guard is `&&` where `||` was meant (see that module's doc) |
+| BUG-FIXED-REVERSE-HEAP-2 | `FixedReverseHeap#clear` leaves `items`, so `peek()` is stale (ditto) |
+| BUG-HEAP-4 | `MaxHeap.prototype = Heap.prototype`, so `instanceof` cannot tell them apart |
+| BUG-HEAP-5 | nothing stops a comparator from mutating the heap it is comparing |
+| BUG-HEAP-6 | `#.consume` zeroes `size` first, so a throwing comparator strands the items |
+| BUG-HEAP-7 | a comparator's return value is coerced, never checked — `'x'` sorts nothing, `-1n` works |
+| BUG-HEAP-8 | a falsy comparator argument takes the default silently |
+| BUG-HEAP-9 | `nsmallest(cmp, -Infinity, arrayLike)` never terminates (above; reproduced, untestable) |
 
-**B-72 is the one worth reading twice**, because it is self-contradicting rather than merely odd:
+**BUG-HEAP-3 is the one worth reading twice**, because it is self-contradicting rather than merely odd:
 
 ```js
 var descending = function (a, b) { return a < b ? 1 : a > b ? -1 : 0; };
@@ -238,7 +238,7 @@ declaring both halves made the prototype half silently vanish. Nine of fourteen 
 `heap.push is not a function`, which is a loud failure, but the *cause* is not one a reader would
 guess: JavaScript has no such conflict, because a constructor and its prototype are different
 objects. Fixed by declaring the statics on a `HeapStatics` class the addon copies across and then
-deletes from its exports (D-75).
+deletes from its exports (DIV-HEAP-6).
 
 *A `#[napi(factory)]` instantiates with `napi_new_instance(this)`.* `MaxHeap` pulled its factory off
 the constructor and called it bare, which died with `Failed to create instance of class`. Fixed by
@@ -246,7 +246,7 @@ binding the receiver before deleting the temporary property.
 
 **What the fuzzer found: nothing new**, which is the expected outcome for a faithful port. The
 oracle *is* upstream, so a faithfully reproduced bug is by definition not a divergence.
-All ten of B-70…B-79 were found by reading the two files statement by statement and confirming each
+All ten of BUG-HEAP-1…BUG-HEAP-8 were found by reading the two files statement by statement and confirming each
 against Node. What the fuzzer is for is drift, and it was proven to work in that direction — see
 "Fuzz + bench".
 
@@ -254,18 +254,18 @@ against Node. What the fuzzer is for is drift, and it was proven to work in that
 
 | # | Divergence | Why |
 |---|---|---|
-| D-70 | **The algorithms take a `Store`, not `&mut Vec<T>`.** | An exclusive borrow is exactly what a re-entrant comparator would have to violate, so the natural Rust signature makes upstream's behaviour *inexpressible*. A `RefCell` panic is not a reproduction of "it works and gives this answer". |
-| D-71 | **`compare` returns `f64`, not `Ordering`.** | Upstream tests `< 0`, `> 0` and `>= 0` on whatever came back. Three values cannot express a comparator that answers `NaN` or `0.5`, and collapsing would quietly *repair* an inconsistent one. |
-| D-72 | **`DEFAULT_COMPARATOR` is ported; `<` and `>` are delegated.** | Number-vs-number and string-vs-string are answered natively and exactly. Anything involving an object, a symbol or a mixed pair goes to a compiled-once `(a, b) => a < b`, because `ToPrimitive` runs user code — re-implementing it would be a port of V8. |
-| D-73 | **`items` is a real JavaScript array.** | `Heap.heapify` mutates the caller's array in place and the original suite consumes that array; `FixedReverseHeap` needs a real `ArrayClass`. Also buys typed-array store semantics exactly, and extends D-70's re-entrancy to the array. |
-| D-74 | **`MaxHeap` is evaluated JavaScript.** | `MaxHeap.prototype = Heap.prototype` is upstream's, and a second native class would have its own prototype and silently *fix* B-75. |
-| D-75 | **The statics live on a `HeapStatics` class, copied across at load.** | napi's one-name-table conflict; see above. **Residual:** `Heap.__max` and `Heap.__maxFrom` survive as non-enumerable properties, because napi defines class properties `configurable: false` and `delete` is a no-op on them. The bridge's only addition to upstream's surface. |
-| D-76 | **The `Infinity` sentinel is a value, not an `Option`.** | `Option<Item>` would have fixed B-71 *and* B-72. A slot type that cannot hold `Infinity` answers `is_infinity` false, which is the same statement one level up rather than a papered-over divergence. |
-| D-77 | **`#.comparator` is not exposed.** *(divergence: yes)* | The bridge stores a `BridgeComparator`, whose default variant has no JS function behind it at all. Synthesising one to satisfy a getter would be a fabrication — it would not be the object the sift calls. No upstream assertion reads it. |
+| DIV-HEAP-1 | **The algorithms take a `Store`, not `&mut Vec<T>`.** | An exclusive borrow is exactly what a re-entrant comparator would have to violate, so the natural Rust signature makes upstream's behaviour *inexpressible*. A `RefCell` panic is not a reproduction of "it works and gives this answer". |
+| DIV-HEAP-2 | **`compare` returns `f64`, not `Ordering`.** | Upstream tests `< 0`, `> 0` and `>= 0` on whatever came back. Three values cannot express a comparator that answers `NaN` or `0.5`, and collapsing would quietly *repair* an inconsistent one. |
+| DIV-HEAP-3 | **`DEFAULT_COMPARATOR` is ported; `<` and `>` are delegated.** | Number-vs-number and string-vs-string are answered natively and exactly. Anything involving an object, a symbol or a mixed pair goes to a compiled-once `(a, b) => a < b`, because `ToPrimitive` runs user code — re-implementing it would be a port of V8. |
+| DIV-HEAP-4 | **`items` is a real JavaScript array.** | `Heap.heapify` mutates the caller's array in place and the original suite consumes that array; `FixedReverseHeap` needs a real `ArrayClass`. Also buys typed-array store semantics exactly, and extends DIV-HEAP-1's re-entrancy to the array. |
+| DIV-HEAP-5 | **`MaxHeap` is evaluated JavaScript.** | `MaxHeap.prototype = Heap.prototype` is upstream's, and a second native class would have its own prototype and silently *fix* BUG-HEAP-4. |
+| DIV-HEAP-6 | **The statics live on a `HeapStatics` class, copied across at load.** | napi's one-name-table conflict; see above. **Residual:** `Heap.__max` and `Heap.__maxFrom` survive as non-enumerable properties, because napi defines class properties `configurable: false` and `delete` is a no-op on them. The bridge's only addition to upstream's surface. |
+| DIV-HEAP-7 | **The `Infinity` sentinel is a value, not an `Option`.** | `Option<Item>` would have fixed BUG-HEAP-2 *and* BUG-HEAP-3. A slot type that cannot hold `Infinity` answers `is_infinity` false, which is the same statement one level up rather than a papered-over divergence. |
+| DIV-HEAP-8 | **`#.comparator` is not exposed.** *(divergence: yes)* | The bridge stores a `BridgeComparator`, whose default variant has no JS function behind it at all. Synthesising one to satisfy a getter would be a fabrication — it would not be the object the sift calls. No upstream assertion reads it. |
 | — | **`nsmallest(cmp, n, undefined)` is read as the three-argument form.** | Upstream keys off `arguments.length === 2`, which napi's typed signature cannot see. The two forms the original suite uses are exact. |
 | — | **`Store::allocate` and `Store::plain_array` are different operations.** | `clear()` and `consume()` allocate a plain `Array` unconditionally, as upstream's `[]` and `new Array(l)` do; only `nsmallest`'s `n === 1` path and `FixedReverseHeap`'s `new ArrayClass(size)` preserve a class. One method doing both made the port *more* class-faithful than upstream. |
 | — | **`n` is carried as the `f64` it is, never validated up front.** | Upstream compares `n`, slices with it and uses it as a loop counter; the only construct that can refuse it is the `new Array(n)` on the non-array-like path. A fractional `n` therefore makes the scan read `iterable[2.5]` — `undefined` — every time, and the port reproduces that rather than truncating. |
-| — | **A `Store` whose `push` reports zero sifts at index 0, where upstream sifts at `-1`.** | Not reachable from core, whose `VecStore` always reports at least 1; reachable through the bridge, because `push` is a real method lookup on a real JS array (D-73) and can be tampered with. `usize` underflow would panic in debug and wrap in release into an index asking the store to grow to `usize::MAX`, so it is `saturating_sub`. Measured afterwards: the observable result is identical. Upstream's `heap[-1] = heap[-1]` writes an expando nothing reads; ours rewrites `heap[0]` with the value it just read. Both leave `items` and `size` exactly as the other does. |
+| — | **A `Store` whose `push` reports zero sifts at index 0, where upstream sifts at `-1`.** | Not reachable from core, whose `VecStore` always reports at least 1; reachable through the bridge, because `push` is a real method lookup on a real JS array (DIV-HEAP-4) and can be tampered with. `usize` underflow would panic in debug and wrap in release into an index asking the store to grow to `usize::MAX`, so it is `saturating_sub`. Measured afterwards: the observable result is identical. Upstream's `heap[-1] = heap[-1]` writes an expando nothing reads; ours rewrites `heap[0]` with the value it just read. Both leave `items` and `size` exactly as the other does. |
 | — | **A missing array method throws an `Error`, not V8's `TypeError`.** | `Heap.from(typedArray).toArray()` reaches `heap.pop()` on a typed array, which has none. Upstream dies with `TypeError: heap.pop is not a function`; the bridge raises `Error: pop is not a function`, because the receiver in V8's message comes from the *source text* of the call site and no Rust code has it. Both throw, at the same point, for the same reason. Measured across ~35 edge cases against the pinned upstream source, this is **the only textual difference**. |
 | — | **`inspect()` is not ported.** | A Node display convenience with no upstream assertion. |
 | — | **`Store::Item` is `Option<T>` in core, where `None` is `undefined`.** | Once a comparator can shrink the array, `heap[childIndex]` reads past the end and `heap[i] = …` writes past it. `Relational` gives `None` JavaScript's rule — compares false against everything — rather than Rust's, which says `None < Some(_)`. |
@@ -291,14 +291,14 @@ so the sift detaches, and throwing, which leaves `items.length` one ahead of `si
 part of what is compared**: each mutating factory fires for its first *k* comparisons and then stops,
 so the answer depends on the number and order of comparisons, not only on the final ordering — a
 sift that reaches the right answer by a different route diverges here, where a black-box push/pop
-grammar would never notice. This grammar exists because of a lesson already paid for: B-31 survived
+grammar would never notice. This grammar exists because of a lesson already paid for: PORTBUG-1 survived
 2.94 M operations on `queue` because the alphabet had no `forEach`, and an op alphabet that omits a
 method omits every bug reachable only through it. Every comparator in `test/heap.js` is pure; a
 grammar that inherited that property would have inherited the same blind spot. Full grammar: evidence
 file.
 
 **The fuzzer was falsified.** Sabotage: `Heap::clear` truncating the backing array in place instead
-of rebinding it — the D-41 collapse, and the most plausible way a future cleanup breaks this port,
+of rebinding it — the DIV-STACK-3 collapse, and the most plausible way a future cleanup breaks this port,
 because `set_length(0)` and `allocate(0)` leave an identical observable state for every program whose
 comparator has no side effects. All 14 assertions of `test/heap.js` and all 7 of
 `test/fixed-reverse-heap.js` still passed under it; the fuzzer caught it in 0.1 s, shrinking a 200-op
@@ -331,7 +331,7 @@ loop.
 at p99. Full table: evidence file.
 
 **A disclosed regression on p50 and min, and it is exactly the mechanism this module was picked to
-expose.** Every `push`/`pop`/`peek` borrows the `RefCell`, clones the `Rc` handle (D-41's re-entrancy
+expose.** Every `push`/`pop`/`peek` borrows the `RefCell`, clones the `Rc` handle (DIV-STACK-3's re-entrancy
 requirement), and calls `Comparator::compare` through a trait object — three indirections V8 has no
 equivalent of for its own numeric comparator, which it inlines. p99 tells a second, different story:
 the port is *faster* at the tail, plausibly because V8 pays a GC pause somewhere in ten measured

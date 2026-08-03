@@ -10,11 +10,11 @@ falsification record, full benchmark table.
 | Test | Closes gap |
 |---|---|
 | `reproduces_the_upstream_suite` | 1:1 port of all twenty-one upstream blocks, as a baseline |
-| `pop_leaves_size_and_the_bits_behind` | 1, 2, 3, 4 — B-21, the whole sequence with the assertion upstream skipped |
+| `pop_leaves_size_and_the_bits_behind` | 1, 2, 3, 4 — BUG-BIT-VECTOR-1, the whole sequence with the assertion upstream skipped |
 | `pushing_true_onto_an_already_set_slot_counts_it_twice` | 3 |
 | `set_at_length_writes_a_bit_that_length_does_not_cover` | 5, 6 |
 | `get_is_undefined_only_strictly_past_the_length` | 6 |
-| `a_zero_length_vector_with_capacity_still_iterates_a_whole_word` | 7 — B-22 |
+| `a_zero_length_vector_with_capacity_still_iterates_a_whole_word` | 7 — BUG-BIT-VECTOR-2 |
 | `a_length_that_exactly_fills_its_words_walks_all_of_them` | 7 — the same misfire where it is also correct |
 | `reallocate_clamps_length_even_when_the_capacity_does_not_change` | 10 |
 | `reallocate_to_zero_drops_the_array_and_the_length` | 8 |
@@ -44,7 +44,7 @@ Plus the 13 tests on the shared `bits.rs`, listed in `docs/modules/evidence/bit-
 * **Initial lengths:** `0..=200`. **Indices:** `0..length + 64`. **Extents:** `0..512`.
 * **Program length:** 1..200 ops.
 * `push(1)` and `push(0)` are separate ops on purpose: only the former touches `size` and only the
-  latter leaves a stale bit, and B-21 needs both interleaved with `pop`.
+  latter leaves a stale bit, and BUG-BIT-VECTOR-1 needs both interleaved with `pop`.
 * `set` is the only op in this grammar that throws, and its message is compared in full through the
   `{"$throw": …}` encoding added for `hashed-array-tree`.
 * **Deliberately excluded: custom growth policies.** Upstream's policy is a JS function and a
@@ -86,7 +86,7 @@ policy that returns exactly the current capacity. A boundary flip, not a deletio
 **Confirmed red**, at exactly the named line: `20 passing, 1 failing`, "Missing expected exception"
 at `test/bit-vector.js:291`. Reverted; **confirmed green again**: 21 passing.
 
-Neither of B-21's halves could have served as the sabotage:
+Neither of BUG-BIT-VECTOR-1's halves could have served as the sabotage:
 
 * "Fixing" `push(0)` to clear its slot leaves the suite **green**, because every slot the push test
   writes over is already zero.

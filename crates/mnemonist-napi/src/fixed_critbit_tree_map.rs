@@ -1,7 +1,7 @@
 //! JS bridge for [`mnemonist_core::structures::fixed_critbit_tree_map`].
 //!
 //! Same key/value handling as [`crate::critbit_tree_map`] (see that
-//! module's docs for the byte-truncation divergence, D-245). Two things
+//! module's docs for the byte-truncation divergence, DIV-CRITBIT-TREE-MAP-1). Two things
 //! specific to the fixed variant.
 //!
 //! # `set` can genuinely throw
@@ -13,7 +13,7 @@
 //! straight through with that same message text, so a caller two layers up
 //! sees the identical crash upstream's own missing capacity guard produces
 //! — see the core module's docs, part 1, for the full mechanism and NOTES.md
-//! B-260/B-261.
+//! BUG-FIXED-CRITBIT-TREE-MAP-1/BUG-FIXED-CRITBIT-TREE-MAP-2.
 //!
 //! # No `delete`
 //!
@@ -111,7 +111,7 @@ impl JsFixedCritBitTreeMap {
     }
 
     /// Upstream's `root` — a raw pointer, exposed verbatim, except right
-    /// after a `clear`, where it is upstream's own `null` instead (B-260).
+    /// after a `clear`, where it is upstream's own `null` instead (BUG-FIXED-CRITBIT-TREE-MAP-1).
     /// `None` here becomes JS `null`, matching upstream's own
     /// `this.root = null`. See
     /// `mnemonist_core::structures::fixed_critbit_tree_map::FixedCritBitTreeMap::root`'s

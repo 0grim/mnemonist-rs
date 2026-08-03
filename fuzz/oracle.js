@@ -25,10 +25,10 @@
 //   -> {"cmd":"ping"}          <- {"ok":true}
 //   -> {"cmd":"quit"}          (no response; process exits)
 //
-// Cursor lifecycle ops (DESIGN.md 3.4/3.7, D-21). An op name starting with `$`
+// Cursor lifecycle ops (DESIGN.md 3.4/3.7, DIV-PROJ-21). An op name starting with `$`
 // is not a method on the instance; it drives the ONE cursor the oracle keeps
 // alongside it. This is what lets a generated program interleave iteration
-// with mutation, which is the only way D-06/D-08/D-09 are reachable at all.
+// with mutation, which is the only way DIV-STACK-1/DIV-PROJ-10/DIV-SPARSE-SET-1 are reachable at all.
 //
 //   -> {"cmd":"op","name":"$iter","args":["values"]}
 //   <- {"ok":true,"result":{"$iterator":true},"state":{...}}
@@ -46,7 +46,7 @@
 // what both actually mean.
 //
 // `$spread` is `Array.from(instance)`, which goes through the COLLECTION's
-// Symbol.iterator rather than a stored cursor — the factory half of D-07. It
+// Symbol.iterator rather than a stored cursor — the factory half of DIV-STACK-2. It
 // is a separate op precisely because it must construct a fresh cursor every
 // time while `$next` must not.
 //
@@ -379,7 +379,7 @@ const FACTORIES = {
     };
   },
   // REBINDS it. `Heap.prototype.clear` installs a new array, so the sift
-  // finishes into one nothing can reach. This is D-41 reached from inside a
+  // finishes into one nothing can reach. This is DIV-STACK-3 reached from inside a
   // comparator rather than from a cursor.
   clearer: () => {
     let budget = 1;
@@ -438,7 +438,7 @@ const FACTORIES = {
     };
   },
   // Resets `root`/`min`/`size` out from under the `consolidate` call
-  // currently comparing against them -- NOTES.md B-220's trigger.
+  // currently comparing against them -- NOTES.md BUG-FIBONACCI-HEAP-1's trigger.
   fibClearer: () => {
     let budget = 1;
     return (a, b) => {

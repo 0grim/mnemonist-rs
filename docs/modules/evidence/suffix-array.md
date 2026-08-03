@@ -22,7 +22,7 @@ falsification record, full benchmark table.
 | 11 | `the_separator_occupies_a_position` |
 | the port's own edges | `a_generalized_array_of_none_is_refused`, `a_mixed_generalized_array_is_refused` |
 
-## B-90 radix-width measurement table
+## BUG-SUFFIX-ARRAY-1 radix-width measurement table
 
 For a 15-character input, three passes run:
 
@@ -52,7 +52,7 @@ So two of the three passes are 8-bit while the largest symbol needs 10.
 | what | sabotage | must break | result |
 |---|---|---|---|
 | the original test suite (gate 4) | remove the `.rev()` from the radix gather in `sort()`, making the LSD sort unstable | `assert.deepStrictEqual(sa.array, [5, 3, 1, 0, 4, 2])` in `'SuffixArray should produce the correct array.'` | **red**: 0 passing, 5 failing. Reverted: 5 passing, 1 pending. |
-| the `suffix-array` fuzz spec | `sort()`'s `bits` fall-through `8 → 16`, i.e. "fixing" B-90 | a state divergence in `array` / `toJSON` / `toString` | **red** after 400 cases, minimised to a 42-character input mixing U+0141 with U+0100. Reverted: clean. |
+| the `suffix-array` fuzz spec | `sort()`'s `bits` fall-through `8 → 16`, i.e. "fixing" BUG-SUFFIX-ARRAY-1 | a state divergence in `array` / `toJSON` / `toString` | **red** after 400 cases, minimised to a 42-character input mixing U+0141 with U+0100. Reverted: clean. |
 | the `generalized-suffix-array` fuzz spec | LCS's second guard `>` → `>=` | a divergence in `longestCommonSubsequence`'s return value | **red**, minimised all the way to a two-member list whose first member is empty — so `firstLength` is 0 and position 0 *is* the boundary the asymmetric guards let through. Reverted: clean. |
 
 Both minimised seeds are committed under `crates/difffuzz/proptest-regressions/` with PROVENANCE

@@ -6,7 +6,7 @@
 //!
 //! Unlike `lru-map.js`, this file's own `.from` gets the cannot-guess message
 //! right (`mnemonist/lru-map.from: ...`) — see `crate::lru_map`'s docs for the
-//! sibling that does not (B-142).
+//! sibling that does not (BUG-LRU-CACHE-2).
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -29,7 +29,7 @@ use crate::lru_map::{map_to_index, MapCore};
 const NOT_POSITIVE: &str = "mnemonist/lru-map: capacity should be positive number.";
 const NOT_INTEGER: &str = "mnemonist/lru-map: capacity should be a finite positive integer.";
 /// Verbatim from `lru-map-with-delete.js`'s own `.from` — correct, unlike
-/// `lru-map.js`'s (B-142).
+/// `lru-map.js`'s (BUG-LRU-CACHE-2).
 const CANNOT_GUESS: &str = "mnemonist/lru-map.from: could not guess iterable length. \
      Please provide desired capacity as last argument.";
 
@@ -142,7 +142,7 @@ impl JsLruMapWithDelete {
                 key,
                 value,
             }),
-            // B-140: see `crate::lru_cache::is_js_truthy`'s doc comment.
+            // BUG-LRU-CACHE-1: see `crate::lru_cache::is_js_truthy`'s doc comment.
             SetPop::Evicted { key, value } if is_js_truthy(&key) => Some(SetPopOutcome {
                 evicted: true,
                 key,

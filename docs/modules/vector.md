@@ -46,12 +46,12 @@ Eighteen `it` blocks, and the shape of the coverage is narrower than the count s
 
 1. **`index === length` is never probed**, on either `get` or `set`. Every in-bounds call in the
    file is comfortably inside the current length, and every out-of-bounds call is far past it.
-   This is the precondition for B-101: the guard upstream actually wrote is `this.length < index`,
+   This is the precondition for BUG-VECTOR-1: the guard upstream actually wrote is `this.length < index`,
    not `<=`, and no assertion in the file would notice if that operator were flipped.
 2. **A `pop` is never followed by a `grow`/`reallocate`/`resize` and then a read of the popped
    slot.** The one `pop`-then-`push` sequence in the file (`should be possible to pop values.`)
    only reads the freshly pushed positions afterwards, never the one just vacated. This is the
-   precondition for B-102.
+   precondition for BUG-VECTOR-2.
 3. **Values are never pushed past their backing's truncation point.** The `Uint8Array` growth test
    pushes `0..250`, which never exceeds `255`; `Uint16Array` is never pushed past `65535` at all.
    Truncation on store is asserted nowhere.
@@ -97,7 +97,7 @@ Eighteen `it` blocks, and the shape of the coverage is narrower than the count s
 `crates/mnemonist-core/src/structures/vector.rs` — 18 unit tests beyond
 `reproduces_the_upstream_suite` (the 1:1 port of all 18 upstream blocks), closing every gap above
 except the `PointerVector.from` half of gap 12: `index == length` admitted on both `get` and `set`
-(B-101), a popped slot's stale data surviving a growth (B-102), every non-finite and non-numeric
+(BUG-VECTOR-1), a popped slot's stale data surviving a growth (BUG-VECTOR-2), every non-finite and non-numeric
 policy result refused (and which of upstream's two throws each lands in), a shrinking
 `PointerVector` keeping its width, a zero-capacity one starting at the narrowest width, truncating
 and exact stores at each backing's own width, cursor non-restartability, a pop during iteration
@@ -107,7 +107,7 @@ naming the actual backing class. Full test-to-gap mapping: evidence file.
 **Differential fuzzing** covers the same ground the native tests do, from the opposite direction:
 instead of a handful of hand-picked boundary cases, every generated program routinely lands on
 `index == length`, pushes values past truncation width, and pops immediately before a grow — at
-~1.45M operations, zero divergences, which is the strongest evidence B-101 and B-102 are reproduced
+~1.45M operations, zero divergences, which is the strongest evidence BUG-VECTOR-1 and BUG-VECTOR-2 are reproduced
 exactly rather than approximately.
 
 **Still untested, stated rather than glossed:** `Vector.PointerVector.from` (gap 12's first half;
@@ -115,7 +115,7 @@ no native test constructs a `PointerVector` from an iterable, though the bridge 
 
 ## Bugs this found
 
-**B-101 — `get`/`set` admit `index === length`, one past the last pushed element.**
+**BUG-VECTOR-1 — `get`/`set` admit `index === length`, one past the last pushed element.**
 Verified against Node 24.18.1. Both guards are `<`, not `<=`:
 
 ```js
@@ -135,7 +135,7 @@ v.get(0) === 42
 `set(length, v)` does not advance `length`, so the write is invisible to anything that only reads
 `length`/`capacity` — it shows up only in `array` itself, or in a subsequent `get(length)`.
 
-**B-102 — a popped slot's stale data survives a growth, and B-101 keeps it reachable.**
+**BUG-VECTOR-2 — a popped slot's stale data survives a growth, and BUG-VECTOR-1 keeps it reachable.**
 Verified against Node 24.18.1. `pop()` reads and decrements; it never clears:
 
 ```js
@@ -160,7 +160,7 @@ v.reallocate(4);        // array [9, 8, 0, 0] -- the 8 survived the copy
 v.get(1) === 8          // length(1) < index(1) is false: reads the stale 8
 ```
 
-**Neither defect alone reaches this state.** Without B-101's admission, index 1 would be refused
+**Neither defect alone reaches this state.** Without BUG-VECTOR-1's admission, index 1 would be refused
 after the pop (`length` is 1, so `get(1)` needs the guard to let `1 === length` through). Without
 the whole-capacity copy, the grow would carry forward a zero instead of the stale `8`. `pop` is
 called four times across the whole suite and never followed by a growth call; this compounding is
@@ -178,8 +178,8 @@ oracle's own JSON round trip rather than from the port. Fixed by enabling `serde
 |---|---|---|
 | — | **Only four `ArrayClass` values are modelled: `Uint8Array`/`Uint16Array`/`Uint32Array`/`Float64Array`.** | `test/vector.js` never constructs a plain `Array`, a signed or clamped typed array, or a caller `factory`; the four modelled here are exactly what it, `Vector.PointerVector`, and `Vector.Float64Vector` reach. Modelling all fifteen JS "typed array or factory" combinations for a module the suite exercises through four is effort spent on a surface nobody is checking. |
 | — | **`Vector.PointerVector` has no `ArrayClass` value to resolve.** | Upstream's `pointerArrayFactory` is a private function reachable only through `Vector.PointerVector = subClass(pointerArrayFactory)` — there is no global a caller could pass to the base constructor to reach the same behaviour. The bridge gives it its own hidden factory rather than pretending a resolvable `ArrayClass` exists. |
-| — | **`get`/`set` admit `index === length`, matching B-101 exactly.** | Tightening the guard to `<=` would be *more correct* than upstream and is exactly the failure mode this port must avoid — see the falsification below, which confirms the fuzz campaign would catch that "fix". |
-| — | **Growth bulk-copies the whole old capacity, matching B-102.** | Copying only up to `length` is the "obvious" implementation and would silently zero the stale slot upstream leaves reachable — a real behaviour turned into a false one. |
+| — | **`get`/`set` admit `index === length`, matching BUG-VECTOR-1 exactly.** | Tightening the guard to `<=` would be *more correct* than upstream and is exactly the failure mode this port must avoid — see the falsification below, which confirms the fuzz campaign would catch that "fix". |
+| — | **Growth bulk-copies the whole old capacity, matching BUG-VECTOR-2.** | Copying only up to `length` is the "obvious" implementation and would silently zero the stale slot upstream leaves reachable — a real behaviour turned into a false one. |
 | — | **A growth policy is a `Box<dyn Fn(f64) -> Option<f64>>` called from Rust.** | Same shape as `bit-vector`'s `Policy`, for the same reason: a JS policy can throw (parked in a `RefCell` at the bridge, preferred over the core's own classification) and can return "not a number" (`None`), which `applyPolicy`'s `typeof !== 'number'` check explicitly guards against. |
 | — | **A policy returning non-finite (`Infinity`/`NaN`) is refused with `Error::PolicyNotRepresentable`, not reproduced as an allocation attempt.** | Upstream's guard does not catch either value, and both flow into `new ArrayClass(Infinity)` / `(NaN)`, throwing `RangeError: Invalid typed array length: …` from inside the engine. There is no honest Rust expression of "allocate `Infinity` elements"; refusing earlier, catchably, is the same call `bit-vector`'s identical divergence makes. |
 | — | **`Vector.from`'s pushed values are coerced with `ToNumber` at the bridge, not checked to already be numbers.** | `push`/`set` themselves take a typed `f64` napi parameter, narrower than upstream's implicit typed-array coercion — the same simplification `hashed-array-tree`'s bridge makes. |
@@ -205,11 +205,11 @@ length or capacity, so both the `index == length` admission and the ordinary out
 are common outcomes rather than edge cases; values run `0.0..70000.0`, past `255` so a truncating
 store is exercised and full-precision so `Float64Array` stores are compared exactly. Observable
 state is `length`, `capacity`, and **`array`** — the whole backing store, capacity region included —
-which is the point: without it, B-101 and B-102 are only checkable indirectly through `get`. Full
+which is the point: without it, BUG-VECTOR-1 and BUG-VECTOR-2 are only checkable indirectly through `get`. Full
 grammar: evidence file.
 
 **Falsification of the port (gate 6):** the sabotage, `Vector::set`'s bound check tightened from
-`self.length < index` to `self.length <= index` ("fixing" the off-by-one B-101 documents, the
+`self.length < index` to `self.length <= index` ("fixing" the off-by-one BUG-VECTOR-1 documents, the
 single most obvious thing a future cleanup would do to this file), is confirmed red immediately —
 `vector_matches_upstream` fails on the campaign's very first shrunk case, a divergence in the
 `set` call's return value. Reverted; confirmed green again. Full record: evidence file.

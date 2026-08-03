@@ -87,7 +87,7 @@
 //! m.inverse.size    // -> 1, STALE — items.size and inverse.items.size are both 0
 //! ```
 //!
-//! Recorded as **B-120**. [`BiMap::size`]/[`BiMap::inverse_size`] are
+//! Recorded as **BUG-BI-MAP-1**. [`BiMap::size`]/[`BiMap::inverse_size`] are
 //! therefore real stored counters, not derived from [`OrderedMap::len`], and
 //! [`BiMap::clear`]/[`BiMap::clear_reverse`] are the two directions of the one
 //! upstream function, reproducing exactly which single counter each resets.
@@ -142,7 +142,7 @@ impl<K> BiMap<K> {
         &self.inverse
     }
 
-    /// Upstream's `size`. A stored counter — see the module docs (B-120) for
+    /// Upstream's `size`. A stored counter — see the module docs (BUG-BI-MAP-1) for
     /// why this must not be `items().len()`.
     pub fn size(&self) -> usize {
         self.size
@@ -154,7 +154,7 @@ impl<K> BiMap<K> {
     }
 
     /// Upstream's `clear`, called through the forward view: empties **both**
-    /// underlying maps but resets only `this.size` — B-120. `inverse_size` is
+    /// underlying maps but resets only `this.size` — BUG-BI-MAP-1. `inverse_size` is
     /// left exactly as it was; it is not recomputed from the now-empty
     /// `inverse` map, because upstream's `this.inverse.size` is not touched
     /// either.
@@ -167,7 +167,7 @@ impl<K> BiMap<K> {
     /// `InverseMap.prototype.clear` — the *same* upstream function as
     /// [`BiMap::clear`], called with `this` being the inverse view: empties
     /// both maps but resets only `this.size`, which from the inverse side is
-    /// `inverse_size`. `size` is left stale — B-120.
+    /// `inverse_size`. `size` is left stale — BUG-BI-MAP-1.
     pub fn clear_reverse(&mut self) {
         self.items.clear();
         self.inverse.clear();
@@ -226,7 +226,7 @@ impl<K: Hash + Eq + Clone> BiMap<K> {
     /// are genuinely empty, so `delete` on any key is a no-op — and upstream's
     /// `del` does not touch either counter on that path. Resyncing
     /// unconditionally here would "heal" the stale counter early and hide
-    /// B-120 on exactly the case fuzzing found first.
+    /// BUG-BI-MAP-1 on exactly the case fuzzing found first.
     pub fn delete(&mut self, key: &K) -> Option<K> {
         let released = unlink(&mut self.items, &mut self.inverse, key);
 
@@ -251,7 +251,7 @@ impl<K: Hash + Eq + Clone> BiMap<K> {
 
     /// Both counters from the live maps. Called after every `set`/`delete` —
     /// never after `clear`/`clear_reverse`, which is exactly what makes the
-    /// two counters able to desync in the first place (B-120).
+    /// two counters able to desync in the first place (BUG-BI-MAP-1).
     fn resync_counters(&mut self) {
         self.size = self.items.len();
         self.inverse_size = self.inverse.len();
@@ -531,13 +531,13 @@ mod tests {
         assert!(!map.has_reverse(&"hello"));
     }
 
-    /// B-120: `clear` empties both maps but resets only the counter on the
+    /// BUG-BI-MAP-1: `clear` empties both maps but resets only the counter on the
     /// side it was called from — verified against Node 24.18.1 (see the
     /// module docs). A port that also zeroes `inverse_size` here is *more
     /// correct* than upstream, which this project treats as a defect, not an
     /// improvement.
     #[test]
-    fn clear_desyncs_size_from_inverse_size_b_120() {
+    fn clear_desyncs_size_from_inverse_size_bug_bi_map_1() {
         let mut forward: BiMap<&str> = BiMap::new();
         forward.set("a", "a");
         forward.clear();
@@ -546,7 +546,7 @@ mod tests {
         assert_eq!(
             forward.inverse_size(),
             1,
-            "clear() must NOT resync inverse_size — B-120"
+            "clear() must NOT resync inverse_size — BUG-BI-MAP-1"
         );
         assert!(
             !forward.has(&"a"),
@@ -566,7 +566,7 @@ mod tests {
         assert_eq!(
             reverse.size(),
             1,
-            "clear_reverse() must NOT resync size — B-120"
+            "clear_reverse() must NOT resync size — BUG-BI-MAP-1"
         );
 
         // The stale counter heals on the very next set/delete, exactly as it

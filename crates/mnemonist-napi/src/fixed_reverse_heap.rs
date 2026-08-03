@@ -14,7 +14,7 @@
 //!    `new ArrayClass(capacity)` runs *before* either guard, so
 //!    `new FixedReverseHeap(Array, -1)` dies with `Array`'s own `RangeError`
 //!    rather than with mnemonist's message. Reproduced by allocating first.
-//! 3. **The capacity guard is `&&` where `||` was meant** (NOTES B-73), so it
+//! 3. **The capacity guard is `&&` where `||` was meant** (NOTES BUG-FIXED-REVERSE-HEAP-1), so it
 //!    can never fire for a number — `new FixedReverseHeap(Array, 0)` is
 //!    accepted and then silently discards every push. Reproduced verbatim,
 //!    including the odd `typeof capacity !== 'number'` half.
@@ -43,7 +43,7 @@ const BAD_COMPARATOR: &str =
 /// A heap of bounded capacity that keeps the `capacity` best items seen.
 #[napi(js_name = "FixedReverseHeap")]
 pub struct JsFixedReverseHeap {
-    /// `RefCell` for D-43's reason, `borrow()`-only for T2's: a comparator can
+    /// `RefCell` for DIV-STACK-5's reason, `borrow()`-only for T2's: a comparator can
     /// re-enter while a sift is on the stack, and a `borrow_mut()` anywhere
     /// below would deadlock against itself when it did.
     inner: RefCell<CoreHeap<JsArray, BridgeComparator>>,
@@ -75,7 +75,7 @@ impl JsFixedReverseHeap {
         let width = coerce_length(&env, &capacity)?;
 
         // `if (typeof capacity !== 'number' && capacity <= 0) throw` — `&&`,
-        // upstream's, where `||` was meant. NOTES B-73: for any number this
+        // upstream's, where `||` was meant. NOTES BUG-FIXED-REVERSE-HEAP-1: for any number this
         // short-circuits to false, so the guard protects nothing it was written
         // to protect. Kept exactly, second half included.
         if !is_number(&capacity)? && width <= 0.0 {
@@ -114,7 +114,7 @@ impl JsFixedReverseHeap {
     }
 
     /// `#.clear` — `this.size = 0`, and nothing else. The array keeps its
-    /// contents, which is why `peek()` afterwards is stale (NOTES B-74).
+    /// contents, which is why `peek()` afterwards is stale (NOTES BUG-FIXED-REVERSE-HEAP-2).
     #[napi]
     pub fn clear(&self) {
         self.inner.borrow().clear();

@@ -4,7 +4,7 @@
  *
  * `forEach` is the one primitive with no Rust-testable core: it is a
  * JavaScript-value coercion, so its semantics only exist where JavaScript
- * values do (DESIGN.md §3.5, D-03). `cargo test` cannot reach it. These specs
+ * values do (DESIGN.md §3.5, DIV-QUEUE-1). `cargo test` cannot reach it. These specs
  * are therefore the gate-7 "what upstream does not test" coverage for the
  * dispatch, and they live outside `tests/original/` because nothing upstream
  * tests obliterator at all — mnemonist's suite exercises it only incidentally,
@@ -30,7 +30,7 @@ var assert = require('assert'),
  * Run one implementation and normalise the outcome into something comparable:
  * either the sequence of (value, key, typeof key) triples, or the thrown
  * error's constructor and message. The key's *type* is part of the record
- * because it is the whole of D-11 — it is a number in branches 1 and 4, a
+ * because it is the whole of DIV-PROJ-12 — it is a number in branches 1 and 4, a
  * string in branch 5, and whatever the host chose in branch 2.
  */
 function outcome(implementation, iterable) {
@@ -79,7 +79,7 @@ function threw(make) {
 
 describe('obliterator/forEach', function () {
 
-  describe('the falsy guard (D-12)', function () {
+  describe('the falsy guard (DIV-PROJ-13)', function () {
 
     it('should throw on every falsy value, verbatim.', function () {
       var falsy = {
@@ -105,7 +105,7 @@ describe('obliterator/forEach', function () {
     it('should iterate a one-character string but throw on an empty one.', function () {
       // The sharpest form of the guard: '' and 'a' differ only in length, and
       // an empty string is a legitimately iterable value that yields zero
-      // times. NOTES B-4.
+      // times. NOTES DIV-PROJ-5.
       assert.strictEqual(threw(function () { return ''; }),
         'Error: obliterator/forEach: invalid iterable.');
       assert.deepStrictEqual(visited(function () { return 'a'; }), [['a', 0, 'number']]);
@@ -181,7 +181,7 @@ describe('obliterator/forEach', function () {
       );
     });
 
-    it('should let a hostile toString hijack the branch (B-5).', function () {
+    it('should let a hostile toString hijack the branch (DIV-PROJ-7).', function () {
       // The dispatch calls `toString()` on an arbitrary user value. Returning
       // the arguments tag routes a plain object through the indexed branch,
       // where it would otherwise have gone to branch 5 and yielded string keys.
@@ -193,7 +193,7 @@ describe('obliterator/forEach', function () {
       );
     });
 
-    it('should propagate a throwing toString (B-5).', function () {
+    it('should propagate a throwing toString (DIV-PROJ-7).', function () {
       assert.strictEqual(
         threw(function () { return {toString: function () { throw new Error('boom'); }}; }),
         'Error: boom'
@@ -224,7 +224,7 @@ describe('obliterator/forEach', function () {
     });
   });
 
-  describe('branch 2 — delegation, which preempts 3 and 4 (D-10, D-11)', function () {
+  describe('branch 2 — delegation, which preempts 3 and 4 (DIV-PROJ-11, DIV-PROJ-12)', function () {
 
     it('should hand a Map its own forEach, so the key is a STRING key.', function () {
       // The single most load-bearing assertion in this file. A Map has a
@@ -427,7 +427,7 @@ describe('obliterator/forEach', function () {
     });
   });
 
-  describe('branch 5 — plain objects (D-11, D-15)', function () {
+  describe('branch 5 — plain objects (DIV-PROJ-12, DIV-PROJ-16)', function () {
 
     it('should pass the KEY as a string, not an index.', function () {
       assert.deepStrictEqual(
@@ -439,7 +439,7 @@ describe('obliterator/forEach', function () {
     it('should follow JS property enumeration order exactly.', function () {
       // Integer-like keys ascending first, then string keys in insertion order
       // — regardless of how the literal was written. Delegated to the engine
-      // rather than reimplemented (D-15).
+      // rather than reimplemented (DIV-PROJ-16).
       assert.deepStrictEqual(
         visited(function () { return {b: 1, 2: 'two', a: 3, 1: 'one'}; }),
         [
@@ -469,10 +469,10 @@ describe('obliterator/forEach', function () {
       );
     });
 
-    it('should enumerate `length` like any other key, which is B-2 in miniature.', function () {
+    it('should enumerate `length` like any other key, which is BUG-UTILS-ITERABLES-1 in miniature.', function () {
       // `{length: 5}` is not array-like enough for branch 1 and hits branch 5,
       // where `length` is simply another own property. This is the input that
-      // makes `iterables.toArray` produce a sparse array upstream (NOTES B-2).
+      // makes `iterables.toArray` produce a sparse array upstream (NOTES BUG-UTILS-ITERABLES-1).
       assert.deepStrictEqual(
         visited(function () { return {length: 5}; }),
         [[5, 'length', 'string']]
@@ -497,7 +497,7 @@ describe('obliterator/forEach', function () {
     });
   });
 
-  describe('truthy primitives — the unguarded hole (B-30)', function () {
+  describe('truthy primitives — the unguarded hole (BUG-STACK-1)', function () {
 
     it('should die in the `in` operator, not in obliterator.', function () {
       // A truthy primitive survives the falsy guard, is not an indexed

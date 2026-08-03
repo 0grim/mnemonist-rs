@@ -3,7 +3,7 @@
 //! Thin translation only; the `ArrayClass` handling is
 //! [`crate::array_class`] and is shared with the other two fixed-capacity
 //! modules, as is [`crate::fixed_stack::from_parts`], which is upstream's
-//! identical fourteen-line `from` static and reproduces NOTES B-60.
+//! identical fourteen-line `from` static and reproduces NOTES BUG-UTILS-ITERABLES-2.
 //!
 //! Two things here that the `FixedStack` bridge does not have.
 //!
@@ -14,12 +14,12 @@
 //! every step. So `forEach` is not a second traversal here: it opens a
 //! [`CursorState`] and steps it, which is the same code the cursor runs. The
 //! borrow is taken and released per step, because the callback may re-enter and
-//! mutate (D-43, B-31), and reproducing upstream's live read *requires* that
+//! mutate (DIV-STACK-5, PORTBUG-1), and reproducing upstream's live read *requires* that
 //! each read really be a read.
 //!
 //! This is the one place `FixedDeque` and `FixedStack` genuinely differ:
 //! `FixedStack.prototype.forEach` walks a different bound from its own cursor
-//! (B-61) and so cannot share the walk.
+//! (BUG-FIXED-STACK-1) and so cannot share the walk.
 //!
 //! # `#.get` takes a JavaScript number, and upstream's guard has no lower bound
 //!
@@ -89,7 +89,7 @@ pub struct JsFixedDeque {
 impl JsFixedDeque {
     /// `new FixedDeque(ArrayClass, capacity)`. See
     /// [`crate::fixed_stack::JsFixedStack::new`] for why both parameters are
-    /// `Unknown` rather than `Option<Unknown>` (D-61).
+    /// `Unknown` rather than `Option<Unknown>` (DIV-FIXED-STACK-3).
     #[napi(constructor)]
     pub fn new(env: Env, array_class: Unknown, capacity: Unknown) -> Result<Self> {
         if array_class.get_type()? == ValueType::Undefined {
@@ -173,7 +173,7 @@ impl JsFixedDeque {
         self.inner.borrow().peek_last().into()
     }
 
-    /// `#.get` — bounded by the capacity, not by the size (B-62), and with no
+    /// `#.get` — bounded by the capacity, not by the size (BUG-CIRCULAR-BUFFER-1), and with no
     /// lower bound at all. See the module docs.
     #[napi]
     pub fn get(&self, index: Either<f64, Unknown>) -> Either<JsSlot, Undefined> {
@@ -237,7 +237,7 @@ impl JsFixedDeque {
     }
 
     /// A fresh cursor over the values, front to back — the factory half of
-    /// D-07.
+    /// DIV-STACK-2.
     #[napi]
     pub fn values(&self, env: Env, this: Reference<JsFixedDeque>) -> Result<JsFixedDequeValues> {
         let source = this.share_with(env, |deque| Ok(&deque.inner))?;
@@ -259,7 +259,7 @@ impl JsFixedDeque {
     }
 
     /// `FixedDeque.from(iterable, ArrayClass, capacity)` — including the branch
-    /// that cannot work; see [`from_parts`] and NOTES B-60.
+    /// that cannot work; see [`from_parts`] and NOTES BUG-UTILS-ITERABLES-2.
     #[napi(factory)]
     pub fn from(
         env: Env,
@@ -294,7 +294,7 @@ impl JsFixedDeque {
 /// * a **non-number** index is `undefined` here. Upstream reaches string
 ///   concatenation — `2 + "1"` is `"21"`, which the next comparison coerces
 ///   back to a number — and can therefore return a real element for a numeric
-///   string on a large enough deque. Not reproduced; recorded as D-65.
+///   string on a large enough deque. Not reproduced; recorded as DIV-CIRCULAR-BUFFER-1.
 /// * a **non-negative integer** below the capacity goes through the core's
 ///   `get`, so the ordinary path is the one the fuzzer exercises.
 /// * a **negative or fractional** index performs upstream's arithmetic here and

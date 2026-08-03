@@ -12,7 +12,7 @@ Shim: `tests/bridge/bit-vector.js`.
 
 The largest of this group of four modules, and the one with the best test:source ratio. It shares
 `bits.rs` with `bit-set` because **upstream copy-pastes seven methods between the two files** — so
-B-17 and B-18 arrive here for free, exactly as they arrived upstream for free. Both were
+BUG-BIT-SET-1 and BUG-BIT-SET-2 arrive here for free, exactly as they arrived upstream for free. Both were
 re-verified against `BitVector` on Node rather than inferred from `BitSet`.
 
 ---
@@ -42,7 +42,7 @@ any assertion about `size` after a `pop`.
 
 1. **`get(0)` after the pop/push(0) sequence.** The `pop` test does
    `push(1); push(1); pop(); pop(); push(0); push(1)` and then asserts `get(1)`. Asking about
-   `get(0)` instead would have returned `1` and exposed B-21 on the spot.
+   `get(0)` instead would have returned `1` and exposed BUG-BIT-VECTOR-1 on the spot.
 2. **`size` is never read after a `pop`.** It is asserted eleven times elsewhere in the file and not
    once here.
 3. **Pushing `1` onto a slot that already holds `1`** — i.e. re-pushing after a pop — is never
@@ -61,7 +61,7 @@ any assertion about `size` after a `pop`.
 **Capacity and length coming apart**
 
 7. **A vector with capacity but zero length is never iterated.** `new BitVector(); v.grow();` then
-   `forEach` calls back **32 times** on a vector of length 0 — B-22.
+   `forEach` calls back **32 times** on a vector of length 0 — BUG-BIT-VECTOR-2.
 8. **`reallocate` to `0`** is never done.
 9. **A shrinking `reallocate` that discards a word holding set bits** is never done.
 10. **`reallocate` where the rounded capacity is unchanged but `length` still gets clamped** — the
@@ -79,9 +79,9 @@ any assertion about `size` after a `pop`.
 
 **Inherited from `bit-set`, and untested here for the same reasons**
 
-16. `reset` on an already-clear bit (B-17). 17. `select` skipping an empty word (B-18).
+16. `reset` on an already-clear bit (BUG-BIT-SET-1). 17. `select` skipping an empty word (BUG-BIT-SET-2).
 18. `select` past the population, and on an empty vector. 19. Indices past `length` but inside the
-last word (B-23). 20. Mutation during iteration, and re-draining a cursor. 21. `forEach`'s `scope`.
+last word (BUG-BIT-SET-3). 20. Mutation during iteration, and re-draining a cursor. 21. `forEach`'s `scope`.
 
 **Never called at all**
 
@@ -105,7 +105,7 @@ table).
 
 ## Bugs this found
 
-**B-21 — `pop` maintains neither `size` nor the bit, and `push(0)` clears nothing.**
+**BUG-BIT-VECTOR-1 — `pop` maintains neither `size` nor the bit, and `push(0)` clears nothing.**
 Verified against Node 24.18.1. Three defects in six lines:
 
 ```js
@@ -137,25 +137,25 @@ v.push(1);              // size 3, with two bits actually set
 **Upstream's own `pop` test performs exactly this sequence** and asserts `v.get(1) === 1`, which is
 true either way. One index to the left and it would have failed.
 
-**B-22 — `length % 32 || 32` treats a length of 0 as a full final word.**
+**BUG-BIT-VECTOR-2 — `length % 32 || 32` treats a length of 0 as a full final word.**
 Verified against Node 24.18.1. The `|| 32` exists for a length that fills its last word
 exactly, and `0 % 32` is also falsy. `BitSet` cannot reach it — its array is empty when its length
 is — but `BitVector` can, because capacity outlives length: `new BitVector(); v.grow();` then
 `forEach` calls back 32 times on a vector of length 0.
 
-**And the same `length < index` off-by-one as `HashedArrayTree`** (B-16's shape, in a different
+**And the same `length < index` off-by-one as `HashedArrayTree`** (BUG-HASHED-ARRAY-TREE-2's shape, in a different
 file): `set(length, v)` writes into the capacity region without moving `length`. Measured:
 `new BitVector(5); set(5, 1)` gives `size === 1`, `get(5) === 1`, `test(5) === true`, `rank(5) === 0`
 and iteration over five bits. Two of this group's four modules have the identical guard bug, written
 independently.
 
-**Inherited verbatim from the copy-paste:** B-17 (`reset`'s missing `>>> 0` driving `size` negative)
-and B-18 (`select` losing 32 positions per skipped word). Both re-measured against `BitVector` on
-Node. See `docs/modules/bit-set.md` for the analysis and `docs/modules/utils-bitwise.md` for B-19
-and B-20, also in this unit's require-closure.
+**Inherited verbatim from the copy-paste:** BUG-BIT-SET-1 (`reset`'s missing `>>> 0` driving `size` negative)
+and BUG-BIT-SET-2 (`select` losing 32 positions per skipped word). Both re-measured against `BitVector` on
+Node. See `docs/modules/bit-set.md` for the analysis and `docs/modules/utils-bitwise.md` for BUG-UTILS-BITWISE-1
+and BUG-UTILS-BITWISE-2, also in this unit's require-closure.
 
 **The bridge held a bare core value behind `&self`**, which LLVM was entitled to compile as a
-`noalias readonly` pointer and hoist reads across a re-entrant JS callback (B-31). It now holds
+`noalias readonly` pointer and hoist reads across a re-entrant JS callback (PORTBUG-1). It now holds
 `RefCell<Core>`, which is not `Freeze`, and every `&mut self` method borrows via `borrow_mut()`
 taken per step and released before the callback runs. Full history in the log.
 
@@ -202,7 +202,7 @@ Reproduce with `target/release/difffuzz --module bit-vector --seed 42 --cases 21
 
 The op alphabet covers `set`/`reset`/`flip`/`get`/`test`/`rank`/`select`/`clear` plus `push(1)`,
 `push(0)`, `pop()` (kept as separate ops, since only the former touches `size` and only the latter
-leaves a stale bit, and B-21 needs both interleaved), `resize`/`reallocate`/`grow` and the cursor
+leaves a stale bit, and BUG-BIT-VECTOR-1 needs both interleaved), `resize`/`reallocate`/`grow` and the cursor
 ops. Observable state is `size`, `length`, `capacity`, **`array`** and `toJSON()`. `set` is the only
 op in this grammar that throws, and its message is compared in full through the `{"$throw": …}`
 encoding added for `hashed-array-tree`. **Deliberately excluded: custom growth policies** — upstream's
@@ -223,7 +223,7 @@ the best-covered part of the upstream file, so a sabotage there has a real asser
 sabotage, `applyPolicy`'s `newCapacity <= this.capacity` weakened to `<` (accepting a policy that
 returns exactly the current capacity), is confirmed red at exactly the named line (20 passing, 1
 failing, "Missing expected exception"); reverted, confirmed green again (21 passing). Neither half
-of B-21 could have served as this sabotage: "fixing" `push(0)` to clear its slot leaves the suite
+of BUG-BIT-VECTOR-1 could have served as this sabotage: "fixing" `push(0)` to clear its slot leaves the suite
 green, because every slot the push test writes over is already zero, and "fixing" `pop` to decrement
 `size` leaves it green too, because no assertion in the file reads `size` after a `pop`. Across this
 group of four modules, five plausible-looking sabotages were rejected on that ground before a usable

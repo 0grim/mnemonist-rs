@@ -97,11 +97,11 @@
 //! `crate::map::MapCursor` itself is reused for the actual walk, but it is
 //! no longer handed a live `&OrderedMap` by the caller every step.
 //!
-//! # B-240 — `forEach` never calls its callback, regardless of how many documents are stored
+//! # BUG-INVERTED-INDEX-1 — `forEach` never calls its callback, regardless of how many documents are stored
 //!
 //! See [`InvertedIndex::for_each`]'s own docs for the mechanism —
 //! `this.documents.length` reads a **method's** arity, not an array's
-//! length — and NOTES.md B-240 for the confirmed repro against Node
+//! length — and NOTES.md BUG-INVERTED-INDEX-1 for the confirmed repro against Node
 //! 24.18.1. Reproduced here as a cursor frozen at length zero, so a walk
 //! against it is a no-op by construction rather than a hand-written empty
 //! callback list standing in for the same effect through a different route.
@@ -166,7 +166,7 @@ impl<Doc, Tok> InvertedIndex<Doc, Tok> {
 
     /// Upstream's `size` property: the document count. A real, non-drifting
     /// counter — every `add` increments it exactly once, and nothing removes
-    /// a document, so there is no B-40-shaped divergence to reproduce here.
+    /// a document, so there is no BUG-DEFAULT-MAP-1-shaped divergence to reproduce here.
     pub fn size(&self) -> usize {
         self.size
     }
@@ -176,7 +176,7 @@ impl<Doc, Tok> InvertedIndex<Doc, Tok> {
     /// Upstream assigns `this.dimension = this.mapping.size;` at the end of
     /// every `add` — a re-derivation, not an independent increment — so a
     /// read straight off `mapping.len()` is exactly equivalent and cannot
-    /// drift the way `DefaultMap.size` does (B-40).
+    /// drift the way `DefaultMap.size` does (BUG-DEFAULT-MAP-1).
     pub fn dimension(&self) -> usize {
         self.mapping.borrow().len()
     }
@@ -203,7 +203,7 @@ impl<Doc, Tok> InvertedIndex<Doc, Tok> {
 
     /// Upstream's `forEach`.
     ///
-    /// # B-240 — always a no-op
+    /// # BUG-INVERTED-INDEX-1 — always a no-op
     ///
     /// ```js
     /// InvertedIndex.prototype.forEach = function(callback, scope) {
@@ -227,7 +227,7 @@ impl<Doc, Tok> InvertedIndex<Doc, Tok> {
     /// Verified against Node 24.18.1
     /// (`~/upstream-mnemonist/inverted-index.js`):
     /// `InvertedIndex.from(['a b', 'b c'], s => s.split(' ')).forEach(cb)`
-    /// calls `cb` zero times. Recorded as **B-240** in NOTES.md.
+    /// calls `cb` zero times. Recorded as **BUG-INVERTED-INDEX-1** in NOTES.md.
     ///
     /// The original suite's own `forEach` block (`test/inverted-index.js`,
     /// `'should be possible to iterate using #.forEach'`) asserts properties
@@ -399,7 +399,7 @@ impl<Doc> DocumentsCursor<Doc> {
 
     /// [`InvertedIndex::for_each`]'s cursor: the array is captured (so a
     /// `clear()` mid-walk still cannot panic this), but the frozen length is
-    /// zero unconditionally — see B-240 in the module docs.
+    /// zero unconditionally — see BUG-INVERTED-INDEX-1 in the module docs.
     fn open_at_zero(items: Items<Doc>) -> Self {
         Self {
             items,
@@ -582,7 +582,7 @@ mod tests {
         );
     }
 
-    // ---- B-240 -------------------------------------------------------
+    // ---- BUG-INVERTED-INDEX-1 -------------------------------------------------------
 
     #[test]
     fn b_240_for_each_never_visits_a_single_document() {
@@ -629,7 +629,7 @@ mod tests {
 
     #[test]
     fn a_clear_between_two_steps_of_an_open_for_each_walk_does_not_panic() {
-        // `for_each`'s cursor is frozen at length zero regardless (B-240), so
+        // `for_each`'s cursor is frozen at length zero regardless (BUG-INVERTED-INDEX-1), so
         // this can never step at all -- but it must not panic either, since
         // it now captures the array object the same way `documents()` does.
         let mut index = index_from(&["a"]);

@@ -7,7 +7,7 @@
 //! difference is not cosmetic: upstream's `forEach` freezes only its loop bound
 //! and re-reads `this.items` on every step, so a callback that mutates the
 //! stack is visible to the reads after it. Nothing in the alphabet could
-//! express that, and B-31 — the port's own worst bug — was reachable only
+//! express that, and PORTBUG-1 — the port's own worst bug — was reachable only
 //! through a mutating `forEach` and survived 2.94 M operations because no
 //! grammar had one.
 //!
@@ -20,7 +20,7 @@
 //! nullary ones that cannot throw — `pop` and `clear` — so a generated
 //! program is always well formed.
 //!
-//! It is also the only op that can see **B-61**: `forEach`'s bound is
+//! It is also the only op that can see **BUG-FIXED-STACK-1**: `forEach`'s bound is
 //! `this.items.length` and every other method's is `this.size`, so an
 //! under-full stack hands the callback its unused slots first. A port that
 //! walked `size` would pass every other op in this alphabet.
@@ -187,7 +187,7 @@ impl ModuleSpec for FixedStackSpec {
                 Some(cursor) => step_value(cursor.step(&instance.stack)),
             },
             // A *fresh* cursor every time — the collection-level
-            // `Symbol.iterator` is a factory (D-07).
+            // `Symbol.iterator` is a factory (DIV-STACK-2).
             "$spread" => {
                 let mut cursor = CursorState::open(&instance.stack);
                 let mut items = Vec::new();
@@ -202,7 +202,7 @@ impl ModuleSpec for FixedStackSpec {
 
                 Value::Array(items)
             }
-            // Upstream's own loop, whose bound is frozen (B-61):
+            // Upstream's own loop, whose bound is frozen (BUG-FIXED-STACK-1):
             //
             // ```js
             // for (var i = 0, l = this.items.length; i < l; i++)

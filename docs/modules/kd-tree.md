@@ -71,8 +71,8 @@ nothing to test here upstream, and nothing to diverge from either.
 
 `crates/mnemonist-core/src/structures/kd_tree.rs` — 9 tests: a 1:1 transcription of all five
 upstream blocks as a baseline, `k` clamped to size rather than padding with nothing, a zero `k`
-rejected with upstream's message (narrowed — see D-408), an empty tree building cleanly and
-answering no queries (D-407), and a dedicated cross-splitting-plane test — see "Fuzz + bench" for
+rejected with upstream's message (narrowed — see DIV-KD-TREE-3), an empty tree building cleanly and
+answering no queries (DIV-KD-TREE-2), and a dedicated cross-splitting-plane test — see "Fuzz + bench" for
 why that last one needed a dense grid rather than a hand-picked shape to actually exercise the
 branch it is named for.
 
@@ -90,11 +90,11 @@ Reported plainly, per this project's "set — no upstream bugs, and that is the 
 
 | # | Divergence | Why |
 |---|---|---|
-| D-406 | **The bridge exposes no direct constructor** — only `.from`/`.fromAxes`. | Upstream's raw `function KDTree(dimensions, build)` takes an already-built internal shape nothing but those two factories ever produces; no test calls it directly, and narrowing to how the module is actually used avoids inventing a bridge for a shape nothing needs. |
-| D-407 | **An empty tree's `nearestNeighbor` returns `None`/`undefined`** rather than cascading through `undefined` arithmetic. | Untested upstream; the cascade is entirely internal (unlike `vp-tree`'s D-401, no caller-supplied function is involved), so there is no ambiguity to preserve by reproducing it. |
-| D-408 | **`k <= 0`'s guard only fires for `k == 0`.** | `usize` cannot carry a negative value at all; the untested `NaN` fall-through (`NaN <= 0` is `false` in JS, so it does *not* throw and instead cascades) is not reproduced either, for the same reason. |
-| D-409 | **`dimensions == 0` fails differently on each side** (panic here, `NaN`-cascade upstream) rather than being reconciled. | No test constructs one; there is no real "right answer" in upstream's own silent-garbage output to reproduce, so this is disclosed as a known gap instead of papered over with an invented guard. |
-| D-410 | **`axes`/`labels`/`this.visited` are not exposed by the bridge.** | No test reads any of the three; `axes`/`labels` are reconstructable from the constructor arguments a caller already has, and `visited` is a diagnostic aside the fuzz harness measures a different way instead (see Fuzz, below). |
+| DIV-KD-TREE-1 | **The bridge exposes no direct constructor** — only `.from`/`.fromAxes`. | Upstream's raw `function KDTree(dimensions, build)` takes an already-built internal shape nothing but those two factories ever produces; no test calls it directly, and narrowing to how the module is actually used avoids inventing a bridge for a shape nothing needs. |
+| DIV-KD-TREE-2 | **An empty tree's `nearestNeighbor` returns `None`/`undefined`** rather than cascading through `undefined` arithmetic. | Untested upstream; the cascade is entirely internal (unlike `vp-tree`'s DIV-VP-TREE-2, no caller-supplied function is involved), so there is no ambiguity to preserve by reproducing it. |
+| DIV-KD-TREE-3 | **`k <= 0`'s guard only fires for `k == 0`.** | `usize` cannot carry a negative value at all; the untested `NaN` fall-through (`NaN <= 0` is `false` in JS, so it does *not* throw and instead cascades) is not reproduced either, for the same reason. |
+| DIV-KD-TREE-4 | **`dimensions == 0` fails differently on each side** (panic here, `NaN`-cascade upstream) rather than being reconciled. | No test constructs one; there is no real "right answer" in upstream's own silent-garbage output to reproduce, so this is disclosed as a known gap instead of papered over with an invented guard. |
+| DIV-KD-TREE-5 | **`axes`/`labels`/`this.visited` are not exposed by the bridge.** | No test reads any of the three; `axes`/`labels` are reconstructable from the constructor arguments a caller already has, and `visited` is a diagnostic aside the fuzz harness measures a different way instead (see Fuzz, below). |
 
 ## Fuzz + bench
 
@@ -112,7 +112,7 @@ Reproduce with `target/release/difffuzz --module kd-tree --seed 42 --cases 9713`
 
 The op alphabet covers `nearestNeighbor`/`kNearestNeighbors`/`linearKNearestNeighbors`, all
 constructed via `.from`, not `new KDTree(...)` — upstream's own raw constructor takes an
-already-built internal shape (D-406), so this was the first module in the port whose `ModuleSpec`
+already-built internal shape (DIV-KD-TREE-1), so this was the first module in the port whose `ModuleSpec`
 needed an alternate entry point. Points are a dense 12×12 integer grid rather than a sparse or
 wide-ranging one: many points share a coordinate on whichever axis the tree splits on (which is
 what puts a query close to a plane at all), and many points sit at genuinely equal squared distance

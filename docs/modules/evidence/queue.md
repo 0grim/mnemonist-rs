@@ -15,7 +15,7 @@ record, full benchmark table.
 | `a_one_element_queue_compacts_immediately` | 1 — the degenerate end (`1 * 2 >= 1`) |
 | `interleaved_enqueue_and_dequeue_stay_in_order` | 1 — FIFO across compactions, which is the way the offset arithmetic actually breaks |
 | `dequeueing_an_empty_queue_moves_nothing` | — |
-| `cursors_do_not_restart_but_the_queue_can_be_walked_again` | D-06/D-07 |
+| `cursors_do_not_restart_but_the_queue_can_be_walked_again` | DIV-STACK-1/DIV-STACK-2 |
 | `an_enqueue_during_iteration_is_visible_to_the_cursor` | 5 — the live end |
 | `a_finished_cursor_resumes_when_the_queue_grows` | 6 — nothing latches |
 | `a_compaction_detaches_an_open_cursor_onto_the_old_array` | 2, 3 |
@@ -23,7 +23,7 @@ record, full benchmark table.
 | `clear_leaves_an_open_cursor_walking_the_old_array` | 4 |
 | `for_each_reads_the_live_array_where_the_cursor_reads_the_capture` | 7 |
 | `an_empty_queue_iterates_zero_times` | — |
-| `from_iter_accepts_any_iterator` | D-03 |
+| `from_iter_accepts_any_iterator` | DIV-QUEUE-1 |
 
 ## Fuzz grammar
 

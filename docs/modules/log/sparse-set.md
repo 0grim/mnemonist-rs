@@ -21,7 +21,7 @@ programs the driver spun visibly and `--duration 20` reported 32 cases in 20.0 s
 `every_batch_generates_new_cases`, which runs with **no** corpus so that the only way past `batch`
 cases is a batch that really generated.
 
-## B-31 — `&self` on a `Freeze` type was `noalias readonly` (fixed 2026-08-01)
+## PORTBUG-1 — `&self` on a `Freeze` type was `noalias readonly` (fixed 2026-08-01)
 
 This bridge held a bare core value, so `&self` compiled to a `noalias readonly` pointer and LLVM was
 entitled to hoist reads across the JS callback — which it did. It now holds `RefCell<Core>`, which
@@ -29,9 +29,9 @@ is not `Freeze`, and every `&mut self` method became `&self` + `borrow_mut()`. T
 per step and released before the callback runs, so a re-entrant callback never meets an outstanding
 borrow. See `crates/mnemonist-napi/src/cursor.rs`'s `CellCursor`.
 
-## `$forEach` — the op that was missing (added 2026-08-01, B-31)
+## `$forEach` — the op that was missing (added 2026-08-01, PORTBUG-1)
 
-`sparse-set`'s grammar had no `forEach` op at all. That omission is what let B-31 — a `forEach`
+`sparse-set`'s grammar had no `forEach` op at all. That omission is what let PORTBUG-1 — a `forEach`
 callback mutating the collection it is walking — through 2.94 M clean operations: an op alphabet
 that omits a method omits every bug reachable only through it. `$forEach(method, rule, limit)` was
 added to close that hole; see the current document for what it covers now.

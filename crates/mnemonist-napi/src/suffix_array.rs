@@ -1,7 +1,7 @@
 //! JS bridge for [`mnemonist_core::structures::suffix_array`].
 //!
 //! Thin translation only: every behavioural decision — including both of the
-//! defects this unit reproduces, B-90 and B-91 — lives in the core crate. What
+//! defects this unit reproduces, BUG-SUFFIX-ARRAY-1 and BUG-SUFFIX-ARRAY-2 — lives in the core crate. What
 //! this layer carries is the shape of the two constructors' arguments and of
 //! the two "sequence-shaped" return values.
 //!
@@ -26,7 +26,7 @@
 //!    has already landed inside a function tail three times. That trade is
 //!    recorded in `docs/modules/suffix-array.md` rather than left implicit.
 //! 4. **The core structure is held in a [`RefCell`].** Nothing here mutates and
-//!    no method takes a callback, so the aliasing hazard behind B-31 is not
+//!    no method takes a callback, so the aliasing hazard behind PORTBUG-1 is not
 //!    currently reachable — but `&self` on a `Freeze` type is `noalias
 //!    readonly` to LLVM whether or not today's methods exercise it, and the
 //!    cost of the cell is nil. Written this way from the start so that adding a

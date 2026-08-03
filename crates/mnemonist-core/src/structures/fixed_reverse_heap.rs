@@ -19,11 +19,11 @@
 //! # Two upstream defects live here
 //!
 //! * the capacity guard is `typeof capacity !== 'number' && capacity <= 0`,
-//!   where `||` was meant, so it can never fire for *any* number — NOTES B-73.
+//!   where `||` was meant, so it can never fire for *any* number — NOTES BUG-FIXED-REVERSE-HEAP-1.
 //!   The guard is a JavaScript type test, so it is reproduced in the bridge,
 //!   not here;
 //! * `clear()` resets `size` and nothing else, so `peek()` on a cleared heap
-//!   still answers the stale root — NOTES B-74. That one is reproduced here,
+//!   still answers the stale root — NOTES BUG-FIXED-REVERSE-HEAP-2. That one is reproduced here,
 //!   because it is about the data and not about JavaScript.
 
 use std::cell::Cell;
@@ -75,7 +75,7 @@ impl<S: Store, C: Comparator<S::Item, S::Error>> FixedReverseHeap<S, C> {
     /// `#.clear` — `this.size = 0`, and **nothing else**.
     ///
     /// The array keeps its contents, which is why [`peek`](Self::peek) can
-    /// answer with an item that was logically discarded. NOTES B-74.
+    /// answer with an item that was logically discarded. NOTES BUG-FIXED-REVERSE-HEAP-2.
     pub fn clear(&self) {
         self.size.set(0);
     }
@@ -223,7 +223,7 @@ mod tests {
         assert_eq!(values(&heap.consume().unwrap()), vec![Some(3), Some(34)]);
     }
 
-    /// NOTES B-74: `clear()` resets `size` and leaves the array alone, so the
+    /// NOTES BUG-FIXED-REVERSE-HEAP-2: `clear()` resets `size` and leaves the array alone, so the
     /// root of the discarded heap is still what `peek()` reports.
     #[test]
     fn peek_after_clear_answers_a_discarded_item() {
@@ -261,7 +261,7 @@ mod tests {
     }
 
     /// A capacity-0 heap accepts nothing and never throws — the constructor
-    /// guard that should have refused it cannot fire. NOTES B-73.
+    /// guard that should have refused it cannot fire. NOTES BUG-FIXED-REVERSE-HEAP-1.
     #[test]
     fn a_capacity_of_zero_silently_accepts_nothing() {
         let heap = heap(0);

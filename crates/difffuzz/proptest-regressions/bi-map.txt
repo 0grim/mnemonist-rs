@@ -7,7 +7,7 @@
 #
 # PROVENANCE
 # ----------
-# Both entries are REAL divergences B-120 found — the port was, at the time
+# Both entries are REAL divergences BUG-BI-MAP-1 found — the port was, at the time
 # each was caught, more correct than upstream, which this project treats as a
 # defect. Both were fixed; the campaign is clean on the fixed tree (5,000
 # cases / 38.3s, seed 42, zero divergences). See docs/modules/bi-map.md.

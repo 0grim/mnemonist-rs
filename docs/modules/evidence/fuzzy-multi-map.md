@@ -10,7 +10,7 @@ Gate artifacts for `docs/modules/fuzzy-multi-map.md`: fuzz grammar detail, full 
   identical function rather than two hand-written mirrors that could quietly disagree) collapses the
   first two onto one hashed key.
 * **Constructor**: `new FuzzyMultiMap(fuzzyLower)` — one hash function shared by both directions,
-  `List`-kind container (see D-167 for why `Set`-kind is out of scope for this campaign).
+  `List`-kind container (see DIV-FUZZY-MULTI-MAP-1 for why `Set`-kind is out of scope for this campaign).
 * **Observable state**: `size`, `dimension`, and `items` rendered as the **nested** object upstream's
   own `this.items` actually is — a `MultiMap` *instance*, not a raw `Map`, so `fuzz/oracle.js`'s
   generic `encode()` renders it as `{items: {$map: [...]}, size, dimension}` rather than a bare

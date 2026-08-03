@@ -19,7 +19,7 @@ falsification record, full benchmark tables.
 | `negative_members_arrive_as_their_two_s_complement_and_truncate_alike` | 11 — ToUint32 and a narrowing store compose to the same answer in both languages |
 | `size_can_exceed_length_and_then_iteration_hits_the_gap` | 11, 16 — the `undefined` window, reached through public calls only |
 | `a_delete_past_capacity_writes_dense_but_not_sparse` | 11 — the expando case, see "Bugs this found" |
-| `cursors_do_not_restart_but_the_set_can_be_walked_again` | 13, 14 — both levels of D-07 in one test |
+| `cursors_do_not_restart_but_the_set_can_be_walked_again` | 13, 14 — both levels of DIV-STACK-2 in one test |
 | `a_delete_during_iteration_is_visible_to_the_cursor` | 12 |
 | `a_delete_ahead_of_the_cursor_can_yield_a_member_twice` | 12 — the nastier half: the swap makes the last member appear twice and the deleted one never |
 | `an_add_during_iteration_is_not_visible_to_the_cursor` | 12 — the frozen-length half |
@@ -65,7 +65,7 @@ out-of-range write while still truncating the in-range one.
 
 **A — the out-of-range half.** Sabotage: `delete`'s two swap stores treated as if they behaved
 alike past capacity, i.e. writing `sparse[0]` where upstream writes an expando. This is the mistake
-the port actually made first (B-10). Caught in **1,416 cases (6.6 s)**, shrunk from 200 ops to
+the port actually made first (BUG-SPARSE-SET-3). Caught in **1,416 cases (6.6 s)**, shrunk from 200 ops to
 seven:
 
 ```js

@@ -28,11 +28,11 @@
 //! | `a` `b` `c` `A` | ordinary ASCII, and the repeated triples that make the recursion fire |
 //! | `U+0000` | equal to the value `convert` pads with, so padding and content are indistinguishable |
 //! | `U+0001` | equal to `GeneralizedSuffixArray`'s separator, so a member can forge one |
-//! | `U+0100` | low byte `0x00` — collides with the padding under B-90's 8-bit radix |
+//! | `U+0100` | low byte `0x00` — collides with the padding under BUG-SUFFIX-ARRAY-1's 8-bit radix |
 //! | `U+0141` | low byte `0x41` — collides with `A` under the same |
 //! | `U+0201` | low byte `0x01` — collides with the separator under the same |
 //!
-//! Lengths run to 45, which covers all three residues of `l % 3` (B-91 needs
+//! Lengths run to 45, which covers all three residues of `l % 3` (BUG-SUFFIX-ARRAY-2 needs
 //! `1`), several recursion depths, and the point where a reduced string's ranks
 //! start to exceed 255.
 //!

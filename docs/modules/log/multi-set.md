@@ -8,7 +8,7 @@ Chronological. See `docs/modules/multi-set.md` for the current-state document an
 Two harness bugs were found and fixed while getting the `multi-set` fuzz campaign clean. Neither is
 a port or upstream defect; both are in the fuzz spec's own comparison logic
 (`crates/difffuzz/src/modules/multi_set.rs`). The spec's `apply()` for `add`/`remove` originally
-always echoed back `{"$self": true}`/`{undefined}` regardless of the sign-flip delegation D-164
+always echoed back `{"$self": true}`/`{undefined}` regardless of the sign-flip delegation DIV-MULTI-SET-2
 describes, and `edit`'s `apply()` always echoed `{"$self": true}` regardless of whether `a` was
 present. Both were caught by the very first case the campaign generated once the harness ran at all.
 

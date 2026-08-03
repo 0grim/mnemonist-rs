@@ -20,7 +20,7 @@
 //! directly as the key domain, exactly as `sparse-map`/`bit-set` do: there is
 //! no separate index to rig here, because there is only one.
 //!
-//! The factory always returns `Some`, so B-40's `size` drift (a stored
+//! The factory always returns `Some`, so BUG-DEFAULT-MAP-1's `size` drift (a stored
 //! `undefined` making the counter diverge from the live entry count) is never
 //! triggered by this workload — that divergence is exhaustively covered by
 //! the differential fuzzer and the unit's own native tests, where it belongs;

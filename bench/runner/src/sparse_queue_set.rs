@@ -8,7 +8,7 @@
 //! second operand does on `sparse-set`'s own mixed workload.
 //!
 //! Members are drawn in range (`workload.a[i]` is already `rng.below(size)`,
-//! `size` == the ring's capacity), so this never reaches B-13's out-of-range
+//! `size` == the ring's capacity), so this never reaches BUG-SPARSE-QUEUE-SET-2's out-of-range
 //! eviction path — that belongs to the differential fuzzer. In range, the
 //! ring's own ceiling does the interesting thing on its own: once every
 //! member `0..size` has cycled through, further `enqueue`s of already-queued

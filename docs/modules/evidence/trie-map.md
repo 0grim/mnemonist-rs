@@ -14,8 +14,8 @@ record, full benchmark table.
 | `has_distinguishes_a_stored_word_from_a_mere_prefix_of_one` | the gate 6 falsification target, pinned directly |
 | `walk_over_a_prefix_that_does_not_exist_is_empty` | gap 1 |
 | `walk_visits_every_word_in_the_same_order_as_find` | cross-checks the lazy walk against the eager `find` DFS, which upstream never does explicitly (they are two separate code paths upstream too) |
-| `an_addition_inside_an_already_queued_branch_is_visible_to_an_open_walk` | the *matching* half of the D-201 story: a live addition (not a prune) to a node an open walk has already queued IS seen, on both sides |
-| `a_token_equal_to_the_sentinel_character_is_an_ordinary_token` | gap 3 / B-200 — pins that the port does **not** reproduce the corruption |
+| `an_addition_inside_an_already_queued_branch_is_visible_to_an_open_walk` | the *matching* half of the DIV-TRIE-MAP-2 story: a live addition (not a prune) to a node an open walk has already queued IS seen, on both sides |
+| `a_token_equal_to_the_sentinel_character_is_an_ordinary_token` | gap 3 / BUG-TRIE-MAP-1 — pins that the port does **not** reproduce the corruption |
 | `root_exposes_entries_in_insertion_order` | the shared value/child enumeration order `NodeView` exposes, which is what makes `find`'s DFS order correct in the first place |
 | `values_mut_reaches_every_stored_value` | bridge plumbing: every stored value must be reachable to release a JS reference on `clear`/finalize |
 
@@ -29,10 +29,10 @@ draws 2,000 samples from the real `set` op strategy across both regimes and conf
 generated stream* — not just the pool in principle — mostly revisits these relationships. Both are
 plain `cargo test` assertions, no oracle, no `node`.
 
-**The regime split (D-201).** `ctor_strategy` generates one internal flag (not a real `Token`
+**The regime split (DIV-TRIE-MAP-2).** `ctor_strategy` generates one internal flag (not a real `Token`
 argument — see the module's own docs) deciding whether a program exercises `delete`/`clear` or a
 persistent `$iter`/`$next` cursor, never both in the same program. This exists because the campaign
-run *without* the split diverged inside a few hundred operations, independently rediscovering B-201:
+run *without* the split diverged inside a few hundred operations, independently rediscovering BUG-TRIE-MAP-2:
 
 ```
 divergence in return value after op #4: $next()
@@ -55,11 +55,11 @@ so it verifies structure; `find`/`$spread`/`$next` sequences (JSON arrays) are w
   it); fuzzing it here would mean a third, independent reimplementation of the same coercion rule
   purely to compare against itself. Covered by the original suite's custom-tokens block and by
   `mnemonist_napi::trie_map`'s own reasoning instead.
-* **Digit tokens** — see D-202.
+* **Digit tokens** — see DIV-TRIE-MAP-3.
 * **A starting sub-prefix on `values`/`keys`/`entries`** — every walk in this grammar starts at the
   root. Covered by `mnemonist_core::structures::trie_map::tests::walk_visits_every_word_in_the_same_order_as_find`
   and by gate 4 (`test/trie-map.js` exercises `keys('rate')` directly).
-* **`delete`/`clear` interleaved with an open cursor** — D-201, above. Excluded by construction
+* **`delete`/`clear` interleaved with an open cursor** — DIV-TRIE-MAP-2, above. Excluded by construction
   rather than by luck, after the campaign showed it was reachable in practice, not merely in theory.
 
 ## Falsification record (gate 6)

@@ -36,7 +36,7 @@ falsification record, full benchmark tables.
 
 ## Falsification record (gate 6)
 
-Sabotage: *fix* B-7 in the core — the most plausible way this port could realistically break, since
+Sabotage: *fix* BUG-STATIC-DISJOINT-SET-1 in the core — the most plausible way this port could realistically break, since
 it makes the port strictly more correct than upstream and therefore wrong. Caught in **129 cases
 (0.3 s)** and shrunk from a 600-op program to three operations:
 

@@ -11,10 +11,10 @@
 //!    that reason.
 //! 2. **`MaxFibonacciHeap` is installed as JavaScript, not a second `#[napi]`
 //!    class.** Upstream's is `MaxFibonacciHeap.prototype =
-//!    FibonacciHeap.prototype` — the same B-75-shaped anti-pattern
+//!    FibonacciHeap.prototype` — the same BUG-HEAP-4-shaped anti-pattern
 //!    `crate::heap`'s bridge already documents for `Heap`/`MaxHeap`, and a
 //!    second native class would silently *fix* it instead of reproducing it
-//!    (NOTES.md B-221). See [`install_fibonacci_heap_statics`].
+//!    (NOTES.md BUG-FIBONACCI-HEAP-2). See [`install_fibonacci_heap_statics`].
 //! 3. **`.from` always drains through the 5-branch `forEach` dispatch.**
 //!    Unlike `Heap.from`, which special-cases an array-like source,
 //!    `FibonacciHeap.from` upstream is unconditionally
@@ -83,7 +83,7 @@ impl JsFibonacciHeap {
         })
     }
 
-    /// `this.size`. `i64`, matching core — see NOTES.md B-220 and
+    /// `this.size`. `i64`, matching core — see NOTES.md BUG-FIBONACCI-HEAP-1 and
     /// `mnemonist_core::structures::fibonacci_heap`'s own docs: a
     /// re-entrant `clear()` from inside `consolidate` can drive this
     /// negative, and upstream's own arithmetic reflects that rather than
@@ -163,7 +163,7 @@ impl JsFibonacciHeap {
 /// The prototype assignment is the whole point, exactly as it is for
 /// `Heap`/`MaxHeap` (`crate::heap`'s `INSTALLER`): it is what makes
 /// `new FibonacciHeap() instanceof MaxFibonacciHeap` true upstream (NOTES.md
-/// B-221), and a second native class would have its own prototype and
+/// BUG-FIBONACCI-HEAP-2), and a second native class would have its own prototype and
 /// silently repair that. `.bind(FibonacciHeap)` is not decoration either: a
 /// `#[napi(factory)]` instantiates with `napi_new_instance(this)`, so a
 /// factory pulled off the constructor and called bare would die with
@@ -192,7 +192,7 @@ const INSTALLER: &str = "(function (FibonacciHeap) { \
 /// `FibonacciHeap.__max` and `FibonacciHeap.__maxFrom` stay on the
 /// constructor: they are `#[napi(factory)]`s, and napi defines a class's own
 /// properties `writable: false, enumerable: false, configurable: false`, so
-/// `delete` is a no-op on them — measured, same as `crate::heap`'s D-75
+/// `delete` is a no-op on them — measured, same as `crate::heap`'s DIV-HEAP-6
 /// residual. Non-enumerable, so `Object.keys`/`for...in`/`deepStrictEqual`
 /// cannot see them; the bridge's only addition to upstream's surface.
 pub fn install_fibonacci_heap_statics(exports: &mut Object, env: &Env) -> Result<()> {

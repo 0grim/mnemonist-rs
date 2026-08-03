@@ -5,7 +5,7 @@
 //! copied key by key, and then `push` and `unshift` are overwritten. The
 //! shared pieces are shared here too —
 //! [`crate::fixed_deque::get_at`] for `#.get`, [`crate::fixed_stack::from_parts`]
-//! for the `from` static (NOTES B-60), [`crate::array_class`] for the class.
+//! for the `from` static (NOTES BUG-UTILS-ITERABLES-2), [`crate::array_class`] for the class.
 //!
 //! The one behavioural difference worth naming at the bridge: **`push` and
 //! `unshift` cannot fail here**, so they return a `u32` rather than a
@@ -55,7 +55,7 @@ pub struct JsCircularBuffer {
 #[napi]
 impl JsCircularBuffer {
     /// `new CircularBuffer(ArrayClass, capacity)`. See
-    /// [`crate::fixed_stack::JsFixedStack::new`] for the parameter types (D-61).
+    /// [`crate::fixed_stack::JsFixedStack::new`] for the parameter types (DIV-FIXED-STACK-3).
     #[napi(constructor)]
     pub fn new(env: Env, array_class: Unknown, capacity: Unknown) -> Result<Self> {
         if array_class.get_type()? == ValueType::Undefined {
@@ -134,7 +134,7 @@ impl JsCircularBuffer {
         self.inner.borrow().peek_last().into()
     }
 
-    /// Bounded by the capacity, not by the size — B-62, inherited literally
+    /// Bounded by the capacity, not by the size — BUG-CIRCULAR-BUFFER-1, inherited literally
     /// because upstream pastes the same function.
     #[napi]
     pub fn get(&self, index: Either<f64, Unknown>) -> Either<JsSlot, Undefined> {

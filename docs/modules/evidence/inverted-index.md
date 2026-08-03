@@ -10,7 +10,7 @@ falsification record, full benchmark table.
 | Test | Closes gap |
 |---|---|
 | `adding_documents_updates_size_and_dimension`, `querying_returns_the_and_intersection_of_matching_documents`, `from_iter_builds_the_same_index_as_repeated_add`, `documents_iterates_in_insertion_order`, `tokens_iterates_in_first_seen_order` | the eight blocks, as a baseline (tokenizer replaced by plain whitespace-split — see the fuzz spec's own docs on why) |
-| `b_240_for_each_never_visits_a_single_document`, `b_240_holds_on_an_empty_index_too` | 3 — B-240, pinned directly |
+| `b_240_for_each_never_visits_a_single_document`, `b_240_holds_on_an_empty_index_too` | 3 — BUG-INVERTED-INDEX-1, pinned directly |
 | `a_clear_between_two_steps_of_an_open_documents_cursor_does_not_panic_and_finishes_the_old_array`, `a_clear_between_two_steps_of_an_open_for_each_walk_does_not_panic`, `a_clear_between_two_steps_of_an_open_tokens_cursor_finishes_the_old_mapping` | 1 — the port defect the fuzzer found, both cursors |
 | `documents_cursor_is_not_restartable_and_does_not_grow_after_it_reports_done`, `a_document_added_after_a_cursor_opens_is_not_visible_because_the_length_is_frozen` | 4 |
 | `a_query_before_any_document_is_added_returns_nothing`, `an_empty_query_returns_nothing`, `a_repeated_token_within_one_document_is_recorded_once`, `clear_resets_everything`, `get_only_matches_documents_containing_every_query_token` | general correctness |

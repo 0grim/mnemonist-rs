@@ -10,7 +10,7 @@
 # the fuzzer itself, in the spirit of DoD gate 6: a fuzzer that has never
 # been seen to fail is just a second green light.
 #
-# The sabotage was to *fix* upstream's B-7 rank bug in
+# The sabotage was to *fix* upstream's BUG-STATIC-DISJOINT-SET-1 rank bug in
 # crates/mnemonist-core/src/structures/static_disjoint_set.rs, i.e. to read
 # `ranks[x_root]/[y_root]` where upstream reads `ranks[x]/[y]`. That makes the
 # port strictly more correct than upstream -- and therefore wrong, because the

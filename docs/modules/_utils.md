@@ -56,7 +56,7 @@ member at all. Nothing here supplies a malformed, unsorted, or partially-empty i
 
 **`merge.js` has the sharpest gaps:**
 
-1. **B-180.** A k-way `merge`/`unionUnique` call where some but not all arrays are empty and
+1. **BUG-UTILS-1.** A k-way `merge`/`unionUnique` call where some but not all arrays are empty and
    three-or-more remain live throws a `TypeError` upstream never catches or documents — see "Bugs
    this found". Not one k-array test case here mixes an empty array with two-or-more non-empty
    ones.
@@ -82,7 +82,7 @@ member at all. Nothing here supplies a malformed, unsorted, or partially-empty i
    docs cover this at length, independently of this unit).
 6. **`hash-tables`'s key `0`, a non-power-of-two table, and a zero-length one.** The suite's single
    example uses an eight-slot (power-of-two) table and none of its eight keys is `0`
-   (`crate::utils::hash_tables`'s own docs, B-92/B-94).
+   (`crate::utils::hash_tables`'s own docs, BUG-UTILS-HASH-TABLES-1/BUG-UTILS-HASH-TABLES-2).
 7. **`getMinimalRepresentation`'s optional `getter` argument.** Never supplied; not ported (helpers
    land as callers reach them, same policy `indices` already established).
 8. **A custom hash function** passed to `linearProbing.*` — the suite only ever passes
@@ -94,9 +94,9 @@ member at all. Nothing here supplies a malformed, unsorted, or partially-empty i
   campaign ever run against this grammar — see "Bugs this found" below.
 * **`crates/mnemonist-core/src/utils/merge.rs`'s native tests** — the upstream suite's own cases,
   transcribed, plus: `NaN` in a union's dedup check, ties across k-way arrays that do *not* change
-  the merged multiset, B-180 isolated at its sharpest, the boundary where filtering down to
+  the merged multiset, BUG-UTILS-1 isolated at its sharpest, the boundary where filtering down to
   two-or-fewer arrays takes the early-return path *before* the stale-length bug could ever fire, and
-  `intersection_unique_k`'s structural immunity to B-180. Full test list: evidence file.
+  `intersection_unique_k`'s structural immunity to BUG-UTILS-1. Full test list: evidence file.
 * **`crates/mnemonist-core/src/utils/typed_arrays.rs`'s new tests** for `getNumberType`/
   `getMinimalRepresentation`/`concat` — every priority-table boundary (including the sharp,
   counter-intuitive one where `Uint32Array` tops out at `i32::MAX`, not `u32::MAX`, because
@@ -109,7 +109,7 @@ member at all. Nothing here supplies a malformed, unsorted, or partially-empty i
 
 ## Bugs this found
 
-**B-180 — the k-way `merge`/`unionUnique` throw a `TypeError` whenever filtering an empty array out
+**BUG-UTILS-1 — the k-way `merge`/`unionUnique` throw a `TypeError` whenever filtering an empty array out
 leaves three-or-more arrays live.** Verified against Node 24.18.1. `kWayMergeArrays` and
 `kWayUnionUniqueArrays` both capture `l = arrays.length` *before* filtering empty inputs out into
 `filtered`, then reassign `arrays = filtered` and seed a `FibonacciHeap` with `l` indices — more
@@ -127,7 +127,7 @@ merge.intersectionUnique([], [1, 2, 3], [4, 5, 6])   // OK -- returns [] before 
 
 `kWayIntersectionUniqueArrays` has no heap at all (a sequential binary-search fold) and returns `[]`
 on the first empty array it scans, before the stale-`l` code path is reachable — structurally
-immune, not merely untested. Reproduced in the port as `KWayError::StaleLengthMismatch` (D-104).
+immune, not merely untested. Reproduced in the port as `KWayError::StaleLengthMismatch` (DIV-UTILS-1).
 
 Two further findings are **port defects, not upstream's**, and get no B-number ("do not
 overclaim causation" cuts the other way too):
@@ -139,15 +139,15 @@ overclaim causation" cuts the other way too):
    `merge`'s element order and `unionUnique`'s deduplication. Fixed by driving a real
    `FibonacciHeap` instead of a linear-scan substitute — see "Deliberate divergences" and the log for
    the history. The exact case that found this (`merge([3], [2, -5], [2])`) is pinned as a Rust test,
-   `merge_k_matches_upstreams_real_heap_on_the_case_that_found_d_105`
+   `merge_k_matches_upstreams_real_heap_on_the_case_that_found_div_utils_2`
    (`crates/mnemonist-core/src/utils/merge.rs`), against the real heap's actual output.
 
 ## Deliberate divergences
 
 | # | Divergence | Why |
 |---|---|---|
-| D-104 | **B-180 is reproduced as `Err(KWayError::StaleLengthMismatch)`, not a panic.** | `mnemonist-core` has no exceptions and forbids `unsafe`, so the actual out-of-bounds mechanism cannot be reproduced; the outcome (the k-way call fails, with upstream's message available at the boundary) is. Same convention as D-44 (`hash_tables::TABLE_IS_FULL`). |
-| D-106 | **`intersectionUnique`'s k-way `NaN` handling is a separate, still-open gap.** | `kWayIntersectionUniqueArrays`/`intersection_unique_k` never used a heap. Upstream seeds its running bounds from JS's `-Infinity`/`Infinity` sentinels; this port seeds from `Option<T>`, so the *first* array scanned always sets the accumulator, `NaN` included, where upstream's sentinel can survive past a `NaN`-headed array. Reachable only once `NaN` participates in a three-or-more-array group; the fuzz grammar's `k_way_arrays_op` takes an `allow_nan` flag that stays `false` for `intersectionUnique` specifically so the `merge`/`unionUnique` tie-break fix does not silently paper over this different gap. See `crates/mnemonist-core/src/utils/merge.rs`'s `intersection_unique_k` module docs for the mechanism. |
+| DIV-UTILS-1 | **BUG-UTILS-1 is reproduced as `Err(KWayError::StaleLengthMismatch)`, not a panic.** | `mnemonist-core` has no exceptions and forbids `unsafe`, so the actual out-of-bounds mechanism cannot be reproduced; the outcome (the k-way call fails, with upstream's message available at the boundary) is. Same convention as DIV-UTILS-HASH-TABLES-2 (`hash_tables::TABLE_IS_FULL`). |
+| DIV-UTILS-3 | **`intersectionUnique`'s k-way `NaN` handling is a separate, still-open gap.** | `kWayIntersectionUniqueArrays`/`intersection_unique_k` never used a heap. Upstream seeds its running bounds from JS's `-Infinity`/`Infinity` sentinels; this port seeds from `Option<T>`, so the *first* array scanned always sets the accumulator, `NaN` included, where upstream's sentinel can survive past a `NaN`-headed array. Reachable only once `NaN` participates in a three-or-more-array group; the fuzz grammar's `k_way_arrays_op` takes an `allow_nan` flag that stays `false` for `intersectionUnique` specifically so the `merge`/`unionUnique` tie-break fix does not silently paper over this different gap. See `crates/mnemonist-core/src/utils/merge.rs`'s `intersection_unique_k` module docs for the mechanism. |
 | — | **`concat` supports `Uint8Array` only.** | `test/_utils.js`'s own case never constructs anything else; upstream is generic over any typed-array class via `arguments[0].constructor`. Same "helpers land as callers reach them" policy as `indices`. |
 | — | **`getMinimalRepresentation`'s optional `getter` argument is not ported.** | Never supplied by any test in scope; same policy. |
 | — | **A custom `linearProbing` hash function is supported at the bridge (a real JS callback), but never fuzzed.** | `test/_utils.js` only ever passes `jenkinsInt32`; fuzzing an arbitrary hash would need the same re-entrant-callback machinery as the comparator exclusion below, for a capability nothing in scope exercises. |
@@ -158,7 +158,7 @@ overclaim causation" cuts the other way too):
 
 Two 60-second campaigns logged (`fuzz/log.txt`, `module=_utils`), seeds `42` and `20260801`:
 **508,729 + 503,372 = 1,012,101 operations, zero divergences** on the final grammar. The grammar
-manufactures B-180 deliberately (a 0-length array alongside two-or-more non-empty ones in a
+manufactures BUG-UTILS-1 deliberately (a 0-length array alongside two-or-more non-empty ones in a
 three-to-five-array group) rather than relying on luck; the k-way generator draws globally distinct
 values across a group so array-head ties (the FibonacciHeap tie-break question) do not confound the
 value comparison, while the two-array generator keeps duplicates and `NaN` freely since

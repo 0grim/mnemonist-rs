@@ -2,7 +2,7 @@
 //!
 //! A growable bit set. The bit-level half is [`crate::structures::bits`], shared
 //! with [`crate::structures::bit_set`] because upstream copy-pastes seven
-//! methods between the two files — **including all of B-13 and B-14**, which are
+//! methods between the two files — **including all of BUG-SPARSE-QUEUE-SET-2 and BUG-SPARSE-QUEUE-SET-3**, which are
 //! documented there and which this module inherits unchanged. What is added
 //! here is the capacity machinery: a user-supplied growth policy, `push`/`pop`,
 //! `grow`, `resize` and `reallocate`.
@@ -64,7 +64,7 @@
 //! any multiple of 32 as a full final word, zero included. `BitSet` cannot reach
 //! it — its array is empty when its length is — but a `BitVector` whose capacity
 //! outlives its length can: `new BitVector(); v.grow();` then `forEach` calls
-//! back **32 times** on a vector of length 0. NOTES.md B-18.
+//! back **32 times** on a vector of length 0. NOTES.md BUG-BIT-SET-2.
 //!
 //! # Example
 //!
@@ -181,7 +181,7 @@ impl BitVector {
     }
 
     /// Upstream's `size` counter. Signed, and unreliable after any `pop`; see
-    /// the module docs and B-13.
+    /// the module docs and BUG-SPARSE-QUEUE-SET-2.
     pub fn size(&self) -> i64 {
         self.words.size
     }
@@ -213,7 +213,7 @@ impl BitVector {
         Ok(())
     }
 
-    /// `reset(index)` — no bounds check at all upstream. Carries B-13.
+    /// `reset(index)` — no bounds check at all upstream. Carries BUG-SPARSE-QUEUE-SET-2.
     pub fn reset(&mut self, index: i64) {
         self.words.reset_bit(index);
     }
@@ -244,7 +244,7 @@ impl BitVector {
         self.words.rank(i)
     }
 
-    /// `select(r)`. Carries B-14; see [`crate::structures::bits`].
+    /// `select(r)`. Carries BUG-SPARSE-QUEUE-SET-3; see [`crate::structures::bits`].
     pub fn select(&self, r: i64) -> Option<i64> {
         self.words.select(r)
     }
@@ -739,7 +739,7 @@ mod tests {
         assert_eq!(vector.get(6), None);
     }
 
-    /// Gap: B-18. A length of 0 over a non-empty array still walks 32 bits,
+    /// Gap: BUG-BIT-SET-2. A length of 0 over a non-empty array still walks 32 bits,
     /// because `0 % 32` is falsy and `|| 32` fires. `BitSet` cannot reach this.
     ///
     /// Measured on Node: `new BitVector(); v.grow();` then `forEach` runs 32
@@ -982,7 +982,7 @@ mod tests {
         assert_eq!(vector.values().count(), 96);
     }
 
-    /// Gap: D-06/D-07. Upstream drains each cursor once, in one expression.
+    /// Gap: DIV-STACK-1/DIV-STACK-2. Upstream drains each cursor once, in one expression.
     #[test]
     fn cursors_do_not_restart_but_the_vector_can_be_walked_again() {
         let mut vector = BitVector::new(4);
@@ -1023,7 +1023,7 @@ mod tests {
         assert_eq!(vector.get(17), None);
     }
 
-    /// Gap: B-13 and B-14 reach `BitVector` too, because the code is
+    /// Gap: BUG-SPARSE-QUEUE-SET-2 and BUG-SPARSE-QUEUE-SET-3 reach `BitVector` too, because the code is
     /// copy-pasted. Verified independently on Node against `BitVector`, not
     /// inferred from `BitSet`.
     #[test]

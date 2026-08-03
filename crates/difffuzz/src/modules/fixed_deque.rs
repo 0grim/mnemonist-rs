@@ -9,7 +9,7 @@
 //!
 //! Three behaviours it is aimed at specifically:
 //!
-//! * **`#.get` is bounded by the capacity, not by the size** (NOTES B-62), so
+//! * **`#.get` is bounded by the capacity, not by the size** (NOTES BUG-CIRCULAR-BUFFER-1), so
 //!   generated indices run past the size *and* past the capacity — the first
 //!   returns debris, the second is the one guard that fires.
 //! * **`start` is observable**, and the upstream test file asserts on it
@@ -38,7 +38,7 @@ const MAX_VALUE: u32 = 320;
 const MAX_CAPACITY: u32 = 8;
 
 /// Largest index a generated `get` asks for — past `MAX_CAPACITY`, so both
-/// halves of B-62's guard are exercised.
+/// halves of BUG-CIRCULAR-BUFFER-1's guard are exercised.
 const MAX_INDEX: u32 = 11;
 
 /// Mutations `$forEach`'s callback may perform, and how often. All three are
@@ -91,7 +91,7 @@ impl ModuleSpec for FixedDequeSpec {
             2 => Just(Op::new("shift", vec![])),
             1 => Just(Op::new("peekFirst", vec![])),
             1 => Just(Op::new("peekLast", vec![])),
-            // Past both the size and the capacity: B-62's two clauses.
+            // Past both the size and the capacity: BUG-CIRCULAR-BUFFER-1's two clauses.
             2 => (0u32..=MAX_INDEX).prop_map(|index| Op::new("get", vec![json!(index)])),
             1 => Just(Op::new("clear", vec![])),
             2 => Just(Op::new("$iter", vec![json!("values")])),

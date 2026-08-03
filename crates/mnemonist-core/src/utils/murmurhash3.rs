@@ -51,7 +51,7 @@
 //! So the digest is right, and the helper is wrong, and the only thing holding
 //! them together is a constant nobody would recognise as a typo. Reproduced
 //! bug-for-bug: [`sum32`] is public precisely so the defect is testable, and
-//! the swapped constant is spelled out in [`murmurhash3`]. See NOTES.md B-93.
+//! the swapped constant is spelled out in [`murmurhash3`]. See NOTES.md BUG-BLOOM-FILTER-1.
 //!
 //! # The tail, and the reads past the end
 //!

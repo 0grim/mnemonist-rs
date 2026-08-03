@@ -12,8 +12,8 @@
 //!
 //! `delete`/`set` are deliberately excluded from this mix: both carry
 //! reproduced-bug-for-bug corruption on paths this workload would hit
-//! constantly (B-161's `size` going `NaN` on a `delete` of an absent item;
-//! B-160's `set` silently adding instead of replacing on a present one —
+//! constantly (BUG-MULTI-SET-2's `size` going `NaN` on a `delete` of an absent item;
+//! BUG-MULTI-SET-1's `set` silently adding instead of replacing on a present one —
 //! `docs/modules/multi-set.md`). Exercising them here would benchmark how
 //! fast the port recomputes `NaN`, not how fast a multiset counts — `add`/
 //! `remove`/`multiplicity` are the well-behaved trio that stays representative

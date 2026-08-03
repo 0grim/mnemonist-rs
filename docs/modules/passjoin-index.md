@@ -45,7 +45,7 @@ bridge) is exercised by native tests and by construction, not by the original su
 **An array-like of characters as an added/searched value.** Upstream's own string operations
 (`.length`, `.slice`, `+`) work identically on a plain array of characters, so `add`/`search` accept
 either in principle; `test/passjoin-index.js` only ever passes strings. See "Deliberate divergences"
-(D-453).
+(DIV-PASSJOIN-INDEX-2).
 
 **The partition/segment-generation arithmetic under a differential fuzz campaign spanning many
 random `k`/length combinations** — the original suite pins a fixed set of literal examples at
@@ -67,8 +67,8 @@ range `test/passjoin-index.js` itself uses), the real `leven` npm package as the
 function via `fuzz/oracle.js`'s `pjLeven` factory; see "Fuzz + bench" for measured numbers, including
 a `grammar_self_check` counting non-empty searches and exact-`k`-distance hits directly.
 
-**Still untested, stated rather than glossed:** the array-like-of-characters input form (D-453), and
-astral-character input (D-452).
+**Still untested, stated rather than glossed:** the array-like-of-characters input form (DIV-PASSJOIN-INDEX-2), and
+astral-character input (DIV-PASSJOIN-INDEX-1).
 
 ## Bugs this found
 
@@ -102,9 +102,9 @@ upstream bug:
 
 | # | Divergence | Why |
 |---|---|---|
-| D-452 | **String indexing (`segments`/`segmentPos`/`multiMatchAwareSubstrings`) is over Rust `char`s (Unicode scalar values), not upstream's UTF-16 code units.** | Agrees exactly for every Basic-Multilingual-Plane codepoint, the only kind `test/passjoin-index.js` and this port's fuzz grammar use; diverges only for astral characters, which neither exercises. |
-| D-453 | **`add`/`search` accept only a JS `String`, not upstream's array-like-of-characters form.** | Untested upstream; accepting the array form would mean threading a second representation through every core helper for a case nothing observes. |
-| D-454 | **The inverted index keys on a `(String, i64)` tuple, not upstream's string concatenation `segment + i`.** | A strictly safer key (upstream's concatenation could in principle collide between two distinct `(segment, i)` pairs; the tuple cannot) that is unreached on every tested and fuzzed input either way, so it can only ever make the port's candidate set a superset on an input nobody has observed, never a subset. Recorded because this is the one unit where "more correct than upstream" is the stated risk to watch for. |
+| DIV-PASSJOIN-INDEX-1 | **String indexing (`segments`/`segmentPos`/`multiMatchAwareSubstrings`) is over Rust `char`s (Unicode scalar values), not upstream's UTF-16 code units.** | Agrees exactly for every Basic-Multilingual-Plane codepoint, the only kind `test/passjoin-index.js` and this port's fuzz grammar use; diverges only for astral characters, which neither exercises. |
+| DIV-PASSJOIN-INDEX-2 | **`add`/`search` accept only a JS `String`, not upstream's array-like-of-characters form.** | Untested upstream; accepting the array form would mean threading a second representation through every core helper for a case nothing observes. |
+| DIV-PASSJOIN-INDEX-3 | **The inverted index keys on a `(String, i64)` tuple, not upstream's string concatenation `segment + i`.** | A strictly safer key (upstream's concatenation could in principle collide between two distinct `(segment, i)` pairs; the tuple cannot) that is unreached on every tested and fuzzed input either way, so it can only ever make the port's candidate set a superset on an input nobody has observed, never a subset. Recorded because this is the one unit where "more correct than upstream" is the stated risk to watch for. |
 
 ## Fuzz + bench
 

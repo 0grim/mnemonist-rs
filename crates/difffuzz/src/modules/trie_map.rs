@@ -35,7 +35,7 @@
 //! **Array mode.** `new TrieMap(Array)` runs each array element through
 //! upstream's `ToPropertyKey`, which `mnemonist-napi`'s bridge approximates
 //! with `String(value)` rather than reproducing in full (see
-//! `mnemonist_napi::trie_map`'s module docs, and D-91's precedent). Fuzzing
+//! `mnemonist_napi::trie_map`'s module docs, and DIV-LRU-CACHE-3's precedent). Fuzzing
 //! that coercion would mean either reimplementing it a third time here (after
 //! core, which does not have it at all, and the bridge) or comparing against
 //! a divergence that is really in the fuzz spec's own mirror. String mode
@@ -46,7 +46,7 @@
 //! `mnemonist_napi::trie_map`'s own reasoning instead.
 //!
 //! **Digit tokens.** `Object.keys` sorts integer-like keys ascending before
-//! any other key, a rule this port does not implement (D-202). `PREFIX_POOL`
+//! any other key, a rule this port does not implement (DIV-TRIE-MAP-3). `PREFIX_POOL`
 //! is built entirely from letters so this campaign can never manufacture a
 //! divergence out of that documented, disclosed gap.
 //!
@@ -56,7 +56,7 @@
 //! `walk_visits_every_word_in_the_same_order_as_find` and by gate 4.
 //!
 //! **`delete` interleaved with an open cursor — found on contact, then
-//! deliberately excluded (D-201).** The very first campaign run for this
+//! deliberately excluded (DIV-TRIE-MAP-2).** The very first campaign run for this
 //! module (before this narrowing existed) diverged in under a hundred
 //! operations: `TrieMap.prototype.values`/`keys`/`entries` closes over live
 //! JS *object references* it has already queued but not yet visited, and
@@ -74,7 +74,7 @@
 //! `mnemonist_core::structures::trie_map::Walk` re-navigates by token path
 //! instead of holding a reference (required so a cursor can be resumed from a
 //! fresh `&TrieMap` at the FFI boundary — see that module's own docs), so it
-//! disagrees with upstream in exactly this interaction. This is D-201, and it
+//! disagrees with upstream in exactly this interaction. This is DIV-TRIE-MAP-2, and it
 //! was already known and disclosed before this campaign ran; what the
 //! campaign added was independent confirmation that the interaction is
 //! genuinely reachable, not just theoretically possible.
@@ -211,7 +211,7 @@ impl ModuleSpec for TrieMapSpec {
             1 => Just(Op::new("$spread", vec![])),
         ];
 
-        // D-201: `delete` and `clear` never share a program with a
+        // DIV-TRIE-MAP-2: `delete` and `clear` never share a program with a
         // persistent `$iter`/`$next` cursor. Both prune structure a cursor
         // may have already queued a reference to -- `clear` more bluntly
         // than `delete`, since it replaces the whole root -- and upstream's
@@ -415,7 +415,7 @@ mod tests {
 
         let mut set_prefixes = Vec::new();
 
-        // Both regimes (see the module docs, D-201) generate `set`; sample
+        // Both regimes (see the module docs, DIV-TRIE-MAP-2) generate `set`; sample
         // each so the check reflects the grammar actually run, not one half
         // of it.
         for regime in [json!(false), json!(true)] {

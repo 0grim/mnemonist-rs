@@ -88,7 +88,7 @@ found were hiding**
    own `setpop` decides whether to report an eviction with `if (oldKey)` — a truthiness check, not
    a definedness check — so a real eviction of a falsy key silently returns `null`. Every `setpop`
    block in the original suite evicts or overwrites a plain non-empty string. See "Bugs this
-   found", B-140.
+   found", BUG-LRU-CACHE-1.
 
 **Everything about the object-backed pair's key coercion beyond the one walkthrough line**
 
@@ -131,7 +131,7 @@ below (2 and its `remove` counterpart, plus the freed-pointer-reused interaction
 test-to-gap mapping: evidence file.
 
 **Differential fuzzer** — see "Fuzz + bench" for the campaigns. It closes gap 1 (found on contact),
-gap 4/B-140 (found on contact too), gap 6 (the object-backed vs. `Map`-backed key pool deliberately
+gap 4/BUG-LRU-CACHE-1 (found on contact too), gap 6 (the object-backed vs. `Map`-backed key pool deliberately
 includes `Int(0)`/`Str("0")`, which collide for one family and not the other), and carries a
 **self-check on the grammar itself** (`grammar_self_check`, two tests, no oracle involved) that
 samples generated programs and asserts a floor on how often `set`/`setpop` evict and `delete`
@@ -149,7 +149,7 @@ narrower base than modules with a boundary spec (e.g. `heap`) have.
 One upstream defect, verified against Node 24.18.1, plus one already-known upstream inconsistency
 this unit's own bridge code documents, plus two real port defects, both fixed.
 
-### B-140 — `setpop` silently drops the eviction report when the evicted key is falsy
+### BUG-LRU-CACHE-1 — `setpop` silently drops the eviction report when the evicted key is falsy
 
 Verified against Node 24.18.1 · `lru-cache.js`, `lru-map.js` (and both `-with-delete`
 siblings, via prototype copy) · found by the differential fuzzer.
@@ -186,7 +186,7 @@ three `setpop` blocks all evict or overwrite a non-empty string key, so gate 4 n
 path; the fuzz grammar's key pool includes four JS-falsy raw keys (`Int(0)`, `Bool(false)`, `Null`,
 `Undefined`) out of ten.
 
-### B-142 — `lru-map.js`'s own `.from` names the wrong module in its error
+### BUG-LRU-CACHE-2 — `lru-map.js`'s own `.from` names the wrong module in its error
 
 Verified against Node 24.18.1 · `lru-map.js`
 
@@ -201,7 +201,7 @@ one file, not systemic to the family. Reproduced verbatim in
 `crates/mnemonist-napi/src/lru_map.rs`'s `CANNOT_GUESS` constant, which is commented at the point of
 use to say so. Not independently fuzzable (it fires from `Cache.from`'s argument-arity resolution,
 before a cache exists at all, so it is an `init`-time error in the oracle protocol rather than an op
-comparison); found by reading, the same way B-70..B-79 were for `heap`.
+comparison); found by reading, the same way BUG-HEAP-1..BUG-HEAP-8 were for `heap`.
 
 ### Two defects in the port, both fixed
 
@@ -241,12 +241,12 @@ provenance header. Full history of how this was found: log.
 
 | # | Divergence | Why |
 |---|---|---|
-| D-89 | **`this.K[pointer]`/`this.V[pointer]` are left stale after `delete`/`remove`, never nulled.** | The fix for the panic above; see "Bugs this found". Reproducing upstream's own lack of a null-out is what makes a walk left open across a delete return upstream's actual (stale, not `undefined`) answer instead of crashing. |
-| D-90 | **`forEach` is `ForEachWalk`, not `Sequence`/`CursorState`.** | The fix for the timing bug above. `keys`/`values`/`entries` correctly stay on `Sequence`, because their own timing already matches upstream's lazy-iterator closures; only `forEach`'s callback-before-advance shape needed a different primitive. |
-| D-91 | **The object-backed pair's index key is restricted to what `JsKey` classifies** (`undefined`, `null`, booleans, numbers, strings) — an object key is rejected rather than run through `ToPropertyKey`. | `JsKey` was built for the `Map`-backed pair and for `default-map`, and no test in the original suite ever supplies an object key to either family. Implementing `ToPropertyKey`'s full object-coercion path (`toString`/`valueOf`, `Symbol.toPrimitive`) for a path nothing exercises would be unverifiable scope; see gap 5. |
-| D-92 | **The fuzz grammar never narrows a key through an `ArrayClass`.** | `index_of` and `to_index` are the same function for every one of the four fuzz specs (no `Keys`/`Values` array class is ever generated), so the eviction re-derivation gap `mnemonist_core::structures::lru_cache`'s own docs describe — where a narrowing store can make eviction's re-read of `this.K[pointer]` disagree with the key `set` was called with — is *unreachable by this grammar, by construction*. It is real (see the Rust unit test that pins it) and is exercised only there, not by fuzzing. |
-| D-93 | **`lru-map`/`lru-map-with-delete`'s fuzz spec omits `items` from `observations()`.** | Upstream's `this.items` is a genuine `Map` there, encoded by the oracle as an ORDER-SENSITIVE list. `mnemonist_core`'s index is a plain `std::collections::HashMap`, whose iteration order is unrelated to insertion order and would drift from a real `Map`'s on nearly every op — not because of a port defect, but because nothing about a lookup-only index needs to track insertion order. Comparing it in full would manufacture a divergence out of an implementation detail. The object-backed pair's `items` (a plain object, compared as an order-independent JSON object) has no such problem and is compared in full — see the fuzz module's own docs. This is exactly the judgement call the real bridge already made (`mnemonist_napi::lru_map`'s own `items` getter returns only `{size: N}`, for the identical reason). |
-| — | **B-142 is reproduced verbatim, not fixed.** | `lru-map.js`'s `.from` names the wrong module in one error message; `lru-map.rs`'s bridge raises the identical wrong string. |
+| DIV-LRU-CACHE-1 | **`this.K[pointer]`/`this.V[pointer]` are left stale after `delete`/`remove`, never nulled.** | The fix for the panic above; see "Bugs this found". Reproducing upstream's own lack of a null-out is what makes a walk left open across a delete return upstream's actual (stale, not `undefined`) answer instead of crashing. |
+| DIV-LRU-CACHE-2 | **`forEach` is `ForEachWalk`, not `Sequence`/`CursorState`.** | The fix for the timing bug above. `keys`/`values`/`entries` correctly stay on `Sequence`, because their own timing already matches upstream's lazy-iterator closures; only `forEach`'s callback-before-advance shape needed a different primitive. |
+| DIV-LRU-CACHE-3 | **The object-backed pair's index key is restricted to what `JsKey` classifies** (`undefined`, `null`, booleans, numbers, strings) — an object key is rejected rather than run through `ToPropertyKey`. | `JsKey` was built for the `Map`-backed pair and for `default-map`, and no test in the original suite ever supplies an object key to either family. Implementing `ToPropertyKey`'s full object-coercion path (`toString`/`valueOf`, `Symbol.toPrimitive`) for a path nothing exercises would be unverifiable scope; see gap 5. |
+| DIV-LRU-CACHE-4 | **The fuzz grammar never narrows a key through an `ArrayClass`.** | `index_of` and `to_index` are the same function for every one of the four fuzz specs (no `Keys`/`Values` array class is ever generated), so the eviction re-derivation gap `mnemonist_core::structures::lru_cache`'s own docs describe — where a narrowing store can make eviction's re-read of `this.K[pointer]` disagree with the key `set` was called with — is *unreachable by this grammar, by construction*. It is real (see the Rust unit test that pins it) and is exercised only there, not by fuzzing. |
+| DIV-LRU-CACHE-5 | **`lru-map`/`lru-map-with-delete`'s fuzz spec omits `items` from `observations()`.** | Upstream's `this.items` is a genuine `Map` there, encoded by the oracle as an ORDER-SENSITIVE list. `mnemonist_core`'s index is a plain `std::collections::HashMap`, whose iteration order is unrelated to insertion order and would drift from a real `Map`'s on nearly every op — not because of a port defect, but because nothing about a lookup-only index needs to track insertion order. Comparing it in full would manufacture a divergence out of an implementation detail. The object-backed pair's `items` (a plain object, compared as an order-independent JSON object) has no such problem and is compared in full — see the fuzz module's own docs. This is exactly the judgement call the real bridge already made (`mnemonist_napi::lru_map`'s own `items` getter returns only `{size: N}`, for the identical reason). |
+| — | **BUG-LRU-CACHE-2 is reproduced verbatim, not fixed.** | `lru-map.js`'s `.from` names the wrong module in one error message; `lru-map.rs`'s bridge raises the identical wrong string. |
 
 ## Fuzz + bench
 
@@ -260,15 +260,15 @@ evidence file.
 The op alphabet weights `get` heaviest (the mutating read, and an LRU's whole point is that a read
 changes recency), with `peek`/`has` as the non-mutating controls, `set`/`setpop` for eviction, the
 lazy-iterator lifecycle ops, and `$forEach`. The `-with-delete` variants add `delete`/`remove`,
-weighted above `clear` specifically because interleaving them with eviction is where B-140's sibling
+weighted above `clear` specifically because interleaving them with eviction is where BUG-LRU-CACHE-1's sibling
 defect and the two port defects above were found. Constructor capacities (`1..=6`) are deliberately
 small relative to the op-count ceiling, so a generated program cycles the ring many times over at
 every capacity in range — a campaign whose capacity is large relative to its op count proves only
 that a map stores things. The key pool mixes ten keys across `Str`/`Int`/`Bool`/`Null`/`Undefined`,
 including the one collision unique to this family (`Int(0)` and `Str("0")` are the same key for the
 object-backed pair and two different keys for the `Map`-backed pair) and four JS-falsy values, which
-is what made B-140 reachable. Observable state is `capacity`/`size`/`head`/`tail` always, plus the
-object-backed pair's full `items` (see D-93 for why the `Map`-backed pair's own `items` is left out).
+is what made BUG-LRU-CACHE-1 reachable. Observable state is `capacity`/`size`/`head`/`tail` always, plus the
+object-backed pair's full `items` (see DIV-LRU-CACHE-5 for why the `Map`-backed pair's own `items` is left out).
 Full grammar: evidence file.
 
 **How often eviction actually fired** was measured directly, not inferred from the weights, by

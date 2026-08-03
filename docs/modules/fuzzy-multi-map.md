@@ -122,9 +122,9 @@ depends on.
 
 | # | Divergence | Why |
 |---|---|---|
-| D-167 | **`Set`-kind object-identity dedup is not fuzzable through the differential protocol.** | The core-level campaign drives `FuzzyMultiMap<String, String>` through the infallible `set_with` convenience path (plain `PartialEq`), which has no notion of JS object identity at all — the whole reason `same_value_zero` exists is JavaScript-specific (`napi_strict_equals`) and lives entirely in the bridge, one layer outside what the differential fuzzer compares (core vs. upstream JS, not bridge vs. upstream JS). Covered instead by `test/fuzzy-multi-map.js` itself and by a bridge-level native test; see "What we test in addition". |
-| D-168 | **`FuzzyMultiMap.from`'s three-argument boolean-shift (`arguments.length === 3` reinterpreting `Container` as `useSet`) is reproduced by shape, not by counting real napi arguments.** | napi has no `arguments.length` equivalent; the bridge instead checks "the third parameter is present, the fourth is absent, and the third is a JS boolean" — indistinguishable from upstream's own check for every call `test/fuzzy-multi-map.js` makes, and the only case this project could construct where the two rules would disagree (a caller passing an explicit `undefined` as a fourth argument *and* a boolean third) is not exercised by any test. |
-| D-169 | **Values are `Rc<RefCell<Retained>>`, not a bare `Retained`.** | `MultiMap`'s flattened cursor snapshots a bucket by cloning its contents, and a bare `Retained` (owning exactly one `napi_ref`) cannot be cloned at all without either failing to compile or double-freeing. `Rc` clones cheaply (a refcount bump, never a second `napi_ref`); `RefCell` gives `release` (which needs `&mut self`) a way in through a shared handle. See `mnemonist_napi::fuzzy_multi_map`'s own module docs for the one stated consequence: a `values()`/`entries()`-style iterator kept open across a `clear()` observes the now-released, inert value if read afterwards — untested by `test/fuzzy-multi-map.js`, and the same class of gap `multi-map`'s own flattened cursor states for a same-bucket mutation mid-walk. |
+| DIV-FUZZY-MULTI-MAP-1 | **`Set`-kind object-identity dedup is not fuzzable through the differential protocol.** | The core-level campaign drives `FuzzyMultiMap<String, String>` through the infallible `set_with` convenience path (plain `PartialEq`), which has no notion of JS object identity at all — the whole reason `same_value_zero` exists is JavaScript-specific (`napi_strict_equals`) and lives entirely in the bridge, one layer outside what the differential fuzzer compares (core vs. upstream JS, not bridge vs. upstream JS). Covered instead by `test/fuzzy-multi-map.js` itself and by a bridge-level native test; see "What we test in addition". |
+| DIV-FUZZY-MULTI-MAP-2 | **`FuzzyMultiMap.from`'s three-argument boolean-shift (`arguments.length === 3` reinterpreting `Container` as `useSet`) is reproduced by shape, not by counting real napi arguments.** | napi has no `arguments.length` equivalent; the bridge instead checks "the third parameter is present, the fourth is absent, and the third is a JS boolean" — indistinguishable from upstream's own check for every call `test/fuzzy-multi-map.js` makes, and the only case this project could construct where the two rules would disagree (a caller passing an explicit `undefined` as a fourth argument *and* a boolean third) is not exercised by any test. |
+| DIV-FUZZY-MULTI-MAP-3 | **Values are `Rc<RefCell<Retained>>`, not a bare `Retained`.** | `MultiMap`'s flattened cursor snapshots a bucket by cloning its contents, and a bare `Retained` (owning exactly one `napi_ref`) cannot be cloned at all without either failing to compile or double-freeing. `Rc` clones cheaply (a refcount bump, never a second `napi_ref`); `RefCell` gives `release` (which needs `&mut self`) a way in through a shared handle. See `mnemonist_napi::fuzzy_multi_map`'s own module docs for the one stated consequence: a `values()`/`entries()`-style iterator kept open across a `clear()` observes the now-released, inert value if read afterwards — untested by `test/fuzzy-multi-map.js`, and the same class of gap `multi-map`'s own flattened cursor states for a same-bucket mutation mid-walk. |
 
 ## Fuzz + bench
 
@@ -144,7 +144,7 @@ The op alphabet covers `add`/`set`/`has`/`get`/`clear`. The source pool is `"Hel
 `fuzz/oracle.js`'s `FACTORIES` table, so both sides run the identical function rather than two
 hand-written mirrors that could quietly disagree) collapses the first two onto one hashed key. The
 constructor is `new FuzzyMultiMap(fuzzyLower)` — one hash function shared by both directions,
-`List`-kind container (see D-167 for why `Set`-kind is out of scope for this campaign). Observable
+`List`-kind container (see DIV-FUZZY-MULTI-MAP-1 for why `Set`-kind is out of scope for this campaign). Observable
 state is `size`, `dimension`, and `items` rendered as the **nested** object upstream's own
 `this.items` actually is — a `MultiMap` *instance*, not a raw `Map`. Full grammar: evidence file.
 
@@ -154,7 +154,7 @@ clears of a nonempty map. Both floors are asserted in the test itself.
 
 ### Falsification of the port (gate 6)
 
-Because this unit's own differential fuzzer cannot reach `Set`-kind object-identity dedup (D-167),
+Because this unit's own differential fuzzer cannot reach `Set`-kind object-identity dedup (DIV-FUZZY-MULTI-MAP-1),
 the sharpest target is that exact path, at the bridge — not core, which is untouched here.
 
 **The assertion the sabotage had to break was named first:** `test/fuzzy-multi-map.js:179` —

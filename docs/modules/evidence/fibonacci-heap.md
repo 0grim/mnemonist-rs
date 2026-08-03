@@ -14,8 +14,8 @@ falsification record, full benchmark table.
 | `interleaved_push_and_pop_stays_sorted_and_merges_repeatedly` | 2 — a 400-step xorshift32-seeded interleaving of push and pop, checked against a reference `Vec` sort at every third step, plus a measured floor on total merges |
 | `push_favours_the_most_recently_pushed_node_on_a_tie` | 3 — pins that a tie really does take the `<=` branch (see the falsification record for the sharper way this rule is actually pinned) |
 | `a_comparator_may_re_enter_and_push` | 4 (growing) |
-| `a_comparator_that_clears_the_heap_mid_pop_does_not_panic` | 4 (resetting) — and pins B-220's exact `-1`, not merely "doesn't crash" |
-| `a_pop_after_b_220s_negative_size_panics_matching_upstreams_null_dereference` (`#[should_panic]`) | the follow-on half of B-220: the *next* `pop` after the corruption |
+| `a_comparator_that_clears_the_heap_mid_pop_does_not_panic` | 4 (resetting) — and pins BUG-FIBONACCI-HEAP-1's exact `-1`, not merely "doesn't crash" |
+| `a_pop_after_b_220s_negative_size_panics_matching_upstreams_null_dereference` (`#[should_panic]`) | the follow-on half of BUG-FIBONACCI-HEAP-1: the *next* `pop` after the corruption |
 
 ## Fuzz grammar
 
@@ -30,11 +30,11 @@ falsification record, full benchmark table.
   none needed a fibonacci-heap-specific version. Three are new, because this structure has no public
   backing array to mutate through: `fibPushy` (`instance.push(99)`), `fibPopper` (a **nested**
   `instance.pop()` — the shape that found this port's own arena defect), `fibClearer`
-  (`instance.clear()` — B-220/B-222's trigger).
+  (`instance.clear()` — BUG-FIBONACCI-HEAP-1/BUG-FIBONACCI-HEAP-3's trigger).
 * **Observable state, compared after every op:** `size` and `peek`. There is no `.items` to compare
   against — `push`/`peek`/`pop`/`clear` are this structure's entire public surface. `size` is
-  compared as the signed `i64` both sides can produce (D-171); a campaign that clamped or ignored
-  negative values here would have missed B-220 entirely.
+  compared as the signed `i64` both sides can produce (DIV-FIBONACCI-HEAP-2); a campaign that clamped or ignored
+  negative values here would have missed BUG-FIBONACCI-HEAP-1 entirely.
 
 **Measured evidence that `consolidate` actually merges trees, repeatedly — not inferred from op
 weights.** `grammar_self_check` (`crates/difffuzz/src/modules/fibonacci_heap.rs`, no oracle, no
@@ -73,7 +73,7 @@ same-degree trees becomes the parent.
 * The bridge: **the Node process aborted outright** —
   `thread '<unnamed>' panicked at ...: Cannot read properties of null (reading 'child') ... fatal
   runtime error: failed to initiate panic, error 5, aborting`. The sabotage corrupted the tree
-  structure badly enough to reach B-220's own panic site through completely ordinary (non-re-entrant)
+  structure badly enough to reach BUG-FIBONACCI-HEAP-1's own panic site through completely ordinary (non-re-entrant)
   operation, and a Rust panic crossing the N-API boundary is not a catchable JS exception — it takes
   the whole process down. About as red as a falsification gets.
 
@@ -86,7 +86,7 @@ prediction, stated before running, was "this may not be observable within this u
 because ties between identical values carry no information."
 
 **The sabotage:** `push`'s tie-break, `<= 0.0` (favour the just-pushed node on an exact tie) flipped
-to `< 0.0` (favour the existing `min`) — B-220/B-221's neighbouring line, and the exact rule D-105's
+to `< 0.0` (favour the existing `min`) — BUG-FIBONACCI-HEAP-1/BUG-FIBONACCI-HEAP-2's neighbouring line, and the exact rule DIV-UTILS-2's
 own fix in `utils/merge.rs` depends on.
 
 **Result, confirmed and reported honestly:**
@@ -102,7 +102,7 @@ own fix in `utils/merge.rs` depends on.
   being sabotaged exposed it, because `fibClearer`'s own re-entrant `clear()` interacts with the
   tie-break rule in a way two plain pushes do not.
 * **The sibling unit's own regression caught it too:** `mnemonist_core::utils::merge`'s
-  `merge_k_matches_upstreams_real_heap_on_the_case_that_found_d_105` failed — D-105's fix depends on
+  `merge_k_matches_upstreams_real_heap_on_the_case_that_found_div_utils_2` failed — DIV-UTILS-2's fix depends on
   this exact rule.
 
 **Reverted; confirmed green again** at all four: `12/12`, `6/6`, a clean 3,000-case fuzz replay, and

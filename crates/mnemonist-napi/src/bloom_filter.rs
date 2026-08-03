@@ -3,7 +3,7 @@
 //! Thin translation only — with one exception that has to be here rather than
 //! in the core, because it is entirely about JavaScript values.
 //!
-//! 1. **`stringToByteArray` lives here, and it is where B-98 lives.** Upstream's
+//! 1. **`stringToByteArray` lives here, and it is where BUG-BLOOM-FILTER-3 lives.** Upstream's
 //!    conversion is
 //!
 //!    ```js
@@ -37,7 +37,7 @@
 //! 5. **The core structure is held in a [`RefCell`].** `add` and `clear` mutate,
 //!    and `from` runs JavaScript (`collect` can call a host `forEach`, a
 //!    `Symbol.iterator`, or a user `toString`) — so unlike the suffix arrays,
-//!    the B-31 aliasing hazard is live here, not theoretical. Every borrow ends
+//!    the PORTBUG-1 aliasing hazard is live here, not theoretical. Every borrow ends
 //!    before any JS call.
 //! 6. **`inspect` is not ported.** No upstream assertion, no Rust equivalent.
 
@@ -94,7 +94,7 @@ fn to_units(_env: &Env, item: &Unknown) -> Result<Vec<u16>> {
             "Cannot read properties of undefined (reading 'length')".to_owned(),
         )),
         // A primitive with no `length` property: `new Uint16Array(undefined)`
-        // is empty and the loop never runs. This is B-98.
+        // is empty and the loop never runs. This is BUG-BLOOM-FILTER-3.
         ValueType::Number | ValueType::Boolean | ValueType::BigInt | ValueType::Symbol => {
             Ok(Vec::new())
         }
@@ -228,7 +228,7 @@ impl JsBloomFilter {
         self.inner.borrow().error_rate()
     }
 
-    /// `#.hashFunctions` — zero is reachable and is not an error. See B-97.
+    /// `#.hashFunctions` — zero is reachable and is not an error. See BUG-BLOOM-FILTER-2.
     #[napi(getter, js_name = "hashFunctions")]
     pub fn hash_functions(&self) -> u32 {
         self.inner.borrow().hash_functions() as u32

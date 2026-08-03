@@ -40,7 +40,7 @@ Twelve `it` blocks, and the shape of the coverage matters more than the list:
 **The `size` counter, past the three cases that were already found the hard way**
 
 1. **`reset` on a bit that is already clear.** Every `reset` in the file clears a set bit. This is
-   the precondition for B-17, and it is one call away from the assertions that exist.
+   the precondition for BUG-BIT-SET-1, and it is one call away from the assertions that exist.
 2. **That `size` and `rank(length)` agree.** They are computed by completely different means — a
    running counter versus a popcount — and no assertion ever compares them.
 3. **`size` after `clear()`**, since `clear` is never called.
@@ -48,7 +48,7 @@ Twelve `it` blocks, and the shape of the coverage matters more than the list:
 
 **`select`, beyond one word**
 
-5. **No `select` call ever skips an empty word**, which is the precondition for B-18.
+5. **No `select` call ever skips an empty word**, which is the precondition for BUG-BIT-SET-2.
 6. **`select(r)` for `r` past the population** — the branch where upstream falls out of its loop and
    returns `undefined`, a third return shape the tests never see.
 7. **`select(0)`**, which matches before any bit is counted and answers the position of the first
@@ -59,7 +59,7 @@ Twelve `it` blocks, and the shape of the coverage matters more than the list:
 
 9. **No index outside `0..length` is ever passed to anything.** That hides both the fact that
    out-of-range indices are inert (which is the answer to "does the `SparseSet` corruption family
-   recur?" — see below) *and* B-23, the band between `length` and the end of the last allocated word
+   recur?" — see below) *and* BUG-BIT-SET-3, the band between `length` and the end of the last allocated word
    where a bit is accepted and then invisible.
 10. **Negative indices**, which upstream turns into a negative word index and drops.
 
@@ -73,8 +73,8 @@ Twelve `it` blocks, and the shape of the coverage matters more than the list:
 12. **Mutation during iteration is never performed.** Upstream's cursor captures the array *object*,
     so a `clear` mid-walk is invisible to it while a write into a word it has not yet entered is
     visible. Neither half is tested.
-13. **A cursor is never re-drained** (D-06), and **`[...set]` is never used** (the factory half of
-    D-07, which is the last line of the upstream module).
+13. **A cursor is never re-drained** (DIV-STACK-1), and **`[...set]` is never used** (the factory half of
+    DIV-STACK-2, which is the last line of the upstream module).
 14. **`values()`/`entries()` on an empty set** is never called.
 15. **`forEach`'s `scope` argument** is never passed.
 
@@ -100,7 +100,7 @@ which the bridge cannot support (also in the table).
 
 ## Bugs this found
 
-**B-17 — `reset` omits the `>>> 0` that `set` and `flip` apply, so `size` drifts and can go
+**BUG-BIT-SET-1 — `reset` omits the `>>> 0` that `set` and `flip` apply, so `size` drifts and can go
 negative.** Verified against Node 24.18.1. `size` is never a popcount; it is maintained by
 comparing the word before and after each write, which is only valid if both readings are unsigned.
 `set` and `flip` say so:
@@ -128,7 +128,7 @@ three lines from two correct call sites, whose consequence propagates into both 
 (each bails on `size === 0`). It is why `Words::size` is an `i64` — a `usize` cannot hold the state
 upstream reaches.
 
-**B-18 — `select` does not advance its position across the words it skips.**
+**BUG-BIT-SET-2 — `select` does not advance its position across the words it skips.**
 Verified against Node 24.18.1.
 
 ```js
@@ -141,7 +141,7 @@ Every all-zero word before the answer costs the result 32. `new BitSet(64); s.se
 skipped) and `select(2) === 38` (wrong by exactly one word). Invisible upstream because both
 `select` tests use a length of 11.
 
-**B-23 — an index past `length` but inside the last allocated word is accepted, and then invisible.**
+**BUG-BIT-SET-3 — an index past `length` but inside the last allocated word is accepted, and then invisible.**
 Verified against Node 24.18.1. `new BitSet(10)` allocates one 32-bit word, and `set(20)`
 lands in it: `size === 1`, `array === [1048576]`, while `rank(10) === 0`, `select(1) === undefined`
 and iteration yields ten zeros. `size` disagrees with every other view of the same set.
@@ -156,14 +156,14 @@ the question is the obvious one. Measured on Node:
 | `test` | `false` | — |
 
 `new BitSet(10).set(1000)` leaves `size === 0` and the array untouched. The structural difference is
-that `SparseSet` **increments its counter unconditionally** after a dropped store (B-8), where
+that `SparseSet` **increments its counter unconditionally** after a dropped store (BUG-SPARSE-SET-1), where
 `BitSet` derives its counter from a before/after comparison that an `undefined` read makes inert.
-B-23 is the narrow survivor of the family, and it is a *reachability* gap rather than corruption.
+BUG-BIT-SET-3 is the narrow survivor of the family, and it is a *reachability* gap rather than corruption.
 
-See also `docs/modules/utils-bitwise.md` for B-19 and B-20, found in this unit's require-closure.
+See also `docs/modules/utils-bitwise.md` for BUG-UTILS-BITWISE-1 and BUG-UTILS-BITWISE-2, found in this unit's require-closure.
 
 **The bridge held a bare core value behind `&self`**, which LLVM was entitled to compile as a
-`noalias readonly` pointer and hoist reads across a re-entrant JS callback (B-31). It now holds
+`noalias readonly` pointer and hoist reads across a re-entrant JS callback (PORTBUG-1). It now holds
 `RefCell<Core>`, which is not `Freeze`, and every `&mut self` method borrows via `borrow_mut()`
 taken per step and released before the callback runs, so a re-entrant callback never meets an
 outstanding borrow. See `crates/mnemonist-napi/src/cursor.rs`'s `CellCursor`. Full history in the
@@ -175,12 +175,12 @@ log.
 |---|---|---|
 | — | **The word store is `Rc<RefCell<Vec<u32>>>`.** | `clear()` **replaces** `this.array`, and `values()` captures the array object, so a cursor opened beforehand keeps reading the pre-clear words — measured on Node. Reading through `&self` in `Sequence::slot` would have shown the new array. `Rc<Vec<_>>` with copy-on-write would have made element writes *invisible* to an open cursor, which is the opposite divergence. Every borrow is confined to one method call, so two can never overlap. |
 | — | **The cursor caches the current word.** | Upstream reads `byte = array[i++]` once per **word**, not once per bit, so a write into the word being walked is invisible while a write into the next word is visible. A `Cell<Option<(usize, u32)>>` in `BitWindow` reproduces exactly that. |
-| — | **`size` is `i64`, not `usize`.** | B-17 takes it negative. A `usize` could not represent the state upstream reaches, and clamping at zero would be a silent divergence in the one field the module is about. |
+| — | **`size` is `i64`, not `usize`.** | BUG-BIT-SET-1 takes it negative. A `usize` could not represent the state upstream reaches, and clamping at zero would be a silent divergence in the one field the module is about. |
 | — | **Indices are `i64` with a real ToInt32, not `usize`.** | Every upstream use is a bitwise expression, so a negative index gives a negative word index and is dropped. A `usize` coercion would turn `set(-1)` into `set(4294967295)` — the same outcome by accident for `set`, and a 134-million-iteration loop inside `rank`. |
 | — | **`Step::Gap` is unreachable here.** | Unlike `SparseSet`, where the shrink window is reachable in two public calls. The cursor keeps its own array alive and no upstream method resizes a word vector in place, so every ordinal below the frozen length has a word behind it. The bridge's yield type is therefore a plain `Option<u32>` rather than `Either<u32, Undefined>` — stated because the *absence* of the gap here is a claim, not an oversight. |
 | — | **`array` IS exposed to JS, as a copy.** | The original test reads `set.array.length`, so it has to exist — unlike `SparseSet`'s `dense`/`sparse`, which are hidden for exactly this reason. napi can only hand out a copy, so a JS caller writing *through* it is a silent divergence. The differential fuzzer compares the real backing store on the Rust side after every operation, so the representation is verified rather than merely exposed. |
 | — | **`set(index, value)` matches on the JS value's type.** | Upstream's test is a strict `value === 0 \|\| value === false`, not truthiness: `set(i, null)` and `set(i, '')` both *set* the bit. Coercing to a `bool` at the boundary would have been wrong in both directions. |
-| — | **`select` yields `Either<i64, Undefined>`.** | Three outcomes — `-1`, a position, and upstream's loop fall-through — and D-39 says `Option` renders the third as `null`. |
+| — | **`select` yields `Either<i64, Undefined>`.** | Three outcomes — `-1`, a position, and upstream's loop fall-through — and DIV-FIXED-STACK-1 says `Option` renders the third as `null`. |
 | — | **`forEach(cb, undefined)` binds `this` to the set.** | Upstream keys off `arguments.length > 1`, which napi's typed signature cannot see. The omitted case — the only one the original suite uses — is exact, as is passing a real scope object. |
 | — | **`inspect()` is not ported.** | A Node display convenience with no upstream assertion. |
 
@@ -198,7 +198,7 @@ module=bit-set seed=20260801 cases=12871 ops=1293656 wall=60.0s divergences=0
 Reproduce with `target/release/difffuzz --module bit-set --seed 42 --cases 26373`.
 
 The op alphabet covers `set`/`reset`/`flip`/`get`/`test`/`rank`/`select`/`clear` plus the cursor ops,
-with `reset` weighted **up** rather than down, because B-17 only misfires on a bit that is already
+with `reset` weighted **up** rather than down, because BUG-BIT-SET-1 only misfires on a bit that is already
 clear, and a low weight would make that rare rather than routine. Observable state is `size`,
 `length`, **`array`** and `toJSON()` — `array` is the point, since `size` alone would agree in
 plenty of programs where the words had already diverged. `$iter` alternates between `values` and
@@ -208,9 +208,9 @@ interacts with an open cursor. Deliberately excluded: nothing — out-of-range i
 negative-adjacent behaviour and cursor interleaving are all generated. Full grammar: evidence file.
 
 **The fuzzer was falsified before it was trusted.** Sabotage: `reset` given the `>>> 0`
-upstream forgot — B-17 *fixed*, which is the single most plausible thing a future cleanup does to
+upstream forgot — BUG-BIT-SET-1 *fixed*, which is the single most plausible thing a future cleanup does to
 this file. Caught in 1,325 cases (2.0 s), shrunk from 200 ops to two, and the two-op repro shows that
-**B-23 and B-17 compound**: the accepted-but-invisible `set(31)` past `length` is what puts bit 31
+**BUG-BIT-SET-3 and BUG-BIT-SET-1 compound**: the accepted-but-invisible `set(31)` past `length` is what puts bit 31
 into the word, which is the precondition for `reset`'s signed comparison to misfire — neither defect
 alone reaches the state, and no upstream test passes an index past `length` at all. Reverted; the
 seed is committed with provenance in `crates/difffuzz/proptest-regressions/bit-set.txt`. Full repro:
@@ -221,7 +221,7 @@ evidence file.
 file that depends on the last-word width calculation, and because upstream issue #117 exists
 precisely because that calculation was once wrong. The sabotage, `length % 32 || 32` reduced to
 `length % 32`, is confirmed red at exactly that line (11 passing, 1 failing, `32 !== 64`); reverted,
-confirmed green again (12 passing). Neither of this module's headline defects (B-17, B-18) could
+confirmed green again (12 passing). Neither of this module's headline defects (BUG-BIT-SET-1, BUG-BIT-SET-2) could
 have served as this sabotage — "fixing" either leaves the original suite green, since every `reset`
 in the file clears a bit that is actually set and `select`'s own test never skips a word — which is
 exactly the failure mode gate 6 exists to catch, and here there were two of them waiting.

@@ -151,7 +151,7 @@ impl FuzzKey {
     }
 
     /// JS `Boolean(value)`. Mirrors
-    /// `mnemonist_napi::lru_cache::is_js_truthy` exactly, for B-140 — see
+    /// `mnemonist_napi::lru_cache::is_js_truthy` exactly, for BUG-LRU-CACHE-1 — see
     /// the `"setpop"` arm of [`apply_generic`].
     fn is_js_truthy(&self) -> bool {
         match self {
@@ -326,7 +326,7 @@ fn apply_generic<IK: Hash + Eq + Clone>(instance: &mut Instance<IK>, op: &Op) ->
                 SetPop::Overwritten { key, value } => {
                     json!({"evicted": false, "key": key.to_json(), "value": value})
                 }
-                // B-140: upstream's `if (oldKey) {...} else { return null; }`
+                // BUG-LRU-CACHE-1: upstream's `if (oldKey) {...} else { return null; }`
                 // -- a JS-falsy evicted key silently suppresses the eviction
                 // report. Mirrors `mnemonist_napi::lru_cache::is_js_truthy`;
                 // see docs/modules/lru-cache.md.

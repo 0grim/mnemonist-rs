@@ -37,7 +37,7 @@ Characterising the shape of that coverage:
   list that is already in its final shape, then drained to exhaustion in the same block.
   `forEach`'s callback never calls back into the list.
 * **`shift()` is only ever called until the list is empty**, and `last()` is never read
-  immediately afterward — so B-241 (below) has zero coverage.
+  immediately afterward — so BUG-LINKED-LIST-1 (below) has zero coverage.
 * **`unshift` is tested together with `push`**, but neither is tested while a cursor from an
   *earlier* call is still open.
 * **`LinkedList.from` is given a plain object** (`{one: 1, two: 2, three: 3}`), exercising
@@ -57,16 +57,16 @@ Everything below is reachable through the public API and never exercised by the 
    either way.
 3. **A cursor that has reported `{done: true}` is never revisited after the list grows.** Nothing
    confirms it stays done rather than resuming (contrast `queue.js`, whose cursor *does* resume —
-   D-09 — this module's does not, and nothing here says so).
+   DIV-SPARSE-SET-1 — this module's does not, and nothing here says so).
 4. **`clear()` under an open cursor is never done.** `clear` never touches any node object, so an
    open cursor is entirely unaffected by it; untested.
 
-**B-241's whole territory**
+**BUG-LINKED-LIST-1's whole territory**
 
 5. **`shift()` down to a fully empty list, followed by `last()`, is never done.** This is exactly
-   the gap B-241 lives in (below).
+   the gap BUG-LINKED-LIST-1 lives in (below).
 6. **A `push`/`unshift` immediately after emptying the list via `shift()` is never done**, so the
-   self-healing half of B-241 is untested too.
+   self-healing half of BUG-LINKED-LIST-1 is untested too.
 
 **Everything else**
 
@@ -80,7 +80,7 @@ Everything below is reachable through the public API and never exercised by the 
 ## What we test in addition
 
 `crates/mnemonist-core/src/structures/linked_list.rs` — 21 tests, closing every gap above except 7
-and 9: a 1:1 reproduction of all eleven upstream blocks as a baseline, B-241 pinned in both
+and 9: a 1:1 reproduction of all eleven upstream blocks as a baseline, BUG-LINKED-LIST-1 pinned in both
 directions (shifting to empty leaves `tail` stale, and the next `push` or `unshift` heals it), all
 four cursor-liveness rules, non-restartability, both port defects the fuzzer found (below), general
 correctness cross-checked against `std::collections::VecDeque`, and baseline edges (an empty list,
@@ -95,7 +95,7 @@ under `arguments.length`, a deliberate divergence, see below), gap 9 (`inspect`,
 
 ## Bugs this found
 
-**B-241 — `shift()` never updates `tail`, so emptying the list leaves `last()` returning the
+**BUG-LINKED-LIST-1 — `shift()` never updates `tail`, so emptying the list leaves `last()` returning the
 just-removed item.**
 Verified against Node 24.18.1.
 
@@ -120,7 +120,7 @@ list.first()           // undefined  (head is null: correct)
 list.last()            // 'a'        (tail is STALE: the removed item)
 ```
 
-Silent and self-healing, exactly like B-40: the next `push` or `unshift` on an empty list takes the
+Silent and self-healing, exactly like BUG-DEFAULT-MAP-1: the next `push` or `unshift` on an empty list takes the
 `!this.head` branch and resets `tail` unconditionally, so the staleness is only observable in the
 narrow window between "shifted to empty" and "the next insert." Reproduced rather than corrected:
 `LinkedList::shift` deliberately does not touch `tail`, and `LinkedList::last` reads it verbatim
@@ -168,7 +168,7 @@ the lazy iterators do not; see the core module's own docs for the full account. 
 keeps its original (correct, for the lazy iterators) shape.
 
 **2 — `push` branched on `self.tail` instead of `self.head`.** Indistinguishable from upstream's
-own `if (!this.head) {...} else {...}` guard in every state except the one B-241 produces (`head`
+own `if (!this.head) {...} else {...}` guard in every state except the one BUG-LINKED-LIST-1 produces (`head`
 `None`, `tail` stale-`Some`), where the wrong branch links onto the stale tail and never repairs
 `head` — leaving it permanently unreachable even though `tail` and the arena both hold a real node.
 Found by the same campaign, one generated operation after the first defect:
@@ -177,7 +177,7 @@ Found by the same campaign, one generated operation after the first defect:
 var s = new LinkedList();
 s.push(0);
 var fired = 0;
-s.forEach(function (a, b) { if (fired++ < 1) s.shift(); }); // empties the list -- B-241's state
+s.forEach(function (a, b) { if (fired++ < 1) s.shift(); }); // empties the list -- BUG-LINKED-LIST-1's state
 s.push(0);
 // port: toArray() === []   upstream: toArray() === [0]
 ```
@@ -202,7 +202,7 @@ this produced.
 | — | **The arena never frees or recycles a slot.** `shift()` removes a node from the reachable chain but never from `LinkedList::arena`; a list that has pushed and shifted heavily keeps every item it has ever held until the whole list is dropped. Upstream does not have this cost — V8 reclaims a shifted-off node once nothing (no list, no open cursor) references it. This port cannot tell "no cursor holds it any more" without a live reference count per node, and recycling the slot would silently alias two logically distinct positions the moment a stale index was reused — the same failure mode `fibonacci-heap`'s own arena docs describe for re-entrancy, here reachable through nothing more exotic than an ordinary open cursor. At the bridge, a stored item is a real JS value (`JsSlot`) kept alive by the arena for as long as the arena lives — later than upstream would release it, never never. |
 | — | **`forEach`'s third callback argument, and `scope` under `arguments.length`.** Upstream passes the list itself as the third argument and keys `scope` off `arguments.length > 1`, which napi's typed signature cannot see; identical divergence to `SparseSet`/`Queue`/`Stack`'s own `forEach`, recorded the same way. The omitted-argument case, which the original suite uses, is exact. |
 | — | **`inspect()`/`toString`'s custom constructor-name trick are not ported.** Upstream's `inspect()` returns `toArray()` with `Object.defineProperty(array, 'constructor', {value: LinkedList, ...})` so Node's REPL prints it as a `LinkedList`; nothing asserts on this and no equivalent concept exists at the boundary. `toString`/`toJSON` (plain `toArray().join(',')` / `toArray()`) are ported. |
-| D-06 | No collection implements `IntoIterator`; unchanged from every other module in this port, for the same non-restartability reason. |
+| DIV-STACK-1 | No collection implements `IntoIterator`; unchanged from every other module in this port, for the same non-restartability reason. |
 
 ## Fuzz + bench
 
@@ -222,7 +222,7 @@ history, including the throughput fix for the `$forEach`/`push` grammar hazard: 
 
 The op alphabet weights `push`/`unshift` above `shift` so a program keeps enough live nodes to
 reach the liveness rules rather than emptying the list every few operations; `first`/`last` are the
-pair B-241 depends on. `$forEach` is the heaviest of the cursor-lifecycle ops — the one that reaches
+pair BUG-LINKED-LIST-1 depends on. `$forEach` is the heaviest of the cursor-lifecycle ops — the one that reaches
 "push while the walk is mid-flight" — with its `push` mutation capped at 8 for the tail-chasing
 reason above, while `shift`/`unshift`/`clear` stay uncapped since none of the three has that hazard.
 Observable state is `size`, `first()`, `last()` and `toArray()`, compared after every operation.
@@ -232,7 +232,7 @@ this test file's own primitive-only style, so the fuzz side runs `LinkedList<ser
 directly with no bridge-specific mirror key type needed, unlike `default-map`'s `FuzzKey`. Full
 grammar: evidence file.
 
-**Falsification (gate 6).** Two Rust-level defects were falsified, plus B-241; all three were
+**Falsification (gate 6).** Two Rust-level defects were falsified, plus BUG-LINKED-LIST-1; all three were
 assertions the port's own history had already made, so the sabotage is literally "revert the fix" in
 two cases. The `forEach` timing fix (defect 1 above) is not separately re-run as a formal sabotage,
 since finding it via the fuzzer *is* the falsification — the campaign that found it is the

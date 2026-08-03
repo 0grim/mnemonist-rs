@@ -11,13 +11,13 @@
 # second green light.
 #
 # The sabotage: an early `if self.hash_functions == 0 { return false; }` was
-# added to `test`, i.e. upstream defect B-97 was "fixed" so that a filter with
+# added to `test`, i.e. upstream defect BUG-BLOOM-FILTER-2 was "fixed" so that a filter with
 # zero hash functions stops answering true to everything. The campaign reported
 # a return-value divergence on the FIRST op of the minimised program --
 # `new BloomFilter({capacity: 21, errorRate: 0.98}).test(...)`, where an
 # errorRate that loose truncates hashFunctions to 0. The sabotage was reverted;
 # the seed is replayed before any novel case on every run, so a future
-# "tidy-up" of B-97 fails here.
+# "tidy-up" of BUG-BLOOM-FILTER-2 fails here.
 #
 # Not recorded as a seed, because it was fixed rather than pinned: this spec's
 # FIRST run reported `capacity: port 6.0, upstream 6` before a single operation

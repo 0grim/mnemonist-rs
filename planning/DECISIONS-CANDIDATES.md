@@ -32,7 +32,7 @@ inflating the count is exactly the kind of thing an adversarial judge checks.
 
 ## Architecture
 
-### D-01 — Original test suite driven through an N-API bridge
+### DIV-PROJ-2 — Original test suite driven through an N-API bridge
 **Status:** **CONFIRMED — RATIFIED BY ADMINS** · **Category:** architecture · **Divergence:** no
 **Upstream:** tests are JS, `require('../heap.js')` per file.
 **Port:** port is pure Rust; original test files run **unmodified** in Node against a `.node` addon.
@@ -58,7 +58,7 @@ logic 1:1 into native `#[test]` tests is also acceptable and still counts."*
 translating test logic 1:1 into `#[test]` still scores — it is second-best, not zero.
 **Rationale:** record this so the CP1 decision is made on evidence rather than panic.
 
-### D-02 — Two-crate split to quarantine `unsafe`
+### DIV-PROJ-3 — Two-crate split to quarantine `unsafe`
 **Status:** CONFIRMED · **Category:** architecture · **Divergence:** no
 **Port:** `mnemonist-core` (`#![forbid(unsafe_code)]`) + `mnemonist-napi` (cdylib, test-only).
 **Rationale:** napi-rs generates `unsafe` internally. Quarantining keeps the Zero Unsafe claim
@@ -71,7 +71,7 @@ literally true and machine-checkable.
 Quote this line directly alongside the crate diagram in the final `DECISIONS.md`. It converts our
 architecture from a defensible choice into the officially stated preference.
 
-### D-03 — `forEach`/`iter`/`iterables` live at the boundary, not in core
+### DIV-QUEUE-1 — `forEach`/`iter`/`iterables` live at the boundary, not in core
 **Status:** CONFIRMED · **Category:** architecture · **Divergence:** YES
 **Upstream:** `obliterator/foreach` is imported by 30 modules. Grep of every call site shows
 **all** are `forEach(iterable, cb)` inside `.from()` statics or iterable-accepting constructors,
@@ -82,7 +82,7 @@ Core structures accept `IntoIterator<Item = T>`.
 (20% criterion), writes the gnarliest logic once instead of per module.
 **Verify:** core compiles with no JS-value types in any public signature.
 
-### D-04 — `tests/.work/` assembly keeps `tests/original/` pure
+### DIV-PROJ-6 — `tests/.work/` assembly keeps `tests/original/` pure
 **Status:** CONFIRMED · **Category:** architecture · **Divergence:** no
 **Upstream:** `test/heap.js` does `require('../heap.js')`, so a shim must sit one level above.
 **Port:** `tests/original/` holds upstream test files only, hashed. `tests/run.sh` assembles a
@@ -90,7 +90,7 @@ scratch tree with generated shims at the root.
 **Rationale:** placing shims inside the hashed directory would muddy the parity claim.
 **Verify:** `tests/verify-hashes.sh` on camera in the demo video.
 
-### D-05 — Scoped subset port, with the FULL suite hashed at kickoff
+### DIV-PROJ-8 — Scoped subset port, with the FULL suite hashed at kickoff
 **Status:** CONFIRMED (admin answer still pending, but non-blocking) · **Category:** scope · **Divergence:** no
 **Upstream:** 15,386 LOC, 44 modules, 41 test files, 525 passing.
 **Port:** declared module scope in `.port-mortem.toml` + README. **`tests/original/` ships all 41
@@ -122,7 +122,7 @@ Combined with "size tiers are a difficulty signal only," the >8k concern is not 
 Keep the dual reporting anyway: it costs nothing and answers the pass-rate question before it is asked.
 **Verify:** `tests/SHA256SUMS` covers all 41 files, committed before the first line of port code.
 
-### D-28 — Track letter: G, not F
+### DIV-PROJ-28 — Track letter: G, not F
 **Status:** CONFIRMED-PENDING (settle by Aug 2) · **Category:** scope · **Divergence:** no
 The website's track table and the admin FAQ disagree. Website: F = JS→Go/Rust, G = C→Zig.
 FAQ: **F = JS→Go, G = JS→Rust**, with C→Zig absent entirely. The FAQ list is internally consistent
@@ -130,7 +130,7 @@ and later, so the website table is presumed stale. We are JS→Rust ⇒ **Track 
 **Not urgent:** FAQ says track and repo are declared *at submission on the last day*, not at
 registration. Confirm with admins, set once in `.port-mortem.toml`, README, and the demo banner.
 
-### D-29 — Eligibility: no existing Rust port of mnemonist
+### DIV-PROJ-29 — Eligibility: no existing Rust port of mnemonist
 **Status:** CONFIRMED · **Category:** scope · **Divergence:** no
 FAQ requires the repo be "not already ported to your target language," and notes judges may rule
 a project ineligible if an existing project is *effectively* a port.
@@ -144,7 +144,7 @@ auto-disqualify you."*
 
 ## Behavioural — iteration semantics
 
-### D-06 — `Iterator` is a stateful cursor, not `IntoIterator`
+### DIV-STACK-1 — `Iterator` is a stateful cursor, not `IntoIterator`
 **Status:** CONFIRMED · **Category:** behavioural · **Divergence:** YES
 **Upstream:** `obliterator` v2.0.5 `iterator.js`: `Iterator.prototype[Symbol.iterator] = function () { return this; }`.
 Self-returning, therefore **not restartable** — a second drain yields nothing.
@@ -156,7 +156,7 @@ fresh iterator per loop and silently restart.
 Smoke test on Node 24.18.1: `c[Symbol.iterator]() === c` → `true`; first `[...c]` → `[1,2,3]`;
 second `[...c]` → `[]`; `next(); next(); [...c]` → `[3]`. **No custom bridge work required.**
 
-### D-07 — Two-level `Symbol.iterator`: collection is a factory, cursor is identity
+### DIV-STACK-2 — Two-level `Symbol.iterator`: collection is a factory, cursor is identity
 **Status:** CONFIRMED · **Category:** behavioural · **Divergence:** no
 **Upstream:** `stack.js:150`, `queue.js:156`, `vector.js:286`, `bit-set.js:348`, `fixed-deque.js:294`
 — all `X.prototype[Symbol.iterator] = X.prototype.values`. So `[...stack]` twice **works**, while
@@ -165,8 +165,8 @@ second `[...c]` → `[]`; `next(); next(); [...c]` → `[3]`. **No custom bridge
 **Rationale:** a uniform "iterable" abstraction gets exactly one of these wrong.
 **Verify:** both expressions in the fuzz grammar.
 **✅ PARTIALLY VALIDATED:** the *identity* half is free — napi-rs `#[napi(iterator)]` returns `this`
-(measured, see D-06). The *factory* half remains ours: each collection's `Symbol.iterator` must
-construct a new cursor object per call. That is the only side of D-07 needing implementation.
+(measured, see DIV-STACK-1). The *factory* half remains ours: each collection's `Symbol.iterator` must
+construct a new cursor object per call. That is the only side of DIV-STACK-2 needing implementation.
 **✅ BUILT.** `crates/mnemonist-napi/src/cursor.rs` installs it from `#[napi(module_exports)]`,
 driven by a `(class, method)` table, so module N+1 is one row. Deliberately in Rust rather than in
 `tests/bridge/*.js`: the shims are test scaffolding, and an addon that needs the test harness to be
@@ -179,7 +179,7 @@ cursor only through `obliterator.take(set.values())` and never writes `[...set]`
 half has **zero** upstream test coverage despite being the last line of the upstream module. It is
 covered by the fuzzer's `$spread` op instead.
 
-### D-08 — Hybrid capture: length frozen, elements live
+### DIV-PROJ-10 — Hybrid capture: length frozen, elements live
 **Status:** CONFIRMED · **Category:** behavioural · **Divergence:** no
 **Upstream:** universal pattern. `Iterator.fromSequence` captures `l = sequence.length` at creation
 but reads `sequence[i++]` lazily. `Stack.prototype.values` captures `l = items.length`;
@@ -191,7 +191,7 @@ question is unobservable from Rust and the clean design is also the correct one.
 observable only through the bridge.
 **Verify:** fuzz `iter_create → mutate element → iter_next`.
 
-### D-09 — Shrink window: reproduce the `undefined` gap (Option A, sequenced)
+### DIV-SPARSE-SET-1 — Shrink window: reproduce the `undefined` gap (Option A, sequenced)
 **Status:** **DECIDED** · **Category:** behavioural · **Divergence:** no (yes if the B fallback is taken)
 **Upstream:** `i >= l` tests the frozen `l`, so a shrunk backing array is read past its new end and
 JS yields `{done: false, value: undefined}` rather than terminating.
@@ -229,9 +229,9 @@ three-state `Step { Item, Gap, Done }`; the bridge maps it in one function.
 because no upstream test reaches the window. Still true. But `sparse-set` reaches it **through the
 public API in two calls** (`new SparseSet(0); s.add(0); Array.from(s)` → `[undefined]`, verified
 against Node), and the differential fuzzer finds the difference in 0.3 s when the port takes
-Option B. See NOTES.md B-9.
+Option B. See NOTES.md BUG-SPARSE-SET-2.
 
-### D-10 — `forEach` five-branch dispatch order is observable
+### DIV-PROJ-11 — `forEach` five-branch dispatch order is observable
 **Status:** CONFIRMED · **Category:** behavioural · **Divergence:** no
 **Upstream:** order is (1) array/typed-array/string/`[object Arguments]`, (2) has own `.forEach`
 → delegate, (3) `Symbol.iterator` present and no `.next`, (4) has `.next` → drain, (5) plain object
@@ -240,14 +240,14 @@ Option B. See NOTES.md B-9.
 **Rationale:** anything owning a `.forEach` must never reach the iterator path.
 **Verify:** boundary unit tests, one per branch, plus a `Map` (hits branch 2) and a plain object.
 
-### D-11 — `forEach` second callback argument is polymorphic
+### DIV-PROJ-12 — `forEach` second callback argument is polymorphic
 **Status:** CONFIRMED · **Category:** behavioural · **Divergence:** no
 **Upstream:** index (number) for sequences, own counter (number) for iterators, **string key** for
 plain objects, host-defined for branch 2 — a JS `Map` yields `(value, key)`, not `(value, index)`.
 **Port:** enum at the boundary; delegation preserved for branch 2.
 **Verify:** per-branch assertions on the second argument's type and value.
 
-### D-12 — `forEach` falsy guard
+### DIV-PROJ-13 — `forEach` falsy guard
 **Status:** CONFIRMED · **Category:** behavioural · **Divergence:** no
 **Upstream:** `if (!iterable) throw`. So `forEach('', cb)` **throws** while `forEach('a', cb)`
 iterates. Same for `0`, `false`, `NaN`, `null`, `undefined`.
@@ -255,7 +255,7 @@ iterates. Same for `0`, `false`, `NaN`, `null`, `undefined`.
 **Rationale:** JS truthiness has no Rust analogue; it must be spelled out.
 **Verify:** boundary tests for each falsy value.
 
-### D-13 — `iter` is narrower than `forEach` (upstream asymmetry)
+### DIV-PROJ-14 — `iter` is narrower than `forEach` (upstream asymmetry)
 **Status:** CONFIRMED · **Category:** behavioural · **Divergence:** no
 **Upstream:** `iter.js` has no `.forEach` branch and no plain-object branch. So `take({a: 1})`
 **throws** while `forEach({a: 1}, cb)` **iterates the values**.
@@ -264,7 +264,7 @@ iterates. Same for `0`, `false`, `NaN`, `null`, `undefined`.
 behavioural change.
 **Verify:** paired test asserting throw-vs-iterate on the same input.
 
-### D-14 — Exact error strings reproduced
+### DIV-PROJ-15 — Exact error strings reproduced
 **Status:** CONFIRMED · **Category:** behavioural · **Divergence:** no
 **Upstream:** `'obliterator/iterator: expecting a function!'`,
 `'obliterator/forEach: invalid iterable.'`,
@@ -273,7 +273,7 @@ behavioural change.
 **Rationale:** upstream tests assert on messages; typed errors keep core idiomatic.
 **Verify:** string equality assertions at the boundary.
 
-### D-15 — Plain-object enumeration order
+### DIV-PROJ-16 — Plain-object enumeration order
 **Status:** CONFIRMED · **Category:** behavioural · **Divergence:** no
 **Upstream:** `for…in` + `hasOwnProperty` → integer-like keys ascending, then string keys in
 insertion order.
@@ -281,7 +281,7 @@ insertion order.
 **Rationale:** reimplementing JS property order in Rust is pure downside risk.
 **Verify:** mixed integer/string key object in the boundary tests.
 
-### D-16 — `support.js` feature flags hardcoded true
+### DIV-PROJ-17 — `support.js` feature flags hardcoded true
 **Status:** PROPOSED · **Category:** behavioural · **Divergence:** YES
 **Upstream:** `ARRAY_BUFFER_SUPPORT` / `SYMBOL_SUPPORT` are runtime-detected for old engines.
 **Port:** hardcoded true.
@@ -290,12 +290,12 @@ insertion order.
 
 ---
 
-### D-30 — JS typed-array write truncation must be emulated, not just width *selection*
+### DIV-STATIC-DISJOINT-SET-1 — JS typed-array write truncation must be emulated, not just width *selection*
 **Status:** CONFIRMED (implemented in `StaticDisjointSet`) · **Category:** behavioural · **Divergence:** no
 **Upstream:** writing to a `Uint8Array` silently truncates mod 256. Selecting the right *width*
-(D-17/`getPointerArray`) is only half the semantics; the *write* behaviour is the other half.
+(DIV-PROJ-18/`getPointerArray`) is only half the semantics; the *write* behaviour is the other half.
 
-**Why this is reachable rather than theoretical — it compounds with B-7.** Because the rank bug
+**Why this is reachable rather than theoretical — it compounds with BUG-STATIC-DISJOINT-SET-1.** Because the rank bug
 leaves non-root ranks permanently zero, the equal-ranks branch is taken on nearly every union, so a
 single root's rank is bumped once per union — far past what `getPointerArray(Math.log2(size))` sized
 the array for. And `ranks` is **always** `Uint8Array` in practice: widening would require
@@ -309,17 +309,17 @@ diverged silently here, and no test would have caught it.
 **Note:** `PointerVec` is currently private to `static_disjoint_set.rs`. Promote it into
 `utils/typed_arrays.rs` as soon as a second structure needs truncation semantics.
 
-### D-31 — `StaticDisjointSet` rank bug pinned by regression test
+### DIV-STATIC-DISJOINT-SET-2 — `StaticDisjointSet` rank bug pinned by regression test
 **Status:** CONFIRMED · **Category:** behavioural · **Divergence:** no (deliberate bug-for-bug)
 Concrete input where the bug changes the elected root, found and pinned so a future "cleanup"
 cannot silently correct it: size 8, unions `(0,1) (0,2) (3,4) (1,3)`. Upstream reads
 `ranks[1] == 0 < ranks[3] == 1` and flips the root to `3`; a correct union-by-rank would read
 `ranks[0] == 1 == ranks[3] == 1` and keep `0`. **Node confirms `find(1) === 3`.**
-See B-7 in `NOTES.md` for the upstream report. **Verify:** test `reproduces_upstream_rank_bug`.
+See BUG-STATIC-DISJOINT-SET-1 in `NOTES.md` for the upstream report. **Verify:** test `reproduces_upstream_rank_bug`.
 
 ## Behavioural — `utils/iterables`
 
-### D-17 — `toArray` preallocation can produce sparse arrays
+### DIV-PROJ-18 — `toArray` preallocation can produce sparse arrays
 **Status:** PROPOSED · **Category:** behavioural · **Divergence:** YES
 **Upstream:** `toArray` preallocates `new Array(guessLength(target))` then fills via `array[i++]`.
 If the guess exceeds what `forEach` yields, the result is a **sparse array with holes** —
@@ -329,14 +329,14 @@ enumerates own properties including `length` itself, giving `[5, <4 empty>]`.
 **Rationale:** decide explicitly rather than discover it via a fuzz divergence.
 **Verify:** fuzz inputs with a lying `.length`/`.size`.
 
-### D-18 — `guessLength` trusts `.length` then `.size`
+### DIV-UTILS-ITERABLES-1 — `guessLength` trusts `.length` then `.size`
 **Status:** CONFIRMED · **Category:** behavioural · **Divergence:** no
 **Upstream:** returns `target.length` if numeric, else `target.size` if numeric, else `undefined`.
 No validation against actual yield count.
-**Port:** same, feeding D-17.
-**Verify:** covered by D-17 cases.
+**Port:** same, feeding DIV-PROJ-18.
+**Verify:** covered by DIV-PROJ-18 cases.
 
-### D-19 — `Stack.values()` captures `items.length`, not `this.size`
+### DIV-PROJ-19 — `Stack.values()` captures `items.length`, not `this.size`
 **Status:** CONFIRMED · **Category:** behavioural · **Divergence:** no
 **Upstream:** `Stack.prototype.values` uses `l = items.length` and indexes `items[l - i - 1]`
 (reverse, LIFO). Other structures capture `this.size`.
@@ -348,30 +348,30 @@ No validation against actual yield count.
 
 ## Tooling & methodology
 
-### D-20 — Benchmarks measure the pure Rust path
+### DIV-PROJ-20 — Benchmarks measure the pure Rust path
 **Status:** CONFIRMED · **Category:** tooling · **Divergence:** no
 **Port:** `bench/` drives `mnemonist-core` directly, never through N-API.
 **Rationale:** napi marshalling overhead would misrepresent the port in both directions.
 **Verify:** stated in `bench/methodology.md`.
 
-### D-21 — Fuzz grammar includes cursor lifecycle interleaving
+### DIV-PROJ-21 — Fuzz grammar includes cursor lifecycle interleaving
 **Status:** CONFIRMED · **Category:** tooling · **Divergence:** no
 **Port:** ops include `iter_create` → k structure mutations → `iter_next`.
-**Rationale:** D-06/D-08/D-09 are only reachable by interleaving; a suite written against a GC'd
+**Rationale:** DIV-STACK-1/DIV-PROJ-10/DIV-SPARSE-SET-1 are only reachable by interleaving; a suite written against a GC'd
 language rarely probes this deliberately.
 **Verify:** grammar listed in `fuzz/log.txt` header.
 
-### D-22 — mocha pinned; default glob is non-recursive
+### DIV-PROJ-22 — mocha pinned; default glob is non-recursive
 **Status:** CONFIRMED · **Category:** tooling · **Divergence:** no
 **Upstream:** `mocha ^9.1.3`, no `.mocharc`, `npm test` is bare `mocha`. Default spec
 `./test/*.{js,cjs,mjs}`. Corroborated: `test/exports/` has its own separate `test:exports` script,
 which only makes sense if the default run does not descend.
 **Port:** pin the exact version in the harness `package.json`. Keep mocha at upstream's `^9.1.3` —
-do **not** upgrade it (see D-26).
+do **not** upgrade it (see DIV-PROJ-26).
 **Rationale:** a v10+ glob change would silently alter which files run.
 **Verify:** lockfile + recorded mocha version in the demo.
 
-### D-26 — Node pinned to 24.18.1 (constrained by mocha, not preference)
+### DIV-PROJ-26 — Node pinned to 24.18.1 (constrained by mocha, not preference)
 **Status:** CONFIRMED · **Category:** tooling · **Divergence:** no
 **Measured** against the real upstream suite pre-kickoff, not assumed:
 
@@ -388,7 +388,7 @@ alternative — upgrading mocha to support Node 26 — leaves `test/*.js` hashes
 test runner, introducing a divergence where none is needed. Rejected on that basis.
 **Verify:** version recorded in `.nvmrc`, Dockerfile, CI matrix, and stated on camera in the demo.
 
-### D-27 — Linux is the build environment; Windows is not used
+### DIV-PROJ-27 — Linux is the build environment; Windows is not used
 **Status:** CONFIRMED · **Category:** tooling · **Divergence:** no
 **Port:** dev in WSL2 Ubuntu 22.04 with the repo in `~/` (never `/mnt/c`); Docker 28.3.0 Linux
 engine as the reference build for submission and all benchmark numbers.
@@ -401,7 +401,7 @@ across a compile-heavy 72h sprint.
 **Verify:** validated end-to-end pre-kickoff — napi 3.6.1 cdylib built (11.6s) and loaded into
 Node 24.18.1 successfully.
 
-### D-23 — Node oracle is a persistent subprocess
+### DIV-PROJ-23 — Node oracle is a persistent subprocess
 **Status:** CONFIRMED — **BUILT AND MEASURED** · **Category:** tooling · **Divergence:** no
 **Port:** one long-lived Node process, line-delimited JSON protocol.
 **Rationale:** per-op spawning turns 60s of fuzzing into an hour and would quietly forfeit the
@@ -411,12 +411,12 @@ Fuzz Survivor bonus.
 op. The 120s campaign did 2,837,506 ops; at one spawn per op it would have taken ~33 hours. The
 estimate in the rationale was, if anything, generous to the naive approach.
 
-### D-32 — The differential fuzzer is falsified before it is trusted
+### DIV-PROJ-30 — The differential fuzzer is falsified before it is trusted
 **Status:** CONFIRMED · **Category:** tooling · **Divergence:** no
 **Rationale:** gate 6 exists because a falsification test that cannot fail is a second green light.
 The same argument applies to the fuzzer, and with more force: a bug-for-bug port that fuzzes clean
 is indistinguishable from a fuzzer that never compares anything.
-**Port:** the sabotage is to *fix* upstream's B-7 rank bug in the core — the most plausible way a
+**Port:** the sabotage is to *fix* upstream's BUG-STATIC-DISJOINT-SET-1 rank bug in the core — the most plausible way a
 future cleanup breaks this port, and one that makes the port strictly *more correct* than upstream
 and therefore wrong, since the elected root is observable through `find()`. Caught in 129 cases
 (0.3s); proptest shrank a 600-op program to three ops.
@@ -424,10 +424,10 @@ and therefore wrong, since the elected root is observable through `find()`. Caug
 `crates/difffuzz/proptest-regressions/static-disjoint-set.txt`, with a provenance header so it is
 not misread as a real port defect, and proptest replays it before any novel case.
 
-### D-33 — Differential fuzzing structurally cannot find bug-for-bug defects
+### DIV-PROJ-31 — Differential fuzzing structurally cannot find bug-for-bug defects
 **Status:** CONFIRMED · **Category:** methodology · **Divergence:** no
 **Observed:** 4.23 M ops across two seeds on `static-disjoint-set`, zero divergences — while the
-module contains a known upstream bug (B-7) and a known second-order overflow (D-30).
+module contains a known upstream bug (BUG-STATIC-DISJOINT-SET-1) and a known second-order overflow (DIV-STATIC-DISJOINT-SET-1).
 **Rationale:** the oracle *is* upstream, so any behaviour we reproduce faithfully is by definition
 not a divergence. Both defects on this module were found by reading, and neither is findable this
 way. Recording it because "we fuzzed it and found nothing" is otherwise easy to misread as either
@@ -437,7 +437,7 @@ Both directions of drift — towards a different answer and towards a more corre
 failures. Say this in the write-up; it is a genuinely non-obvious property of the technique the
 event is built around.
 
-### D-34 — Benchmark regressions are derived, not written down
+### DIV-PROJ-32 — Benchmark regressions are derived, not written down
 **Status:** CONFIRMED · **Category:** tooling · **Divergence:** no
 **Port:** every published metric is lower-is-better, so `bench/drive.js` computes the `regressions`
 array mechanically from the results rather than leaving a human to fill it in.
@@ -447,19 +447,19 @@ has to remember cannot be quietly left out on a bad day at hour 60.
 slower**, while p50 stays 1.7× faster. Cause is `PointerVec` backing every logical width with a
 `Vec<u32>`, making our structure 32 MB against upstream's 20 MB and pushing it past this CPU's
 32 MB L3. Found by sweeping the size *because* the 1e6 result looked too clean.
-**Consequence for D-30:** promoting `PointerVec` into `utils/typed_arrays.rs` should give it a real
+**Consequence for DIV-STATIC-DISJOINT-SET-1:** promoting `PointerVec` into `utils/typed_arrays.rs` should give it a real
 per-width backing store, with this benchmark as the before/after.
 
-### D-35 — Both benchmark sides checksum their results, and disagreement aborts
+### DIV-PROJ-33 — Both benchmark sides checksum their results, and disagreement aborts
 **Status:** CONFIRMED · **Category:** tooling · **Divergence:** no
 **Port:** each runner accumulates a checksum over every non-mutating op's return value; the driver
 requires all 20 runs across both sides to agree before writing anything.
 **Rationale:** "both sides ran the same workload" is otherwise an assertion. This makes it a
 verified claim — same ops *and* same answers, not merely the same op count. It also re-proves the
-B-7 reproduction for free: a corrected implementation elects different roots and the checksum moves.
+BUG-STATIC-DISJOINT-SET-1 reproduction for free: a corrected implementation elects different roots and the checksum moves.
 **Verify:** `checksum` field per workload in `bench/results.json`.
 
-### D-36 — Percentiles are computed once, in the driver, over both sides
+### DIV-PROJ-34 — Percentiles are computed once, in the driver, over both sides
 **Status:** CONFIRMED · **Category:** tooling · **Divergence:** no
 **Upstream of the decision:** DESIGN.md §5.2 Problem 1 asks for "same percentile maths" on both sides.
 **Port:** the runners emit raw per-batch nanoseconds and nothing else; nearest-rank percentiles
@@ -471,7 +471,7 @@ than implementing it once. Same reasoning as the matched PRNG being *diffed* rat
 
 ## Licensing & scope
 
-### D-37 — Out-of-range inputs: reproduce where reproducible, raise where not
+### DIV-PROJ-35 — Out-of-range inputs: reproduce where reproducible, raise where not
 **Status:** CONFIRMED · **Category:** behavioural · **Divergence:** partial
 **Upstream:** both modules read and write past the end of typed arrays without validating.
 **Port:** the two modules landed so far take *opposite* approaches, and the difference is upstream's
@@ -488,10 +488,10 @@ it expressible". Where it is, reproduce; where it is not, raise and document.
 grammar and say so; `sparse-set` excludes nothing, and roughly one generated member in eight is out
 of range. Both stated in `fuzz/log.txt`.
 
-### D-38 — Cursor state is detached from the borrow it walks
+### DIV-PROJ-36 — Cursor state is detached from the borrow it walks
 **Status:** CONFIRMED · **Category:** architecture · **Divergence:** no
 **Upstream:** a JS cursor is an independent object; the collection stays mutable underneath it, and
-that aliasing is precisely what makes the hybrid capture (D-08) observable.
+that aliasing is precisely what makes the hybrid capture (DIV-PROJ-10) observable.
 **Port:** `mnemonist-core` splits the cursor in two. `CursorState<S>` is the closure state alone
 (`i`, `l`, the frozen payload) and takes `&S` per step; `Cursor<'a, S>` is `CursorState` plus a
 borrow, and is the ergonomic `Iterator`-implementing form for Rust callers.
@@ -508,7 +508,7 @@ is a position in a structure rather than an ordinal. Those need a second `Sequen
 `Frozen` that carries the traversal stack; the `Step`/`CursorState` split above is reusable either
 way, since neither depends on the ordinal being an index.
 
-### D-39 — The `undefined` yield is `Either<T, Undefined>`, never `Option<T>`
+### DIV-FIXED-STACK-1 — The `undefined` yield is `Either<T, Undefined>`, never `Option<T>`
 **Status:** CONFIRMED · **Category:** behavioural · **Divergence:** no
 **Upstream:** the shrink window yields `{done: false, value: undefined}`.
 **Port:** `Generator::Yield = Either<u32, Undefined>`; `Either::B(())` is a real `undefined`.
@@ -519,7 +519,7 @@ workaround but the better shape — it frees `Option<Yield>` to keep its own mea
 `{done: true}`.
 **Verify:** `crates/mnemonist-napi/src/cursor.rs::yielded`, and the fuzzer's `$next`/`$spread` ops.
 
-### D-41 — A JS array is a *reference*, so the backing store is `Rc<RefCell<Vec<T>>>`
+### DIV-STACK-3 — A JS array is a *reference*, so the backing store is `Rc<RefCell<Vec<T>>>`
 **Status:** CONFIRMED (implemented in `stack`, `queue`) · **Category:** behavioural · **Divergence:** no
 **Upstream:** `Stack.prototype.clear` is `this.items = []` — a **new array**, not
 `items.length = 0`. `Queue`'s compaction is `this.items = this.items.slice(this.offset)`, likewise
@@ -534,7 +534,7 @@ cursor and draining it — but the fuzzer catches the collapse in 0.1s and shrin
 **Verify:** `clear_rebinds_the_array_and_leaves_an_open_cursor_untouched`,
 `a_compaction_detaches_an_open_cursor_onto_the_old_array`, and the committed regression seeds.
 
-### D-42 — A cursor's end may be live, not only frozen (`Sequence::limit`)
+### DIV-STACK-4 — A cursor's end may be live, not only frozen (`Sequence::limit`)
 **Status:** CONFIRMED · **Category:** behavioural · **Divergence:** no
 **Upstream:** `Stack.prototype.values` freezes `l = items.length`; the structurally identical
 `Queue.prototype.values`, four files away, writes `if (i >= items.length)` and re-reads it every
@@ -547,7 +547,7 @@ inconsistency is upstream's and is not normalised.
 **Verify:** `a_finished_cursor_resumes_when_the_queue_grows`, plus the fuzz falsification whose
 minimised repro is three operations.
 
-### D-43 — Bridge structures are held in a `RefCell` because `&self` is `noalias`
+### DIV-STACK-5 — Bridge structures are held in a `RefCell` because `&self` is `noalias`
 **Status:** CONFIRMED · **Category:** architecture · **Divergence:** no
 **Upstream:** n/a — this is about the port's own soundness.
 **Problem:** napi hands the same object to JS as `&self` and `&mut self`, and JS re-enters from a
@@ -562,7 +562,7 @@ papering over a `&self` that is simply not true at this boundary.
 **Note:** the `sparse-set` bridge has the same defect and is **not** fixed — it is already in
 `tests/scope.txt`. See NOTES.md.
 
-### D-44 — Arbitrary JS values are stored as an enum, not as a `napi_ref`
+### DIV-STACK-6 — Arbitrary JS values are stored as an enum, not as a `napi_ref`
 **Status:** CONFIRMED · **Category:** architecture · **Divergence:** no
 **Upstream:** `Stack`/`Queue` hold anything.
 **Problem:** `napi_create_reference` rejects primitives below Node-API 10, and napi-rs 3.12 does
@@ -576,7 +576,7 @@ raw words.
 hand-written lifetime rule is one `Drop`.
 **Verify:** the primitive round-trip and object-identity specs in `tests/boundary/stack-queue.js`.
 
-### D-45 — `X.of` is installed as evaluated JavaScript
+### DIV-STACK-7 — `X.of` is installed as evaluated JavaScript
 **Status:** CONFIRMED · **Category:** architecture · **Divergence:** YES (mechanism, not behaviour)
 **Upstream:** `Stack.of = function () { return Stack.from(arguments); };`
 **Port:** the same line, `run_script`-evaluated once at module load from a fixed literal.
@@ -589,7 +589,7 @@ coverage claim an earlier draft made.
 **Verify:** `Stack.of(1, 2, 3)` in the original suite; the Arguments clause itself is covered only
 by the hijacked-`toString` case in `tests/boundary/foreach.js`.
 
-### D-46 — napi's generator `#.return` is deleted, because upstream cursors have none
+### DIV-STACK-8 — napi's generator `#.return` is deleted, because upstream cursors have none
 **Status:** CONFIRMED · **Category:** behavioural · **Divergence:** no
 **Upstream:** `obliterator/iterator` defines a constructor and an identity `Symbol.iterator`, and
 nothing else. `IteratorClose` finds no `return`, so a `break` out of a `for…of` leaves the cursor
@@ -601,7 +601,7 @@ its `return` writes a `[[GeneratorState]]` flag **before** the Rust `complete()`
 **Note:** this corrects a claim in the `sparse-set` bridge's docs that napi's default `complete`
 is observably equivalent to having no `return`. It is not.
 
-### D-40 — Every fuzz batch must generate new cases
+### DIV-UTILS-BINARY-SEARCH-1 — Every fuzz batch must generate new cases
 **Status:** CONFIRMED · **Category:** tooling · **Divergence:** no
 **Problem:** proptest's `TestRunner` counts successes for its whole lifetime and loops
 `while successes < config.cases`. Reusing one runner across batches means every batch after the
@@ -612,11 +612,11 @@ were 32 real programs plus two saved seeds repeated ~8,300 times each.
 while successive batches explore new programs.
 **Verify:** `every_batch_generates_new_cases`, run deliberately with **no** corpus — with nothing to
 replay, the only way past `batch` cases is a batch that really generated.
-**Lesson:** this is the same failure as D-32 one level up. The number was large and the run took the
+**Lesson:** this is the same failure as DIV-PROJ-30 one level up. The number was large and the run took the
 full 120 seconds, so nothing looked wrong. Add it to the "confident green signal that was empty"
 list in NOTES.md.
 
-### D-24 — MIT attribution
+### DIV-PROJ-24 — MIT attribution
 **Status:** CONFIRMED · **Category:** licensing · **Divergence:** no
 **Upstream:** MIT, © 2016 Guillaume Plique (Yomguithereal). **No** per-file copyright or SPDX
 headers anywhere in source.
@@ -626,7 +626,7 @@ attribution comment per ported module.
 **Rationale:** upstream has no per-file headers, so per-file attribution exceeds the obligation —
 cheap, and it reads well to a judge checking licence hygiene.
 
-### D-25 — Only `semi-dynamic-trie` is genuinely untested
+### DIV-PROJ-25 — Only `semi-dynamic-trie` is genuinely untested
 **Status:** CONFIRMED · **Category:** scope · **Divergence:** no
 **CORRECTED pre-kickoff.** The earlier claim — that 1,086 LOC across four modules had no test
 coverage — was wrong. It rested on "no *matching* test file," which is true but not the same as
@@ -657,7 +657,7 @@ yields the rest. `semi-dynamic-trie` alone stays roadmap.
 
 ## T3 — resolved by the `default-map` pilot
 
-**Numbers deliberately not assigned.** `D-40` is already taken and three agents are allocating from
+**Numbers deliberately not assigned.** `DIV-UTILS-BINARY-SEARCH-1` is already taken and three agents are allocating from
 the same sequential space concurrently; these get numbers at merge. Full rationale for each is in
 `planning/DESIGN.md` §3.8 and `docs/modules/default-map.md`.
 
@@ -695,13 +695,13 @@ handle, and one per value would mean a million of them for a million-entry `lru-
 observable, because a JS primitive has no identity.
 
 ### T3-e — `undefined` is `None`; `null` is a value
-Core spells absence `None` and stores `Option<V>`, which is what makes B-40 expressible from pure
+Core spells absence `None` and stores `Option<V>`, which is what makes BUG-DEFAULT-MAP-1 expressible from pure
 Rust. The bridge cannot use napi's `Option<T>` conversion, which folds `null` into `None` as well —
 `test/lru-cache.js` asserts that a stored `null` round-trips.
 
 ### B31-a — The bridge holds its core structure in a `RefCell`, and no borrow may cross a JS call
 `&self` on a `Freeze` type is `noalias readonly`, and LLVM used it: a `forEach` callback's mutation
-was invisible to the walk it ran inside (B-31). `RefCell` is not `Freeze`, so the assumption
+was invisible to the walk it ran inside (PORTBUG-1). `RefCell` is not `Freeze`, so the assumption
 disappears. The rule the fix imposes is the interesting part — **a borrow must never be alive across
 a call that can run JavaScript** — because a `RefCell` panic inside a `#[napi]` method does not
 become a JS exception. napi 3.12 does not `catch_unwind` a sync call, and a panic unwinding out of
@@ -733,10 +733,10 @@ can call the policy unlocked and the divergence disappears.
 ## Behavioural — Wave 1 fixed-capacity modules
 
 Appended at the end rather than into the sections above, for the same merge reason as everything
-else in this wave. IDs D-60..D-69 were taken to mirror the B-60..B-69 bug range allocated to this
+else in this wave. IDs DIV-FIXED-STACK-2..DIV-PROJ-38 were taken to mirror the BUG-UTILS-ITERABLES-2..DIV-PROJ-37 bug range allocated to this
 agent; no D range was allocated explicitly.
 
-### D-60 — `toArray`'s sparse arrays are reproduced, not repaired (resolves D-17)
+### DIV-FIXED-STACK-2 — `toArray`'s sparse arrays are reproduced, not repaired (resolves DIV-PROJ-18)
 **Status:** CONFIRMED · **Category:** behavioural · **Divergence:** no
 **Upstream:** `toArray` preallocates `new Array(guessLength(target))` and fills with
 `array[i++] = value`, with nothing checking the guess against the yield count or against what a
@@ -747,7 +747,7 @@ guess leaves **real holes** (`2 in array === false`, `map` skips them) and an in
 V8's own `RangeError: Invalid array length`. `napi_create_array_with_length(-1)` would not have.
 **Verify:** `tests/boundary/iterables.js`, seven specs.
 
-### D-61 — An omitted argument and an explicit `undefined` are indistinguishable
+### DIV-FIXED-STACK-3 — An omitted argument and an explicit `undefined` are indistinguishable
 **Status:** CONFIRMED · **Category:** structural · **Divergence:** YES, narrow
 **Upstream:** `if (arguments.length < 2) throw` in every fixed-capacity constructor, and
 `if (arguments.length < 3)` in every `from`.
@@ -760,7 +760,7 @@ its *capacity* error.
 `new FixedStack(Array, null)` throws about the number, not about the Array class.
 **Verify:** `test/fixed-stack.js` first block; differential probes.
 
-### D-62 — A non-integral capacity always raises `RangeError: Invalid array length`
+### DIV-FIXED-STACK-4 — A non-integral capacity always raises `RangeError: Invalid array length`
 **Status:** CONFIRMED · **Category:** behavioural · **Divergence:** YES, for typed classes only
 **Upstream:** passes the raw number to `new this.ArrayClass(capacity)` and lets the class decide.
 `new FixedStack(Array, 2.5)` throws; `new FixedStack(Uint8Array, 2.5)` **succeeds**, with
@@ -773,7 +773,7 @@ the error for every class. The `Array` case is exact; the typed case is the dive
 carrying an `f64` capacity through the wrap arithmetic to reproduce a state no test reaches — buys
 nothing and costs the type.
 
-### D-63 — The `ArrayClass` is probed, not whitelisted by name
+### DIV-FIXED-STACK-5 — The `ArrayClass` is probed, not whitelisted by name
 **Status:** CONFIRMED · **Category:** structural · **Divergence:** no
 **Upstream:** `ArrayClass` is any constructor. The test files use `Array`, `Uint8Array` and
 `Float64Array`.
@@ -789,7 +789,7 @@ property off it — exactly.
 upstream does not perform. Invisible for `Array` and the typed arrays; observable for a constructor
 with side effects.
 
-### D-64 — B-60 is reproduced: `from` on a non-array-like iterable throws
+### DIV-FIXED-STACK-6 — BUG-UTILS-ITERABLES-2 is reproduced: `from` on a non-array-like iterable throws
 **Status:** CONFIRMED · **Category:** behavioural · **Divergence:** no
 **Upstream:** `iterables.forEach` does not exist, so `FixedStack.from(new Set([1,2,3]), Array, 3)`
 is `TypeError: iterables.forEach is not a function`.
@@ -799,14 +799,14 @@ after `guessLength`, after the capacity guards, after `isArrayLike` says no.
 upstream test and be a different library.
 **Verify:** differential probes for `Set` and for a string, all three classes.
 
-### D-65 — `#.get` with a non-numeric index returns `undefined`
+### DIV-CIRCULAR-BUFFER-1 — `#.get` with a non-numeric index returns `undefined`
 **Status:** CONFIRMED · **Category:** behavioural · **Divergence:** YES, narrow
 **Upstream:** `FixedDeque.prototype.get` (and, pasted, `CircularBuffer.prototype.get`) does
 `index = this.start + index` with no type check. For a string that is **concatenation**:
 `2 + "1"` is `"21"`, which the following `>=` coerces back to a number, and `this.items["21"]` is a
 real element on any deque with capacity > 21.
 **Port:** the type check refuses at the boundary and returns `undefined`.
-**What is NOT lost:** everything *numeric* is reproduced exactly, including the two forms of B-62
+**What is NOT lost:** everything *numeric* is reproduced exactly, including the two forms of BUG-CIRCULAR-BUFFER-1
 that matter — a negative index (`get(-1)` returning a shifted-out element) and an index between the
 size and the capacity (returning debris) — as well as fractional, `NaN` and infinite indices.
 **Rationale:** reproducing string concatenation inside an index computation would mean carrying a
@@ -814,14 +814,14 @@ JS value through arithmetic that has a well-defined numeric meaning everywhere e
 unreachable from any upstream test and from any sane caller; the divergence is stated instead.
 **Verify:** four differential probes per class in `docs/modules/fixed-deque.md`.
 
-### D-66 — `X.from` on a `DataView` gives `size === 0`, not `size === undefined`
+### DIV-FIXED-STACK-7 — `X.from` on a `DataView` gives `size === 0`, not `size === undefined`
 **Status:** CONFIRMED · **Category:** behavioural · **Divergence:** YES — the only one in this wave
 where the port is not bug-for-bug
-**Upstream:** B-63. `isArrayLike` accepts a `DataView` (via `ArrayBuffer.isView`), the copy loop
+**Upstream:** BUG-FIXED-STACK-2. `isArrayLike` accepts a `DataView` (via `ArrayBuffer.isView`), the copy loop
 reads its absent `.length`, and `size` is assigned `undefined`. Every later method is then
 arithmetic on `NaN`, and `toArray()` is `[undefined]`.
 **Port:** `size === 0`, an ordinary empty structure.
-**Rationale:** a `usize` cannot hold `undefined`, so D-37's rule — reproduce where reproducible,
+**Rationale:** a `usize` cannot hold `undefined`, so DIV-PROJ-35's rule — reproduce where reproducible,
 raise where not — leaves a choice between two inexact answers. `0` was chosen over a throw because
 "nothing was copied" is *true*, and because upstream does not throw either: raising a `RangeError`
 would break a caller upstream leaves running, which is a larger divergence than under-reporting a
@@ -834,15 +834,15 @@ port, and it is accepted only because the alternative is not expressible.
 
 ---
 
-## sort (D-80 .. D-83)
+## sort (DIV-SORT-1 .. DIV-SORT-3)
 
 **Numbering note.** This unit was built in an isolated worktree alongside three others, and only a
-bug-ID range (B-80..B-89) was allocated. `D-47` onward is the obvious next number and therefore the
+bug-ID range (BUG-SORT-1..DIV-PROJ-41) was allocated. `DIV-UTILS-HASH-TABLES-1` onward is the obvious next number and therefore the
 one another agent is most likely to have taken, so these are numbered to match the allocated B
 range instead. Renumber at merge if the orchestrator prefers; nothing references them by number
 except `docs/modules/sort.md`.
 
-### D-80 — The sort helpers take numbers; upstream takes anything
+### DIV-SORT-1 — The sort helpers take numbers; upstream takes anything
 `sort/quick.js` and `sort/insertion.js` are duck-typed: `array` is anything indexable and elements
 are compared with `>`, `>=`, `<=`, which coerce through `valueOf`/`toString`. Supporting that means
 calling into JavaScript from inside the sort loop — DESIGN.md 3.3's **T2 tier** — which this unit
@@ -854,20 +854,20 @@ inputs and answer differently, because JavaScript's relational comparison on two
 lexicographic and not numeric. A loud refusal naming the limit is better than a quiet wrong answer.
 
 **Consequence worth stating in the write-up, because the direction is easy to get backwards:**
-B-80 and B-81 are unreachable in the port, and the port is *not* fixing them. It is refusing the
+BUG-SORT-1 and BUG-SORT-2 are unreachable in the port, and the port is *not* fixing them. It is refusing the
 only inputs that can observe them. With numeric elements no user code runs during a comparison, so
 upstream's shared global counter and shared partition stack are never re-entered and a local
 behaves identically. Reproducing them bug-for-bug would mean implementing T2 first and then adding
 shared state to reproduce a defect nothing can see — strictly less faithful.
 
-### D-81 — Sort windows outside `0..=length` are refused
+### DIV-SORT-2 — Sort windows outside `0..=length` are refused
 Upstream reads `undefined` past the end and writes into holes, producing a genuinely sparse array.
 A JS array hole has no Rust representation, and modelling one would mean `Vec<Option<f64>>`
 throughout for a regime `test/sort.js` never enters. `mnemonist_core::sort::check_window` asserts
 instead and the bridge reports it with a message naming the limit — the same position
 `PointerVec::get` already takes, for the same reason.
 
-### D-82 — `utils/typed_arrays::indices` takes an `f64`, not a `usize`
+### DIV-SORT-4 — `utils/typed_arrays::indices` takes an `f64`, not a `usize`
 Upstream's `exports.indices` uses its argument twice and coerces it **differently** each time:
 `getPointerArray` compares `length - 1` as a double, while the `TypedArray` constructor applies
 `ToIndex` and truncates. So `indices(256.5)` is a `Uint16Array` of **256** elements — one width
@@ -878,7 +878,7 @@ Rejected alternative: take a `usize` and let the bridge truncate. That was the f
 produced `Uint8Array(256)` for `256.5`. Caught by `tests/boundary/sort.js`, and now pinned by the
 fuzzer's first falsification seed.
 
-### D-83 — A free-function unit's export shape is re-assembled by the shim, and the aggregate is the source
+### DIV-SORT-3 — A free-function unit's export shape is re-assembled by the shim, and the aggregate is the source
 The addon exports into one flat namespace, so there is no `sort/quick` object to hand back, and
 `indices` is far too generic a name to claim at the top of an addon that will eventually carry forty
 modules' worth of helpers. It is `typedArraysIndices` in the addon and mapped back in
@@ -890,7 +890,7 @@ leaf shims plus an aggregate that re-requires them — would leave `sort.js` dec
 to satisfy `tests/verify.sh` gate 3, which looks for a shim named after the unit. `test/sort.js`
 never requires `../sort.js` itself.
 
-### D-84 — The differential fuzzer models a free-function module by echoing its arguments
+### DIV-SORT-5 — The differential fuzzer models a free-function module by echoing its arguments
 `ModuleSpec::functions()` names the upstream **files** a unit spans (three, for `sort`); the oracle
 merges their exports and `instance` becomes that object. Such a module has no observable state, so
 `observe()` is `{}` forever and the comparison would rest entirely on return values — useless for
@@ -903,13 +903,13 @@ everything is generic, and the oracle's whole design principle is that it holds 
 
 ---
 
-## set (D-85 .. D-88)
+## set (DIV-SET-1 .. DIV-SET-4)
 
-Same numbering caveat as D-80..D-84 above: allocated a bug-ID range only, so these are numbered to
-match it rather than continuing from D-46, which is the number a parallel worktree is most likely
+Same numbering caveat as DIV-SORT-1..DIV-SORT-5 above: allocated a bug-ID range only, so these are numbered to
+match it rather than continuing from DIV-STACK-8, which is the number a parallel worktree is most likely
 to have taken.
 
-### D-85 — The four mutating set functions replay `add`/`delete`; they do not rebuild
+### DIV-SET-1 — The four mutating set functions replay `add`/`delete`; they do not rebuild
 `add`, `subtract`, `intersect` and `disjunct` return `undefined` and do their whole job to their
 first argument. Core returns the `SetOp` trace it applied, in upstream's call order, and the bridge
 makes exactly those calls on the caller's own `Set`.
@@ -926,14 +926,14 @@ Residual divergence, stated rather than hidden: the `add`/`delete` handles are f
 before the first call, so a member's side effects cannot divert the rest of the trace. Upstream
 re-resolves `A.add` per call. Nothing in the original suite goes either way.
 
-### D-86 — Object members are refused (inherited from `JsKey`, restated because `set` is where it bites hardest)
+### DIV-SET-2 — Object members are refused (inherited from `JsKey`, restated because `set` is where it bites hardest)
 `Set` compares objects by identity and no identity hash for a JS object is reachable from Rust. The
 argument is unchanged from `crates/mnemonist-napi/src/js_key.rs` and the audit there holds: every
 member in `test/set.js` is a number or a single character. This unit is the first where the limit is
 visible in the *public API of the module itself* rather than only in a structure's keys, which is
 why `tests/boundary/set.js` asserts the refusal explicitly.
 
-### D-87 — Variadicity goes through an array, and the arity check stays in core
+### DIV-SET-3 — Variadicity goes through an array, and the arity check stays in core
 napi has no variadic parameter, so `intersection` and `union` take a `Vec` and `tests/bridge/set.js`
 does the spread. The "needs at least two arguments" check is in `mnemonist-core`, so upstream's
 threshold and its exact message live in one place; the shim forwards whatever it was handed,
@@ -944,7 +944,7 @@ Rejected alternative: `env.run_script` an `arguments`-based wrapper, as `crate::
 the real dispatch is the point. Nothing here inspects `arguments` beyond its length, so the script
 would buy nothing and cost a `run_script` per call.
 
-### D-88 — Upstream's three `===` shortcuts are implemented in core and unreachable from JavaScript
+### DIV-SET-4 — Upstream's three `===` shortcuts are implemented in core and unreachable from JavaScript
 `intersection` skips `set.has(item)` when `set === smallestSet`; `isSubset` and `intersectionSize`
 each short-circuit on `A === B`. Core reproduces all three with `std::ptr::eq`, so a Rust caller
 passing one reference twice takes upstream's own path. The bridge cannot: two arguments that are the
@@ -974,16 +974,16 @@ shared member passes it, is re-added, and the result becomes `A ∪ B`. That sab
 
 **Numbering note.** `B-nn` bug IDs are allocated centrally (CLAUDE.md); `D-nn` are not, and three
 agents were working in isolated worktrees when these landed. They are therefore numbered in the
-decade of the `B-70`–`B-79` block this agent was given, so that two agents cannot both claim the
-next free `D-47`. Renumber at merge if the sequence matters more than the collision.
+decade of the `BUG-HEAP-1`–`BUG-HEAP-8` block this agent was given, so that two agents cannot both claim the
+next free `DIV-UTILS-HASH-TABLES-1`. Renumber at merge if the sequence matters more than the collision.
 
-### D-70 — The heap algorithms take a `Store`, not a `&mut Vec<T>`
+### DIV-HEAP-1 — The heap algorithms take a `Store`, not a `&mut Vec<T>`
 **Status:** CONFIRMED · **Category:** architecture · **Divergence:** no
 **Upstream:** `siftDown(compare, heap, startIndex, i)` takes a bare JavaScript array and a
 comparison *callback*. The callback is arbitrary code, invoked from inside the loop, and both the
 heap and the callback are reachable from whatever scope built them — so it can call `heap.push()`
 or `heap.clear()` while the sift is halfway through, and upstream has no defence and no error path
-(B-76).
+(BUG-HEAP-5).
 **Port:** the algorithms address a `Store` — a JavaScript array as they see one — through `&self`,
 with the borrow released before every comparison. `mnemonist-core`'s `VecStore` is
 `Rc<RefCell<Vec<Option<T>>>>`; the bridge's is a live `napi_ref` to a real JS array.
@@ -995,11 +995,11 @@ reproduction of "it works and gives this answer".
 `a_comparator_that_shrinks_the_array_makes_the_walk_read_undefined`,
 `a_comparator_may_re_enter_and_push`, and four cases in `tests/boundary/heap.js`.
 
-### D-71 — `compare` returns `f64`, not `Ordering`
+### DIV-HEAP-2 — `compare` returns `f64`, not `Ordering`
 **Status:** CONFIRMED · **Category:** behavioural · **Divergence:** no
 **Upstream:** the three tests performed on a comparator's answer are `< 0`, `> 0` and `>= 0`, on
 whatever value came back. `NaN` makes all three false; `0.5` counts as "greater"; a `BigInt` works
-because the relational operators use `ToNumeric` rather than `ToNumber` (B-78).
+because the relational operators use `ToNumeric` rather than `ToNumber` (BUG-HEAP-7).
 **Port:** `Comparator::compare` returns `Result<f64, E>`. The bridge coerces a JS comparator's
 result with `ToNumber`, except for a `BigInt`, whose sign is read directly.
 **Rationale:** `Ordering` has three values and upstream's answer has a continuum; collapsing it
@@ -1009,7 +1009,7 @@ port is most likely to be handed by a user who has one working against V8's sort
 reject it" and "should accept a BigInt comparator result, which ToNumber alone would reject", both
 of which pass unchanged against the pinned upstream source.
 
-### D-72 — `DEFAULT_COMPARATOR` is ported; `<` and `>` are delegated to the engine
+### DIV-HEAP-3 — `DEFAULT_COMPARATOR` is ported; `<` and `>` are delegated to the engine
 **Status:** CONFIRMED · **Category:** architecture · **Divergence:** no
 **Upstream:** `DEFAULT_COMPARATOR` is two relational operators inside two `if`s.
 **Port:** the `if`s are `mnemonist_core::utils::comparators::default_comparator`. The operators are
@@ -1024,7 +1024,7 @@ smaller and exact.
 **Verify:** `test/heap.js`'s string heap (`push('hello')`, `push('world')`) and object-comparator
 block go through the native path and the delegated one respectively.
 
-### D-73 — the heaps' `items` is a real JavaScript array, not a materialised `Vec`
+### DIV-HEAP-4 — the heaps' `items` is a real JavaScript array, not a materialised `Vec`
 **Status:** CONFIRMED · **Category:** architecture · **Divergence:** no
 **Upstream:** `Heap.heapify(compare, array)` mutates the caller's array **in place**, and
 `test/heap.js` then consumes that same array. `FixedReverseHeap` is parameterised by an
@@ -1036,27 +1036,27 @@ elements in a `Vec`.
 **Rationale:** three independent forcing reasons, any one sufficient — the in-place static, the
 `ArrayClass`, and the fact that a comparison is a JS call regardless, so the boundary was already
 being crossed. It also buys the typed-array `ToUint32`-then-narrow store semantics for free and
-exactly, and it extends the re-entrancy of D-70 to the array as well as to the comparator: a
+exactly, and it extends the re-entrancy of DIV-HEAP-1 to the array as well as to the comparator: a
 getter or a `Proxy` trap runs where upstream's would.
 **Verify:** `test/heap.js` "should be possible to heapify an array";
 `test/fixed-reverse-heap.js` "should return the same type of array as given to the constructor";
 `tests/boundary/heap.js` "should apply typed-array store semantics to pushed values" and "should
 mutate the caller's own array in place".
 
-### D-74 — `MaxHeap` is installed as evaluated JavaScript, prototype sharing included
+### DIV-HEAP-5 — `MaxHeap` is installed as evaluated JavaScript, prototype sharing included
 **Status:** CONFIRMED · **Category:** behavioural · **Divergence:** no
 **Upstream:** `MaxHeap.prototype = Heap.prototype` — the same object, not a derived one. So
 `new Heap() instanceof MaxHeap` is `true`, `new MaxHeap().constructor.name` is `'Heap'`, and the
-two are indistinguishable at runtime except by behaviour (B-75).
+two are indistinguishable at runtime except by behaviour (BUG-HEAP-4).
 **Port:** `MaxHeap` is upstream's four lines, evaluated once from the addon's module-export hook —
-the same call D-45 makes for `X.of`, and for the same reason.
+the same call DIV-STACK-7 makes for `X.of`, and for the same reason.
 **Rationale:** a second `#[napi]` class would have its own prototype and would silently **fix**
-B-75. Bug-for-bug means the type confusion is reproduced, and the only way to reproduce a shared
+BUG-HEAP-4. Bug-for-bug means the type confusion is reproduced, and the only way to reproduce a shared
 prototype is to share one.
 **Verify:** `tests/boundary/heap.js` — "should make every Heap an instanceof MaxHeap, and vice
 versa", which passes unchanged against upstream.
 
-### D-75 — the raw-array statics live on a separate class and are copied across
+### DIV-HEAP-6 — the raw-array statics live on a separate class and are copied across
 **Status:** CONFIRMED · **Category:** tooling · **Divergence:** no
 **Upstream:** `Heap` carries **both** `Heap.push(compare, heap, item)` and
 `Heap.prototype.push(item)`, and five such name pairs in all (`push`, `pop`, `replace`, `pushpop`,
@@ -1075,12 +1075,12 @@ only addition to upstream's surface.
 **Verify:** `tests/boundary/heap.js` — "should expose all eight statics next to the prototype
 methods of the same name" and "should keep the bridge's scaffolding off the enumerable surface".
 
-### D-76 — the `Infinity` sentinel is modelled as a value, not as an `Option`
+### DIV-HEAP-7 — the `Infinity` sentinel is modelled as a value, not as an `Option`
 **Status:** CONFIRMED · **Category:** behavioural · **Divergence:** no
 **Upstream:** `nsmallest`/`nlargest`'s `n === 1` paths use `var min = Infinity` as "nothing seen
 yet" and test `min === Infinity`. The sentinel is a real member of the domain, which produces two
-distinct bugs: an empty source answers `[Infinity]` (B-71), and an element that *is* `Infinity`
-resets the sentinel so the next element replaces it unconditionally (B-72).
+distinct bugs: an empty source answers `[Infinity]` (BUG-HEAP-2), and an element that *is* `Infinity`
+resets the sentinel so the next element replaces it unconditionally (BUG-HEAP-3).
 **Port:** a `Sentinel` trait supplies `infinity()` and `is_infinity()` for the slot type, and the
 `Unset` helper is a slot pre-loaded with the sentinel plus that identity test. The obvious
 `Option<Item>` would have fixed both bugs.
@@ -1090,7 +1090,7 @@ such a store cannot exhibit the bug either.
 **Verify:** `tests/boundary/heap.js` — "should answer with the Infinity sentinel itself for an
 empty source" and "should let a real Infinity element reset the sentinel".
 
-### D-77 — `#.comparator` is not exposed
+### DIV-HEAP-8 — `#.comparator` is not exposed
 **Status:** CONFIRMED · **Category:** behavioural · **Divergence:** **yes**
 **Upstream:** `this.comparator` is a public property holding a function — the user's, or
 `DEFAULT_COMPARATOR`, or the `reverseComparator` wrapper a `MaxHeap` builds.
@@ -1102,7 +1102,7 @@ not be the object the sift actually calls. No upstream assertion reads the prope
 differential fuzzer cannot compare a function in any case (`JSON.stringify` of one is `undefined`).
 **Verify:** absence; recorded in `docs/modules/heap.md`.
 
-### D-78 — the fuzz oracle encodes an array hole and an assigned `undefined` alike
+### DIV-PROJ-39 — the fuzz oracle encodes an array hole and an assigned `undefined` alike
 **Status:** CONFIRMED · **Category:** tooling · **Divergence:** no
 **Problem:** `fuzz/oracle.js` encoded arrays with `Array.prototype.map`, which **skips** holes and
 leaves them holes for `JSON.stringify` to render as `null`, while an element explicitly assigned
@@ -1117,7 +1117,7 @@ change is also strictly more accurate for `sparse-map`, whose holes really do re
 and never as `null`; its own doc already recorded that nothing in that grammar can tell them apart.
 **Verify:** `cargo test -p difffuzz` — all fourteen differential campaigns, `sparse-map` included.
 
-### D-79 — `Store::allocate` and `Store::plain_array` are different operations
+### DIV-PROJ-40 — `Store::allocate` and `Store::plain_array` are different operations
 **Status:** CONFIRMED · **Category:** behavioural · **Divergence:** no
 **Upstream:** `Heap.prototype.clear` is `this.items = []` and `Heap.consume` opens with
 `var array = new Array(l)` — unconditional literals. Only `nsmallest`'s `n === 1` path
@@ -1131,7 +1131,7 @@ class, so the bug is structurally invisible to it.
 **Verify:** `tests/boundary/heap.js` — "should clear and consume into a PLAIN array, whatever class
 items was", which passes unchanged against upstream.
 
-### D-80 — `n` is carried as a JavaScript number and never validated up front
+### DIV-SORT-1 — `n` is carried as a JavaScript number and never validated up front
 **Status:** CONFIRMED · **Category:** behavioural · **Divergence:** no
 **Upstream:** `nsmallest`/`nlargest` never validate `n`. They compare it (`n === 1`,
 `n >= iterable.length`), slice with it, and use it as a **loop counter** —
@@ -1148,7 +1148,7 @@ two paths upstream never validates. Also found by the independent review.
 **Known, reproduced, untestable:** `n = -Infinity` never terminates, upstream or here, because
 `-Infinity + 1` is `-Infinity`. See `planning/NOTES.md`.
 
-### D-81 — a borrow is bound to a local before any `Store` call, never chained
+### DIV-SORT-2 — a borrow is bound to a local before any `Store` call, never chained
 **Status:** CONFIRMED · **Category:** architecture · **Divergence:** no
 **Problem:** `self.items.borrow().allocate(0)?` keeps the `Ref` alive for the whole call, because a
 temporary lives to the end of the *statement*. On the bridge that call read `items.constructor` and
@@ -1157,24 +1157,24 @@ invoked it — user JavaScript — so a re-entrant `clear()` reached the followi
 catchable `Error`. `peek()` had the same shape through an accessor on index 0.
 **Port:** every method binds `let items = self.items.borrow().clone();` first. The comment that
 previously claimed the chained form was safe asserted the opposite of what it did.
-**Rationale:** D-43 says the bridge holds a `RefCell` and releases every borrow before any JS call.
+**Rationale:** DIV-STACK-5 says the bridge holds a `RefCell` and releases every borrow before any JS call.
 This is the third thing needed to make that true: `borrow()`-only is necessary, and so is not
 letting the temporary outlive the call.
 **Verify:** `tests/boundary/heap.js` — "should not hold a RefCell borrow across the JS its own
 peek() runs", and "should not run ANY user JavaScript from clear()", which asserts the cause rather
 than the symptom.
 
-## vector, static-interval-tree (D-100 .. D-103)
+## vector, static-interval-tree (DIV-PROJ-42 .. DIV-PROJ-45)
 
-Same numbering caveat as D-60..D-69/D-80..D-88 above: only a bug-ID range (B-100..B-119) was
-allocated to this agent, so D-100..D-103 are chosen to mirror it rather than continuing the
+Same numbering caveat as DIV-FIXED-STACK-2..DIV-PROJ-38/DIV-SORT-1..DIV-SET-4 above: only a bug-ID range (BUG-STATIC-INTERVAL-TREE-1..DIV-PROJ-46) was
+allocated to this agent, so DIV-PROJ-42..DIV-PROJ-45 are chosen to mirror it rather than continuing the
 sequential D count, which other agents may be allocating from concurrently.
 
-### D-100 — `StaticIntervalTree::new` refuses zero intervals with an `Err`, not a panic
+### DIV-PROJ-42 — `StaticIntervalTree::new` refuses zero intervals with an `Err`, not a panic
 **Status:** CONFIRMED · **Category:** behavioural · **Divergence:** no
 **Upstream:** `new StaticIntervalTree([])` throws a raw `TypeError: Cannot read properties of
 undefined (reading '1')` — three stack frames down inside `buildBST`, which is called
-unconditionally even for `length === 0`. See B-100.
+unconditionally even for `length === 0`. See BUG-STATIC-INTERVAL-TREE-1.
 **Port:** `StaticIntervalTree::new` returns `Err(Error::EmptyIntervals)` for zero intervals,
 rather than reproducing the index-into-`undefined` mechanism as a Rust panic.
 **Rationale:** a Rust panic unwinding across the napi boundary is worse than the JS exception it
@@ -1187,26 +1187,26 @@ without a panic.
 **Verify:** `crates/mnemonist-core/src/structures/static_interval_tree.rs`,
 `zero_intervals_is_refused_rather_than_silently_accepted`; `docs/modules/static-interval-tree.md`.
 
-### D-101 — `Vector::get`/`set` admit `index == length`, bug-for-bug
+### DIV-PROJ-43 — `Vector::get`/`set` admit `index == length`, bug-for-bug
 **Status:** CONFIRMED · **Category:** behavioural · **Divergence:** no
 **Upstream:** both bounds guards compare with `<`, not `<=`, so `get(length)`/`set(length, v)`
-are admitted rather than refused — see B-101.
+are admitted rather than refused — see BUG-VECTOR-1.
 **Port:** `Vector::get`/`Vector::set` compare `self.length < index` exactly as upstream does, and
 let the *actual* backing-array bound (`index < self.capacity`) decide whether the access lands at
 all — the same two-guard shape upstream has, not a "tidier" single check at `length`.
 **Rationale:** a bounds check tightened to `<=` would be more correct than upstream and would
 silently drop a `set(length, v)` that upstream honours, which is exactly the "more correct than
 upstream" failure mode this port is required to avoid. `docs/modules/vector.md` documents the
-consequence (B-102) rather than quietly closing it.
+consequence (BUG-VECTOR-2) rather than quietly closing it.
 **Verify:** `crates/mnemonist-core/src/structures/vector.rs`,
 `get_and_set_admit_index_equal_to_length`, `a_full_vector_drops_the_admitted_write`; falsified in
 `docs/modules/vector.md` (tightening the guard to `<=` turns `vector_matches_upstream` red).
 
-### D-102 — `Storage::grown` bulk-copies the whole old capacity, not just `length`
+### DIV-PROJ-44 — `Storage::grown` bulk-copies the whole old capacity, not just `length`
 **Status:** CONFIRMED · **Category:** behavioural · **Divergence:** no
 **Upstream:** growth does `this.array.set(oldArray, 0)` — the whole old typed array, capacity
 region included — and `pop()` never clears the slot it releases. Together these let a popped
-value's stale data survive a grow and stay reachable through D-101's admission; see B-102.
+value's stale data survive a grow and stay reachable through DIV-PROJ-43's admission; see BUG-VECTOR-2.
 **Port:** `Storage::grown` copies the old backing store's full length (its capacity), matching the
 bulk-copy upstream's `TypedArray.prototype.set` performs, rather than copying only up to the
 vector's logical `length`.
@@ -1217,7 +1217,7 @@ compares the whole backing store slot for slot specifically so this stays checke
 **Verify:** `crates/mnemonist-core/src/structures/vector.rs`,
 `stale_data_from_a_pop_survives_a_growth_and_stays_reachable`; `docs/modules/vector.md`.
 
-### D-103 — the fuzz harness parses oracle floats with serde_json's `float_roundtrip` feature
+### DIV-PROJ-45 — the fuzz harness parses oracle floats with serde_json's `float_roundtrip` feature
 **Status:** CONFIRMED · **Category:** tooling · **Divergence:** no
 **Problem:** `serde_json`'s default (fast) float parser is not always correctly rounded: parsing
 the literal `"38403.356486892444"` — an ordinary value `vector`'s fuzz grammar generates from a
@@ -1231,7 +1231,7 @@ did not.
 **Port:** `serde_json = { version = "1", features = ["float_roundtrip"] }` in the workspace
 `Cargo.toml`. The feature trades a small parsing cost for a parser that is always correctly
 rounded, which is what a byte-for-byte oracle comparison requires.
-**Rationale:** this is the same class of finding as D-78 (the oracle's own array-holes-vs-`undefined`
+**Rationale:** this is the same class of finding as DIV-PROJ-39 (the oracle's own array-holes-vs-`undefined`
 encoding bug) — a harness defect that manufactures divergences rather than catching them — and, per
 CLAUDE.md, "before trusting a check, ask what it would look like if the thing it checks were
 broken": here the check (a raw `Value` comparison) actively re-introduced the imprecision it was
@@ -1241,7 +1241,7 @@ either passed on narrower/discrete float sets or not yet exercised the unlucky b
 **Verify:** `cargo test -p difffuzz --test differential vector_matches_upstream
 static_interval_tree_matches_upstream`; the four campaigns in `fuzz/log.txt` for both modules,
 zero divergences at ~1.45M ops each.
-### D-89 — `BiMap`'s two size counters are real state, reset asymmetrically by `clear`
+### DIV-LRU-CACHE-1 — `BiMap`'s two size counters are real state, reset asymmetrically by `clear`
 **Status:** CONFIRMED · **Category:** behavioural · **Divergence:** no
 **Upstream:** `BiMap`/`InverseMap` share one `clear` function — `this.size = 0; this.items.clear();
 this.inverse.items.clear();` — that empties both underlying `Map`s regardless of which side calls
@@ -1249,7 +1249,7 @@ it, but resets only the ONE counter belonging to whichever object `this` is. `bi
 `bimap.inverse.size` stale at its pre-clear value; `bimap.inverse.clear()` leaves `bimap.size`
 stale. `set`/`delete` resync both counters from the live maps on their real-mutation path, so the
 staleness heals on the next successful mutation — but not on a no-op `delete` (absent key), which
-returns `false` before touching either counter, exactly as upstream. Recorded as B-120
+returns `false` before touching either counter, exactly as upstream. Recorded as BUG-BI-MAP-1
 (`planning/NOTES.md`), found by differential fuzzing.
 **Port:** `BiMap<K>` carries two real stored fields (`size`, `inverse_size`), not derived from
 `OrderedMap::len()`. `clear`/`clear_reverse` reset only the matching field; `set`/`set_reverse`
@@ -1263,10 +1263,10 @@ resynced them unconditionally after every `delete`, which "healed" the staleness
 early on exactly the no-op-delete-after-clear case; differential fuzzing caught both drafts on
 their very next run.
 **Verify:** `crates/mnemonist-core/src/structures/bi_map.rs`,
-`clear_desyncs_size_from_inverse_size_b_120`; `crates/difffuzz/proptest-regressions/bi-map.txt`
+`clear_desyncs_size_from_inverse_size_bug_bi_map_1`; `crates/difffuzz/proptest-regressions/bi-map.txt`
 (both seeds, with provenance); `cargo run --release -p difffuzz -- --module bi-map --seed 42
 --cases 5000` clean at zero divergences on the fixed tree.
-### D-89 — `delete`/`remove` leave `this.K[pointer]`/`this.V[pointer]` stale, never nulled
+### DIV-LRU-CACHE-1 — `delete`/`remove` leave `this.K[pointer]`/`this.V[pointer]` stale, never nulled
 **Status:** CONFIRMED · **Category:** behavioural · **Divergence:** no
 **Upstream:** `LRUCacheWithDelete.prototype.delete`/`.remove` only splice the linked list and record
 the freed pointer in `this.deleted`; neither ever touches `this.K[pointer]` or `this.V[pointer]`.
@@ -1286,7 +1286,7 @@ pattern (an open walk, a delete underneath it) upstream itself does not guard ag
 confirming that a freed pointer *reused* before a stale walk reaches it correctly surfaces the new
 occupant (upstream's own algorithm cannot tell "stale" from "reused" apart either).
 
-### D-90 — `forEach` is `ForEachWalk`, not `Sequence`/`CursorState`
+### DIV-LRU-CACHE-2 — `forEach` is `ForEachWalk`, not `Sequence`/`CursorState`
 **Status:** CONFIRMED · **Category:** architecture · **Divergence:** no
 **Upstream:** `forEach`'s loop body calls the callback and only THEN reads
 `pointer = forward[pointer]` — one statement later, not before. `keys`/`values`/`entries`'s own
@@ -1303,7 +1303,7 @@ matching upstream's loop body statement for statement.
 **Verify:** `crates/difffuzz/proptest-regressions/lru-cache.txt`'s checked-in seed (provenance
 header explains what it found); `docs/modules/lru-cache.md`'s "Bugs this found".
 
-### D-91 — the object-backed pair's index key is restricted to what `JsKey` classifies
+### DIV-LRU-CACHE-3 — the object-backed pair's index key is restricted to what `JsKey` classifies
 **Status:** CONFIRMED · **Category:** scope · **Divergence:** yes
 **Upstream:** `this.items[key] = pointer` runs `key` through JS's full `ToPropertyKey`, which
 coerces an object argument via `toString`/`valueOf`/`Symbol.toPrimitive`.
@@ -1315,7 +1315,7 @@ rejected before it gets there.
 `ToPropertyKey` object-coercion path for territory nothing exercises would be unverifiable scope.
 **Verify:** `docs/modules/lru-cache.md`, "What upstream does NOT test", gap 5.
 
-### D-92 — the fuzz grammar never narrows a stored key through an `ArrayClass`
+### DIV-LRU-CACHE-4 — the fuzz grammar never narrows a stored key through an `ArrayClass`
 **Status:** CONFIRMED · **Category:** scope · **Divergence:** no (a coverage gap, not a behavioural one)
 **Problem:** `mnemonist_core::structures::lru_cache::LruCache::insert_new` re-derives an evicted
 entry's index key from its *stored* `K` via `to_index`, which can disagree with the index key it was
@@ -1329,7 +1329,7 @@ by a targeted Rust unit test. Stated rather than left to be assumed found.
 **Verify:** `crates/mnemonist-core/src/structures/lru_cache.rs`'s
 `eviction_re_derives_the_index_key_from_the_stored_key_and_can_leave_it_stale`.
 
-### D-93 — the `Map`-backed pair's fuzz spec omits `items` from `observations()`
+### DIV-LRU-CACHE-5 — the `Map`-backed pair's fuzz spec omits `items` from `observations()`
 **Status:** CONFIRMED · **Category:** tooling · **Divergence:** no
 **Problem:** upstream's `this.items` for `lru-map`/`lru-map-with-delete` is a real `Map`, which
 `fuzz/oracle.js`'s `encode` renders as an ORDER-SENSITIVE list (`{"$map": [...]}`).
@@ -1346,11 +1346,11 @@ bridge already made for the identical reason (its own `items` getter returns `{s
 **Verify:** `crates/difffuzz/src/modules/lru_cache.rs`'s module docs, "`items`, and the one
 observation deliberately left out".
 
-### D-104 — B-180's crash is reproduced as `Err(KWayError::StaleLengthMismatch)`, not a panic
+### DIV-UTILS-1 — BUG-UTILS-1's crash is reproduced as `Err(KWayError::StaleLengthMismatch)`, not a panic
 **Status:** CONFIRMED · **Category:** behavioural · **Divergence:** no
 **Upstream:** `merge`/`unionUnique`'s k-way path throws `TypeError: Cannot read properties of
 undefined (reading 'undefined')` whenever filtering empty inputs out of `arrays` leaves the stale
-`l` (captured before filtering) larger than `filtered.length` — B-180.
+`l` (captured before filtering) larger than `filtered.length` — BUG-UTILS-1.
 **Port:** `mnemonist_core::utils::merge::merge_k`/`union_unique_k` detect the exact same condition
 (`original_len != filtered.len()` with `filtered.len() >= 3`) and return
 `Err(KWayError::StaleLengthMismatch)` rather than indexing out of bounds. The napi bridge
@@ -1359,13 +1359,13 @@ undefined (reading 'undefined')` whenever filtering empty inputs out of `arrays`
 **Rationale:** `mnemonist-core` has no exceptions and `#![forbid(unsafe_code)]` forbids reproducing
 the mechanism (an actual out-of-bounds read); reproducing the *outcome* — construction of the
 result fails, with upstream's own message available at the boundary — is the faithful port. Same
-judgement call as D-44 (`hash_tables::TABLE_IS_FULL`) and D-100 (`StaticIntervalTree`'s empty-input
+judgement call as DIV-STACK-6 (`hash_tables::TABLE_IS_FULL`) and DIV-PROJ-42 (`StaticIntervalTree`'s empty-input
 refusal).
 **Verify:** `crates/mnemonist-core/src/utils/merge.rs`'s
 `merge_k_reproduces_b_180_when_filtering_drops_the_length` and
-`union_unique_k_reproduces_b_180_when_filtering_drops_the_length`; NOTES.md B-180.
+`union_unique_k_reproduces_b_180_when_filtering_drops_the_length`; NOTES.md BUG-UTILS-1.
 
-### D-105 — CLOSED — the k-way merge/union's tie-break was a linear scan's, not `FibonacciHeap`'s
+### DIV-UTILS-2 — CLOSED — the k-way merge/union's tie-break was a linear scan's, not `FibonacciHeap`'s
 **Status:** CLOSED (was CONFIRMED, open) · **Category:** architecture · **Divergence:** no (was yes)
 **Upstream:** `kWayMergeArrays`/`kWayUnionUniqueArrays` pick the next value via a real
 `FibonacciHeap`, whose tie-break (which of several equal-valued array heads is extracted first) is
@@ -1382,7 +1382,7 @@ fibonacci_heap.rs`, `docs/modules/fibonacci-heap.md`). `k_way_scan` now drives a
 closure over a shared mutable array does. This is upstream's algorithm, not a second substitute for
 it.
 **Verification:** the exact case that found this (`merge([3], [2, -5], [2])`) is now pinned as a
-Rust unit test, `merge_k_matches_upstreams_real_heap_on_the_case_that_found_d_105`, asserting the
+Rust unit test, `merge_k_matches_upstreams_real_heap_on_the_case_that_found_div_utils_2`, asserting the
 real heap's output (`[2, 2, -5, 3]`) rather than the old linear scan's (`[2, -5, 2, 3]`).
 `crates/difffuzz/src/modules/_utils.rs`'s `k_way_arrays_op` grammar, previously narrowed to
 globally-distinct values specifically to avoid this gap, is widened back to the same small,
@@ -1396,18 +1396,18 @@ path (`kWayIntersectionUniqueArrays`/`intersection_unique_k`) never used a heap 
 bounds seeded from JS's `-Infinity`/`Infinity` sentinels, which this port seeds from `Option<T>`
 instead, a *different*, pre-existing, already-documented divergence (see
 `intersection_unique_k`'s own module docs) this task never claimed to close. Reinstating `NaN`
-broadly (rather than only for the two functions D-105 is about) reached it immediately on the
+broadly (rather than only for the two functions DIV-UTILS-2 is about) reached it immediately on the
 first verification run of the widened grammar: `intersectionUnique([-1], [NaN], [-5])` — port
 `[-5]`, upstream `[]`. `k_way_arrays_op` therefore takes an `allow_nan` flag and stays `false` for
-`intersectionUnique` specifically, so the widening is exactly what D-105 needed and nothing was
+`intersectionUnique` specifically, so the widening is exactly what DIV-UTILS-2 needed and nothing was
 swept back under a narrower grammar to report green.
 **Verify:** `crates/mnemonist-core/src/utils/merge.rs`'s `KWayKeyComparator` and `k_way_scan`, and
-its `merge_k_matches_upstreams_real_heap_on_the_case_that_found_d_105` test;
+its `merge_k_matches_upstreams_real_heap_on_the_case_that_found_div_utils_2` test;
 `crates/difffuzz/src/modules/_utils.rs`'s `arrays_op`/`k_way_arrays_op`; `docs/modules/
-fibonacci-heap.md`; `docs/modules/_utils.md`'s updated D-105 entry; `fuzz/log.txt`'s four
+fibonacci-heap.md`; `docs/modules/_utils.md`'s updated DIV-UTILS-2 entry; `fuzz/log.txt`'s four
 `module=_utils` lines (two pre-closure, two post-).
 
-### D-106 — `intersectionUnique`'s k-way `NaN` handling is a separate, still-open gap D-105 never touched
+### DIV-UTILS-3 — `intersectionUnique`'s k-way `NaN` handling is a separate, still-open gap DIV-UTILS-2 never touched
 **Status:** CONFIRMED · **Category:** behavioural · **Divergence:** yes
 **Upstream:** `kWayIntersectionUniqueArrays` seeds `maxStart`/`minEnd` from the JS sentinels
 `-Infinity`/`Infinity`; `first > maxStart` (and symmetrically for `minEnd`) is `false` whenever
@@ -1419,51 +1419,51 @@ seed from without a `Sentinel`-style trait (`crate::utils::comparators`'s own, b
 `heap.rs`'s `nsmallest`/`nlargest`, is over the wrong shape here: a per-slot sentinel value, not a
 running-fold accumulator).
 **Rationale:** `kWayIntersectionUniqueArrays` never touches a `FibonacciHeap` at all — it folds
-`intersection_unique_two`'s binary-search walk left to right, seeded from `arrays[0]`. D-105's
+`intersection_unique_two`'s binary-search walk left to right, seeded from `arrays[0]`. DIV-UTILS-2's
 closure (porting `fibonacci-heap` and wiring it into `merge_k`/`union_unique_k`) has nothing to say
-about this function, and this gap predates D-105's closure — it was simply unreachable while `NaN`
+about this function, and this gap predates DIV-UTILS-2's closure — it was simply unreachable while `NaN`
 was excluded from every k-way group, `intersectionUnique` included alongside `merge`/`unionUnique`.
-Reinstating `NaN` for the two D-105 actually covers reached this immediately
+Reinstating `NaN` for the two DIV-UTILS-2 actually covers reached this immediately
 (`intersectionUnique([-1], [NaN], [-5])`: port `[-5]`, upstream `[]`), and `NaN` is kept excluded
 from `intersectionUnique`'s own k-way fuzz pool specifically rather than fixed under the same
 commit, since fixing it needs a different mechanism (a fold-accumulator sentinel) than the one
-D-105's closure built.
+DIV-UTILS-2's closure built.
 **Verify:** `crates/mnemonist-core/src/utils/merge.rs`'s `intersection_unique_k` module docs;
 `crates/difffuzz/src/modules/_utils.rs`'s `k_way_arrays_op`'s `allow_nan` parameter;
-`docs/modules/_utils.md`'s D-106 entry.
+`docs/modules/_utils.md`'s DIV-UTILS-3 entry.
 
-### D-200 — the trie node keeps its value and its children in separate fields, not one shared keyspace
+### DIV-TRIE-MAP-1 — the trie node keeps its value and its children in separate fields, not one shared keyspace
 **Status:** CONFIRMED · **Category:** behavioural · **Divergence:** yes
 **Upstream:** every trie node is a plain object; `node[SENTINEL]` (the stored value) and
 `node[token]` (each child) are properties of the *same* object. A real token equal to `SENTINEL`
 therefore collides with the value slot, and — verified against Node 24.18.1 — corrupts the trie:
 `size` overcounts and the colliding entry is unrecoverably lost into an unlinked orphan object. See
-B-200 in NOTES.md for the mechanism and the exact repro.
+BUG-TRIE-MAP-1 in NOTES.md for the mechanism and the exact repro.
 **Port:** `mnemonist_core::structures::trie_map::Node` stores its value (`Slot::Word`) and its
 children (`Slot::Child`) in one insertion-ordered list — needed regardless, to keep enumeration
 order faithful (see below) — but as two distinct variants that never collide. A token equal to
 whatever the bridge treats as a reserved marker is, here, an entirely ordinary token: stored,
 retrieved and iterated like any other.
-**Rationale:** reproducing B-200 exactly would mean modelling JavaScript's primitive/object
+**Rationale:** reproducing BUG-TRIE-MAP-1 exactly would mean modelling JavaScript's primitive/object
 duality — that `node[token] = {}` on a primitive silently discards the write while the assignment
 *expression* still evaluates to the discarded value — purely to recreate one corruption bug that
 nothing else in this port has any use for. Neither `test/trie.js` nor `test/trie-map.js` ever
 embeds the sentinel character in a token; every key in both suites is an ordinary word. Building
 machinery to reproduce a corruption path no test reaches is worse than disclosing the gap.
 **Verify:** `crates/mnemonist-core/src/structures/trie_map.rs`'s module docs and
-`a_token_equal_to_the_sentinel_character_is_an_ordinary_token`; NOTES.md B-200.
+`a_token_equal_to_the_sentinel_character_is_an_ordinary_token`; NOTES.md BUG-TRIE-MAP-1.
 
-### D-201 — the lazy walk re-navigates by token path rather than holding a live reference
+### DIV-TRIE-MAP-2 — the lazy walk re-navigates by token path rather than holding a live reference
 **Status:** CONFIRMED · **Category:** behavioural · **Divergence:** yes
 **Upstream:** `values`/`prefixes`/`keys`/`entries` close over two live JS arrays holding actual
 node object references it has discovered but not yet visited. `delete`'s pruning
 (`delete toPrune[tokenToPrune]`) removes a *parent's* reference to a node, which can leave the node
 object itself — and any `SENTINEL` property still on it — completely untouched. An open walk
-already holding that object keeps reporting its stale content. See B-201 in NOTES.md for the
+already holding that object keeps reporting its stale content. See BUG-TRIE-MAP-2 in NOTES.md for the
 confirmed repro.
 **Port:** `mnemonist_core::structures::trie_map::Walk` stores the **token path** to each pending
 node, not a reference, and re-navigates from the root on every step. This is required regardless of
-B-201: the walk must be resumable from a fresh `&TrieMap` handed in per call, which is the contract
+BUG-TRIE-MAP-2: the walk must be resumable from a fresh `&TrieMap` handed in per call, which is the contract
 the FFI boundary needs (a JS cursor outlives the call that produced it, and the map stays mutable
 underneath it) and which a live Rust borrow cannot express across calls. A path that no longer
 resolves (the node it named, or an ancestor of it, was pruned since the frame was queued) is simply
@@ -1476,16 +1476,16 @@ trie, which is precisely what the path-based, detached design exists to avoid.
 **Corrected after measuring, not assumed:** an earlier draft of this entry claimed the fuzz grammar
 could not reach this shape "by construction." That was wrong, and finding out was the point of
 running the campaign — the first ungated run for *each* unit diverged inside a few hundred
-operations (`trie-map` over `delete`, `trie` over `clear`; NOTES.md B-201). The grammar now carries
+operations (`trie-map` over `delete`, `trie` over `clear`; NOTES.md BUG-TRIE-MAP-2). The grammar now carries
 an explicit, disclosed regime split — `delete`/`clear` never share a generated program with a
 persistent `$iter`/`$next` cursor — rather than relying on the interaction being rare; see
 `crates/difffuzz/src/modules/trie_map.rs`'s module docs for the mechanism and both repros.
-**Verify:** `crates/mnemonist-core/src/structures/trie_map.rs`'s module docs (D-201) and
+**Verify:** `crates/mnemonist-core/src/structures/trie_map.rs`'s module docs (DIV-TRIE-MAP-2) and
 `an_addition_inside_an_already_queued_branch_is_visible_to_an_open_walk`, which pins the half of
 this design's behaviour that DOES match upstream (a live addition to an already-queued node is
-seen); NOTES.md B-201.
+seen); NOTES.md BUG-TRIE-MAP-2.
 
-### D-202 — the port does not reproduce `Object.keys`' integer-like-key-sorts-first rule
+### DIV-TRIE-MAP-3 — the port does not reproduce `Object.keys`' integer-like-key-sorts-first rule
 **Status:** CONFIRMED · **Category:** scope · **Divergence:** yes
 **Upstream:** enumerating a plain object's own keys (`for...in`, `Object.keys`) lists any key that
 is a canonical non-negative integer string (`"0"`, `"1"`, `"23"`, …) ascending, **before** every
@@ -1500,14 +1500,14 @@ is deliberately built over a small **letter** alphabet (never digits) for exactl
 a divergence here is never silently manufactured into a false positive.
 **Verify:** `crates/mnemonist-core/src/structures/trie_map.rs`'s module docs; the fuzz spec's own
 alphabet, documented in `crates/difffuzz/src/modules/trie_map.rs`.
-## multi-map, multi-set, fuzzy-multi-map (D-160 .. D-169)
+## multi-map, multi-set, fuzzy-multi-map (DIV-MULTI-MAP-1 .. DIV-FUZZY-MULTI-MAP-3)
 
-Same numbering caveat as D-89..D-93/D-100..D-103 above: only a bug-ID range (B-160..B-179) was
-allocated to this agent, so D-160..D-169 are chosen to mirror it rather than continuing the
+Same numbering caveat as DIV-LRU-CACHE-1..DIV-LRU-CACHE-5/DIV-PROJ-42..DIV-PROJ-45 above: only a bug-ID range (BUG-MULTI-SET-1..DIV-PROJ-50) was
+allocated to this agent, so DIV-MULTI-MAP-1..DIV-FUZZY-MULTI-MAP-3 are chosen to mirror it rather than continuing the
 sequential D numbering. Full write-ups in `docs/modules/multi-map.md`, `multi-set.md`,
 `fuzzy-multi-map.md`.
 
-### D-160 — any `MultiMap` container beyond exactly `Array`/`Set` is treated as `Array`, and rendered as one
+### DIV-MULTI-MAP-1 — any `MultiMap` container beyond exactly `Array`/`Set` is treated as `Array`, and rendered as one
 **Status:** CONFIRMED · **Category:** scope · **Divergence:** yes
 **Upstream:** `this.Container === Set` is the *only* branch upstream's write path takes; every other
 constructor (the default `Array`, a `Vector` subclass, a caller's own class) takes the identical
@@ -1521,7 +1521,7 @@ asserts `Array.from(map.get(key))` against the pushed numbers, never `instanceof
 array instead; nothing in the original suite can tell the difference.
 **Verify:** `docs/modules/multi-map.md`, "What upstream does NOT test" and its own divergence table.
 
-### D-161 — `MultiMap`'s `Set`-kind membership is a linear scan against a supplied equality, not `Hash`/`Eq`
+### DIV-MULTI-MAP-2 — `MultiMap`'s `Set`-kind membership is a linear scan against a supplied equality, not `Hash`/`Eq`
 **Status:** CONFIRMED · **Category:** architecture · **Divergence:** no (a performance cost, not a behavioural one)
 **Problem:** `fuzzy-multi-map`'s own values can be arbitrary JS objects, whose `Set` membership is
 SameValueZero-by-identity for an object and needs `napi_strict_equals`, which needs an `Env` — no
@@ -1534,7 +1534,7 @@ comparator callback, applied to a JavaScript equality callback. Buckets in every
 fuzz case are small, so the linear scan's cost is not observable.
 **Verify:** `crates/mnemonist-core/src/structures/multi_map.rs`'s own module docs.
 
-### D-162 — `MultiMap`'s flattened `values`/`entries`/`forEach` cursor snapshots a bucket instead of reading it live
+### DIV-MULTI-MAP-3 — `MultiMap`'s flattened `values`/`entries`/`forEach` cursor snapshots a bucket instead of reading it live
 **Status:** CONFIRMED · **Category:** architecture · **Divergence:** yes, in one stated case
 **Upstream:** obtains, per key, either a genuinely live `Set` iterator or an `Array`-index walk with
 the length frozen at entry — so a mutation to the *very bucket currently being walked* can, in
@@ -1547,18 +1547,18 @@ the original suite and stated rather than silently accepted.
 **Verify:** `crates/mnemonist-core/src/structures/multi_map.rs`'s own module docs;
 `docs/modules/multi-map.md`'s divergence table.
 
-### D-163 — `multi-set`'s `dimension` is a tracked counter, not derived from `items.len()`
-**Status:** CONFIRMED · **Category:** architecture · **Divergence:** no (this is what makes B-161/B-162 reproduce, not what causes them)
+### DIV-MULTI-SET-1 — `multi-set`'s `dimension` is a tracked counter, not derived from `items.len()`
+**Status:** CONFIRMED · **Category:** architecture · **Divergence:** no (this is what makes BUG-MULTI-SET-2/BUG-MULTI-SET-3 reproduce, not what causes them)
 **Problem:** `multi-map`'s equivalent simplification (derive `dimension` from the map's own length)
-would be *wrong* here: B-161 (`#.delete` on an absent item) and B-162 (`#.edit` merging into an
+would be *wrong* here: BUG-MULTI-SET-2 (`#.delete` on an absent item) and BUG-MULTI-SET-3 (`#.edit` merging into an
 existing key) both make upstream's own `dimension` counter diverge from the real distinct-key count.
-**Port:** `MultiSet` stores `dimension: i64` (not `usize` — B-161 can drive it negative) and updates
+**Port:** `MultiSet` stores `dimension: i64` (not `usize` — BUG-MULTI-SET-2 can drive it negative) and updates
 it exactly where upstream's source does, including the two places upstream does not.
 **Rationale:** a derived counter would silently *fix* both defects instead of reproducing them —
-the same trap `docs/modules/bi-map.md`'s B-120 already taught this project once.
-**Verify:** `crates/mnemonist-core/src/structures/multi_set.rs`'s module docs; NOTES.md B-161/B-162.
+the same trap `docs/modules/bi-map.md`'s BUG-BI-MAP-1 already taught this project once.
+**Verify:** `crates/mnemonist-core/src/structures/multi_set.rs`'s module docs; NOTES.md BUG-MULTI-SET-2/BUG-MULTI-SET-3.
 
-### D-164 — `multi-set`'s `add`/`remove` return-value inconsistency is not modelled at the bridge
+### DIV-MULTI-SET-2 — `multi-set`'s `add`/`remove` return-value inconsistency is not modelled at the bridge
 **Status:** CONFIRMED · **Category:** scope · **Divergence:** yes, on an untested surface
 **Upstream:** `add`/`remove` return `this` on their normal path but `undefined` on the sign-flip
 delegation branch (`add(x, -3)` returns whatever `remove(x, 3)` returns, which is unconditionally
@@ -1572,7 +1572,7 @@ confirmed the asymmetry empirically rather than only by reading.
 **Verify:** `crates/difffuzz/src/modules/multi_set.rs`'s `apply` doc comment;
 `docs/modules/multi-set.md`'s divergence table.
 
-### D-165 — `multi-set` counts are `f64`, including `ceil(multiplicity)` repeats for a fractional one
+### DIV-MULTI-SET-3 — `multi-set` counts are `f64`, including `ceil(multiplicity)` repeats for a fractional one
 **Status:** CONFIRMED · **Category:** behavioural · **Divergence:** no — this is upstream's own behaviour, stated rather than assumed
 **Upstream:** `typeof count !== 'number'` is the only guard; a fractional count is legal and left
 as-is, and `values()`/`forEach`'s repeat loop (`for (i = 0; i < multiplicity; i++)`) yields
@@ -1583,7 +1583,7 @@ step counter against the raw `f64` limit with `<`, exactly as upstream's loop do
 fractional input upstream accepts or round it to something upstream never produces.
 **Verify:** `crates/mnemonist-core/src/structures/multi_set.rs`'s module docs.
 
-### D-166 — `multi-set`'s `#.edit(a, a)` doubles then deletes, in upstream's own execution order
+### DIV-MULTI-SET-4 — `multi-set`'s `#.edit(a, a)` doubles then deletes, in upstream's own execution order
 **Status:** CONFIRMED · **Category:** behavioural · **Divergence:** no
 **Upstream:** `edit`'s body is `set(b, am + bm)` before `delete(a)`, unconditionally — when
 `a === b`, this doubles the multiplicity and then deletes the (now sole) entry outright.
@@ -1592,7 +1592,7 @@ fractional input upstream accepts or round it to something upstream never produc
 not guard against.
 **Verify:** `crates/mnemonist-core/src/structures/multi_set.rs`'s `edit` doc comment.
 
-### D-167 — `fuzzy-multi-map`'s `Set`-kind object-identity dedup is not fuzzable through the differential protocol
+### DIV-FUZZY-MULTI-MAP-1 — `fuzzy-multi-map`'s `Set`-kind object-identity dedup is not fuzzable through the differential protocol
 **Status:** CONFIRMED · **Category:** scope · **Divergence:** no
 **Problem:** the differential fuzzer compares `mnemonist-core` against upstream JS; `same_value_zero`
 (object-identity dedup via `napi_strict_equals`) is entirely a bridge concern, one layer outside that
@@ -1603,7 +1603,7 @@ comparison. The core-level campaign drives `FuzzyMultiMap<String, String>` throu
 6's falsification, which targets exactly this path since the fuzzer cannot.
 **Verify:** `docs/modules/fuzzy-multi-map.md`'s "What we test in addition" and gate-6 write-up.
 
-### D-168 — `fuzzy-multi-map`'s `.from` argument-count boolean-shift is reproduced by shape, not by counting real arguments
+### DIV-FUZZY-MULTI-MAP-2 — `fuzzy-multi-map`'s `.from` argument-count boolean-shift is reproduced by shape, not by counting real arguments
 **Status:** CONFIRMED · **Category:** scope · **Divergence:** no
 **Upstream:** `if (arguments.length === 3) { if (typeof Container === 'boolean') { useSet =
 Container; Container = Array; } }` — `test/fuzzy-multi-map.js`'s own third `.from` call depends on
@@ -1615,9 +1615,9 @@ the only constructible disagreement (an explicit `undefined` fourth argument alo
 third) is not exercised by any test.
 **Verify:** `crates/mnemonist-napi/src/fuzzy_multi_map.rs`'s `from` doc comment.
 
-### D-169 — `fuzzy-multi-map` bucket values are `Rc<RefCell<Retained>>`, not a bare `Retained`
+### DIV-FUZZY-MULTI-MAP-3 — `fuzzy-multi-map` bucket values are `Rc<RefCell<Retained>>`, not a bare `Retained`
 **Status:** CONFIRMED · **Category:** architecture · **Divergence:** yes, in one stated case
-**Problem:** `MultiMap`'s flattened cursor clones a bucket's contents to snapshot it (D-162); a bare
+**Problem:** `MultiMap`'s flattened cursor clones a bucket's contents to snapshot it (DIV-MULTI-MAP-3); a bare
 `Retained` owns exactly one `napi_ref` and cannot be cloned without either failing to compile or
 double-freeing.
 **Port:** `Rc` clones cheaply (a refcount bump, never a second `napi_ref`); `RefCell` gives
@@ -1627,13 +1627,13 @@ a `clear()` observes the now-released, inert value if read afterwards. Untested 
 `test/fuzzy-multi-map.js`.
 **Verify:** `crates/mnemonist-napi/src/fuzzy_multi_map.rs`'s own module docs.
 
-### D-170 — `MaxFibonacciHeap` is installed as evaluated JavaScript, not a second native class
+### DIV-FIBONACCI-HEAP-1 — `MaxFibonacciHeap` is installed as evaluated JavaScript, not a second native class
 **Status:** CONFIRMED · **Category:** architecture · **Divergence:** no (reproduces upstream, does
 not repair it)
 **Upstream:** `MaxFibonacciHeap.prototype = FibonacciHeap.prototype;` at load time — the same
-anti-pattern `heap.js`'s D-74/B-75 already documents for `Heap`/`MaxHeap`, one file over. It makes
+anti-pattern `heap.js`'s DIV-HEAP-5/BUG-HEAP-4 already documents for `Heap`/`MaxHeap`, one file over. It makes
 `new FibonacciHeap() instanceof MaxFibonacciHeap` true and blurs the two constructors together
-(NOTES.md B-221).
+(NOTES.md BUG-FIBONACCI-HEAP-2).
 **Port:** `crates/mnemonist-napi/src/fibonacci_heap.rs`'s `install_fibonacci_heap_statics` evaluates
 a small JS installer at module load that closes over `FibonacciHeap.__max`/`__maxFrom` factories and
 performs the identical prototype assignment — the same mechanism `crate::heap`'s
@@ -1642,17 +1642,17 @@ performs the identical prototype assignment — the same mechanism `crate::heap`
 and would silently *repair* the `instanceof` blur instead of reproducing it — exactly the kind of
 "more correct than upstream" outcome CLAUDE.md's bug-for-bug mandate forbids.
 **Verify:** `crates/mnemonist-napi/src/fibonacci_heap.rs`'s `INSTALLER`/`install_fibonacci_heap_statics`;
-NOTES.md B-221.
+NOTES.md BUG-FIBONACCI-HEAP-2.
 
-### D-171 — `FibonacciHeap::size` is `i64`, not `usize`
+### DIV-FIBONACCI-HEAP-2 — `FibonacciHeap::size` is `i64`, not `usize`
 **Status:** CONFIRMED · **Category:** behavioural · **Divergence:** no (matches upstream's own
 untyped-number arithmetic)
 **Upstream:** `pop`'s `this.size--` runs *after* `consolidate`, so a re-entrant comparator that calls
 `clear()` (`this.size = 0`) from inside that `consolidate` leaves the pending decrement to compute
 `0 - 1`. JavaScript has no unsigned integers: that is a real `-1`, held without complaint (NOTES.md
-B-220).
+BUG-FIBONACCI-HEAP-1).
 **Port:** `size: Cell<i64>` throughout `mnemonist_core::structures::fibonacci_heap::FibonacciHeap`,
-matching `multi-set`'s D-163 precedent for the identical class of problem — a tracked counter whose
+matching `multi-set`'s DIV-MULTI-SET-1 precedent for the identical class of problem — a tracked counter whose
 upstream arithmetic can reach a state a "cleaner" derived or clamped value never would.
 **Rationale:** `usize` cannot represent `-1` at all; clamping to `0` (saturating) or panicking on
 underflow would each be a different, more "defensive" behaviour than upstream's own silent
@@ -1660,19 +1660,19 @@ corruption, and CLAUDE.md is explicit that a port which quietly repairs upstream
 defect, not an improvement.
 **Verify:** `mnemonist_core::structures::fibonacci_heap`'s `size` field docs;
 `a_comparator_that_clears_the_heap_mid_pop_does_not_panic`, which pins the exact `-1`; NOTES.md
-B-220.
+BUG-FIBONACCI-HEAP-1.
 
-### D-172 — B-220/B-222's crashes are reproduced as Rust panics whose message IS the exact upstream `TypeError` text
+### DIV-FIBONACCI-HEAP-3 — BUG-FIBONACCI-HEAP-1/BUG-FIBONACCI-HEAP-3's crashes are reproduced as Rust panics whose message IS the exact upstream `TypeError` text
 **Status:** CONFIRMED · **Category:** architecture · **Divergence:** yes, in mechanism only
-**Upstream:** once `size`/`root`/`min` are left inconsistent by a re-entrant `clear()` (B-220,
-B-222), the *next* `pop` throws a real `TypeError` — `"Cannot read properties of null (reading
+**Upstream:** once `size`/`root`/`min` are left inconsistent by a re-entrant `clear()` (BUG-FIBONACCI-HEAP-1,
+BUG-FIBONACCI-HEAP-3), the *next* `pop` throws a real `TypeError` — `"Cannot read properties of null (reading
 'child')"` or `"...(reading 'right')"`, depending on which inconsistency it is.
 **Port:** `mnemonist-core` has no exceptions, so both sites are `Option::expect(msg)` panics — and
 `msg` is upstream's literal wording, not a description of the invariant, so a caller that catches
 the panic (the differential fuzz harness, `crates/difffuzz/src/modules/fibonacci_heap.rs`'s `pop`)
 can use the payload directly as the thrown text with no hand-maintained translation table to drift
 out of sync with what Node actually says.
-**Rationale — noted inconsistency with `_utils`'s D-104:** `merge.rs`'s B-180 chose the opposite
+**Rationale — noted inconsistency with `_utils`'s DIV-UTILS-1:** `merge.rs`'s BUG-UTILS-1 chose the opposite
 shape, `Result<_, KWayError>`, because that call site already returns a `Result` its callers handle
 routinely. `FibonacciHeap::pop`/`consolidate` reaching this state is reachable only through one
 adversarial re-entrant `clear()` sequence, not through any input a normal caller supplies, and
@@ -1680,10 +1680,10 @@ building a dedicated raised-message channel for it — a new error variant threa
 `pop`/`consolidate` caller — was judged disproportionate to what it protects. The panic's message
 text is what closes that gap for the one caller (the fuzz harness) that needs to keep running past
 it.
-**Verify:** `FibonacciHeap::pop`/`consolidate`'s doc comments (NOTES.md B-220, B-222);
+**Verify:** `FibonacciHeap::pop`/`consolidate`'s doc comments (NOTES.md BUG-FIBONACCI-HEAP-1, BUG-FIBONACCI-HEAP-3);
 `crates/difffuzz/src/modules/fibonacci_heap.rs`'s `pop`/`install_panic_capture`/`bare_message`.
 
-### D-173 — node storage is an arena of `NodeId`s, never `Rc<RefCell<Node>>`, and popped slots are never recycled
+### DIV-FIBONACCI-HEAP-4 — node storage is an arena of `NodeId`s, never `Rc<RefCell<Node>>`, and popped slots are never recycled
 **Status:** CONFIRMED · **Category:** architecture · **Divergence:** no (invisible to any public API)
 **Problem:** upstream's node graph is a circular doubly-linked list plus a parent/child tree, kept
 alive by JavaScript's tracing GC — an object stays valid for as long as anything references it,
@@ -1702,23 +1702,23 @@ lifetime creation count rather than its live size, which is bounded differently 
 GC but is the same shape of promise.
 **Verify:** `mnemonist_core::structures::fibonacci_heap`'s `Arena` and module-level doc comments.
 
-## linked-list, default-weak-map, inverted-index (D-240 .. D-244)
+## linked-list, default-weak-map, inverted-index (DIV-PROJ-53 .. DIV-PROJ-58)
 
-Same numbering caveat as D-160..D-169/D-200..D-202 above: chosen to mirror the B-240..B-259 range
-allocated to this batch, not a continuation of D-173's sequence. Full write-ups in
+Same numbering caveat as DIV-MULTI-MAP-1..DIV-FUZZY-MULTI-MAP-3/DIV-TRIE-MAP-1..DIV-TRIE-MAP-3 above: chosen to mirror the BUG-INVERTED-INDEX-1..DIV-PROJ-59 range
+allocated to this batch, not a continuation of DIV-FIBONACCI-HEAP-4's sequence. Full write-ups in
 `docs/modules/linked-list.md`, `default-weak-map.md`, `inverted-index.md`.
 
-### D-240 — `linked-list`'s arena never frees or recycles a slot
+### DIV-PROJ-53 — `linked-list`'s arena never frees or recycles a slot
 **Status:** CONFIRMED · **Category:** memory shape · **Divergence:** yes
 **Upstream:** a shifted-off node becomes eligible for V8's GC the moment nothing (no list, no open
 cursor) references it any longer, and is reclaimed on the engine's own schedule.
 **Port:** `LinkedList::arena` is append-only; `shift()` advances `head` but never removes the node
 from the arena, and nothing else ever does either. A list that has pushed and shifted heavily over
 its lifetime keeps every item it has ever held until the whole `LinkedList` itself is dropped.
-**Rationale:** this is the same shape `fibonacci-heap`'s own arena docs already accepted (D-173):
+**Rationale:** this is the same shape `fibonacci-heap`'s own arena docs already accepted (DIV-FIBONACCI-HEAP-4):
 recycling a slot the moment its node becomes unreachable would require knowing an open cursor does
 not still hold that index, which this port cannot answer without a live reference count per node —
-the identical FFI-boundary constraint D-201 accepts for `trie-map`'s path-based walk (a cursor must
+the identical FFI-boundary constraint DIV-TRIE-MAP-2 accepts for `trie-map`'s path-based walk (a cursor must
 be resumable from a fresh handle per call, so it cannot be the thing that keeps a node's liveness
 information current). Nothing about the public API exposes node identity or arena occupancy, so the
 choice is unobservable except as a memory-shape difference: at the bridge, a stored item is a real
@@ -1726,7 +1726,7 @@ JS value (`JsSlot`) kept alive by the arena for longer than upstream would keep 
 alive, never permanently and never incorrectly, just later.
 **Verify:** `mnemonist_core::structures::linked_list`'s module docs; `docs/modules/linked-list.md`.
 
-### D-241 — `default-weak-map`'s collected key is never proactively released
+### DIV-PROJ-54 — `default-weak-map`'s collected key is never proactively released
 **Status:** CONFIRMED · **Category:** memory shape · **Divergence:** yes
 **Upstream:** a real `WeakMap` entry (key and value together) becomes eligible for reclamation the
 moment its key is unreachable elsewhere, on the engine's own schedule.
@@ -1739,13 +1739,13 @@ never present that exact object as an argument again either, but its stored *val
 **Rationale:** nothing upstream exposes can distinguish this from prompt reclamation — there is no
 `size`, no iteration, nothing that reads as "how many entries remain" — so implementing per-key
 finalization would be machinery built for a distinction no test, and no upstream API surface, can
-observe. The identical judgement call as D-240, applied to a structure whose entire contract is
+observe. The identical judgement call as DIV-PROJ-53, applied to a structure whose entire contract is
 already "you cannot observe the whole state" (see `docs/modules/default-weak-map.md`'s own opening
 section).
 **Verify:** `crates/mnemonist-napi/src/default_weak_map.rs`'s module docs;
 `docs/modules/default-weak-map.md`.
 
-### D-242 — `default-weak-map`'s `get` rejects a non-object key before running the factory; upstream runs the factory first
+### DIV-PROJ-55 — `default-weak-map`'s `get` rejects a non-object key before running the factory; upstream runs the factory first
 **Status:** CONFIRMED · **Category:** behavioural · **Divergence:** yes
 **Upstream:** `get`'s internal shape is read (`this.items.get(key)`, never throws for any key
 type), then — on a miss — call the factory (any type, any side effects), then write
@@ -1763,7 +1763,7 @@ exactly.
 **Verify:** `crates/mnemonist-napi/src/default_weak_map.rs`'s `get` doc comment;
 `docs/modules/default-weak-map.md`.
 
-### D-243 — `inverted-index`'s `identity` tokenizer fallback is modelled as `Option::None`, not a materialised JS closure
+### DIV-PROJ-57 — `inverted-index`'s `identity` tokenizer fallback is modelled as `Option::None`, not a materialised JS closure
 **Status:** CONFIRMED · **Category:** scope · **Divergence:** no (observationally identical)
 **Upstream:** `function identity(x) { return x; }` is a real function object, assigned to
 `this.documentTokenizer`/`this.queryTokenizer` when the constructor's `descriptor` argument is
@@ -1779,7 +1779,7 @@ because CLAUDE.md asks every divergence to be recorded, even one this port consi
 **Verify:** `crates/mnemonist-napi/src/inverted_index.rs`'s `tokenize` doc comment;
 `docs/modules/inverted-index.md`.
 
-### D-244 — `default-weak-map` accepts only plain objects as keys; a real `WeakMap` also accepts functions and symbols
+### DIV-PROJ-58 — `default-weak-map` accepts only plain objects as keys; a real `WeakMap` also accepts functions and symbols
 **Status:** CONFIRMED · **Category:** scope · **Divergence:** yes
 **Upstream:** `WeakMap` keys may be any object, function, or (unregistered) symbol.
 **Port:** `WeakKey::new` (via `as_object`) accepts `ValueType::Object` only; a function or symbol
@@ -1793,139 +1793,139 @@ object keys are the entire point, and function/symbol keys are what nothing test
 **Verify:** `crates/mnemonist-napi/src/default_weak_map.rs`'s `as_object`/`UNSUPPORTED`;
 `docs/modules/default-weak-map.md`.
 
-## Divergences reconciled from module docs (D-300+)
+## Divergences reconciled from module docs (DIV-BK-TREE-1+)
 
 Appended as one self-contained block at the very end: this file is edited from several worktrees at
-once, and it has already suffered one merge collision — D-01, D-80, D-81 and D-89 each appear twice.
+once, and it has already suffered one merge collision — DIV-PROJ-2, DIV-SORT-1, DIV-SORT-2 and DIV-LRU-CACHE-1 each appear twice.
 
 These were documented in their module docs from the start, but numbered `—` rather than `D-nnn`, so
 they never reached this registry. `DECISIONS.md` is assembled from here, so they would have been
 dropped. The text is **relocated verbatim from the module doc**, not re-summarised: the original
 author had the source in front of them and this pass did not.
 
-### D-300 — Not a T3 module — no Map, no OrderedMap
+### DIV-BK-TREE-1 — Not a T3 module — no Map, no OrderedMap
 `unit: bk-tree` · relocated from `docs/modules/bk-tree.md`
 
 `node.children` is a plain `HashMap<i64, Node<I>>` here, matching upstream's plain-object-keyed-by-number exactly: `add` does one `get`/`insert` at an exact distance, `search` probes a bounded numeric range one value at a time, and nothing ever iterates the *keys* of a children table. No ordering machinery is needed because upstream's own algorithm never needs one either.
 
-### D-301 — distance is fallible at the core level
+### DIV-BK-TREE-2 — distance is fallible at the core level
 `unit: bk-tree` · relocated from `docs/modules/bk-tree.md`
 
 `try_add`/`try_search` take `FnMut(&I, &I) -> Result<i64, E>` so a JS distance function that throws propagates as a real `Err`, leaving the tree exactly as it was — both of upstream's mutations are textually after the call that can throw, in every path through both loops. `add`/`search` are the infallible convenience for a Rust caller whose distance cannot fail.
 
-### D-302 — The bridge refuses a distance function that re-enters the tree, rather than serving it half-built state
+### DIV-BK-TREE-3 — The bridge refuses a distance function that re-enters the tree, rather than serving it half-built state
 `unit: bk-tree` · relocated from `docs/modules/bk-tree.md`
 
-`distance` is called from *inside* both `add`'s descent and `search`'s traversal, holding the bridge's `RefCell` borrow for the whole call — the same shape as `bit_vector`'s growth-policy re-entrancy (B-31). A distance function that calls back into the same tree meets that outstanding borrow and gets a catchable `REENTRANT_DISTANCE` error. Upstream would instead serve such a call from a tree mid-traversal and get whatever half-built state it finds. Narrower than upstream, and recorded rather than hidden — the same trade `bit_vector.rs` makes.
+`distance` is called from *inside* both `add`'s descent and `search`'s traversal, holding the bridge's `RefCell` borrow for the whole call — the same shape as `bit_vector`'s growth-policy re-entrancy (PORTBUG-1). A distance function that calls back into the same tree meets that outstanding borrow and gets a catchable `REENTRANT_DISTANCE` error. Upstream would instead serve such a call from a tree mid-traversal and get whatever half-built state it finds. Narrower than upstream, and recorded rather than hidden — the same trade `bit_vector.rs` makes.
 
-### D-303 — n and distance's return value are i64/f64, not upstream's implicit string-keyed coercion
+### DIV-BK-TREE-4 — n and distance's return value are i64/f64, not upstream's implicit string-keyed coercion
 `unit: bk-tree` · relocated from `docs/modules/bk-tree.md`
 
 No test anywhere gives `distance` a reason to return anything but a small non-negative integer; reproducing `ToPropertyKey`'s full stringification would need a string-keyed children table for a case no test can observe. Stated as a narrowing rather than silently mismodelled.
 
-### D-304 — toJSON()/inspect() are not ported
+### DIV-BK-TREE-5 — toJSON()/inspect() are not ported
 `unit: bk-tree` · relocated from `docs/modules/bk-tree.md`
 
 Node/JSON display conveniences with no upstream assertion.
 
-### D-305 — The fuzz grammar excludes a throwing distance and string/object items
+### DIV-BK-TREE-6 — The fuzz grammar excludes a throwing distance and string/object items
 `unit: bk-tree` · relocated from `docs/modules/bk-tree.md`
 
 `Math.abs` (this grammar's distance) cannot throw, so the fallible path is covered by `mnemonist_core::structures::bk_tree`'s own native tests instead, which control the failure directly rather than hoping a generated program provokes it. Integers keep the metric a one-line, unmistakably-correct mirror on both sides; `mnemonist_napi::bk_tree`'s bridge is exercised against strings and `levenshtein` by the original suite, and against `Item` objects by core's own tests.
 
-### D-306 — Only plain objects are accepted as keys; functions and symbols are rejected
+### DIV-DEFAULT-WEAK-MAP-1 — Only plain objects are accepted as keys; functions and symbols are rejected
 `unit: default-weak-map` · relocated from `docs/modules/default-weak-map.md`
 
 with a message naming the limit. A real `WeakMap` accepts all three. `test/default-weak-map.js` never constructs a key any way but `{}`. Implementing napi's function/symbol reference paths for a distinction nothing here exercises would be unverifiable scope — the same judgement call `js_key.rs` makes for object keys in the `Map` family, mirrored in the opposite direction: there, object keys are out of scope because nothing tests them; here, they are the *entire point*, and it is function/symbol keys that are out of scope for the identical reason.
 
-### D-307 — A non-object key given to get is rejected immediately, before the factory runs — upstream runs the factory first and only fails at the internal items.set
+### DIV-DEFAULT-WEAK-MAP-2 — A non-object key given to get is rejected immediately, before the factory runs — upstream runs the factory first and only fails at the internal items.set
 `unit: default-weak-map` · relocated from `docs/modules/default-weak-map.md`
 
 Verified against Node 24.18.1: `get(1)` on a fresh map calls the factory (with whatever side effects it has) and *then* throws `TypeError: Invalid value used as weak map key`. Reproducing that exact order would mean calling this port's typed factory (`FunctionRef<FnArgs<(JsSlot,)>, Received>`) with a value its own signature has no slot for. `peek`/`has`/`delete` all match upstream exactly for a non-object key (a quiet miss, never a throw, because a real `WeakMap.prototype.get`/`.has`/`.delete` don't throw for one either) — only `get`'s *ordering*, on the one path no upstream test reaches, differs.
 
-### D-308 — A collected key's entry is never proactively released
+### DIV-DEFAULT-WEAK-MAP-3 — A collected key's entry is never proactively released
 `unit: default-weak-map` · relocated from `docs/modules/default-weak-map.md`
 
 No finalizer is registered per key to notice the moment of collection; a dead `WeakKey` (one whose `napi_ref` upgrade fails) simply never matches any future candidate again — the correct answer, since a caller could not present that exact object as an argument again either — but its stored *value* stays retained, taking a slot in the linear scan, until the whole `DefaultWeakMap` itself is finalized. Nothing upstream exposes can distinguish this from prompt reclamation (there is no `size`, no iteration), so this is a memory-shape divergence, not a behavioural one — and implementing per-key finalization for a distinction nothing can observe would be exactly the "building machinery no test can reach" CLAUDE.md and `js_key.rs` both warn against.
 
-### D-309 — WeakKey is a linear scan (O(n)), not a hash table
+### DIV-DEFAULT-WEAK-MAP-4 — WeakKey is a linear scan (O(n)), not a hash table
 `unit: default-weak-map` · relocated from `docs/modules/default-weak-map.md`
 
 `crate::structures::default_weak_map::DefaultWeakMap` takes an identity predicate per call rather than requiring `K: Hash + Eq`, because JS object identity has no Rust-expressible hash — the same conclusion `js_key.rs` reaches and declines to act on for `Map` keys (out of scope there); here it is unavoidable, because identity comparison is the entire reason this structure exists. Correct, not fast, and nothing about a 60-line test file or a `WeakMap`'s own contract asks for anything faster.
 
-### D-310 — undefined is spelled None
+### DIV-DEFAULT-WEAK-MAP-5 — undefined is spelled None
 `unit: default-weak-map` · relocated from `docs/modules/default-weak-map.md`
 
-exactly as in `default-map`, for the identical reason: it is what makes B-242 expressible and testable from pure Rust, and it gets `peek` right for free.
+exactly as in `default-map`, for the identical reason: it is what makes BUG-DEFAULT-WEAK-MAP-1 expressible and testable from pure Rust, and it gets `peek` right for free.
 
-### D-311 — inspect() is not ported
+### DIV-DEFAULT-WEAK-MAP-6 — inspect() is not ported
 `unit: default-weak-map` · relocated from `docs/modules/default-weak-map.md`
 
 It returns the inner `WeakMap`, which does not exist in this port, and nothing asserts on it.
 
-### D-312 — Core stores Option<V>, not V
+### DIV-FUZZY-MAP-1 — Core stores Option<V>, not V
 `unit: fuzzy-map` · relocated from `docs/modules/fuzzy-map.md`
 
 `this.items.get(key)` is `undefined` for both "no such key" and "the key holds `undefined`", exactly as `default-map`. `None` spells the latter; `has`/`get` diverge on it the same way upstream's do.
 
-### D-313 — Hashing lives entirely in the bridge
+### DIV-FUZZY-MAP-2 — Hashing lives entirely in the bridge
 `unit: fuzzy-map` · relocated from `docs/modules/fuzzy-map.md`
 
 The hash function(s) are JS callbacks; core takes the already-hashed key, the same split `default-map`'s factory makes. `crates/mnemonist-napi/src/fuzzy_map.rs`'s `HashFn` is `FunctionRef<Unknown<'static>, Unknown<'static>>` rather than a typed signature, because `add`'s hash argument is genuinely unconstrained (upstream's own test hashes a bare object).
 
-### D-314 — A falsy descriptor slot becomes None, not a stored identity closure
+### DIV-FUZZY-MAP-3 — A falsy descriptor slot becomes None, not a stored identity closure
 `unit: fuzzy-map` · relocated from `docs/modules/fuzzy-map.md`
 
 `if (!this.writeHashFunction) this.writeHashFunction = identity;` is a truthiness test (`0`, `''`, `false`, `null` all fall through), not a null check. `resolve_hash` mirrors the truthiness test; `None` means "classify the value directly," which is observably identical to calling a real `identity` and feeding its return into `JsKey::from_unknown`, without paying for a `FunctionRef` and a JS round trip for what is a no-op.
 
-### D-315 — forEach's second callback argument is the value, not a hashed key
+### DIV-FUZZY-MAP-4 — forEach's second callback argument is the value, not a hashed key
 `unit: fuzzy-map` · relocated from `docs/modules/fuzzy-map.md`
 
 Reproduces the exact one-parameter delegation shown above; both core's `values_mut`/cursor step and the bridge's `for_each` project the *value* out twice. Not tested upstream (gap 1 above), but changing it would be wrong regardless.
 
-### D-316 — inspect() is not ported
+### DIV-FUZZY-MAP-5 — inspect() is not ported
 `unit: fuzzy-map` · relocated from `docs/modules/fuzzy-map.md`
 
 A Node display convenience with no upstream assertion.
 
-### D-317 — The [write, read] array-descriptor form is excluded from the fuzz grammar
+### DIV-FUZZY-MAP-6 — The [write, read] array-descriptor form is excluded from the fuzz grammar
 `unit: fuzzy-map` · relocated from `docs/modules/fuzzy-map.md`
 
 It needs two independent named factories per case; the single-function form is what the campaign spends its budget on, and the pair form is covered instead by `FuzzyMap.from`'s own upstream test and by `mnemonist_napi::fuzzy_map`'s construction tests. Disclosed rather than silently narrowed.
 
-### D-318 — Fuzzed items are always strings, never objects
+### DIV-FUZZY-MAP-7 — Fuzzed items are always strings, never objects
 `unit: fuzzy-map` · relocated from `docs/modules/fuzzy-map.md`
 
 A hash function that can throw (`item.title.toLowerCase()` on a bare string) would turn every non-title-bearing generated item into an apparatus failure rather than a comparison; `identity`/`lower` both accept a bare string, keeping every generated program well-defined on both sides.
 
-### D-319 — Every function takes f64 and returns i32
+### DIV-UTILS-BITWISE-1 — Every function takes f64 and returns i32
 `unit: utils-bitwise` · relocated from `docs/modules/utils-bitwise.md`
 
 Not an aesthetic choice. Each is written in terms of JS bitwise operators, and every JS bitwise operator begins with ToInt32; taking `u32` would delete the conversion, and the conversion is where three of the four defects live. `to_int32` and `to_uint32` are exposed so a caller sees the coercion rather than inferring it.
 
-### D-320 — to_int32 is not upstream code
+### DIV-UTILS-BITWISE-2 — to_int32 is not upstream code
 `unit: utils-bitwise` · relocated from `docs/modules/utils-bitwise.md`
 
 It is the *implicit* first step of every operator in the file, written out once. Implemented with an exact `fmod`, so it is right for magnitudes past 2^53 where an `i64` cast saturates and would silently disagree.
 
-### D-321 — TABLE8 is built from u8::count_ones, not from popcount
+### DIV-UTILS-BITWISE-3 — TABLE8 is built from u8::count_ones, not from popcount
 `unit: utils-bitwise` · relocated from `docs/modules/utils-bitwise.md`
 
 Upstream fills it by calling its own `popcount` at module load, which cannot be done in a `const fn`. The substitution is only legitimate if the two agree everywhere, so `table8_is_exactly_popcount_of_every_byte` checks all 256 entries against `popcount` rather than assuming it.
 
-### D-322 — popcount's intermediates are f64
+### DIV-UTILS-BITWISE-4 — popcount's intermediates are f64
 `unit: utils-bitwise` · relocated from `docs/modules/utils-bitwise.md`
 
 Upstream's first statement is `x -= x >> 1 & 0x55555555`, where the subtraction happens on the *Number* and only the right-hand side is converted — so an input at or above 2^31 stays a float across the first step. Doing the whole thing in `i32` gives the same answer for every input tested, but by a different route, and the point of a bug-for-bug port is to transcribe the route.
 
-### D-323 — No napi bridge
+### DIV-UTILS-BITWISE-5 — No napi bridge
 `unit: utils-bitwise` · relocated from `docs/modules/utils-bitwise.md`
 
 Nothing in the upstream test corpus calls these functions from JavaScript, and a bridge with no caller is scaffolding for its own sake.
 
 ## critbit-tree-map, fixed-critbit-tree-map
 
-### D-245 — keys are truncated to bytes at the bridge; upstream's critical-bit arithmetic runs on untruncated UTF-16 code units
+### DIV-CRITBIT-TREE-MAP-1 — keys are truncated to bytes at the bridge; upstream's critical-bit arithmetic runs on untruncated UTF-16 code units
 **Status:** CONFIRMED · **Category:** scope · **Divergence:** yes (for code points ≥ 256 only)
 **Upstream:** `charCodeAt(i)` returns a full UTF-16 code unit (0..=65535), fed directly into
 `utils/bitwise.js`'s `msb8`/`criticalBit8Mask`, both of which mask with `0xff` internally. For any
@@ -1940,16 +1940,16 @@ over `Vec<u8>` and never sees a code unit at all.
 every key either original test file ever supplies), truncating at the boundary is a no-op — the
 byte IS the code unit. Reproducing the wide-character case exactly would mean re-deriving which of
 several masked, interacting bitwise operations wins for a given pair of 16-bit values, purely to
-match a bug no test exercises. The same judgement call as D-200 (trie's sentinel-collision
+match a bug no test exercises. The same judgement call as DIV-TRIE-MAP-1 (trie's sentinel-collision
 divergence): observable only through inputs neither original suite constructs.
 **Verify:** `crates/mnemonist-napi/src/critbit_tree_map.rs`'s and `fixed_critbit_tree_map.rs`'s
 `decode_key` doc comments; `docs/modules/critbit-tree-map.md`.
 
-### D-246 — the fixed variant's capacity-overflow crash is a Rust `Result::Err`, not a panic, though the message text is upstream's own verbatim
+### DIV-FIXED-CRITBIT-TREE-MAP-1 — the fixed variant's capacity-overflow crash is a Rust `Result::Err`, not a panic, though the message text is upstream's own verbatim
 **Status:** CONFIRMED · **Category:** implementation technique · **Divergence:** no (observationally identical text; the *mechanism* differs)
 **Upstream:** once more than `capacity` distinct keys are inserted, a later `set` walks through the
 corrupted node and throws `TypeError: Cannot read properties of undefined (reading 'length')` —
-JavaScript's own `undefined`-as-array-index cascade (see NOTES.md's B-260/B-261 discussion in the
+JavaScript's own `undefined`-as-array-index cascade (see NOTES.md's BUG-FIXED-CRITBIT-TREE-MAP-1/BUG-FIXED-CRITBIT-TREE-MAP-2 discussion in the
 core module's docs).
 **Port:** `FixedCritBitTreeMap::set` detects exactly the same corrupted-read condition (a
 `lefts`/`rights`/`critbits` read past its fixed bound) and returns `Err(Error::Corrupted)`, whose
@@ -1965,9 +1965,9 @@ different out-of-range read (see that module's docs, adaptation 3).
 **Verify:** `crates/mnemonist-core/src/structures/fixed_critbit_tree_map.rs`'s module docs, part 1,
 and `Error::Corrupted`; `docs/modules/fixed-critbit-tree-map.md`.
 
-## vp-tree, kd-tree (D-400..D-449 range)
+## vp-tree, kd-tree (DIV-VP-TREE-1..DIV-PROJ-65 range)
 
-### D-400 — `VPTree`'s distance function is passed per call, never stored on the struct
+### DIV-VP-TREE-1 — `VPTree`'s distance function is passed per call, never stored on the struct
 **Status:** CONFIRMED · **Category:** architecture · **Divergence:** no
 **Upstream:** `this.distance = distance` in the constructor, reused by both `nearestNeighbors` and
 `neighbors`.
@@ -1978,7 +1978,7 @@ observationally the same as upstream storing it once.
 **Verify:** `crates/mnemonist-core/src/structures/vp_tree.rs` module docs, "Distance is passed per
 call, never stored".
 
-### D-401 — an empty `VPTree`'s query returns no results rather than crashing the caller's own distance function
+### DIV-VP-TREE-2 — an empty `VPTree`'s query returns no results rather than crashing the caller's own distance function
 **Status:** CONFIRMED · **Category:** behavioural · **Divergence:** yes (narrower than upstream)
 **Upstream:** `new VPTree(distance, [])` builds cleanly (every backing array ends up length zero),
 but `nearestNeighbors`/`neighbors` on it reads `this.nodes[0]` as `undefined`, then
@@ -1994,15 +1994,15 @@ to a case no test exercises.
 **Verify:** `vp_tree.rs`'s `an_empty_tree_builds_cleanly_and_answers_no_queries` test; module docs,
 "What this deliberately does not model".
 
-### D-402 — `VPTree.nearestNeighbors(0, query)` returns no results rather than reading `undefined.distance`
+### DIV-VP-TREE-3 — `VPTree.nearestNeighbors(0, query)` returns no results rather than reading `undefined.distance`
 **Status:** CONFIRMED · **Category:** behavioural · **Divergence:** yes (narrower than upstream)
 **Upstream:** `if (neighbors.size >= k) tau = neighbors.peek().distance` — with `k = 0` this fires
 immediately after the heap is trimmed straight back to empty, so `neighbors.peek()` is `undefined`
 and `.distance` throws a `TypeError` unrelated to any distance function. Untested upstream.
 **Port:** `try_nearest_neighbors` returns `Ok(vec![])` immediately when `k == 0`.
-**Verify:** same test/docs as D-401.
+**Verify:** same test/docs as DIV-VP-TREE-2.
 
-### D-403 — a distance function that calls back into the same `VPTree` sees independent state, not upstream's shared, corruptible `this.heap`/`this.D`
+### DIV-VP-TREE-4 — a distance function that calls back into the same `VPTree` sees independent state, not upstream's shared, corruptible `this.heap`/`this.D`
 **Status:** CONFIRMED · **Category:** behavioural · **Divergence:** yes, and in the "more correct" direction
 **Upstream:** `this.heap`/`this.D` are single instance fields, reused (not recreated) across every
 call to `nearestNeighbors`. A distance function that recursively calls `tree.nearestNeighbors(...)`
@@ -2014,23 +2014,23 @@ tree-wide state to protect. A reentrant call here is simply an independent, corr
 **Rationale:** CLAUDE.md is explicit that "more correct" is still a divergence that must be
 disclosed, not silently kept. No test (upstream's or this port's fuzz grammar) inspects
 `this.heap`/`this.D` directly, so this is unreachable through any instrument currently in place —
-recorded here rather than left implicit, the same posture `bk_tree.rs`'s D-302 takes for a related
+recorded here rather than left implicit, the same posture `bk_tree.rs`'s DIV-BK-TREE-3 takes for a related
 but distinct hazard (a re-entrant *bridge* borrow, which does not arise here at all since no method
-needs `&mut self` — see D-404).
+needs `&mut self` — see DIV-VP-TREE-5).
 **Verify:** `vp_tree.rs` module docs, "What this deliberately does not model", third bullet.
 
-### D-404 — the napi bridge holds no `RefCell` at all for `VPTree`
+### DIV-VP-TREE-5 — the napi bridge holds no `RefCell` at all for `VPTree`
 **Status:** CONFIRMED · **Category:** architecture · **Divergence:** no
 **Upstream:** n/a — a design note, not a behavioural difference.
 **Port:** unlike `bk_tree.rs` (which needs `try_borrow`/`try_borrow_mut` because `add` requires
 exclusive access), every `JsVpTree` method only ever needs a shared reference: there is no mutation
 after construction, so the wrapper struct holds `CoreTree<JsSlot>` directly.
-**Rationale:** stated to make D-403 legible — the reason a reentrant distance call cannot panic or
+**Rationale:** stated to make DIV-VP-TREE-4 legible — the reason a reentrant distance call cannot panic or
 deadlock here is structural (no exclusive borrow is ever taken), not a policy decision to tolerate
 reentrancy the way `bk_tree.rs`'s `REENTRANT_DISTANCE` catch does.
 **Verify:** `crates/mnemonist-napi/src/vp_tree.rs` module docs.
 
-### D-405 — `this.D` (the per-query distance-call counter) is not exposed by the bridge at all
+### DIV-VP-TREE-6 — `this.D` (the per-query distance-call counter) is not exposed by the bridge at all
 **Status:** CONFIRMED · **Category:** scope · **Divergence:** yes (narrower — a property removed)
 **Upstream:** `this.D` is a real, enumerable, public instance property, reset to `0` and
 incremented once per node visited on every `nearestNeighbors`/`neighbors` call.
@@ -2043,7 +2043,7 @@ often a query prunes at least one node versus visits every node — is taken dir
 with a counter closure instead, which needs no core-level change at all.
 **Verify:** `crates/difffuzz/src/modules/vp_tree.rs`'s `grammar_self_check_radius_spans_full_pruning_and_none`.
 
-### D-406 — `KDTree`'s bridge exposes no direct constructor; only `.from`/`.fromAxes`
+### DIV-KD-TREE-1 — `KDTree`'s bridge exposes no direct constructor; only `.from`/`.fromAxes`
 **Status:** CONFIRMED · **Category:** scope · **Divergence:** yes (narrower surface)
 **Upstream:** `function KDTree(dimensions, build)` is a real, callable constructor — `new
 KDTree(2, {axes, labels, pivots, lefts, rights})` would run, provided the caller has already
@@ -2059,19 +2059,19 @@ test calls it, narrowing the surface to how the module is actually used is the m
 choice.
 **Verify:** `crates/mnemonist-napi/src/kd_tree.rs` module docs; `tests/bridge/kd-tree.js`.
 
-### D-407 — an empty `KDTree`'s `nearestNeighbor` returns `None`/`undefined` rather than cascading through `undefined` arithmetic
+### DIV-KD-TREE-2 — an empty `KDTree`'s `nearestNeighbor` returns `None`/`undefined` rather than cascading through `undefined` arithmetic
 **Status:** CONFIRMED · **Category:** behavioural · **Divergence:** yes (narrower than upstream)
 **Upstream:** `KDTree.from([], dimensions)` builds cleanly (`pivots`/`lefts`/`rights` all end up
 length zero), but `nearestNeighbor`/`kNearestNeighbors` on it reads `this.pivots[0]` as `undefined`
 and cascades from there — untested upstream, and not a single well-defined crash the way
-`VPTree`'s caller-supplied-metric crash is (D-401): here the cascade is entirely inside
+`VPTree`'s caller-supplied-metric crash is (DIV-VP-TREE-2): here the cascade is entirely inside
 `mnemonist`'s own code, through several `undefined`-arithmetic steps, before it does anything
 observable.
 **Port:** `KdTree::nearest_neighbor` returns `None` immediately when `size == 0`;
 `k_nearest_neighbors`/`linear_k_nearest_neighbors` return `Ok(vec![])`.
 **Verify:** `kd_tree.rs`'s `an_empty_tree_builds_cleanly_and_answers_no_queries` test; module docs.
 
-### D-408 — `KDTree`'s `k <= 0` guard only fires for `k == 0` in this port
+### DIV-KD-TREE-3 — `KDTree`'s `k <= 0` guard only fires for `k == 0` in this port
 **Status:** CONFIRMED · **Category:** scope · **Divergence:** yes (narrower — fewer inputs rejected)
 **Upstream:** `if (k <= 0) throw new Error('mnemonist/kd-tree.kNearestNeighbors: k should be a
 positive number.')` — reachable with a negative number, `-0`, or (since `NaN <= 0` is `false`) NOT
@@ -2086,7 +2086,7 @@ distinguish "the caller passed a negative number" from "the caller passed zero" 
 `Math.min`/typed-array-length arithmetic on `NaN` for a case nothing observes.
 **Verify:** `kd_tree.rs`'s `zero_k_is_rejected_with_upstreams_message` test; `NON_POSITIVE_K`.
 
-### D-409 — `dimensions == 0` is unguarded; the two ports fail differently, and both are untested
+### DIV-KD-TREE-4 — `dimensions == 0` is unguarded; the two ports fail differently, and both are untested
 **Status:** CONFIRMED · **Category:** behavioural · **Divergence:** yes (different failure mode, not a repair)
 **Upstream:** `(d + 1) % dimensions` is `NaN` when `dimensions` is `0`; every later index derived
 from it is `undefined`, and the traversal produces silent garbage rather than a clean throw.
@@ -2098,12 +2098,12 @@ answer" to reproduce — upstream's own answer is unobservable garbage), and a p
 loud rather than silently wrong. Left as a known, disclosed gap.
 **Verify:** `kd_tree.rs` module docs, "What this deliberately does not model", third bullet.
 
-### D-410 — `KDTree`'s bridge exposes `pivots`/`lefts`/`rights`/`size`/`dimensions` only; `axes`, `labels` and the query diagnostic `this.visited` are not exposed
+### DIV-KD-TREE-5 — `KDTree`'s bridge exposes `pivots`/`lefts`/`rights`/`size`/`dimensions` only; `axes`, `labels` and the query diagnostic `this.visited` are not exposed
 **Status:** CONFIRMED · **Category:** scope · **Divergence:** yes (narrower surface)
 **Upstream:** `axes`, `labels` and `visited` are real, enumerable, public instance properties.
 **Port:** not exposed by `crates/mnemonist-napi/src/kd_tree.rs`.
 **Rationale:** no test reads any of the three. `axes`/`labels` are reconstructable by a caller from
-the constructor arguments it already has; `visited`, like `VPTree`'s `this.D` (D-405), is a
+the constructor arguments it already has; `visited`, like `VPTree`'s `this.D` (DIV-VP-TREE-6), is a
 diagnostic aside on the traversal rather than a behaviour the original suite pins.
 `crates/difffuzz/src/modules/kd_tree.rs` observes `pivots`/`lefts`/`rights` directly instead, which
 is where the tree's real *shape* — as opposed to the caller's own input echoed back — actually
@@ -2111,7 +2111,7 @@ lives.
 **Verify:** `crates/mnemonist-napi/src/kd_tree.rs`; `crates/difffuzz/src/modules/kd_tree.rs`'s
 `observations()`.
 
-### D-450 — `MultiArray` models only two `(Container, capacity)` combinations, not all four
+### DIV-MULTI-ARRAY-1 — `MultiArray` models only two `(Container, capacity)` combinations, not all four
 **Status:** CONFIRMED · **Category:** scope · **Divergence:** yes (narrower — fewer inputs accepted)
 **Upstream:** `Container` defaults to `Array` regardless of `capacity`, so all four combinations —
 default `Array` unbounded, `Array` + fixed `capacity`, a typed array unbounded, a typed array +
@@ -2129,7 +2129,7 @@ the other two, which upstream itself does not support in any useful sense (see a
 cut `vector.rs` makes for its own unmodelled `ArrayClass` values.
 **Verify:** `mnemonist_core::structures::multi_array` module docs; `crates/mnemonist-napi/src/multi_array.rs`'s `UNSUPPORTED_FIXED_CONTAINER`.
 
-### D-451 — `symspell`'s internal string indexing is over Unicode scalar values, not UTF-16 code units
+### DIV-SYMSPELL-1 — `symspell`'s internal string indexing is over Unicode scalar values, not UTF-16 code units
 **Status:** CONFIRMED · **Category:** scope · **Divergence:** yes (differs only outside the Basic Multilingual Plane)
 **Upstream:** `.length`/`.substring`/character indexing throughout `symspell.js`'s `edits`,
 `addLowestDistance`, `damerauLevenshtein` and `lookup` all operate on UTF-16 code units, so an
@@ -2144,17 +2144,17 @@ semantics would mean operating on `Vec<u16>` throughout and converting back to U
 every dictionary-key boundary, for a surface nothing currently reaches.
 **Verify:** `symspell.rs` module docs, "ASCII/BMP scope".
 
-### D-452 — `passjoin-index`'s internal string indexing is over Unicode scalar values, not UTF-16 code units
+### DIV-PASSJOIN-INDEX-1 — `passjoin-index`'s internal string indexing is over Unicode scalar values, not UTF-16 code units
 **Status:** CONFIRMED · **Category:** scope · **Divergence:** yes (differs only outside the Basic Multilingual Plane)
 **Upstream:** `segments`/`segmentPos`/`multiMatchAwareSubstrings` index `.length`/`.slice` in UTF-16
 code units, same as `symspell.js`.
 **Port:** `crates/mnemonist-core/src/structures/passjoin_index.rs` indexes over Rust `char`s.
-**Rationale:** identical to D-451, for the identical reason — see that entry and the module's own
+**Rationale:** identical to DIV-SYMSPELL-1, for the identical reason — see that entry and the module's own
 "ASCII/BMP scope" docs. Recorded as a separate ID because it is a separate unit's require-closure,
 even though the underlying scope cut is the same class of thing.
 **Verify:** `passjoin_index.rs` module docs, "ASCII/BMP scope".
 
-### D-453 — `PassjoinIndex.prototype.add`/`search` accept only `String`, not upstream's array-like of characters
+### DIV-PASSJOIN-INDEX-2 — `PassjoinIndex.prototype.add`/`search` accept only `String`, not upstream's array-like of characters
 **Status:** CONFIRMED · **Category:** scope · **Divergence:** yes (narrower — fewer input shapes accepted)
 **Upstream:** every string operation `passjoin-index.js` performs (`.length`, `.slice`, `+`) works
 identically on a plain array of characters, so `add`/`search` accept either.
@@ -2165,7 +2165,7 @@ would mean threading a second representation through every core helper for a cas
 **Verify:** `passjoin_index.rs` (napi) module docs, "`also accepts an array-like of characters` is
 not modelled".
 
-### D-454 — `PassjoinIndex`'s inverted-index key is a `(String, i64)` tuple, not upstream's string concatenation
+### DIV-PASSJOIN-INDEX-3 — `PassjoinIndex`'s inverted-index key is a `(String, i64)` tuple, not upstream's string concatenation
 **Status:** CONFIRMED · **Category:** internal representation · **Divergence:** narrow, unreached on every tested/fuzzed input
 **Upstream:** `key = segment + i` concatenates the segment index directly onto the segment string,
 so two distinct `(segment, i)` pairs could in principle collide (e.g. segment `"1"` at index `2`

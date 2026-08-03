@@ -217,7 +217,7 @@ impl<IK: Hash + Eq, K, V> LruCache<IK, K, V> {
     }
 
     /// Upstream's `size` property — the live entry count, unlike
-    /// `DefaultMap`'s drifting counter (B-40); nothing in this family
+    /// `DefaultMap`'s drifting counter (BUG-DEFAULT-MAP-1); nothing in this family
     /// diverges the two.
     pub fn len(&self) -> usize {
         self.size

@@ -64,10 +64,10 @@ cross-product against real Node 24.18.1 (see below), both popcount implementatio
 `u32::count_ones` over ~150,000 words, `TABLE8` checked against `popcount` for all 256 entries, the
 full set of ToInt32 boundary behaviours (negatives, non-integer truncation, wraparound past 2^32
 including `2^53` and `1e30`, non-finite inputs becoming zero), `msb32`'s failure for every input
-with the top bit set (B-19) alongside the half that works, `msb8` correct on bytes and unmasked
+with the top bit set (BUG-UTILS-BITWISE-1) alongside the half that works, `msb8` correct on bytes and unmasked
 above them, `test`'s shift-count wrapping, the byte-wide critical-bit helpers' complement property
 over 4,096 byte pairs, `testCriticalBit8`'s Number-arithmetic carry-through, and
-`criticalBit32Mask`'s sign (B-20). Full test-to-gap mapping: evidence file.
+`criticalBit32Mask`'s sign (BUG-UTILS-BITWISE-2). Full test-to-gap mapping: evidence file.
 
 **The cross-product test is the one that matters.** 28 inputs × 9 second arguments, every one of the
 nine functions evaluated on each, run through the **upstream file on real Node 24.18.1** and pasted
@@ -83,7 +83,7 @@ precisely because it is the one a reader would be least surprised to find broken
 
 ## Bugs this found
 
-**B-19 — `msb32` returns `0` for every input whose bit 31 is set.**
+**BUG-UTILS-BITWISE-1 — `msb32` returns `0` for every input whose bit 31 is set.**
 Verified against Node 24.18.1. `x |= (x >> 1)` is an **arithmetic** shift. An input with
 the top bit set smears to `-1` at the first step, and the closing `x & ~(x >> 1)` is then
 `-1 & ~(-1)`, which is `-1 & 0`, which is `0`. Measured: `msb32(0xFFFFFFFF) === 0`,
@@ -95,7 +95,7 @@ confined to the half where "which is the highest set bit?" has the most obvious 
 on input that is not a byte — `msb8(256) === 256`. Upstream's JSDoc says "a byte" and the code never
 checks.
 
-**B-20 — `criticalBit32Mask`'s trailing `& 0xffffffff` undoes its own `>>> 0`.**
+**BUG-UTILS-BITWISE-2 — `criticalBit32Mask`'s trailing `& 0xffffffff` undoes its own `>>> 0`.**
 Verified against Node 24.18.1.
 
 ```js
@@ -118,11 +118,11 @@ diverging.
 
 | # | Divergence | Why |
 |---|---|---|
-| D-319 | **Every function takes `f64` and returns `i32`.** | Not an aesthetic choice. Each is written in terms of JS bitwise operators, and every JS bitwise operator begins with ToInt32; taking `u32` would delete the conversion, and the conversion is where three of the four defects live. `to_int32` and `to_uint32` are exposed so a caller sees the coercion rather than inferring it. |
-| D-320 | **`to_int32` is not upstream code.** | It is the *implicit* first step of every operator in the file, written out once. Implemented with an exact `fmod`, so it is right for magnitudes past 2^53 where an `i64` cast saturates and would silently disagree. |
-| D-321 | **`TABLE8` is built from `u8::count_ones`, not from `popcount`.** | Upstream fills it by calling its own `popcount` at module load, which cannot be done in a `const fn`. The substitution is only legitimate if the two agree everywhere, so `table8_is_exactly_popcount_of_every_byte` checks all 256 entries against `popcount` rather than assuming it. |
-| D-322 | **`popcount`'s intermediates are `f64`.** | Upstream's first statement is `x -= x >> 1 & 0x55555555`, where the subtraction happens on the *Number* and only the right-hand side is converted — so an input at or above 2^31 stays a float across the first step. Doing the whole thing in `i32` gives the same answer for every input tested, but by a different route, and the point of a bug-for-bug port is to transcribe the route. |
-| D-323 | **No napi bridge.** | Nothing in the upstream test corpus calls these functions from JavaScript, and a bridge with no caller is scaffolding for its own sake. |
+| DIV-UTILS-BITWISE-1 | **Every function takes `f64` and returns `i32`.** | Not an aesthetic choice. Each is written in terms of JS bitwise operators, and every JS bitwise operator begins with ToInt32; taking `u32` would delete the conversion, and the conversion is where three of the four defects live. `to_int32` and `to_uint32` are exposed so a caller sees the coercion rather than inferring it. |
+| DIV-UTILS-BITWISE-2 | **`to_int32` is not upstream code.** | It is the *implicit* first step of every operator in the file, written out once. Implemented with an exact `fmod`, so it is right for magnitudes past 2^53 where an `i64` cast saturates and would silently disagree. |
+| DIV-UTILS-BITWISE-3 | **`TABLE8` is built from `u8::count_ones`, not from `popcount`.** | Upstream fills it by calling its own `popcount` at module load, which cannot be done in a `const fn`. The substitution is only legitimate if the two agree everywhere, so `table8_is_exactly_popcount_of_every_byte` checks all 256 entries against `popcount` rather than assuming it. |
+| DIV-UTILS-BITWISE-4 | **`popcount`'s intermediates are `f64`.** | Upstream's first statement is `x -= x >> 1 & 0x55555555`, where the subtraction happens on the *Number* and only the right-hand side is converted — so an input at or above 2^31 stays a float across the first step. Doing the whole thing in `i32` gives the same answer for every input tested, but by a different route, and the point of a bug-for-bug port is to transcribe the route. |
+| DIV-UTILS-BITWISE-5 | **No napi bridge.** | Nothing in the upstream test corpus calls these functions from JavaScript, and a bridge with no caller is scaffolding for its own sake. |
 
 ## Fuzz + bench
 

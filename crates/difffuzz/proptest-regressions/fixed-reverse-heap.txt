@@ -9,7 +9,7 @@
 # heap.txt: a deliberate falsification of the fuzzer, not a real port defect.
 #
 # The sabotage was to make `FixedReverseHeap::clear` blank the backing array as
-# well as resetting `size` -- that is, to *fix* upstream's B-74, where `clear()`
+# well as resetting `size` -- that is, to *fix* upstream's BUG-FIXED-REVERSE-HEAP-2, where `clear()`
 # leaves the discarded contents in place and `peek()` afterwards answers with an
 # item that is no longer in the heap.
 #

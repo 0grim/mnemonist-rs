@@ -22,23 +22,23 @@ falsification record, full benchmark table.
   `consume()` (1).
 * **Constructor alphabet:** `ArrayClass` (see the exclusion below), one of five comparator
   factories, and a **generated capacity in `0..5`, zero included** — because a capacity of `0` is
-  accepted upstream (B-73) and a grammar that only generated sensible capacities would never have
+  accepted upstream (BUG-FIXED-REVERSE-HEAP-1) and a grammar that only generated sensible capacities would never have
   visited that branch.
 * **The comparator factories are `heap`'s**, minus `clearer`: this structure's `clear` sets `size`
   and does not rebind `items`, so it is not the rebinding case `heap` uses that factory for.
-  `clear` is an ordinary op in the alphabet instead, which reaches B-74 directly.
+  `clear` is an ordinary op in the alphabet instead, which reaches BUG-FIXED-REVERSE-HEAP-2 directly.
 * **Both constructor arities are generated** — 30% of programs omit the comparator, which is
   upstream's `arguments.length === 2` form.
 * **Observable state, compared after every op:** `size`, `capacity` and `items`. `items` is
   `capacity` slots long from construction and keeps its contents through a `clear()`, which is what
-  makes B-74 visible in the state rather than only through a `peek`.
+  makes BUG-FIXED-REVERSE-HEAP-2 visible in the state rather than only through a `peek`.
 
 ## Falsification record
 
 ### Fuzzer falsification
 
 Sabotage: `FixedReverseHeap::clear` blanking the backing array as well as resetting `size` — that
-is, *fixing* B-74. Chosen because it is the most plausible "obvious improvement" anyone would make
+is, *fixing* BUG-FIXED-REVERSE-HEAP-2. Chosen because it is the most plausible "obvious improvement" anyone would make
 to this file, and because it makes the port strictly more correct than upstream and therefore
 wrong.
 

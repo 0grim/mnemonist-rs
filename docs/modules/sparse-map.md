@@ -9,7 +9,7 @@ Bridge: `crates/mnemonist-napi/src/sparse_map.rs`, `crates/mnemonist-napi/src/cu
 
 `SparseSet` with a payload, and the payload is where everything interesting is. The module
 inherits the dense/sparse pair, the O(1) `clear`, and all three of `sparse-set`'s out-of-range
-defects (B-8, B-9, B-10) unchanged. It adds one of its own that needs **no** out-of-range input at
+defects (BUG-SPARSE-SET-1, BUG-SPARSE-SET-2, BUG-SPARSE-SET-3) unchanged. It adds one of its own that needs **no** out-of-range input at
 all — `delete` moves the key and leaves the value behind — and the upstream suite cannot see it
 because of a single structural property of that suite: it only ever deletes from a one-element map.
 
@@ -60,7 +60,7 @@ Everything below is reachable through the public API and never exercised by the 
 **The one that matters**
 
 1. **`delete` on a map with more than one entry is never performed.** This single omission hides
-   B-11 completely: the swap moves the last *member* into the hole and leaves the last *value*
+   BUG-SPARSE-MAP-1 completely: the swap moves the last *member* into the hole and leaves the last *value*
    where it was, so the moved member inherits the deleted member's value. On a one-element map the
    swap is `dense[0] = dense[0]` and the missing value move is invisible. Fixing the bug leaves this
    suite at **9 passing, 0 failing**.
@@ -105,10 +105,10 @@ Everything below is reachable through the public API and never exercised by the 
 
 16. **`has(12)` and `get(12)` are the only out-of-range calls in the file, and both are reads.** No
     out-of-range `set` is ever performed, which hides all of:
-    * `set(m)` past the end **corrupts the map**, exactly as `SparseSet.add` does (B-8) — plus a
+    * `set(m)` past the end **corrupts the map**, exactly as `SparseSet.add` does (BUG-SPARSE-SET-1) — plus a
       wrinkle of its own, since the *value* still lands even when the key does not;
     * therefore **`size` can exceed `length`**;
-    * `delete` past capacity writes `dense` but not `sparse` (B-10);
+    * `delete` past capacity writes `dense` but not `sparse` (BUG-SPARSE-SET-3);
     * and `new SparseMap(0)` accepts entries it can never find while its `Array` store grows one
       slot per `set`.
 
@@ -117,11 +117,11 @@ Everything below is reachable through the public API and never exercised by the 
 17. **Mutation during iteration is never performed.** The hybrid capture — length frozen at
     construction, elements read live on every step — means an element write mid-walk *is* visible
     and a length change is *not*; neither half is tested. On
-    this module the visible result of a mid-walk `delete` is a **mismatched pair**, which is B-11
+    this module the visible result of a mid-walk `delete` is a **mismatched pair**, which is BUG-SPARSE-MAP-1
     at its sharpest.
-18. **A cursor is never re-drained**, so D-06 non-restartability is unobserved.
+18. **A cursor is never re-drained**, so DIV-STACK-1 non-restartability is unobserved.
 19. **`[...map]` is never used.** The suite reaches the cursors only through the three named
-    methods, so the collection-level `Symbol.iterator` — the *factory* half of D-07, and the half
+    methods, so the collection-level `Symbol.iterator` — the *factory* half of DIV-STACK-2, and the half
     napi does not provide — has **zero** coverage, despite being the last line of the module. It is
     also aliased to `entries`, not `values`, and nothing checks that.
 20. **The three projections are never compared against each other on the same map**, so the states
@@ -143,7 +143,7 @@ Everything below is reachable through the public API and never exercised by the 
 ## What we test in addition
 
 `crates/mnemonist-core/src/structures/sparse_map.rs` — 20 tests, closing every gap above except 4,
-23–25: a 1:1 reproduction of both constructor signatures as a baseline, the headline B-11 defect
+23–25: a 1:1 reproduction of both constructor signatures as a baseline, the headline BUG-SPARSE-MAP-1 defect
 pinned through `get`, iteration order and `vals` slot by slot, the same defect reproduced through a
 typed store to attribute it to the swap rather than the store, an out-of-range `set` corrupting the
 map value by value, the `Array` store outgrowing the map it belongs to while `keys()` gaps and
@@ -172,7 +172,7 @@ that says so.
 
 ## Bugs this found
 
-**B-11 — `SparseMap.delete` moves the key and leaves the value behind.**
+**BUG-SPARSE-MAP-1 — `SparseMap.delete` moves the key and leaves the value behind.**
 Verified against Node 24.18.1. This is a plain correctness bug on entirely in-range
 input, not an edge case. Upstream's `delete` is `SparseSet`'s swap-with-last, copied verbatim:
 
@@ -200,13 +200,13 @@ Reproduced, not fixed. It holds for a typed value store too (`vals = [11, 22, 33
 **Why it survived upstream, measured rather than asserted.** The test file deletes exactly twice,
 both times from a map holding one entry, where `this.sparse[member]` is `0` and
 `this.dense[this.size - 1]` is the same member — a self-assignment. Sabotaging the port to *fix*
-B-11 leaves `tests/run.sh test/sparse-map.js` at **9 passing, 0 failing**, while turning **four**
+BUG-SPARSE-MAP-1 leaves `tests/run.sh test/sparse-map.js` at **9 passing, 0 failing**, while turning **four**
 of our native tests red and being caught by the differential fuzzer in 3.0 seconds. That
 measurement is the clearest statement of the rigor gap this project has produced: the suite is not
 weak in an obvious way — it covers both constructors and all three iterators — it just never builds
 a map big enough for its own delete to do anything.
 
-**B-8, B-9 and B-10 all apply unchanged**, since `has`, `set`'s insert path and `delete`'s swap are
+**BUG-SPARSE-SET-1, BUG-SPARSE-SET-2 and BUG-SPARSE-SET-3 all apply unchanged**, since `has`, `set`'s insert path and `delete`'s swap are
 `sparse-set`'s code. Verified against Node 24.18.1 for this module specifically:
 `new SparseMap(10); set(300, 7)` gives `size === 1`, `dense === [44, 0, …]`, `sparse` untouched,
 `vals === [7, <9 holes>]`, `has(300) === has(44) === false`; and `new SparseMap(3)`, set
@@ -233,12 +233,12 @@ generates all four constructors.
 
 **What the fuzzer found: nothing new.** Two campaigns, 2.65 M operations, zero divergences —
 the expected outcome for a faithful port, and the same result as the two previous modules.
-B-11 was found by reading `delete` and asking what happened to the third array. What the fuzzer is
+BUG-SPARSE-MAP-1 was found by reading `delete` and asking what happened to the third array. What the fuzzer is
 for is the other direction, and it is sharper than the original suite by a wide margin — see
-"Fuzz + bench", including on B-11 itself.
+"Fuzz + bench", including on BUG-SPARSE-MAP-1 itself.
 
 **The bridge held a bare core value behind `&self`**, which LLVM was entitled to compile as a
-`noalias readonly` pointer and hoist reads across a re-entrant JS callback (B-31). It now holds
+`noalias readonly` pointer and hoist reads across a re-entrant JS callback (PORTBUG-1). It now holds
 `RefCell<Core>`, which is not `Freeze`, and every `&mut self` method borrows via `borrow_mut()`
 taken per step and released before the callback runs, so a re-entrant callback never meets an
 outstanding borrow. See `crates/mnemonist-napi/src/cursor.rs`'s `CellCursor`. Full history in the
@@ -248,15 +248,15 @@ log.
 
 | # | Divergence | Why |
 |---|---|---|
-| — | **`delete` does not move the value.** | B-11, reproduced bug-for-bug. Fixing it would be a silent behavioural divergence on in-range input, and `get` after `delete` is observable. Pinned by four native tests and by a committed fuzz seed, so a future "cleanup" fails loudly. |
+| — | **`delete` does not move the value.** | BUG-SPARSE-MAP-1, reproduced bug-for-bug. Fixing it would be a silent behavioural divergence on in-range input, and `get` after `delete` is observable. Pinned by four native tests and by a committed fuzz seed, so a future "cleanup" fails loudly. |
 | — | **Values are JS numbers (`f64`), not arbitrary JS values.** | The core is generic over the value type; the bridge instantiates it at `f64`. Arbitrary values need the `Map`-backed bridge machinery — a per-slot `Ref` and an `Env` to drop it — and this module does not reach for it. The upstream test file stores only numbers. `map.set(3, 'x')` throws here and works upstream. |
 | — | **Only `Array`, `Uint8Array`, `Uint16Array` and `Uint32Array` are accepted as `Values`.** | `PointerVec` models the three unsigned widths. `Int8Array`, `Float64Array` and the rest are refused with an error naming the gap, rather than silently coerced into the nearest supported width — which would be a wrong answer dressed as a right one. |
 | — | **`Values` is resolved by identity, not by name.** | `strict_equals` against the real `globalThis.Uint8Array`, because `{name: 'Uint8Array'}` is trivial to forge and reading `.name` would accept it. |
 | — | **The constructor branches on "was a second argument passed", not on `arguments.length`.** | napi cannot see `arguments.length`. The two agree on every call except `new SparseMap(x, undefined)`, where upstream sees two arguments and this sees one. Same blind spot as `forEach`'s `scope`, below. The two shapes upstream *throws* on are reproduced: `new SparseMap(Ctor)` reaches `getPointerArray(NaN)` and so throws the pointer-array message verbatim, and `new SparseMap(10, 20)` reaches `new (10)(20)`. |
-| D-09 | **The shrink window is reproduced (Option A), not collapsed.** | As `sparse-set`. Reachable here through `keys()` on any map whose `size` has run past `length`. |
+| DIV-SPARSE-SET-1 | **The shrink window is reproduced (Option A), not collapsed.** | As `sparse-set`. Reachable here through `keys()` on any map whose `size` has run past `length`. |
 | — | **`entries()` is the one cursor whose `Yield` is not an `Either`.** | Upstream builds `[dense[i], vals[i]]` and yields **the array**, so a missing half is `undefined` *inside* a yielded value and the step itself never gaps. `Option::None` therefore keeps its plain meaning of `{done: true}` on that cursor alone. |
-| D-06 | **No collection implements `IntoIterator`.** | It would hand out a fresh iterator per `for` loop and silently restart. |
-| D-07 | **`Symbol.iterator` is installed from Rust, and aliased to `entries`.** | Not to `values` — that is what upstream aliases, and getting it wrong would leave `[...map]` yielding bare numbers with no upstream test to catch it, since the suite never spreads a map. The table in `crates/mnemonist-napi/src/cursor.rs` carries the method name per class for exactly this reason. |
+| DIV-STACK-1 | **No collection implements `IntoIterator`.** | It would hand out a fresh iterator per `for` loop and silently restart. |
+| DIV-STACK-2 | **`Symbol.iterator` is installed from Rust, and aliased to `entries`.** | Not to `values` — that is what upstream aliases, and getting it wrong would leave `[...map]` yielding bare numbers with no upstream test to catch it, since the suite never spreads a map. The table in `crates/mnemonist-napi/src/cursor.rs` carries the method name per class for exactly this reason. |
 | — | **Three walks, one `Sequence` impl, projection carried in `Frozen`.** | A type may implement a trait once, and `keys`/`values`/`entries` are three copies of one closure over one frozen `size`. `CursorState::open_projected` replaces the frozen payload while still taking the length from `freeze()`, so the "no window between the two reads" guarantee is unchanged. |
 | — | **The Rust-side `Iterator` impl skips gaps rather than stopping.** | As `sparse-set`. The faithful three-way primitive is `step()`. |
 | — | **`set` returns `bool` in core; the bridge returns `this`.** | Core reports whether the member was newly inserted, which upstream exposes only through `size`. |
@@ -280,7 +280,7 @@ Reproduce with `target/release/difffuzz --module sparse-map --seed 42 --cases 17
 
 The op alphabet covers `set`/`delete`/`has`/`get`/`clear` plus all three iterator projections.
 Observable state includes `size`, `length`, `dense`, `sparse` **and `vals`** — `vals` is what makes
-B-11 checkable rather than inferable, since a port that "tidied up" the missing value move would
+BUG-SPARSE-MAP-1 checkable rather than inferable, since a port that "tidied up" the missing value move would
 still agree on `size`, on both index arrays and on every `has`. Constructors cover both upstream
 signatures and all four supported value stores. All three iterator factories are generated because
 the three projections **disagree** exactly where a port goes wrong — once `size` has run past
@@ -317,7 +317,7 @@ chosen because it reaches the projection machinery this unit adds. The sabotage 
 projection reading `dense` instead of `vals` — is confirmed red in precisely that place (8 passing,
 1 failing, `[3, 6, 9]` against `[13, 22, 8]`); reverted, confirmed green again (9 passing).
 
-A second falsification was expected to stay green, and did: fixing B-11 in the core leaves the
+A second falsification was expected to stay green, and did: fixing BUG-SPARSE-MAP-1 in the core leaves the
 original suite at 9 passing, 0 failing, while turning four native tests red and being caught by the
 differential fuzzer in 3.0 seconds — both numbers measured, not reasoned about. Full record:
 evidence file.
@@ -329,13 +329,13 @@ Host: AMD Ryzen 5 7600X, 12 threads, WSL2, Node 24.18.1, rustc 1.97.1, quiet ser
 Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 10,000 samples/side.
 
 **`mixed-1e6`** — 1e6 mixed `set`/`get`/`delete` (50/25/25) over length 1e6, members drawn in range
-(the out-of-range corruption path, B-8 inherited, belongs to the differential fuzzer): the port is
+(the out-of-range corruption path, BUG-SPARSE-SET-1 inherited, belongs to the differential fuzzer): the port is
 1.4× faster at p50 (12.0 vs 16.3 ns/op), 1.8× faster at p99 (28.8 vs 52.1), 1.4× faster at min. No
 regressions. Full table: evidence file.
 
 The margin here is narrower than `sparse-set`'s own at p50 (1.4× against 1.3×) but wider at p99
 (1.8× against a tie) — plausible given this module does strictly more per op (a second array,
 `vals`, alongside `dense`/`sparse`), so there is more surface for both sides to spend time on and the
-*ratio* need not track exactly. B-11 (`delete` moving the key but not the value) is reproduced and is
+*ratio* need not track exactly. BUG-SPARSE-MAP-1 (`delete` moving the key but not the value) is reproduced and is
 part of what the checksum agreement confirms: a port that had "fixed" it would desynchronise `get`'s
 answer after a `delete`, and the checksum would catch that before any timing number was trusted.

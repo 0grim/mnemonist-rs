@@ -77,7 +77,7 @@ reads across directly.
 - **Claiming is a submission-form step**, reviewed at judging — not something inferred from the repo.
   A perfect `NOTES.md` that never reaches the form scores nothing.
 - **The required shape is repro + what upstream does wrong + how our port handles it.** Our entries
-  already carry all three, plus why the upstream suite misses it. See B-160.
+  already carry all three, plus why the upstream suite misses it. See BUG-MULTI-SET-1.
 - **"often surfaced when the original tests disagree with correct behavior"** is the sharpest
   ranking filter we have, and it is theirs, not ours. A defect whose upstream test *asserts* the
   wrong result proves the bug survived review; one the tests merely miss proves only that nobody

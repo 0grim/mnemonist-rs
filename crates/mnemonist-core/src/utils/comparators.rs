@@ -136,7 +136,7 @@ impl<T> MaybeUndefined for Option<T> {
 /// `Heap.nsmallest`/`nlargest` open their `n === 1` fast paths with
 /// `var min = Infinity` and then test `min === Infinity` to mean "nothing seen
 /// yet". The sentinel is therefore a **real value in the domain**, and an
-/// element that happens to be `Infinity` resets it — NOTES B-72. Reproducing
+/// element that happens to be `Infinity` resets it — NOTES BUG-HEAP-3. Reproducing
 /// that needs the slot type's own answer to "are you `Infinity`", which is what
 /// this trait asks.
 ///

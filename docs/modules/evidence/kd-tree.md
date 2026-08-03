@@ -15,8 +15,8 @@ record, full benchmark tables.
 | `k_nearest_neighbors_matches_brute_force_membership` | 1:1 transcription of the knn test |
 | `linear_k_nearest_neighbors_matches_upstreams_pinned_case` | 1:1 transcription of the pinned `['five', 'four', 'one']` order |
 | `k_is_clamped_to_size_rather_than_padding_with_nothing` | the `k` > size gap |
-| `zero_k_is_rejected_with_upstreams_message` | the `k <= 0` gap (narrowed — see D-408) |
-| `an_empty_tree_builds_cleanly_and_answers_no_queries` | the empty-tree gap (D-407) |
+| `zero_k_is_rejected_with_upstreams_message` | the `k <= 0` gap (narrowed — see DIV-KD-TREE-3) |
+| `an_empty_tree_builds_cleanly_and_answers_no_queries` | the empty-tree gap (DIV-KD-TREE-2) |
 | `finds_neighbors_across_the_splitting_plane` | the "proven necessary" gap — see the falsification record |
 
 ## Fuzz grammar
@@ -24,7 +24,7 @@ record, full benchmark tables.
 * **Op alphabet:** `nearestNeighbor(query)` (weight 3) · `kNearestNeighbors(k, query)` (3) ·
   `linearKNearestNeighbors(k, query)` (3).
 * **`.from`, not `new KDTree(...)`.** Upstream's own raw constructor takes an already-built
-  internal shape (D-406), so this is the first module in the port whose `ModuleSpec` needs an
+  internal shape (DIV-KD-TREE-1), so this is the first module in the port whose `ModuleSpec` needs an
   alternate entry point: `static_factory()` names `"from"`, and `fuzz/oracle.js`'s `init` case
   grew an additive `staticFactory` field (`Ctor[name](...)` instead of `new Ctor(...)`) —
   optional, defaulted to the prior behaviour for every other module.

@@ -97,7 +97,7 @@
 //! [`ListCursor::current`]/[`ListCursor::advance`] are the fix: `forEach`
 //! reads the current item, lets the callback run, and only then advances,
 //! reading `next` live at that later point — matching `lru-cache`'s own
-//! `ForEachWalk` split (D-90) for the identical reason: the sift there reads
+//! `ForEachWalk` split (DIV-LRU-CACHE-2) for the identical reason: the sift there reads
 //! a *separate* bookkeeping array at a different cadence than a stored
 //! cursor's own advance; here it is the same node object read at two
 //! different times instead. [`ListCursor::step`] keeps the lazy iterators'
@@ -137,12 +137,12 @@
 //! shifted-off node, V8's GC reclaims it. This port cannot tell "no cursor
 //! holds it any more" without a live reference count per node — the same
 //! kind of constraint the FFI boundary already answers one way for `trie`'s
-//! D-201 (a resumable cursor cannot borrow the collection across calls); see
+//! DIV-TRIE-MAP-2 (a resumable cursor cannot borrow the collection across calls); see
 //! `crates/mnemonist-napi/src/linked_list.rs` and `docs/modules/linked-list.md`
 //! for the value-retention consequence at the bridge, where a stored item is
 //! a JS value kept alive by the arena for as long as the arena lives.
 //!
-//! # B-241 — `shift()` never updates `tail`, so emptying the list leaves it stale
+//! # BUG-LINKED-LIST-1 — `shift()` never updates `tail`, so emptying the list leaves it stale
 //!
 //! ```js
 //! LinkedList.prototype.shift = function() {
@@ -169,8 +169,8 @@
 //! list.last()                   // 'a'        (tail is STALE: the removed item)
 //! ```
 //!
-//! Verified against Node 24.18.1; recorded as **B-241** in NOTES.md. Silent
-//! and self-healing exactly like B-40: the next `push` or `unshift` on an
+//! Verified against Node 24.18.1; recorded as **BUG-LINKED-LIST-1** in NOTES.md. Silent
+//! and self-healing exactly like BUG-DEFAULT-MAP-1: the next `push` or `unshift` on an
 //! empty list takes the `!this.head` branch, which sets `this.tail = node`
 //! unconditionally — so the staleness is observable only in the narrow window
 //! between "shifted to empty" and "the next insert," never afterwards.
@@ -249,7 +249,7 @@ impl<T> LinkedList<T> {
     /// Upstream's `last`.
     ///
     /// Reads `tail` verbatim, with no guard against `size == 0`
-    /// — which is exactly how B-241 reproduces: after `shift()` has emptied
+    /// — which is exactly how BUG-LINKED-LIST-1 reproduces: after `shift()` has emptied
     /// the list, `tail` still names the just-removed node, and this method
     /// returns its item rather than `None`. See the module docs.
     pub fn last(&self) -> Option<&T> {
@@ -270,8 +270,8 @@ impl<T> LinkedList<T> {
     /// = node; } else { this.tail.next = node; this.tail = node; }` —
     /// checking **`head`**. An earlier cut of this method checked `self.tail`
     /// instead, which is indistinguishable in every ordinary state (`head`
-    /// and `tail` are always both `None` or both `Some` outside of B-241) but
-    /// diverges in exactly the state B-241 produces: `shift()` on a
+    /// and `tail` are always both `None` or both `Some` outside of BUG-LINKED-LIST-1) but
+    /// diverges in exactly the state BUG-LINKED-LIST-1 produces: `shift()` on a
     /// one-element list sets `head = None` while leaving `tail` at the
     /// removed node. A push in that state must see `!this.head` and start a
     /// **fresh** one-element list — abandoning the stale `tail` entirely,
@@ -281,7 +281,7 @@ impl<T> LinkedList<T> {
     /// `None` while `tail` and the arena both held a real, unreachable node.
     /// Found by the same first fuzz campaign as the `forEach` timing defect,
     /// one generated case later (`push(0); forEach(cb: shift once); push(0);`
-    /// — the second `push`, right after B-241 fires, is where the two
+    /// — the second `push`, right after BUG-LINKED-LIST-1 fires, is where the two
     /// branches disagree): port `toArray() == []`, upstream `toArray() ==
     /// [0]`. Not an upstream bug — a defect in this port, fixed here before
     /// any campaign was logged in `fuzz/log.txt`.
@@ -295,7 +295,7 @@ impl<T> LinkedList<T> {
                 self.tail = Some(index);
             }
             Some(_) => {
-                // `tail` may be stale (B-241) but `head` being `Some` means
+                // `tail` may be stale (BUG-LINKED-LIST-1) but `head` being `Some` means
                 // this really is a non-empty list, so `tail` still names a
                 // live node to link onto -- the in-place mutation the module
                 // docs describe, which is what makes an append visible to a
@@ -346,7 +346,7 @@ impl<T> LinkedList<T> {
 
     /// Upstream's `shift`.
     ///
-    /// `tail` is deliberately **not** touched — see B-241 in the module
+    /// `tail` is deliberately **not** touched — see BUG-LINKED-LIST-1 in the module
     /// docs. The returned value is a clone rather than a move: the slot
     /// itself is never freed (the module docs explain why), so the item has
     /// to stay put for any cursor that already captured this node.
@@ -542,7 +542,7 @@ mod tests {
         assert_eq!(items.last(), Some(&3));
     }
 
-    // ---- B-241 -------------------------------------------------------
+    // ---- BUG-LINKED-LIST-1 -------------------------------------------------------
 
     #[test]
     fn shifting_the_last_element_leaves_tail_stale() {
@@ -555,7 +555,7 @@ mod tests {
         assert_eq!(
             list.last(),
             Some(&"a"),
-            "B-241: tail is stale, still the removed item"
+            "BUG-LINKED-LIST-1: tail is stale, still the removed item"
         );
     }
 
@@ -582,7 +582,7 @@ mod tests {
     /// (`--module linked-list --seed 42`, one op after the `forEach` timing
     /// defect's own repro): `push` branching on `self.tail` instead of
     /// `self.head` (an earlier cut of this method) takes the "list is
-    /// non-empty" branch in the B-241 state and links onto the stale tail
+    /// non-empty" branch in the BUG-LINKED-LIST-1 state and links onto the stale tail
     /// instead of starting fresh, leaving `head` stuck at `None` forever.
     /// The test above already covered "push after a plain shift-to-empty";
     /// this one covers reaching that same state via a mutating `forEach`,
@@ -634,7 +634,7 @@ mod tests {
         assert_eq!(list.last(), Some(&2), "not stale with one element left");
 
         assert_eq!(list.shift(), Some(2));
-        assert_eq!(list.last(), Some(&2), "B-241 fires only now");
+        assert_eq!(list.last(), Some(&2), "BUG-LINKED-LIST-1 fires only now");
     }
 
     // ---- Cursor liveness: the three-way split the module docs describe ---
@@ -853,7 +853,7 @@ mod tests {
         let mut next_value = 0;
 
         // A small deterministic script exercising every mutating op many
-        // times, including shifting fully empty more than once (B-241's
+        // times, including shifting fully empty more than once (BUG-LINKED-LIST-1's
         // trigger) and pushing/unshifting right afterwards (its healing).
         let script = "PPPUSUPPSSSUUPSPSUPPPPSSSSSSUPS";
 

@@ -28,7 +28,7 @@
 //! mutators still take `&mut self` — it is the *reference* half of a JS array,
 //! which is the only part of `Array` semantics this module actually depends on.
 //!
-//! # 2. `values()` freezes `items.length`, not `this.size` (D-19, NOTES B-6)
+//! # 2. `values()` freezes `items.length`, not `this.size` (DIV-PROJ-19, NOTES DIV-PROJ-9)
 //!
 //! Every other structure freezes `this.size`. `Stack` freezes the array's
 //! length and then counts *down* through it (`items[l - i - 1]`). The two
@@ -125,7 +125,7 @@ impl<T> Stack<T> {
 
     /// `this.items.length`, which is *not* the same quantity as
     /// [`size`](Stack::size) even though nothing in the public API can pull
-    /// them apart. See the module docs and D-19.
+    /// them apart. See the module docs and DIV-PROJ-19.
     pub fn items_len(&self) -> usize {
         self.items.borrow().len()
     }
@@ -205,7 +205,7 @@ impl<T: Clone> Stack<T> {
 
 /// The Rust-caller form of `Stack.from(iterable)`.
 ///
-/// D-03: core accepts any [`IntoIterator`]; the five-branch coercion that turns
+/// DIV-QUEUE-1: core accepts any [`IntoIterator`]; the five-branch coercion that turns
 /// an arbitrary *JavaScript* value into one lives at the napi boundary, where
 /// JS values exist. A Rust caller writing `Stack::from_iter(vec)` gets the
 /// natural thing and never meets the dispatch.
@@ -319,7 +319,7 @@ mod tests {
         assert_eq!(stack.items_len(), 0);
     }
 
-    /// D-19 / B-6: `values()` is defined against `items.length`, `toArray()`
+    /// DIV-PROJ-19 / DIV-PROJ-9: `values()` is defined against `items.length`, `toArray()`
     /// against `size`. They agree here, and this test is what would notice if
     /// a future change made them disagree.
     #[test]
@@ -338,8 +338,8 @@ mod tests {
         assert_eq!((stack.size(), stack.items_len()), (0, 0));
     }
 
-    /// D-06: a cursor is stateful, but the collection hands out a fresh one
-    /// every time — the two halves of the `Symbol.iterator` split (D-07).
+    /// DIV-STACK-1: a cursor is stateful, but the collection hands out a fresh one
+    /// every time — the two halves of the `Symbol.iterator` split (DIV-STACK-2).
     #[test]
     fn cursors_do_not_restart_but_the_stack_can_be_walked_again() {
         let stack: Stack<i32> = [1, 2, 3].into_iter().collect();
@@ -457,7 +457,7 @@ mod tests {
     }
 
     /// `from` on an empty iterable, and on an iterable that is not a slice —
-    /// D-03's claim that core takes any `IntoIterator`.
+    /// DIV-QUEUE-1's claim that core takes any `IntoIterator`.
     #[test]
     fn from_iter_accepts_any_iterator() {
         let empty: Stack<i32> = std::iter::empty().collect();

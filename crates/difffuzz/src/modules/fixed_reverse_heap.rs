@@ -8,13 +8,13 @@
 //! # What is different from `heap`'s grammar
 //!
 //! * **The capacity is generated**, `0` included. A capacity of `0` is accepted
-//!   upstream because the guard is `&&` where `||` was meant (B-73), and the
+//!   upstream because the guard is `&&` where `||` was meant (BUG-FIXED-REVERSE-HEAP-1), and the
 //!   heap then discards every push in silence. A grammar that only generated
 //!   sensible capacities would never have visited that branch.
 //! * **`clearer` is excluded.** `FixedReverseHeap.prototype.clear` sets `size`
 //!   and does not touch `items`, so it is not the rebinding case `heap` uses it
 //!   for; `clear` is an ordinary op in the alphabet instead, which reaches the
-//!   stale-`peek()` bug (B-74) directly.
+//!   stale-`peek()` bug (BUG-FIXED-REVERSE-HEAP-2) directly.
 //! * **`Array` only.** Upstream's `ArrayClass` may be any typed array, and the
 //!   element narrowing that comes with one (`push(300)` keeping `44`) is a
 //!   JavaScript store semantic that `mnemonist-core`'s `VecStore` does not
@@ -29,7 +29,7 @@
 //!
 //! `size`, `capacity` and `items`. `items` is `capacity` slots long from
 //! construction and keeps its contents through a `clear()`, so observing it is
-//! what makes B-74 visible without waiting for a `peek`.
+//! what makes BUG-FIXED-REVERSE-HEAP-2 visible without waiting for a `peek`.
 
 use mnemonist_core::structures::fixed_reverse_heap::FixedReverseHeap;
 use mnemonist_core::structures::heap::{Store, VecStore};

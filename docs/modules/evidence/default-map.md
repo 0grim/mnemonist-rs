@@ -37,7 +37,7 @@ full falsification record, full benchmark tables.
 | Test | Closes gap |
 |---|---|
 | `reproduces_the_upstream_suite` | 1:1 port of all seven upstream blocks, as a baseline |
-| `size_drifts_when_a_stored_value_is_undefined` | 1, 2 — B-40, pinned value by value across three reads |
+| `size_drifts_when_a_stored_value_is_undefined` | 1, 2 — BUG-DEFAULT-MAP-1, pinned value by value across three reads |
 | `a_write_resynchronises_a_drifted_size` | 1, 2, 3 — the other half: `set` and `delete` repair it, `get` does not |
 | `a_refilled_undefined_keeps_its_insertion_position` | 1, 4 |
 | `a_defined_value_written_by_the_factory_ends_the_drift` | 1 |
@@ -64,7 +64,7 @@ full falsification record, full benchmark tables.
 
 Run through the built addon and the vendored `bench/upstream/default-map.js` in one process,
 comparing JSON-serialised results. All 27 agree. Coverage: value identity across a round trip, the
-B-40 drift and its resynchronisation, delete-then-reinsert order, overwrite position, `NaN` and
+BUG-DEFAULT-MAP-1 drift and its resynchronisation, delete-then-reinsert order, overwrite position, `NaN` and
 `-0` as keys, mixed primitive keys, `null` versus `undefined` as values, all three liveness rules,
 `clear`-then-`set` under a cursor, non-restartability next to collection restartability, `forEach`
 liveness and both `scope` bindings, `autoIncrement` independence, the factory's two arguments, a
@@ -77,7 +77,7 @@ compaction.
   `has(k)` (2) · `clear()` (1) · `$iter("entries"|"keys"|"values")` (2) · `$next()` (4) ·
   `$spread()` (1) · `$forEach(method, rule, limit)`.
 * **Observable state, compared after every op:** `size` **and** `items`, separately. Both are
-  public upstream, and separating them is the point — they disagree by design once B-40 fires, so a
+  public upstream, and separating them is the point — they disagree by design once BUG-DEFAULT-MAP-1 fires, so a
   port that made `size` return the entry count agrees on `items` and diverges on `size` within two
   operations. `items` is encoded as a **list** of pairs, so entry order is compared, not just
   membership.
@@ -87,7 +87,7 @@ compaction.
   are two different `Map` keys and a port that stringified would agree on everything else; `NaN`
   and `-0` are the only two places SameValueZero differs from `===`.
 * **Values:** `undefined` (weight 2), `null`, small integers, `'v'`. `undefined` is weighted in
-  rather than rare because it is the only route to B-40 — and once it fires, every subsequent
+  rather than rare because it is the only route to BUG-DEFAULT-MAP-1 — and once it fires, every subsequent
   operation in that program is compared against a *drifted* upstream.
 * **Constructors:** five named factories — `undefined`, `null`, `autoIncrement`, `key`, `size` —
   built fresh per instance. `autoIncrement` is upstream's own and is the only stateful one; `key`
@@ -116,7 +116,7 @@ readable.
 ## Falsification record
 
 **A — the `size` half.** Sabotage: `get_or_insert_with` resynchronising `size` from `items` instead
-of incrementing it — the tidier reading, the one that deletes B-40, and the single most plausible
+of incrementing it — the tidier reading, the one that deletes BUG-DEFAULT-MAP-1, and the single most plausible
 mis-port of this module.
 Original mocha suite: **7 passing, 0 failing.**
 Fuzzer: caught in **136 cases (0.1 s)**, shrunk from 200 ops to **two**:
@@ -154,7 +154,7 @@ Host: AMD Ryzen 5 7600X, 12 threads, WSL2, Node 24.18.1, rustc 1.97.1, quiet ser
 Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 10,000 samples/side.
 
 **`mixed-1e6`** — 1e6 mixed `set`/`get-or-insert`/`delete` (50/25/25) over the full 1e6-key domain
-(`IK = K = V = u32`; the factory always returns `Some`, so B-40's `size` drift never fires in this
+(`IK = K = V = u32`; the factory always returns `Some`, so BUG-DEFAULT-MAP-1's `size` drift never fires in this
 workload), xorshift32 seed 42:
 
 | metric | port | upstream | |

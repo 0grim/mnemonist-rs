@@ -100,7 +100,7 @@ rejected a `NaN` `maxDistance` at construction, the opposite of upstream's own (
 
 | # | Divergence | Why |
 |---|---|---|
-| D-451 | **String indexing throughout (`edits`, `addLowestDistance`, `damerauLevenshtein`, `lookup`) is over Rust `char`s (Unicode scalar values), not upstream's UTF-16 code units.** | The two agree exactly for every codepoint in the Basic Multilingual Plane, which includes every alphabet `test/symspell.js` and this port's fuzz grammar use, and diverge only for astral characters (outside the BMP) — not exercised by either. |
+| DIV-SYMSPELL-1 | **String indexing throughout (`edits`, `addLowestDistance`, `damerauLevenshtein`, `lookup`) is over Rust `char`s (Unicode scalar values), not upstream's UTF-16 code units.** | The two agree exactly for every codepoint in the Basic Multilingual Plane, which includes every alphabet `test/symspell.js` and this port's fuzz grammar use, and diverge only for astral characters (outside the BMP) — not exercised by either. |
 
 ## Fuzz + bench
 

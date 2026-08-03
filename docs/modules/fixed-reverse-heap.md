@@ -40,7 +40,7 @@ Seven `it` blocks, all with total, side-effect-free comparators:
 **The constructor**
 
 1. **Only capacity 3 is ever constructed.** Never `0` — which is *accepted*, because the guard is
-   `&&` where `||` was meant, and then discards every push in silence (B-73). Never `1`, where the
+   `&&` where `||` was meant, and then discards every push in silence (BUG-FIXED-REVERSE-HEAP-1). Never `1`, where the
    heap is a single slot and `consume`'s `i !== 0` branch never runs.
 2. **A negative or non-numeric capacity is never passed.** `new FixedReverseHeap(Array, -1)` dies
    in `new Array(-1)` with `Array`'s own `RangeError`, because `this.items = new ArrayClass(capacity)`
@@ -52,7 +52,7 @@ Seven `it` blocks, all with total, side-effect-free comparators:
 **`clear()`**
 
 5. **`peek()` after `clear()` is never called.** It answers with an item that is no longer in the
-   heap, because `clear` resets `size` and does not touch `items` (B-74). `consume` and `toArray`
+   heap, because `clear` resets `size` and does not touch `items` (BUG-FIXED-REVERSE-HEAP-2). `consume` and `toArray`
    both slice to `size`, so they agree the item is gone — which is precisely why the bug is latent
    and why an observation of `items` is what makes it visible.
 6. **`clear()` on an empty heap** is never called.
@@ -106,7 +106,7 @@ closing gaps 1, 2, 3, 5, 7, 8 and 11. Every expectation in it was run against th
 source first and is what upstream printed, so it measures divergence in either direction.
 
 Gap 11 in particular can only be checked here: the narrowing is a JavaScript typed-array store
-semantic, and the port gets it by writing through a real `Uint8Array` (D-73) rather than by
+semantic, and the port gets it by writing through a real `Uint8Array` (DIV-HEAP-4) rather than by
 implementing it.
 
 **Differential fuzzer** — see below.
@@ -117,10 +117,10 @@ neither), and gap 11 *in the fuzzer*, for the reason in the Fuzz section.
 
 ## Bugs this found
 
-Two of the ten in the `B-70`–`B-79` block are this module's; both are verified against
+Two of the ten in the `BUG-HEAP-1`–`BUG-HEAP-8` block are this module's; both are verified against
 Node 24.18.1 and pinned by `tests/boundary/heap.js`.
 
-**B-73 — the capacity guard is `&&` where `||` was meant.**
+**BUG-FIXED-REVERSE-HEAP-1 — the capacity guard is `&&` where `||` was meant.**
 
 ```js
 if (typeof capacity !== 'number' && capacity <= 0)
@@ -133,7 +133,7 @@ the very inputs it names**. `new FixedReverseHeap(Array, 0)` is accepted; `push`
 the throw is a non-number that coerces to `<= 0`, e.g. `null`. And a negative capacity never gets
 there either, because `new ArrayClass(capacity)` runs first and raises `Array`'s own `RangeError`.
 
-**B-74 — `clear()` leaves `items`, so `peek()` answers a discarded item.**
+**BUG-FIXED-REVERSE-HEAP-2 — `clear()` leaves `items`, so `peek()` answers a discarded item.**
 
 ```js
 FixedReverseHeap.prototype.clear = function () { this.size = 0; };
@@ -165,12 +165,12 @@ algorithms. Specific to this one:
 
 | # | Divergence | Why |
 |---|---|---|
-| — | **`ArrayClass` stays a real JavaScript constructor.** | Unlike `hashed-array-tree`, which maps the class onto a `PointerWidth`, this bridge allocates through the constructor it was handed. It has to: the original suite asserts `consume() instanceof Uint8Array` *and* uses plain `Array`, which has no width. Allocating through it also gives the `ToUint32`-then-narrow store semantics for free and exactly (D-73). |
+| — | **`ArrayClass` stays a real JavaScript constructor.** | Unlike `hashed-array-tree`, which maps the class onto a `PointerWidth`, this bridge allocates through the constructor it was handed. It has to: the original suite asserts `consume() instanceof Uint8Array` *and* uses plain `Array`, which has no width. Allocating through it also gives the `ToUint32`-then-narrow store semantics for free and exactly (DIV-HEAP-4). |
 | — | **The constructor's statement order is reproduced.** | `new ArrayClass(capacity)` runs before both guards, so a capacity the class refuses raises the class's error rather than mnemonist's. Reordering would have been tidier and would have changed which error a caller sees. |
-| — | **The dead capacity guard is reproduced, `typeof` half included.** | B-73. A port that "fixed" the `&&` would reject a capacity upstream accepts, which is a behaviour change in the direction of correctness — and therefore wrong. |
-| — | **`clear()` does not touch `items`.** | B-74, same reasoning; and it is the module's fuzzer sabotage precisely because it is the most plausible unrequested improvement. |
+| — | **The dead capacity guard is reproduced, `typeof` half included.** | BUG-FIXED-REVERSE-HEAP-1. A port that "fixed" the `&&` would reject a capacity upstream accepts, which is a behaviour change in the direction of correctness — and therefore wrong. |
+| — | **`clear()` does not touch `items`.** | BUG-FIXED-REVERSE-HEAP-2, same reasoning; and it is the module's fuzzer sabotage precisely because it is the most plausible unrequested improvement. |
 | — | **`arguments.length === 2` is read as "a third argument was supplied".** | napi's typed signature cannot see arity. The two forms upstream's suite uses are exact; the difference is an explicit `new FixedReverseHeap(Array, cmp, undefined)`. |
-| — | **`this.comparator` and `this.ArrayClass` are not exposed.** | Same call as `heap`'s D-77 for the comparator; `ArrayClass` follows it, since it is only meaningful alongside one. `items` **is** exposed, as the live array. |
+| — | **`this.comparator` and `this.ArrayClass` are not exposed.** | Same call as `heap`'s DIV-HEAP-8 for the comparator; `ArrayClass` follows it, since it is only meaningful alongside one. `items` **is** exposed, as the live array. |
 | — | **`inspect()` is not ported.** | A Node display convenience with no upstream assertion. |
 
 ## Fuzz + bench
@@ -194,25 +194,25 @@ The op alphabet covers `push`/`peek`/`clear`/`toArray`/`consume`. The constructo
 `ArrayClass` (see the exclusion below), one of five comparator factories (reusing `heap`'s set minus
 `clearer`, since this structure's `clear` sets `size` without rebinding `items` — the rebinding case
 `clearer` exists for does not apply here; `clear` is an ordinary op in the alphabet instead, which
-reaches B-74 directly), and a generated capacity in `0..5` with zero included, because a capacity of
-`0` is accepted upstream (B-73) and a grammar that only generated sensible capacities would never
+reaches BUG-FIXED-REVERSE-HEAP-2 directly), and a generated capacity in `0..5` with zero included, because a capacity of
+`0` is accepted upstream (BUG-FIXED-REVERSE-HEAP-1) and a grammar that only generated sensible capacities would never
 have visited that branch. Both constructor arities are generated — 30% of programs omit the
 comparator, upstream's `arguments.length === 2` form. Observable state is `size`, `capacity` and
 `items`; `items` is `capacity` slots long from construction and keeps its contents through a
-`clear()`, which is what makes B-74 visible in the state rather than only through a `peek`. Full
+`clear()`, which is what makes BUG-FIXED-REVERSE-HEAP-2 visible in the state rather than only through a `peek`. Full
 grammar: evidence file.
 
 **Deliberately excluded: typed-array `ArrayClass`es** (gap 11). Upstream's `ArrayClass` may be any
 typed array, and the element narrowing that comes with one is a JavaScript store semantic that
 `mnemonist-core`'s `VecStore` does not have and is not supposed to have — the port gets it by
-writing through a real typed array in the *bridge* (D-73). Fuzzing it would compare core against a
+writing through a real typed array in the *bridge* (DIV-HEAP-4). Fuzzing it would compare core against a
 behaviour core deliberately delegates, so every program would diverge for a reason that is not a
 defect. It is covered instead by `test/fixed-reverse-heap.js`, which uses `Uint8Array` in four of
 its seven blocks, and by `tests/boundary/heap.js`, which asserts `push(300) → 44` through the real
 bridge. **This is a real gap in the fuzz coverage and is stated as one.**
 
 **The fuzzer was falsified.** Sabotage: `FixedReverseHeap::clear` blanking the backing array as
-well as resetting `size` — that is, *fixing* B-74, the most plausible "obvious improvement" anyone
+well as resetting `size` — that is, *fixing* BUG-FIXED-REVERSE-HEAP-2, the most plausible "obvious improvement" anyone
 would make to this file, and one that makes the port strictly more correct than upstream and
 therefore wrong. All 7 assertions of `test/fixed-reverse-heap.js` still passed under it; the fuzzer
 caught it in 84 operations, shrinking it to a `clear()` on a capacity-1 heap, and

@@ -48,7 +48,7 @@ describe('Heap (boundary) — the comparator is a callback', function() {
     heap.push(4);
     heap.push(3);
 
-    // NOTES B-76. Upstream has no defence against this and no error path: the
+    // NOTES BUG-HEAP-5. Upstream has no defence against this and no error path: the
     // re-entrant pushes land in the same array the outer sift is walking, and
     // whatever is left is the answer. A port whose algorithms held an exclusive
     // borrow could not have produced this at all.
@@ -89,7 +89,7 @@ describe('Heap (boundary) — the comparator is a callback', function() {
     heap.push(5);
     heap.push(4);
 
-    // `clear()` installs a NEW array (D-41), so the in-flight sift finished
+    // `clear()` installs a NEW array (DIV-STACK-3), so the in-flight sift finished
     // into the detached one and `this.items` is empty -- while `++this.size`
     // still ran, on the zero the clear had just written.
     assert.deepStrictEqual(heap.items, []);
@@ -108,7 +108,7 @@ describe('Heap (boundary) — the comparator is a callback', function() {
     heap.push(1);
     armed = true;
 
-    // NOTES B-70. `push` grows the array BEFORE it sifts, and `++this.size`
+    // NOTES BUG-HEAP-1. `push` grows the array BEFORE it sifts, and `++this.size`
     // never runs, so the two disagree permanently. There is no try/finally
     // anywhere in `heap.js`.
     assert.throws(function() { heap.push(2); }, /boom/);
@@ -146,7 +146,7 @@ describe('Heap (boundary) — the comparator is a callback', function() {
     heap.push(2);
     armed = true;
 
-    // NOTES B-77: `this.size = 0` is the FIRST statement of `#.consume`, so a
+    // NOTES BUG-HEAP-6: `this.size = 0` is the FIRST statement of `#.consume`, so a
     // comparator that throws leaves a heap reporting empty and holding two.
     assert.throws(function() { heap.consume(); }, /boom/);
     assert.strictEqual(heap.size, 0);
@@ -154,7 +154,7 @@ describe('Heap (boundary) — the comparator is a callback', function() {
   });
 
   it('should coerce a non-numeric comparator result rather than reject it.', function() {
-    // NOTES B-78. `< 0`, `> 0` and `>= 0` are all false for NaN, so a
+    // NOTES BUG-HEAP-7. `< 0`, `> 0` and `>= 0` are all false for NaN, so a
     // comparator returning a string reports "equal" for everything.
     var nonsense = new Heap(function() { return 'x'; });
 
@@ -184,7 +184,7 @@ describe('Heap (boundary) — the comparator is a callback', function() {
   });
 
   it('should take the default comparator for any falsy argument.', function() {
-    // NOTES B-79: the guard is `comparator || DEFAULT_COMPARATOR` followed by a
+    // NOTES BUG-HEAP-8: the guard is `comparator || DEFAULT_COMPARATOR` followed by a
     // typeof test, so `0` and `''` are accepted silently while `'test'` throws.
     assert.strictEqual(new Heap(0).size, 0);
     assert.strictEqual(new Heap('').size, 0);
@@ -474,7 +474,7 @@ describe('Heap (boundary) — the raw-array statics', function() {
 describe('Heap (boundary) — MaxHeap shares Heap\'s prototype', function() {
 
   it('should make every Heap an instanceof MaxHeap, and vice versa.', function() {
-    // NOTES B-75. `MaxHeap.prototype = Heap.prototype` upstream, so the two
+    // NOTES BUG-HEAP-4. `MaxHeap.prototype = Heap.prototype` upstream, so the two
     // constructors are indistinguishable by `instanceof`. Modelling MaxHeap as
     // its own native class would have silently corrected this.
     assert.strictEqual(MaxHeap.prototype, Heap.prototype);
@@ -497,7 +497,7 @@ describe('Heap (boundary) — MaxHeap shares Heap\'s prototype', function() {
 describe('Heap (boundary) — nsmallest / nlargest', function() {
 
   it('should answer with the Infinity sentinel itself for an empty source.', function() {
-    // NOTES B-71: `var min = Infinity` is never replaced, and the sentinel is
+    // NOTES BUG-HEAP-2: `var min = Infinity` is never replaced, and the sentinel is
     // returned as though it were an element.
     assert.deepStrictEqual(Heap.nsmallest(1, []), [Infinity]);
     assert.deepStrictEqual(Heap.nlargest(1, []), [-Infinity]);
@@ -514,7 +514,7 @@ describe('Heap (boundary) — nsmallest / nlargest', function() {
   });
 
   it('should let a real Infinity element reset the sentinel.', function() {
-    // NOTES B-72. Under a descending comparator the smallest of
+    // NOTES BUG-HEAP-3. Under a descending comparator the smallest of
     // `[Infinity, 5]` is `Infinity`, and the n === 1 path answers `5` because
     // `min === Infinity` is still true after `min` was set to the element.
     assert.deepStrictEqual(Heap.nsmallest(descending, 1, [Infinity, 5]), [5]);
@@ -564,7 +564,7 @@ describe('Heap (boundary) — the default comparator on non-numbers', function()
 
   it('should order mixed types the way `<` and `>` do.', function() {
     // The port answers number-vs-number and string-vs-string natively and
-    // defers everything else to the engine (D-72). This is the assertion that
+    // defers everything else to the engine (DIV-HEAP-3). This is the assertion that
     // the deferral is exact: `<` on these pairs runs ToPrimitive, and the
     // resulting order is not one anybody would reproduce by hand.
     var heap = new Heap();
@@ -629,7 +629,7 @@ describe('Heap (boundary) — the default comparator on non-numbers', function()
 describe('FixedReverseHeap (boundary)', function() {
 
   it('should accept a capacity of 0 and then discard everything.', function() {
-    // NOTES B-73: the guard is `typeof capacity !== 'number' && capacity <= 0`,
+    // NOTES BUG-FIXED-REVERSE-HEAP-1: the guard is `typeof capacity !== 'number' && capacity <= 0`,
     // where `||` was meant, so it short-circuits to false for every number.
     var heap = new FixedReverseHeap(Array, 0);
 
@@ -654,7 +654,7 @@ describe('FixedReverseHeap (boundary)', function() {
   });
 
   it('should answer peek() with a discarded item after clear().', function() {
-    // NOTES B-74: `clear()` is `this.size = 0` and nothing else.
+    // NOTES BUG-FIXED-REVERSE-HEAP-2: `clear()` is `this.size = 0` and nothing else.
     var heap = new FixedReverseHeap(Array, 3);
 
     heap.push(45);

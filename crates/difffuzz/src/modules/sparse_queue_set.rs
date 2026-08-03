@@ -14,7 +14,7 @@
 //!   enough that a 200-op program goes round the ring many times rather than
 //!   filling it once. At `capacity` 8 with the weights below, a program wraps
 //!   on the order of ten times.
-//! * **The interesting capacity is exact.** B-12 — `dequeue`'s absence sentinel
+//! * **The interesting capacity is exact.** BUG-SPARSE-QUEUE-SET-1 — `dequeue`'s absence sentinel
 //!   truncating because it is written into an array sized for indices
 //!   `0..capacity-1` — happens at `capacity` **256** and **65536** and nowhere
 //!   else. A uniform range over `0..=400` would hit 256 about once in 400
@@ -35,7 +35,7 @@
 //! # Deliberately excluded
 //!
 //! Nothing. Every out-of-range member is generated, and reproducing what
-//! upstream does with it is the port's job — here that means B-13, an
+//! upstream does with it is the port's job — here that means BUG-SPARSE-QUEUE-SET-2, an
 //! out-of-range `enqueue` evicting a **live** member and pushing `size` past
 //! `capacity`, which is a strictly nastier corruption than `SparseSet.add`'s
 //! because the slot it overwrites belonged to someone.
@@ -55,13 +55,13 @@ use crate::spec::{
 /// Straddles 256, where `getPointerArray` switches both arrays to 16-bit.
 const MAX_CAPACITY: u32 = 400;
 
-/// The capacity where B-12's sentinel does not fit its own array, and its
+/// The capacity where BUG-SPARSE-QUEUE-SET-1's sentinel does not fit its own array, and its
 /// control.
 ///
 /// Drawn explicitly because it is a point, not a range: a uniform draw over
 /// `0..=400` would reach 256 about once in 400 programs. 255 rides along as the
 /// control — one below the boundary, where the sentinel fits and the queue
-/// behaves — so a port that "fixed" B-12 fails on 256 while a port that broke
+/// behaves — so a port that "fixed" BUG-SPARSE-QUEUE-SET-1 fails on 256 while a port that broke
 /// the *ordinary* case fails on 255.
 ///
 /// **65536, the second boundary, is deliberately NOT here.** It is the same
@@ -105,7 +105,7 @@ impl ModuleSpec for SparseQueueSetSpec {
     fn ctor_strategy(&self) -> BoxedStrategy<Vec<Value>> {
         prop_oneof![
             // 0 included: `new SparseQueueSet(0)` is legal and makes every
-            // index computation NaN (B-14).
+            // index computation NaN (BUG-SPARSE-QUEUE-SET-3).
             4 => 0u32..=MAX_CAPACITY,
             // Small rings, where a 200-op program wraps many times over.
             3 => 1u32..=8,
@@ -197,7 +197,7 @@ impl ModuleSpec for SparseQueueSetSpec {
             //
             // `dense[i]` is a live read; everything else is captured. At
             // `capacity === 0` the wrap check never fires and `i` runs off the
-            // end, so every argument is `undefined` -- B-14's shape, now
+            // end, so every argument is `undefined` -- BUG-SPARSE-QUEUE-SET-3's shape, now
             // reachable through `forEach` and not only through the cursor.
             "$forEach" => {
                 let spec = for_each(op);

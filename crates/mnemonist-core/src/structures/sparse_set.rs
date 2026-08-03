@@ -253,7 +253,7 @@ impl Sequence for SparseSet {
     fn freeze(&self) -> ((), usize) {
         // `var size = this.size`, not `this.length` and not `dense.length`.
         // Which of the three upstream happens to capture differs per module
-        // (D-19), so it is read off the source file every time rather than
+        // (DIV-PROJ-19), so it is read off the source file every time rather than
         // normalised.
         ((), self.size)
     }
@@ -485,8 +485,8 @@ mod tests {
         assert_eq!(set.sparse(), &PointerVec::U8(vec![0, 1, 2]));
     }
 
-    /// Gap 8: D-06. The cursor is not restartable, while the set is
-    /// re-iterable — the two-level `Symbol.iterator` of D-07, seen from Rust.
+    /// Gap 8: DIV-STACK-1. The cursor is not restartable, while the set is
+    /// re-iterable — the two-level `Symbol.iterator` of DIV-STACK-2, seen from Rust.
     #[test]
     fn cursors_do_not_restart_but_the_set_can_be_walked_again() {
         let mut set = SparseSet::new(10).unwrap();
@@ -502,7 +502,7 @@ mod tests {
         assert_eq!(members(&set), vec![3, 6]);
     }
 
-    /// Gap 9: D-08, on this module's own data. A `delete` between two steps of
+    /// Gap 9: DIV-PROJ-10, on this module's own data. A `delete` between two steps of
     /// a live cursor is visible, because `dense` is read lazily — and the
     /// frozen `size` keeps the walk going past the set's new end.
     ///

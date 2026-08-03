@@ -40,7 +40,7 @@ of callback it expects and nothing about the delegation is simulated.
 statics of the modules that import them — and in the `fixed-stack`, `fixed-deque` and
 `circular-buffer` units, only `guessLength` and
 `isArrayLike` are ever reached, because the `from` branch that would call `toArray` does not exist
-(B-60).
+(BUG-UTILS-ITERABLES-2).
 
 ## What upstream does NOT test
 
@@ -53,7 +53,7 @@ Everything. The list below is what the boundary specs cover, organised by functi
    `ArrayBuffer.isView`, which a `DataView` satisfies. A `from` taking the array-like branch on one
    reads `.length` (undefined) and copies nothing.
 3. That it is **false for a string**, which is why `FixedStack.from('abc', Array)` takes the other
-   branch and dies in B-60.
+   branch and dies in BUG-UTILS-ITERABLES-2.
 
 **`guessLength`**
 
@@ -64,7 +64,7 @@ Everything. The list below is what the boundary specs cover, organised by functi
 7. That `null` and `undefined` throw from the property read, with V8's wording, rather than from
    any guard of the function's own.
 
-**`toArray` — B-2**
+**`toArray` — BUG-UTILS-ITERABLES-1**
 
 8. That an **overstated length leaves real holes**, not `undefined`. `{length: 5}` yielding two
    values gives `[1, 2, <3 empty items>]`: `length === 5`, `2 in array === false`, and
@@ -72,7 +72,7 @@ Everything. The list below is what the boundary specs cover, organised by functi
 9. That an **understated length is silently exceeded**, because `array[i++] = v` grows the array.
 10. That an **invalid length throws `RangeError: Invalid array length`** — from the allocation, not
     from a guard.
-11. The sharpest form of B-2: `toArray({length: 5})` reaches `forEach`'s **plain-object** branch,
+11. The sharpest form of BUG-UTILS-ITERABLES-1: `toArray({length: 5})` reaches `forEach`'s **plain-object** branch,
     which enumerates own properties *including `length` itself*, so the array's first element is
     the number 5.
 12. That `forEach`'s falsy guard still applies, so `toArray('')` throws.
@@ -108,23 +108,23 @@ a `Proxy` with a throwing `get` trap. Neither is reachable from any module in sc
 
 ## Bugs this found
 
-**B-2 — `toArray` produces sparse arrays when `guessLength` lies.** Verified against Node
+**BUG-UTILS-ITERABLES-1 — `toArray` produces sparse arrays when `guessLength` lies.** Verified against Node
 24.18.1. Recorded before kickoff as the strongest of the pre-port bug candidates; this is its
 confirmation and its reproduction. The three measured forms are gaps 8, 9 and 10 above, and the
 sharpest is gap 11 — `toArray({length: 5})` returning `[5, <4 empty items>]`, where the `5` is the
 `length` property itself, enumerated by `forEach`'s plain-object branch.
 
-**B-60 — `iterables.forEach` does not exist**, and three modules call it. Found while porting
+**BUG-UTILS-ITERABLES-2 — `iterables.forEach` does not exist**, and three modules call it. Found while porting
 `fixed-stack`; it belongs to this file as much as to them, because the missing export is here. See
-`docs/modules/fixed-stack.md` and NOTES B-60.
+`docs/modules/fixed-stack.md` and NOTES BUG-UTILS-ITERABLES-2.
 
 ## Deliberate divergences
 
 | # | Divergence | Why |
 |---|---|---|
-| D-60 | **B-2 is reproduced, not repaired**. | The array is really allocated by calling the running realm's `Array` constructor rather than by `napi_create_array_with_length`, so the holes are real holes and the `RangeError` is V8's own. The two calls differ exactly where this module is interesting: `napi_create_array_with_length(-1)` does not throw. |
-| D-18 | **`guessLength` trusts `.length` then `.size` without validating.** | Confirmed rather than changed; it is what feeds D-60. |
-| D-39 | **`guessLength` returns `Either<f64, Undefined>`, not `Option<f64>`.** | napi renders `None` as `null`, and upstream returns a bare `undefined`. |
+| DIV-FIXED-STACK-2 | **BUG-UTILS-ITERABLES-1 is reproduced, not repaired**. | The array is really allocated by calling the running realm's `Array` constructor rather than by `napi_create_array_with_length`, so the holes are real holes and the `RangeError` is V8's own. The two calls differ exactly where this module is interesting: `napi_create_array_with_length(-1)` does not throw. |
+| DIV-UTILS-ITERABLES-1 | **`guessLength` trusts `.length` then `.size` without validating.** | Confirmed rather than changed; it is what feeds DIV-FIXED-STACK-2. |
+| DIV-FIXED-STACK-1 | **`guessLength` returns `Either<f64, Undefined>`, not `Option<f64>`.** | napi renders `None` as `null`, and upstream returns a bare `undefined`. |
 | — | **`toArrayWithIndices` returns a real JS array**, built with `napi_create_array_with_length`, not a plain object with `"0"`/`"1"` keys. | Callers destructure it. |
 | — | **The index-array width comes from `mnemonist-core`'s `get_pointer_array`.** | The one part of this file that is pure computation, so it lives in core and is shared with `sparse-set`, `sparse-map` and `static-disjoint-set` rather than reimplemented at the boundary. |
 

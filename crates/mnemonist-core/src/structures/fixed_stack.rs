@@ -8,7 +8,7 @@
 //! Four things a naive port gets wrong, all of them upstream's, and only one of
 //! them visible in `test/fixed-stack.js`.
 //!
-//! # 1. `forEach` walks `items.length`, not `size` (NOTES B-61)
+//! # 1. `forEach` walks `items.length`, not `size` (NOTES BUG-FIXED-STACK-1)
 //!
 //! ```js
 //! FixedStack.prototype.forEach = function (callback, scope) {
@@ -75,7 +75,7 @@
 //!
 //! The `else` branch — the one that would handle a `Set` or a generator —
 //! **cannot run at all**: it calls `iterables.forEach`, and `utils/iterables.js`
-//! exports no such function. That is NOTES B-60, and it is reproduced at the
+//! exports no such function. That is NOTES BUG-UTILS-ITERABLES-2, and it is reproduced at the
 //! bridge, where the `TypeError` it raises exists.
 
 use std::fmt;
@@ -151,9 +151,9 @@ impl<T: Clone> FixedStack<T> {
     }
 
     /// `FixedStack.from(arrayLike, ArrayClass, capacity)` — the only branch of
-    /// upstream's `from` that is reachable (see item 4 and NOTES B-60).
+    /// upstream's `from` that is reachable (see item 4 and NOTES BUG-UTILS-ITERABLES-2).
     ///
-    /// Takes an [`IntoIterator`] rather than a slice, which is D-03: core takes
+    /// Takes an [`IntoIterator`] rather than a slice, which is DIV-QUEUE-1: core takes
     /// the natural Rust shape and the JS-value coercion lives at the boundary.
     /// The *semantics* are upstream's index-by-index store, so an iterable
     /// longer than `capacity` behaves exactly as it does there — growing a
@@ -413,7 +413,7 @@ mod tests {
         assert_eq!(entries, vec![(0, 3), (1, 2), (2, 1)]);
     }
 
-    /// B-61, the whole point of the module. `forEach`'s bound is the array's
+    /// BUG-FIXED-STACK-1, the whole point of the module. `forEach`'s bound is the array's
     /// length, so an under-full stack hands the callback its unused slots —
     /// `undefined` from an `Array`, the class zero from a typed array — before
     /// any real element.
@@ -577,7 +577,7 @@ mod tests {
         assert_eq!(cursor.step(), Step::Done);
     }
 
-    /// D-06 / D-07: the cursor is stateful and does not restart, but the stack
+    /// DIV-STACK-1 / DIV-STACK-2: the cursor is stateful and does not restart, but the stack
     /// hands out a fresh one every time.
     #[test]
     fn cursors_do_not_restart_but_the_stack_can_be_walked_again() {
@@ -591,7 +591,7 @@ mod tests {
         assert_eq!(stack.values().collect::<Vec<_>>(), vec![3, 2, 1]);
     }
 
-    /// D-08, the frozen half: `l` is `this.size` at creation, so a later `push`
+    /// DIV-PROJ-10, the frozen half: `l` is `this.size` at creation, so a later `push`
     /// is invisible however much room there was.
     #[test]
     fn a_push_during_iteration_is_not_visible_to_the_cursor() {
@@ -608,7 +608,7 @@ mod tests {
         assert_eq!(state.step(&stack), Step::Done);
     }
 
-    /// D-08, the live half: `pop` moves `size` but not the array, so a cursor
+    /// DIV-PROJ-10, the live half: `pop` moves `size` but not the array, so a cursor
     /// opened first still reads the popped element out of the slot it is
     /// sitting in. Nothing shortens, so there is no gap either.
     #[test]
@@ -686,7 +686,7 @@ mod tests {
     }
 
     /// `from` on an empty iterable leaves an empty stack with the array
-    /// allocated, and on a non-slice iterator behaves identically — D-03's
+    /// allocated, and on a non-slice iterator behaves identically — DIV-QUEUE-1's
     /// claim that core takes any `IntoIterator`.
     #[test]
     fn from_array_like_accepts_any_iterator() {

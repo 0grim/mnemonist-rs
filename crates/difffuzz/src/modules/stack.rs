@@ -3,7 +3,7 @@
 //! # Grammar, and what it deliberately includes
 //!
 //! `sparse-set` was the first grammar to interleave iteration with mutation
-//! (D-21). This is the first where **the mutation can rebind the backing array
+//! (DIV-PROJ-21). This is the first where **the mutation can rebind the backing array
 //! out from under an open cursor**, which is the behaviour `clear()` has and
 //! `pop()` does not:
 //!
@@ -22,7 +22,7 @@
 //! `size`, `toArray()` **and `items`**. `items` is a public property upstream,
 //! and observing it directly is what makes the rebinding checkable without
 //! waiting for a cursor to notice. `size` and `items.length` are separate
-//! quantities upstream (D-19); comparing both is how a port that silently
+//! quantities upstream (DIV-PROJ-19); comparing both is how a port that silently
 //! unified them would be caught.
 //!
 //! # Deliberately excluded: nothing
@@ -119,7 +119,7 @@ impl ModuleSpec for StackSpec {
                 Some(cursor) => step_value(cursor.step(&instance.stack)),
             },
             // A *fresh* cursor every time — the collection-level
-            // `Symbol.iterator` is a factory (D-07), and reusing the stored one
+            // `Symbol.iterator` is a factory (DIV-STACK-2), and reusing the stored one
             // here would turn it into the identity and still pass every
             // non-interleaved program.
             // Upstream's own loop, whose bound is frozen:

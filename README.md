@@ -65,10 +65,15 @@ conceals a numeric or comparison lint.
 
 **Bug Catcher submission.** The upstream defects this entry claims are
 [docs/BUGS.md](docs/BUGS.md), in full and in one place: 12 written up individually with
-reproductions, 48 more in a summary table, and 3 held separately as lower-confidence candidates
+reproductions, 49 more in a summary table, and 3 held separately as lower-confidence candidates
 because each has a plausible reading as intentional design. Every entry gives the reproduction, what
 the original does wrong, and how this port handles it; every row in the table was re-confirmed
 against Node 24.18.1 while the document was written rather than carried over from working notes.
+
+Each defect carries a `BUG-<MODULE>-<n>` tag that resolves to the same tag in
+[docs/modules/](docs/modules/)`<module>.md`, where the full analysis lives — how the existing suite
+missed it, and which test or fuzz seed pins it. Deliberate divergences use `DIV-<MODULE>-<n>` the
+same way, and `PORTBUG-n` marks a bug in *this* port rather than upstream's.
 
 Two further candidates are listed as *not* bugs, having proved unreachable through any public
 sequence of calls, and one file was read end to end and found to have nothing to file. The document

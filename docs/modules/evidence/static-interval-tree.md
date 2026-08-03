@@ -10,7 +10,7 @@ record.
 
 | Test | Closes gap |
 |---|---|
-| `zero_intervals_is_refused_rather_than_silently_accepted` | 1 — B-100 |
+| `zero_intervals_is_refused_rather_than_silently_accepted` | 1 — BUG-STATIC-INTERVAL-TREE-1 |
 | `a_two_entry_source_gives_a_height_of_two` | — a second, isolated height computation, since the upstream `Map` case bundles it with iterable resolution |
 | `getters_resolve_to_the_same_bounds_object_values_survive` | — pins that a resolved `(start, end)` pair, not the getter itself, is what the core crate carries forward (see the bridge divergence below) |
 | `a_single_interval_tree_has_one_node` | — the smallest possible tree, verified node-for-node against Node (`tree === [1]`, `augmentations === [0]`) |

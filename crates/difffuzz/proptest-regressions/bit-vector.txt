@@ -6,7 +6,7 @@
 # everyone who runs the test benefits from these saved cases.
 #
 # PROVENANCE OF THE ENTRY BELOW -- it did NOT record a port defect. It was
-# produced by a deliberate falsification of the fuzzer (D-32): a fuzzer that
+# produced by a deliberate falsification of the fuzzer (DIV-PROJ-30): a fuzzer that
 # has never been seen to fail is just a second green light. The sabotage was
 # reverted; the seed is replayed before any novel case on every run.
 #

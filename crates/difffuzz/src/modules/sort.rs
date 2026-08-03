@@ -46,7 +46,7 @@
 //!   already records rather than a finding.
 //! * **Windows past the end.** Same reason: upstream reads `undefined` and
 //!   writes into holes, the port refuses, and the divergence is documented.
-//! * **The re-entrancy bugs B-80 and B-81.** They need an element whose
+//! * **The re-entrancy bugs BUG-SORT-1 and BUG-SORT-2.** They need an element whose
 //!   comparison calls back into JavaScript, which needs an object element,
 //!   which the previous point excludes. Verified by hand against Node instead
 //!   — see `docs/modules/sort.md`.

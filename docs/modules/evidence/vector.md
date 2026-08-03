@@ -9,9 +9,9 @@ record, full benchmark table.
 
 | Test | Closes gap |
 |---|---|
-| `get_and_set_admit_index_equal_to_length` | 1 — B-101 |
+| `get_and_set_admit_index_equal_to_length` | 1 — BUG-VECTOR-1 |
 | `a_full_vector_drops_the_admitted_write` | 1 — the companion case where `index == length == capacity`, so there is no capacity-region slot to admit into |
-| `stale_data_from_a_pop_survives_a_growth_and_stays_reachable` | 2 — B-102 |
+| `stale_data_from_a_pop_survives_a_growth_and_stays_reachable` | 2 — BUG-VECTOR-2 |
 | `a_policy_returning_infinity_is_refused_before_any_allocation` | 5 |
 | `a_policy_returning_nan_is_refused` | 5 |
 | `a_policy_returning_a_negative_number_is_invalid_before_being_non_finite` | 5 — and which of the two upstream throws each non-finite value lands in |
@@ -40,7 +40,7 @@ record, full benchmark table.
   exercised, and full-precision `f64`s so `Float64Array` stores are compared exactly.
 * **Observable state, compared after every op:** `length`, `capacity`, and **`array`** — the whole
   backing store, capacity region included, encoded exactly as the oracle encodes a JS typed array.
-  `array` is the point: without it, B-101 and B-102 are only checkable indirectly through `get`.
+  `array` is the point: without it, BUG-VECTOR-1 and BUG-VECTOR-2 are only checkable indirectly through `get`.
 
 ## Falsification record
 
@@ -51,7 +51,7 @@ because the fuzz grammar's `set`/`get` indices routinely land on `index == lengt
 sabotage removes exactly the admission that lets that case succeed.
 
 **The sabotage:** `Vector::set`'s bound check tightened from `if self.length < index` to
-`if self.length <= index` — "fixing" the off-by-one that B-101 documents, the single most obvious
+`if self.length <= index` — "fixing" the off-by-one that BUG-VECTOR-1 documents, the single most obvious
 thing a future cleanup would do to this file.
 
 **Confirmed red:** `cargo test -p difffuzz --test differential vector_matches_upstream` failed

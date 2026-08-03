@@ -43,7 +43,7 @@
 //!
 //! **`forEach`'s own reentrancy.** No op here drives a callback that mutates
 //! the tree mid-walk (`_utils`'s and `sparse-set`'s `$forEach` machinery,
-//! B-31's family). `forEach`'s *ordering* is covered instead by
+//! PORTBUG-1's family). `forEach`'s *ordering* is covered instead by
 //! `mnemonist_core::structures::critbit_tree_map`'s own native test
 //! (`for_each_visits_in_sorted_key_order`) and by gate 4's "should be
 //! possible to iterate over the tree." block; nothing here calls it at all,
@@ -51,7 +51,7 @@
 //! correct inorder walk would produce.
 //!
 //! **Non-Latin-1 keys.** `mnemonist_napi::critbit_tree_map::decode_key`
-//! truncates each UTF-16 code unit to its low 8 bits (D-245); fuzzing wider
+//! truncates each UTF-16 code unit to its low 8 bits (DIV-CRITBIT-TREE-MAP-1); fuzzing wider
 //! code points would only re-report that already-disclosed divergence.
 //! [`PREFIX_POOL`] is plain ASCII so this campaign can never manufacture one
 //! by accident.

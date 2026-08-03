@@ -56,7 +56,7 @@
 //! same key with two *positive* counts (its double-call case follows a
 //! positive `set` with a negative one, which takes the early
 //! delete-on-non-positive branch instead) — so this is unexercised by gate 4
-//! and worth flagging as a likely defect: NOTES.md B-160. [`MultiSet::set`]
+//! and worth flagging as a likely defect: NOTES.md BUG-MULTI-SET-1. [`MultiSet::set`]
 //! reproduces the addition faithfully; a "corrected" replace-semantics
 //! version would be *more correct than upstream* and therefore wrong per
 //! CLAUDE.md's bug-for-bug mandate.
@@ -69,7 +69,7 @@
 //! not have that property, and reading `items.len()` here would silently
 //! *fix* two real upstream defects rather than reproduce them:
 //!
-//! * **NOTES.md B-161 — `#.delete` on an absent item still decrements
+//! * **NOTES.md BUG-MULTI-SET-2 — `#.delete` on an absent item still decrements
 //!   `dimension` and corrupts `size` to `NaN`, and reports `true`.**
 //!   Upstream's guard is `if (count === 0) return false;`, but
 //!   `this.items.get(item)` on a missing item is `undefined`, and
@@ -80,7 +80,7 @@
 //!   `this.size -= undefined` (`NaN`), `this.dimension--` unconditionally,
 //!   and `this.items.delete(item)` (a harmless no-op on a missing key)
 //!   before returning `true`.
-//! * **NOTES.md B-162 — `#.edit` never touches `dimension` at all**, even
+//! * **NOTES.md BUG-MULTI-SET-3 — `#.edit` never touches `dimension` at all**, even
 //!   when it removes a real key. If `b` already exists, `edit(a, b)` deletes
 //!   `a` from `this.items` — the real distinct-key count drops by one — but
 //!   `this.dimension` is left exactly where it was, so it overcounts by one
@@ -123,8 +123,8 @@ pub struct MultiSet<K> {
     /// count (see the module docs) makes this fractional too, faithfully.
     size: f64,
     /// Upstream's `dimension`, tracked rather than derived — see the module
-    /// docs (B-161, B-162) for why the two can disagree. `i64` because
-    /// B-161's bug can drive it negative.
+    /// docs (BUG-MULTI-SET-2, BUG-MULTI-SET-3) for why the two can disagree. `i64` because
+    /// BUG-MULTI-SET-2's bug can drive it negative.
     dimension: i64,
 }
 
@@ -279,7 +279,7 @@ impl<K: Hash + Eq + Clone> MultiSet<K> {
         self.size += count;
     }
 
-    /// `#.delete`. NOTES.md B-161: upstream's guard (`count === 0`) never
+    /// `#.delete`. NOTES.md BUG-MULTI-SET-2: upstream's guard (`count === 0`) never
     /// actually fires, so deleting an item **not in the set** still
     /// decrements `dimension`, sets `size` to `NaN` (`- undefined` in
     /// JavaScript), and reports `true`. Reproduced exactly — see the module
@@ -315,7 +315,7 @@ impl<K: Hash + Eq + Clone> MultiSet<K> {
     /// upstream's own order (`set` on `b` before `delete` of `a`), which
     /// matters when `a === b`: the multiplicity is doubled and then the
     /// (now sole) entry is deleted outright. `dimension` is **never**
-    /// touched here, matching upstream exactly (NOTES.md B-162) even though
+    /// touched here, matching upstream exactly (NOTES.md BUG-MULTI-SET-3) even though
     /// a real key can disappear (when `b` already existed).
     pub fn edit(&mut self, a: K, b: K) {
         let am = self.multiplicity(&a);
@@ -570,7 +570,7 @@ mod tests {
 
     #[test]
     fn set_replaces_a_missing_item_but_adds_to_an_existing_one() {
-        // B-160: upstream's `set` adds to an existing multiplicity instead
+        // BUG-MULTI-SET-1: upstream's `set` adds to an existing multiplicity instead
         // of replacing it. This test pins the port's faithful reproduction.
         let mut set: MultiSet<&str> = MultiSet::new();
 
@@ -581,7 +581,7 @@ mod tests {
         assert_eq!(
             set.multiplicity(&"hello"),
             7.0,
-            "a second positive #.set adds rather than replacing -- B-160"
+            "a second positive #.set adds rather than replacing -- BUG-MULTI-SET-1"
         );
     }
 
@@ -639,17 +639,17 @@ mod tests {
 
         assert!(
             reported,
-            "B-161: upstream's dead `count === 0` guard means #.delete \
+            "BUG-MULTI-SET-2: upstream's dead `count === 0` guard means #.delete \
              always reports true, even for a key that was never present"
         );
         assert!(
             set.size().is_nan(),
-            "B-161: `this.size -= undefined` is NaN in JavaScript"
+            "BUG-MULTI-SET-2: `this.size -= undefined` is NaN in JavaScript"
         );
         assert_eq!(
             set.dimension(),
             0,
-            "B-161: dimension decrements even though nothing was removed"
+            "BUG-MULTI-SET-2: dimension decrements even though nothing was removed"
         );
         // The real entry is undisturbed.
         assert_eq!(set.multiplicity(&"hello"), 1.0);
@@ -672,7 +672,7 @@ mod tests {
         assert_eq!(
             set.dimension(),
             2,
-            "B-162: dimension still reports the pre-edit count of distinct keys"
+            "BUG-MULTI-SET-3: dimension still reports the pre-edit count of distinct keys"
         );
     }
 

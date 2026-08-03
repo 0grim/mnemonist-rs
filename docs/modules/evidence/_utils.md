@@ -8,12 +8,12 @@ record.
 `crates/mnemonist-core/src/utils/merge.rs`'s native tests — the upstream suite's own cases,
 transcribed, plus: `NaN` in a union's dedup check
 (`nan_is_never_deduplicated_by_the_union_dedup_check`), ties across k-way arrays that do *not*
-change the merged multiset (`ties_across_arrays_do_not_affect_the_merged_multiset`), B-180 isolated
+change the merged multiset (`ties_across_arrays_do_not_affect_the_merged_multiset`), BUG-UTILS-1 isolated
 at its sharpest (`merge_k_reproduces_b_180_when_filtering_drops_the_length`,
 `union_unique_k_reproduces_b_180_when_filtering_drops_the_length`), the boundary where filtering
 down to two-or-fewer arrays takes the early-return path *before* the stale-length bug could ever
 fire (`filtering_down_to_two_or_fewer_never_reaches_the_bug`), and `intersection_unique_k`'s
-structural immunity to B-180 (`intersection_unique_k_is_immune_to_b_180`).
+structural immunity to BUG-UTILS-1 (`intersection_unique_k_is_immune_to_bug_utils_1`).
 
 `crates/mnemonist-core/src/utils/typed_arrays.rs`'s new tests for `getNumberType`/
 `getMinimalRepresentation`/`concat` — every priority-table boundary and `-0` taking the
@@ -24,11 +24,11 @@ non-negative branch.
 Two 60-second campaigns, seeds `42` and `20260801`: **508,729 + 503,372 = 1,012,101 operations,
 zero divergences** on the final grammar.
 
-* The grammar manufactures B-180 deliberately: a 0-length array alongside two-or-more non-empty
+* The grammar manufactures BUG-UTILS-1 deliberately: a 0-length array alongside two-or-more non-empty
   ones in a three-to-five-array group.
 * The k-way (three-or-more array) generator draws **globally distinct** values across the whole
   group, so array-head ties do not confound the value comparison — this removes the only condition
-  (a tie) under which the FibonacciHeap tie-break question was ever unreachable; B-180 stays fully
+  (a tie) under which the FibonacciHeap tie-break question was ever unreachable; BUG-UTILS-1 stays fully
   reachable regardless, since it depends only on array counts, never on value content.
 * The two-array generator keeps duplicates and `NaN` freely, because `merge_two`/`union_unique_two`
   have no tie-break step to disagree about (verified: `merge([-5, NaN], [-1, 3])` matches upstream

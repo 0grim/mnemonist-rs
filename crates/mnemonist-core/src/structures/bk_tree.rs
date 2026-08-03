@@ -22,7 +22,7 @@
 //!
 //! `distance` is a caller-supplied callback, called from deep inside both
 //! `add`'s descent and `search`'s traversal — this is the bridge's
-//! `RefCell`-and-`FnMut` problem (B-31 and `crate::structures::bit_vector`'s
+//! `RefCell`-and-`FnMut` problem (PORTBUG-1 and `crate::structures::bit_vector`'s
 //! growth policy), not a `Map` problem, so this module inherits *that* half of
 //! the T3 lesson and none of the `OrderedMap` half. Core expresses the
 //! fallibility explicitly: [`BkTree::try_add`] and [`BkTree::try_search`] take

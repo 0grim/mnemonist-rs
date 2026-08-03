@@ -36,7 +36,7 @@
 //! m.delete('a');           size 0   items.size 0   resynchronised
 //! ```
 //!
-//! Measured against Node 24.18.1; recorded as **B-40** in NOTES.md. It is
+//! Measured against Node 24.18.1; recorded as **BUG-DEFAULT-MAP-1** in NOTES.md. It is
 //! reproduced here rather than corrected, so [`DefaultMap::size`] is a stored
 //! counter and [`DefaultMap::items`]`().len()` is the truth. A port that made
 //! `size` return `items.len()` would be *tidier and wrong*, and no upstream
@@ -113,7 +113,7 @@ impl<K, V> DefaultMap<K, V> {
     /// Upstream's `size` **property**.
     ///
     /// A stored counter, and deliberately not `items().len()`. See the module
-    /// docs and B-40: the two disagree, permanently, once a value of
+    /// docs and BUG-DEFAULT-MAP-1: the two disagree, permanently, once a value of
     /// `undefined` has been read back through
     /// [`get_or_insert_with`](DefaultMap::get_or_insert_with).
     pub fn size(&self) -> usize {
@@ -125,7 +125,7 @@ impl<K, V> DefaultMap<K, V> {
     ///
     /// Exposed because the differential fuzzer compares it entry by entry:
     /// agreeing on `size` while disagreeing on the entries is exactly the
-    /// drift B-40 describes, and only a direct comparison catches it.
+    /// drift BUG-DEFAULT-MAP-1 describes, and only a direct comparison catches it.
     pub fn items(&self) -> &OrderedMap<K, Option<V>> {
         &self.items
     }
@@ -183,7 +183,7 @@ impl<K: Hash + Eq + Clone, V> DefaultMap<K, V> {
     /// napi reference that value held; `None` means there was nothing to
     /// release, whether because the key was new or because it held
     /// `undefined`. Resynchronises `size` from the backing map, which is what
-    /// makes B-40 self-healing on any write.
+    /// makes BUG-DEFAULT-MAP-1 self-healing on any write.
     pub fn set(&mut self, key: K, value: Option<V>) -> Option<V> {
         let displaced = self.items.set(key, value);
         self.size = self.items.len();
@@ -243,7 +243,7 @@ impl<K: Hash + Eq + Clone, V> DefaultMap<K, V> {
     ///
     /// Exists for the bridge, and the reason is specific: there the factory is
     /// a JavaScript function, and the bridge holds the map in a `RefCell`
-    /// (B-31), so it cannot run the factory from *inside*
+    /// (PORTBUG-1), so it cannot run the factory from *inside*
     /// [`try_get_or_insert_with`](DefaultMap::try_get_or_insert_with) without
     /// keeping a borrow alive across a call that may re-enter. Upstream does
     /// not hold its map either — its factory runs between the read and the
@@ -253,7 +253,7 @@ impl<K: Hash + Eq + Clone, V> DefaultMap<K, V> {
     /// Unconditional on purpose. Upstream does not re-check the key after the
     /// factory returns, so a factory that inserted the same key gets
     /// overwritten and `size` is incremented a second time. `size += 1` rather
-    /// than a resynchronisation is B-40, and it is deliberate; see
+    /// than a resynchronisation is BUG-DEFAULT-MAP-1, and it is deliberate; see
     /// [`set`](DefaultMap::set) for the write that heals it.
     pub fn insert_from_factory(&mut self, key: K, value: Option<V>) -> Option<&V> {
         self.items.set(key.clone(), value);
@@ -297,7 +297,7 @@ impl<K: Hash + Eq + Clone, V> DefaultMap<K, V> {
         // its position and is overwritten, which is what
         // `this.items.set(key, value)` does. `size` is then *incremented*
         // rather than resynchronised -- that asymmetry with `DefaultMap::set`
-        // is the whole of B-40, and it is deliberate.
+        // is the whole of BUG-DEFAULT-MAP-1, and it is deliberate.
         self.items.set(key.clone(), value);
         self.size += 1;
 
@@ -431,7 +431,7 @@ mod tests {
         );
     }
 
-    /// B-40, the whole chain. Nothing in the upstream suite reaches this.
+    /// BUG-DEFAULT-MAP-1, the whole chain. Nothing in the upstream suite reaches this.
     #[test]
     fn size_drifts_when_a_stored_value_is_undefined() {
         let mut map: DefaultMap<&str, u32> = DefaultMap::new();
@@ -457,7 +457,7 @@ mod tests {
         assert_eq!(map.peek(&"a"), None);
     }
 
-    /// The other half of B-40: any write resynchronises `size`, so the drift
+    /// The other half of BUG-DEFAULT-MAP-1: any write resynchronises `size`, so the drift
     /// is silent rather than permanent.
     #[test]
     fn a_write_resynchronises_a_drifted_size() {

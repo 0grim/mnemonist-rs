@@ -4,8 +4,8 @@
 //! [`crate::structures::bits`], which is shared with
 //! [`crate::structures::bit_vector`] because upstream ships the two files with
 //! seven methods copy-pasted between them. Read that module first: `size` is an
-//! incrementally maintained counter that can go **negative** (B-13), `select`
-//! loses 32 positions per skipped word (B-14), and a cursor keeps the array it
+//! incrementally maintained counter that can go **negative** (BUG-SPARSE-QUEUE-SET-2), `select`
+//! loses 32 positions per skipped word (BUG-SPARSE-QUEUE-SET-3), and a cursor keeps the array it
 //! was opened over across a `clear` — all three are documented there and all
 //! three are upstream's, present twice.
 //!
@@ -16,7 +16,7 @@
 //!
 //! Worth stating explicitly, because the two modules are both typed-array
 //! backed and the question is the obvious one to ask. `SparseSet.add(m)` past
-//! its length corrupts the set three ways (B-8/B-9/B-10). `BitSet` does not:
+//! its length corrupts the set three ways (BUG-SPARSE-SET-1/BUG-SPARSE-SET-2/BUG-SPARSE-SET-3). `BitSet` does not:
 //!
 //! | call, index past the array | upstream | why |
 //! |---|---|---|
@@ -35,7 +35,7 @@
 //! allocated word — is **accepted**: `size` counts the bit, while `rank`,
 //! `select` and iteration all stop at `length` and cannot see it. Measured:
 //! `new BitSet(10); s.set(20)` gives `size === 1`, `rank(10) === 0` and
-//! `select(1) === undefined`. See NOTES.md B-19.
+//! `select(1) === undefined`. See NOTES.md BUG-UTILS-BITWISE-1.
 //!
 //! # Example
 //!
@@ -76,8 +76,8 @@ impl BitSet {
 
     /// Upstream's `size` counter, **not** a population count.
     ///
-    /// Signed, because B-13 takes it below zero. `rank(length)` is the honest
-    /// count; the two disagree exactly when B-13 or B-19 has fired.
+    /// Signed, because BUG-SPARSE-QUEUE-SET-2 takes it below zero. `rank(length)` is the honest
+    /// count; the two disagree exactly when BUG-SPARSE-QUEUE-SET-2 or BUG-UTILS-BITWISE-1 has fired.
     pub fn size(&self) -> i64 {
         self.words.size
     }
@@ -111,7 +111,7 @@ impl BitSet {
         self.words.set_bit(index, value);
     }
 
-    /// `reset(index)` — clear the bit. Carries B-13; see the module docs.
+    /// `reset(index)` — clear the bit. Carries BUG-SPARSE-QUEUE-SET-2; see the module docs.
     pub fn reset(&mut self, index: i64) {
         self.words.reset_bit(index);
     }
@@ -140,7 +140,7 @@ impl BitSet {
     /// `select(r)` — position of the `r`th set bit.
     ///
     /// `Some(-1)` for an empty set or `r >= length`, `None` for upstream's
-    /// `undefined` fall-through. Carries B-14; see the module docs.
+    /// `undefined` fall-through. Carries BUG-SPARSE-QUEUE-SET-3; see the module docs.
     pub fn select(&self, r: i64) -> Option<i64> {
         self.words.select(r)
     }
@@ -305,7 +305,7 @@ mod tests {
         assert_eq!(set.to_json(), vec![772]);
     }
 
-    /// Gap: `size` is a counter, and B-13 drives it negative. Upstream's suite
+    /// Gap: `size` is a counter, and BUG-SPARSE-QUEUE-SET-2 drives it negative. Upstream's suite
     /// only ever resets a bit that is actually set.
     ///
     /// Measured on Node: `new BitSet(32); set(31); reset(0)` gives `size === 0`
@@ -355,7 +355,7 @@ mod tests {
         assert_eq!(set.size(), 1);
     }
 
-    /// Gap: B-14. Upstream's `select` test uses a length of 11, so every bit is
+    /// Gap: BUG-SPARSE-QUEUE-SET-3. Upstream's `select` test uses a length of 11, so every bit is
     /// in word 0 and no word is ever skipped.
     #[test]
     fn select_loses_a_word_of_positions_for_every_empty_word_it_skips() {
@@ -412,7 +412,7 @@ mod tests {
 
     /// But the narrow gap in the same family is real: an index past `length`
     /// yet inside the last allocated word is accepted and then invisible.
-    /// B-19, measured on Node.
+    /// BUG-UTILS-BITWISE-1, measured on Node.
     #[test]
     fn a_bit_between_length_and_the_end_of_its_word_is_counted_but_unreachable() {
         let mut set = BitSet::new(10);
@@ -490,7 +490,7 @@ mod tests {
         set.reset(5);
         assert_eq!(set.size(), 0);
         // The second reset clears nothing AND word 0's top bit is clear, so it
-        // is harmless -- the B-13 precondition is specifically bit 31.
+        // is harmless -- the BUG-SPARSE-QUEUE-SET-2 precondition is specifically bit 31.
         set.reset(5);
         assert_eq!(set.size(), 0);
 
@@ -537,7 +537,7 @@ mod tests {
         }
     }
 
-    /// Gap: D-06/D-07 on this module. Upstream drains each cursor once, in one
+    /// Gap: DIV-STACK-1/DIV-STACK-2 on this module. Upstream drains each cursor once, in one
     /// expression, so neither half is observed.
     #[test]
     fn cursors_do_not_restart_but_the_set_can_be_walked_again() {
@@ -552,7 +552,7 @@ mod tests {
         assert_eq!(set.values().collect::<Vec<_>>(), vec![0, 1, 0, 0]);
     }
 
-    /// Gap: D-08. A write lands mid-walk, and whether the cursor sees it
+    /// Gap: DIV-PROJ-10. A write lands mid-walk, and whether the cursor sees it
     /// depends on which word it is in — because upstream reads a word into a
     /// local once, on entry.
     #[test]

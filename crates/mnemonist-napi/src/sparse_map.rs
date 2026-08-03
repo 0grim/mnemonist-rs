@@ -32,7 +32,7 @@
 //!
 //! Like [`crate::queue`] and [`crate::stack`], the core structure is held in a
 //! [`RefCell`] so that `&self` is not `noalias readonly` and a JS callback's
-//! mutation is actually seen — see [`crate::cursor::CellCursor`] and B-31.
+//! mutation is actually seen — see [`crate::cursor::CellCursor`] and PORTBUG-1.
 
 use std::cell::RefCell;
 
@@ -218,7 +218,7 @@ impl JsSparseMap {
         // callback may `set`, `delete` or `clear` through the same object, and
         // an outstanding borrow would turn upstream's ordinary behaviour into
         // a `BorrowMutError`. The `RefCell` is also what stops LLVM hoisting
-        // the `size` read out of this loop entirely (B-31).
+        // the `size` read out of this loop entirely (PORTBUG-1).
         while index < self.inner.borrow().size() {
             let value: Either<f64, Undefined> = self.inner.borrow().vals().slot(index).into();
             let key: Either<u32, Undefined> = self.inner.borrow().dense().try_get(index).into();

@@ -81,7 +81,7 @@ mismatches — so it pins agreement with the original, not merely internal consi
 
 ## Bugs this found
 
-**B-95 — `lowerBoundIndices` defaults its upper bound from the wrong array.** `hi` falls back to
+**BUG-UTILS-BINARY-SEARCH-1 — `lowerBoundIndices` defaults its upper bound from the wrong array.** `hi` falls back to
 `array.length` where every other reference in the function is to `indices`. When `indices` is shorter
 than `array` — the normal case for a partial argsort, which is exactly what an index array is for —
 the search runs past the end of `indices`, reads `undefined`, indexes `array[undefined]`, gets
@@ -98,7 +98,7 @@ position in neither array.
 The library's one caller, `vp-tree.js`, always passes an `indices` array the same length as `array`,
 so the defect is latent there. Verified on Node 24.18.1. Reproduced.
 
-**B-96 — an out-of-range `hi` makes `search` report a match at a hole.** Not a crash and not a
+**BUG-UTILS-BINARY-SEARCH-2 — an out-of-range `hi` makes `search` report a match at a hole.** Not a crash and not a
 `-1`: `undefined` loses both comparisons, so the `else` branch — which means "equal" — is taken.
 `search([1,2,3], 9, 0, 100)` is `49`. The two bound functions react in *opposite* directions to the
 same `undefined` (`lowerBound` walks right to `100`, `upperBound` walks left to `3`), which is worth
@@ -110,21 +110,21 @@ Neither is reachable from the shipped library today; both are reachable from the
 
 ## Deliberate divergences
 
-**D-40 — comparators return `Ordering`, not a number.** Upstream branches on `comparison > 0`,
+**DIV-UTILS-BINARY-SEARCH-1 — comparators return `Ordering`, not a number.** Upstream branches on `comparison > 0`,
 `comparison < 0`, else. Those three arms are `Greater`, `Less`, `Equal`, so the mapping is exact for
 every comparator that returns a real number. It is *not* exact for one that returns `NaN`: in
 JavaScript that fails both tests and lands in the "equal" arm, and `Ordering` has no way to say so.
 No comparator in mnemonist returns `NaN`; `utils/comparators.js` returns `-1`, `0`, `1`.
 
-**D-41 — `search` returns `isize` with `-1` for "absent"**, not `Option<usize>`. `Option` would be
+**DIV-UTILS-BINARY-SEARCH-2 — `search` returns `isize` with `-1` for "absent"**, not `Option<usize>`. `Option` would be
 the idiomatic choice, but every upstream caller tests `!== -1`, and a port of those callers reads
 more obviously against the same sentinel than against a `None`. The information content is identical.
 
-**D-42 — `(lo + hi) >>> 1` is computed as `(lo + hi) / 2`.** The `>>> 1` also truncates the sum to
+**DIV-UTILS-BINARY-SEARCH-3 — `(lo + hi) >>> 1` is computed as `(lo + hi) / 2`.** The `>>> 1` also truncates the sum to
 32 bits. That can only matter for an array of 2^31 or more elements, which JavaScript cannot
 construct, so the truncation is unreachable and is not reproduced.
 
-**D-43 — out-of-range reads are modelled, not bounds-checked.** `array[i]` past the end is `None`,
+**DIV-UTILS-BINARY-SEARCH-4 — out-of-range reads are modelled, not bounds-checked.** `array[i]` past the end is `None`,
 and every comparison against `None` is `false`. That is what JavaScript does. A `debug_assert` or a
 panic here would be *more correct than upstream*, which this port's own rule explicitly calls a
 bug in the port.

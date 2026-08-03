@@ -59,7 +59,7 @@
 #   ctor sizes   1..=400   — straddles 256, where getPointerArray switches
 #                            `parents` to 16-bit while `ranks`, sized from
 #                            log2(size), stays 8-bit; and large enough for the
-#                            B-7 rank wrap at 256 to be reachable
+#                            BUG-STATIC-DISJOINT-SET-1 rank wrap at 256 to be reachable
 #   program len  1..600 ops
 #   EXCLUDED     out-of-range indices. Upstream reads past a typed array, gets
 #                undefined and propagates NaN; the bridge raises a RangeError.
@@ -106,12 +106,12 @@
 #
 #   NOTE: the `$` ops are protocol, not methods (see fuzz/oracle.js). $iter
 #   opens the one cursor each side holds; $next steps it against whatever the
-#   set has become since, which is the D-08 hybrid capture under test; $spread
+#   set has become since, which is the DIV-PROJ-10 hybrid capture under test; $spread
 #   is Array.from(set), going through the COLLECTION's Symbol.iterator and so
 #   constructing a fresh cursor each time. $spread is separate from $next on
-#   purpose: the factory half of D-07 is only observable by comparing an op
+#   purpose: the factory half of DIV-STACK-2 is only observable by comparing an op
 #   that must restart against one that must not. This is the first grammar in
-#   the repo that satisfies D-21's iteration-interleaved-with-mutation
+#   the repo that satisfies DIV-PROJ-21's iteration-interleaved-with-mutation
 #   requirement; static-disjoint-set had no iterator surface to reach it with.
 #
 # sparse-map
@@ -121,7 +121,7 @@
 #   observed     size · length · dense · sparse · vals
 #                after EVERY op, on both sides. `vals` is the one that carries
 #                this module: delete() moves the KEY into the hole and leaves
-#                the VALUE where it was (B-11), so a port that "tidied that up"
+#                the VALUE where it was (BUG-SPARSE-MAP-1), so a port that "tidied that up"
 #                would still agree on size, dense, sparse and every has() --
 #                and disagree only on get() and on vals itself.
 #   ctor         BOTH upstream signatures, four value stores:
@@ -166,16 +166,16 @@
 #                capacities are not uniformly distributed:
 #                  0..=400  [weight 4]  the ordinary range, 0 included because
 #                                       `new SparseQueueSet(0)` is legal and
-#                                       makes every index computation NaN (B-14)
+#                                       makes every index computation NaN (BUG-SPARSE-QUEUE-SET-3)
 #                  1..=8    [weight 3]  small rings, where a 200-op program
 #                                       wraps many times instead of filling once
-#                  {255,256}[weight 2]  the B-12 boundary and its control. 256
+#                  {255,256}[weight 2]  the BUG-SPARSE-QUEUE-SET-1 boundary and its control. 256
 #                                       is a POINT, not a range: a uniform draw
 #                                       over 0..=400 reaches it about once in
 #                                       400 programs.
 #   members      0..capacity+64, so roughly one in eight is OUT OF RANGE
 #   program len  1..200 ops
-#   EXCLUDED     capacity 65536, the SECOND B-12 boundary. It is the same defect
+#   EXCLUDED     capacity 65536, the SECOND BUG-SPARSE-QUEUE-SET-1 boundary. It is the same defect
 #                one width up and it is covered by a native test
 #                (`the_sentinel_truncates_at_the_second_boundary_too`) instead.
 #                Including it cost about 95% of this campaign's throughput --
@@ -190,7 +190,7 @@
 #   ring is what this module has that its siblings do not. A read-heavy mix
 #   would fill the ring once and never rotate it.
 #
-#   The B-12 sentinel needs no special op to observe: `sparse` is in the
+#   The BUG-SPARSE-QUEUE-SET-1 sentinel needs no special op to observe: `sparse` is in the
 #   observed state, so every dequeue compares the value written into it.
 # hashed-array-tree
 #   ops          push(v) [5] . pop() [3] . set(i, v) [3] . get(i) [3]
@@ -211,7 +211,7 @@
 #
 #   Block sizes are TINY on purpose. Upstream's own test uses the 1024-element
 #   default and never leaves its first block, which is precisely why its pop
-#   bug (B-11) survives there. At blockSize 2 a 200-op program is almost
+#   bug (BUG-SPARSE-MAP-1) survives there. At blockSize 2 a 200-op program is almost
 #   entirely cross-block.
 #
 #   NOTE: this is the first module whose operations legitimately THROW, which
@@ -232,13 +232,13 @@
 #                in plenty of programs where the words had already diverged.
 #   ctor lengths 0..=400 -- thirteen words. 0 included because new BitSet(0)
 #                allocates nothing at all; 400 is sparse enough that empty
-#                words between set bits are routine, which is what B-14 needs.
-#   indices      0..length+64, so a steady fraction land in B-19's band (past
+#                words between set bits are routine, which is what BUG-SPARSE-QUEUE-SET-3 needs.
+#   indices      0..length+64, so a steady fraction land in BUG-UTILS-BITWISE-1's band (past
 #                `length` but inside the last allocated word) and beyond it
 #   program len  1..200 ops
 #   EXCLUDED     NOTHING.
 #
-#   `reset` is weighted UP rather than down. B-13 only misfires on a bit that
+#   `reset` is weighted UP rather than down. BUG-SPARSE-QUEUE-SET-2 only misfires on a bit that
 #   is ALREADY clear, so a low weight would make the interesting case rare
 #   rather than routine.
 #
@@ -269,7 +269,7 @@
 #   as "we covered everything" when it did not.
 #
 #   push(1) and push(0) are separate ops because only the former touches `size`
-#   and only the latter leaves a stale bit, and B-17 needs both interleaved
+#   and only the latter leaves a stale bit, and BUG-BIT-SET-1 needs both interleaved
 #   with pop(). `set` is the only op here that throws.
 # stack
 #   ops          push(v) [weight 6] · pop() [3] · peek() [2] · clear() [2]
@@ -279,7 +279,7 @@
 #                upstream, and observing it directly is what makes the
 #                ARRAY-REBINDING of clear() checkable without waiting for a
 #                cursor to notice. size and items.length are separate
-#                quantities upstream (D-19); comparing both is how a port that
+#                quantities upstream (DIV-PROJ-19); comparing both is how a port that
 #                silently unified them would be caught.
 #   values       0..48, small enough that duplicates are frequent -- a stack is
 #                not a set, and a port that deduplicated is only caught by
@@ -320,10 +320,10 @@
 #   Stack.prototype.values freezes it, four files away in otherwise identical
 #   code, and obliterator's Iterator has no done flag -- so a queue cursor that
 #   has already reported {done: true} RESUMES when the queue grows. Core
-#   expresses that as Sequence::limit (D-42).
+#   expresses that as Sequence::limit (DIV-STACK-4).
 #
 # ---------------------------------------------------------------------------
-# $forEach — THE OP THAT WAS MISSING, ADDED 2026-08-01 AFTER B-31.
+# $forEach — THE OP THAT WAS MISSING, ADDED 2026-08-01 AFTER PORTBUG-1.
 #
 # Appended rather than folded into the eight module blocks above, so nothing
 # already written here moves.
@@ -333,7 +333,7 @@
 # Every module block above discloses what it excludes, and none of them
 # disclosed this: no module's alphabet contained `forEach` at all. sparse-set
 # had $iter/$next/$spread interleaved with mutation and therefore satisfied
-# D-21, so the omission read as coverage. It was not. B-31 -- a JS callback
+# DIV-PROJ-21, so the omission read as coverage. It was not. PORTBUG-1 -- a JS callback
 # mutating the collection it is walking -- is reachable ONLY through forEach,
 # and 2.94M operations could not express a single program that tried. An
 # alphabet that omits a method omits every bug reachable only through it.
@@ -396,14 +396,14 @@
 #
 # WHAT $forEach DOES *NOT* REACH, AND THIS IS THE IMPORTANT LINE
 #
-#   B-31 itself. This fuzzer compares mnemonist-core against upstream JS. The
+#   PORTBUG-1 itself. This fuzzer compares mnemonist-core against upstream JS. The
 #   napi bridge -- where the `noalias readonly` hoist actually happened -- is
 #   not in that loop at all, so no op alphabet, however complete, can catch
 #   that class of bug here. The specs that DO catch it are
 #   tests/boundary/reentrancy.js, which drive the real addon with real JS
 #   callbacks; they were red on seven cases against the pre-fix bridges and
 #   green after. Recorded here so that "we added a forEach op" is never read
-#   as "B-31 is now fuzz-covered".
+#   as "PORTBUG-1 is now fuzz-covered".
 #
 # FALSIFIED, like everything else here
 #
@@ -415,7 +415,7 @@
 #
 # Gate 6's lesson applies to the fuzzer itself: one that has never been seen to
 # catch anything is just a second green light. The sabotage was to *fix*
-# upstream's B-7 rank bug in the core, making the port strictly more correct
+# upstream's BUG-STATIC-DISJOINT-SET-1 rank bug in the core, making the port strictly more correct
 # than upstream and therefore wrong, since the elected root is observable
 # through find(). Caught in 129 cases (0.3s), shrunk from 600 ops to three.
 # Reverted; the seed is committed in
@@ -447,7 +447,7 @@
 # seeds committed with provenance in
 # crates/difffuzz/proptest-regressions/sparse-map.txt:
 #
-#   A. `delete` "fixed" to move the value along with the key, i.e. B-11
+#   A. `delete` "fixed" to move the value along with the key, i.e. BUG-SPARSE-MAP-1
 #      repaired. Caught in 1,474 cases (3.0s), shrunk to three ops:
 #          var s = new SparseMap(5); s.set(0,0); s.set(1,1); s.delete(0);
 #          port vals [1,1,...]   upstream [0,1,...]
@@ -470,7 +470,7 @@
 # ring and the degenerate capacity -- both reverted, both seeds committed with
 # provenance in crates/difffuzz/proptest-regressions/sparse-queue-set.txt:
 #
-#   A. `enqueue` "fixed" to refuse a full ring, i.e. B-13 repaired. Caught in
+#   A. `enqueue` "fixed" to refuse a full ring, i.e. BUG-SPARSE-QUEUE-SET-2 repaired. Caught in
 #      811 cases (0.8s), shrunk to two ops on the smallest possible ring:
 #          var s = new SparseQueueSet(1); s.enqueue(0); s.enqueue(1);
 #          port dense [0] size 1   upstream dense [1] size 2
@@ -498,12 +498,12 @@
 #      (5.2s). The port threw where upstream returned `this`, which is the
 #      divergence the new $throw encoding exists to be able to report at all.
 #
-# bit-set was falsified with B-13 FIXED -- `reset` given the `>>> 0` that
+# bit-set was falsified with BUG-SPARSE-QUEUE-SET-2 FIXED -- `reset` given the `>>> 0` that
 # upstream forgot, which is the single most plausible thing a future cleanup
 # does to that file. Caught in 1,325 cases (2.0s), shrunk to TWO ops:
 #     var s = new BitSet(1); s.set(31); s.reset(0);
 #     port size 1   upstream size 0
-# Note what the two-op program shows: B-19 and B-13 COMPOUND. set(31) is only
+# Note what the two-op program shows: BUG-UTILS-BITWISE-1 and BUG-SPARSE-QUEUE-SET-2 COMPOUND. set(31) is only
 # possible because an index past `length` but inside the last word is accepted,
 # and it is what puts bit 31 into the word, which is the precondition for
 # reset's signed comparison to misfire.
@@ -518,7 +518,7 @@
 #
 # Every one of these five sabotages makes the port strictly MORE CORRECT than
 # upstream. That is the only direction differential fuzzing works in on a
-# bug-for-bug port (D-33), and these three modules supply five independent
+# bug-for-bug port (DIV-PROJ-31), and these three modules supply five independent
 # demonstrations of it.
 # stack and queue were each falsified once, on the behaviour their grammar
 # exists to check. Both reverted, both seeds committed with provenance in
@@ -585,7 +585,7 @@
 #                through valueOf and reads undefined past the end, the port
 #                refuses both -- so generating them would re-report a recorded
 #                decision rather than find anything.
-#                (c) B-80 and B-81, the two re-entrancy bugs, because reaching
+#                (c) BUG-SORT-1 and BUG-SORT-2, the two re-entrancy bugs, because reaching
 #                them needs an element whose comparison calls back into JS,
 #                which needs an object element, which (a) excludes. Verified by
 #                hand against Node 24.18.1 instead; see docs/modules/sort.md.
@@ -688,7 +688,7 @@
 #
 # ---------------------------------------------------------------------------
 # Throughput: ~23,600 op/s including a full mapping()+compile() comparison
-# after every single op. That is the persistent-oracle decision (D-23) paying
+# after every single op. That is the persistent-oracle decision (DIV-PROJ-23) paying
 # off: at one `node` spawn per op the 120s campaign would have taken ~33 hours.
 # ---------------------------------------------------------------------------
 
@@ -824,7 +824,7 @@
 #   for an obliterator CURSOR -- a cursor freezes its state at creation. It is
 #   not enough for #.forEach, which freezes only its loop bound and re-reads
 #   the backing array on every step, so a callback that mutates the collection
-#   is visible to the reads after it. B-31 -- the port's own worst bug, an LLVM
+#   is visible to the reads after it. PORTBUG-1 -- the port's own worst bug, an LLVM
 #   `noalias` hoist -- was reachable ONLY through a mutating forEach, and it
 #   survived 2.94M operations because no grammar had one.
 #
@@ -835,10 +835,10 @@
 #   per callback invocation, so the second argument's VALUE and the callback's
 #   `this` binding are both compared.
 #
-#   FALSIFIED TWICE before being trusted (D-32), both reverted:
+#   FALSIFIED TWICE before being trusted (DIV-PROJ-30), both reverted:
 #     A  items_len() made to return self.size -- the "tidy-up" a naive port
 #        makes on noticing that forEach's bound is the array's length and not
-#        the stack's size (B-61). Caught in 57 cases / 0.0s, shrunk to
+#        the stack's size (BUG-FIXED-STACK-1). Caught in 57 cases / 0.0s, shrunk to
 #        `new FixedStack(Array, 1); s.forEach(function () {});`
 #     B  Sequence::freeze made to capture items.len() instead of self.size --
 #        the mirror-image mistake, on the cursor half. Caught in 57 cases /
@@ -861,14 +861,14 @@
 #                the upstream test file asserts on it directly and because it
 #                is the one number a wrong wrap moves first.
 #   ctor         both backing classes, capacities 1..=8, values 0..320
-#   get indices  0..=11 against capacities of 1..=8, so BOTH clauses of B-62's
+#   get indices  0..=11 against capacities of 1..=8, so BOTH clauses of BUG-CIRCULAR-BUFFER-1's
 #                guard are hit constantly: past the size (returns debris) and
 #                past the capacity (the one guard that fires)
 #   program len  1..200 ops
 #   EXCLUDED     `from` in all its forms -- a static cannot appear in an op
 #                sequence; covered by test/fixed-deque.js and by 23
 #                differential probes recorded in docs/modules/fixed-deque.md.
-#                forEach's `scope` (D-61, a documented divergence).
+#                forEach's `scope` (DIV-FIXED-STACK-3, a documented divergence).
 #                A NEGATIVE `get` index: the fuzzer drives mnemonist-core,
 #                whose `get` takes a usize, and the negative path -- where
 #                upstream's guard has no lower bound and `get(-1)` returns a
@@ -876,9 +876,9 @@
 #                probes cover it instead. This exclusion is the reason those
 #                probes are written up rather than left as scratch work.
 #
-#   FALSIFIED before being trusted (D-32), reverted:
+#   FALSIFIED before being trusted (DIV-PROJ-30), reverted:
 #     `FixedDeque::get`'s guard changed from `index >= capacity` to
-#     `index >= size` -- the "obvious correction" of B-62. Caught in 823 cases
+#     `index >= size` -- the "obvious correction" of BUG-CIRCULAR-BUFFER-1. Caught in 823 cases
 #     / 1.2s, shrunk to five lines. Seed committed with provenance in
 #     crates/difffuzz/proptest-regressions/fixed-deque.txt.
 #
@@ -896,14 +896,14 @@
 #   of times, where the deque's programs stall at the ceiling. It also makes
 #   routine a case that is unreachable elsewhere in the wave: an insert that
 #   overwrites a slot an open cursor has not yet reached, so $next yields a
-#   value that was not in the buffer when the walk started (D-08).
+#   value that was not in the buffer when the walk started (DIV-PROJ-10).
 #
 #   The return value of every insert is compared like any other result, which
 #   is what pins the one thing upstream never asserts: an overwriting insert
 #   returns the size UNCHANGED, and that is the only externally visible signal
 #   that an element was dropped.
 #
-#   FALSIFIED before being trusted (D-32), reverted:
+#   FALSIFIED before being trusted (DIV-PROJ-30), reverted:
 #     `CircularBuffer::push` made to return `size + 1` when it overwrites --
 #     reading upstream's `return this.size` as `return ++this.size`, which is
 #     what the branch two lines below actually does. Caught in 497 cases /
@@ -956,8 +956,8 @@
 2026-08-01T14:36:54Z  module=_utils seed=20260801 cases=12515 ops=503372 wall=60.0s divergences=0
 # trie / trie-map: both units' FIRST campaigns (unlogged, pre-regime-split) diverged inside a few
 # hundred ops -- trie-map over `delete` unlinking an already-queued `entries()` frame, trie over
-# `clear` replacing the root out from under an open `keys()` cursor. Both are D-201 (NOTES.md
-# B-201): upstream's lazy iterator holds a live object reference; this port's `Walk` re-navigates
+# `clear` replacing the root out from under an open `keys()` cursor. Both are DIV-TRIE-MAP-2 (NOTES.md
+# BUG-TRIE-MAP-2): upstream's lazy iterator holds a live object reference; this port's `Walk` re-navigates
 # by token path, which is required for it to be resumable at the FFI boundary. Fixed by a grammar
 # regime split, not a core change -- delete/clear never share a generated program with a persistent
 # $iter/$next cursor. The four lines below are the post-fix campaigns.
@@ -980,7 +980,7 @@
 # which advances eagerly; upstream's forEach advances AFTER its callback runs, so a callback that
 # pushes while the walk sits on the current tail must see the pushed node too, and the eager
 # primitive missed it. (2) push() branched on `tail` instead of `head` (unlike upstream's own guard
-# and unlike this port's own unshift()), indistinguishable except in the exact state B-241 produces
+# and unlike this port's own unshift()), indistinguishable except in the exact state BUG-LINKED-LIST-1 produces
 # (head None, tail stale), where it linked onto the stale tail instead of starting a fresh list and
 # left head stuck at None. Both fixed in core (ListCursor::current/advance; push() now checks head);
 # see crates/mnemonist-core/src/structures/linked_list.rs's module docs and push()'s own doc comment.
@@ -1031,12 +1031,12 @@
 # either -- same NOTES.md entry. Fixed by adding a real size field and a store_external helper that
 # overwrites low indices post-clear instead of always pushing. Once that and the critbit-tree-map
 # bug above were both fixed, the differential fuzzer also confirmed two genuine, disclosed upstream
-# bugs by direct comparison against real Node: B-260 (root is 0 fresh off the constructor, null
-# after clear -- reproduced via a root_is_null flag) and B-261 (no capacity guard at all; exceeding
+# bugs by direct comparison against real Node: BUG-FIXED-CRITBIT-TREE-MAP-1 (root is 0 fresh off the constructor, null
+# after clear -- reproduced via a root_is_null flag) and BUG-FIXED-CRITBIT-TREE-MAP-2 (no capacity guard at all; exceeding
 # it silently corrupts a node then crashes a later set -- reproduced as Error::Corrupted with
 # upstream's own message text). Both documented in full in NOTES.md and
 # crates/mnemonist-core/src/structures/fixed_critbit_tree_map.rs's module docs. The two lines below
-# are the post-fix campaigns, with capacity drawn from 2..=5 against the same 8-key pool so B-261's
+# are the post-fix campaigns, with capacity drawn from 2..=5 against the same 8-key pool so BUG-FIXED-CRITBIT-TREE-MAP-2's
 # crash is reached in nearly every generated program (measured: pool_self_check_capacity_is_
 # actually_exceeded_and_hits_the_crash, ~60%/100% respectively over 500 sampled programs).
 2026-08-01T20:43:28Z  module=fixed-critbit-tree-map seed=42 cases=9987 ops=1020404 wall=60.0s divergences=0
@@ -1064,7 +1064,7 @@
 2026-08-01T21:24:00Z  module=kd-tree seed=42 cases=9713 ops=970441 wall=90.0s divergences=0
 2026-08-01T21:26:00Z  module=kd-tree seed=7 cases=6462 ops=650306 wall=60.0s divergences=0
 #
-# multi-array, symspell, passjoin-index (planning/HANDOFF.md batch 5, B-300-319 range). Each
+# multi-array, symspell, passjoin-index (planning/HANDOFF.md batch 5). Each
 # campaign below is clean, but not on the first attempt for two of the three units -- both real
 # bugs were caught by these exact campaigns and fixed before the numbers below were logged; see
 # docs/modules/symspell.md and docs/modules/multi-array.md, "Bugs this found", for what a quick

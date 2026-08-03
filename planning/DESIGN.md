@@ -43,7 +43,7 @@ CP1 fallback is no longer a scoring cliff, because 1:1 native tests are explicit
 
 **2. Repo size / scoped subset — STILL UNANSWERED.** The ruling addressed FFI and tests only.
 Nothing on mnemonist's 15,386 LOC against the 8k guidance, or on declaring a module scope. Ask
-again pre-kickoff. Not a blocker — worst case is presentational (see D-05 and §6 scope
+again pre-kickoff. Not a blocker — worst case is presentational (see DIV-PROJ-8 and §6 scope
 declaration) — but resolve it if an answer is cheap.
 
 ---
@@ -739,7 +739,7 @@ All four confirmed against Node 24.18.1 rather than read off the spec:
 
 **This is a different discipline from §3.4's cursor, and must not be merged with it.** An
 `obliterator` cursor freezes a length at construction and reads elements lazily (hybrid capture,
-D-08); a `Map` cursor owns its entry list, skips tombstones and sees appends. Both are faithful —
+DIV-PROJ-10); a `Map` cursor owns its entry list, skips tombstones and sees appends. Both are faithful —
 to different things. `MapCursor` therefore does *not* implement `cursor::Sequence`, and there is no
 `Step::Gap`: a `Map` cursor has no frozen length to run past.
 
@@ -1425,7 +1425,7 @@ loaded into Node 24.18.1, called successfully.
 | second `[...c]` | `[]` | §3.4 **non-restartable** |
 | `next(); next(); [...c]` | `[3]` | cursor state survives mixed consumption |
 
-So **D-06 and the identity half of D-07 need no custom work.** What remains ours is the *factory*
+So **DIV-STACK-1 and the identity half of DIV-STACK-2 need no custom work.** What remains ours is the *factory*
 half — the collection's `Symbol.iterator` must construct a fresh cursor each call (§3.6).
 
 ### 11.5 Environment — DECIDED AND BUILT
@@ -1902,7 +1902,7 @@ anyway and are fresh. Everything else is fill-in-the-blank at CP4 from `DECISION
 
 ## 12. Still open
 
-- [x] ~~Admin ruling on FFI~~ — **RATIFIED**, quoted in the header and D-01.
+- [x] ~~Admin ruling on FFI~~ — **RATIFIED**, quoted in the header and DIV-PROJ-2.
 - [ ] **Admin ruling on repo size / scoped subset** — still unanswered. Ask again pre-kickoff.
       Not a blocker; worst case is presentational.
 - [x] ~~§3.7 shrink-window~~ — **DECIDED: Option A, sequenced.** Evidence gathered: no upstream

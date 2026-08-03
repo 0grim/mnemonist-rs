@@ -21,7 +21,7 @@
 //!
 //! Like [`crate::queue`] and [`crate::stack`], the core structure is held in a
 //! [`RefCell`] so that `&self` is not `noalias readonly` and a JS callback's
-//! mutation is actually seen — see [`crate::cursor::CellCursor`] and B-31.
+//! mutation is actually seen — see [`crate::cursor::CellCursor`] and PORTBUG-1.
 
 use std::cell::RefCell;
 
@@ -99,7 +99,7 @@ impl JsSparseQueueSet {
 
     /// A fresh cursor over the queued members, front to back.
     ///
-    /// The *factory* half of D-07: every call constructs a new cursor object,
+    /// The *factory* half of DIV-STACK-2: every call constructs a new cursor object,
     /// so `[...queue]` works repeatedly while each cursor is individually
     /// non-restartable. `crate::cursor::install_iterator_factories` aliases
     /// `Symbol.iterator` onto this method, as upstream's last line does.
@@ -155,7 +155,7 @@ impl JsSparseQueueSet {
             // The borrow is taken and dropped per step, before the callback
             // runs: a callback that enqueues or dequeues through the same
             // object must not meet an outstanding borrow, and the `RefCell` is
-            // what stops the walk reading a hoisted snapshot (B-31).
+            // what stops the walk reading a hoisted snapshot (PORTBUG-1).
             let member: Either<u32, Undefined> = match walk.step(&self.inner.borrow()) {
                 Step::Item(member) => Either::A(member),
                 Step::Gap => Either::B(()),
@@ -176,7 +176,7 @@ impl JsSparseQueueSet {
 
 /// The cursor `SparseQueueSet.prototype.values()` hands out.
 ///
-/// `#[napi(iterator)]` supplies the identity half of D-07 for free: this
+/// `#[napi(iterator)]` supplies the identity half of DIV-STACK-2 for free: this
 /// object's own `Symbol.iterator` returns itself, so it is non-restartable.
 #[napi(iterator, js_name = "SparseQueueSetValues")]
 pub struct JsSparseQueueSetValues {

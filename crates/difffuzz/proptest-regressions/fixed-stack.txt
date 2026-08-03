@@ -13,7 +13,7 @@
 #
 #   A  `FixedStack::items_len` made to return `self.size` -- the "tidy-up" a
 #      naive port makes when it notices that `forEach`'s bound is the array's
-#      length rather than the stack's size (B-61). Caught in 57 cases (0.0s),
+#      length rather than the stack's size (BUG-FIXED-STACK-1). Caught in 57 cases (0.0s),
 #      shrunk to two lines. This is the seed recorded below.
 #
 #   B  `Sequence::freeze` made to capture `items.len()` instead of `self.size`

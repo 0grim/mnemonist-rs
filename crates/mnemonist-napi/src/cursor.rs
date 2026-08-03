@@ -26,7 +26,7 @@
 //! SparseSet.prototype[Symbol.iterator] = SparseSet.prototype.values;
 //! ```
 //!
-//! which produces two different behaviours one level apart (D-07):
+//! which produces two different behaviours one level apart (DIV-STACK-2):
 //!
 //! | expression | behaviour |
 //! |---|---|
@@ -312,7 +312,7 @@ pub fn install_iterator_factories(mut exports: Object, env: Env) -> Result<()> {
     crate::statics::install_variadic_factories(&mut exports, &env)?;
 
     // `Vector`'s width-named subclasses and `Vector.PointerVector` have no
-    // JS-representable `ArrayClass` of their own to construct with (D-07's
+    // JS-representable `ArrayClass` of their own to construct with (DIV-STACK-2's
     // reasoning again: this belongs in the addon, not in test scaffolding).
     // Before the `Symbol.iterator` aliasing loop below is fine either way --
     // every subclass instance is a real `Vector` under the hood, so it picks

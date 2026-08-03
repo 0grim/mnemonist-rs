@@ -94,12 +94,12 @@ Characterising the shape of that coverage:
    leaves `size > capacity` on the one class whose whole purpose is to prevent that, and the walk
    then goes round the ring more than once. `CircularBuffer.from([1,2,3], Array, 2).toArray()` is
    `[1, 2, 1]`.
-7. **`from` is never called with a non-array-like iterable** — that branch is a `TypeError` (B-60).
+7. **`from` is never called with a non-array-like iterable** — that branch is a `TypeError` (BUG-UTILS-ITERABLES-2).
 8. **`from` is never called with an unguessable iterable and no capacity.**
 
 **Everything inherited from `FixedDeque`, inherited untested too**
 
-9. **`#.get` for `size <= index < capacity`, and for a negative index** — B-62, which this class
+9. **`#.get` for `size <= index < capacity`, and for a negative index** — BUG-CIRCULAR-BUFFER-1, which this class
    gets *literally*, because upstream pastes the same function object.
 10. **`forEach` on a non-full, empty or wrapped buffer, with a mutating callback, or with a
     `scope`.**
@@ -138,17 +138,17 @@ overwriting push stepped against an open cursor. All agree.
 constructor-name quirk — confirmed on Node 24.18.1:
 `new CircularBuffer(Array, 3).inspect().constructor.name === 'FixedDeque'` — is therefore
 neither reproduced nor contradicted), and the same three
-divergence-shaped gaps as `fixed-deque` — D-65, D-61, D-62.
+divergence-shaped gaps as `fixed-deque` — DIV-CIRCULAR-BUFFER-1, DIV-FIXED-STACK-3, DIV-FIXED-STACK-4.
 
 ## Bugs this found
 
-**B-62 — `#.get` is bounded by the capacity, and has no lower bound.** Inherited *literally*: the
+**BUG-CIRCULAR-BUFFER-1 — `#.get` is bounded by the capacity, and has no lower bound.** Inherited *literally*: the
 `get` on `CircularBuffer.prototype` is the same function object as the one on
 `FixedDeque.prototype`. See `docs/modules/fixed-deque.md` for the transcript. Confirmed on this
 class: `new CircularBuffer(Array, 3)`, push 1 and 2, `pop()` — then `size === 1` and
 `get(1) === 2`.
 
-**B-60 — `from` on a non-array-like iterable throws.** Shared with the other two; see
+**BUG-UTILS-ITERABLES-2 — `from` on a non-array-like iterable throws.** Shared with the other two; see
 `docs/modules/fixed-stack.md`. Confirmed here:
 `CircularBuffer.from(new Set([1,2,3]), Array, 3)` is `TypeError: iterables.forEach is not a
 function`.
@@ -159,7 +159,7 @@ array-like branch copies by index and assigns `size` rather than pushing. An ove
 therefore leaves a `CircularBuffer` in a state its own `push` can never produce —
 `size > capacity`, elements repeating on the walk. Verified on Node 24.18.1:
 `CircularBuffer.from([1,2,3], Array, 2)` gives `size 3`, `start 0`, `items [1,2,3]`,
-`toArray() [1, 2, 1]`. Filed under B-60's umbrella rather than as its own ID, because the shared
+`toArray() [1, 2, 1]`. Filed under BUG-UTILS-ITERABLES-2's umbrella rather than as its own ID, because the shared
 `from` is one piece of code with two problems and the second is arguably a documentation gap rather
 than a defect.
 
@@ -173,9 +173,9 @@ expected outcome.
 | — | **`CircularBuffer` holds a `FixedDeque` rather than duplicating the ring.** | Upstream's own mechanism is `Object.keys(FixedDeque.prototype).forEach(paste)` — the pasted methods are the *same function objects*, not copies. Delegation is the closest Rust equivalent, and it makes "every `FixedDeque` defect is a defect here" structural rather than coincidental. Two copies of a wrap would be two places to get it wrong. |
 | — | **`push` and `unshift` return `usize`, not `Result<usize>`.** | Neither can fail here, which is the entire difference from `FixedDeque`. Encoding that in the type is what stops a caller from handling an error that cannot happen. |
 | — | **`inspect()` is not ported**, and with it the quirk that the pasted `inspect` reports the constructor as `FixedDeque`. | A Node display convenience with no upstream assertion. Noted rather than reproduced. |
-| D-65 | **`get` with a non-numeric index returns `undefined`.** | See `docs/modules/fixed-deque.md`. |
-| D-60, D-61, D-62, D-63, D-64, D-66 | See `docs/modules/fixed-stack.md`. | Shared by all three fixed-capacity modules -- they live in one `from_parts`. |
-| D-06, D-07, D-39, D-43 | See `docs/modules/fixed-stack.md`. | Cursor and bridge decisions, shared repo-wide. |
+| DIV-CIRCULAR-BUFFER-1 | **`get` with a non-numeric index returns `undefined`.** | See `docs/modules/fixed-deque.md`. |
+| DIV-FIXED-STACK-2, DIV-FIXED-STACK-3, DIV-FIXED-STACK-4, DIV-FIXED-STACK-5, DIV-FIXED-STACK-6, DIV-FIXED-STACK-7 | See `docs/modules/fixed-stack.md`. | Shared by all three fixed-capacity modules -- they live in one `from_parts`. |
+| DIV-STACK-1, DIV-STACK-2, DIV-FIXED-STACK-1, DIV-STACK-5 | See `docs/modules/fixed-stack.md`. | Cursor and bridge decisions, shared repo-wide. |
 
 ## Fuzz + bench
 
@@ -198,7 +198,7 @@ is the contrast with the `fixed-deque` grammar, whose programs stall at the ceil
 value of every insert is compared, which is what pins gaps 1 and 2 — the only visible signal that an
 element was dropped. Both backing classes are generated, `get` indices run 0..=11, values to 320.
 Deliberately excluded: the same three as `fixed-deque` — `from` (a static), `forEach`'s `scope`
-(D-61), and a negative `get` index (core takes a `usize`; covered by differential probes). Full
+(DIV-FIXED-STACK-3), and a negative `get` index (core takes a `usize`; covered by differential probes). Full
 grammar: evidence file.
 
 **The grammar was falsified before being trusted.** Sabotage: `push` returning `size + 1` when it

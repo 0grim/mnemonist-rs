@@ -37,14 +37,14 @@ value.**
 1. **Any `jenkinsInt32` output.** Not one. The function could return `key & 7` and the test would
    still pass, because a hash only has to be a function for linear probing to round-trip. That
    matters here: the mixed float/ToInt32 arithmetic in it is exactly the shape that broke
-   `bitwise.msb32` (B-19).
+   `bitwise.msb32` (BUG-UTILS-BITWISE-1).
 2. **The resulting slot layout.** Only that reads round-trip, never *where* anything landed — so
    the probe order, the mask, and the wrap are all unpinned.
 3. **Setting a key that is already present.** Every one of the eight keys is distinct, so the
    overwrite-in-place branch (`c === key` at the top of `linearProbingSet`) never runs.
 4. **The key `0`.** It is the empty sentinel, and it is also a perfectly ordinary `Uint32Array`
    value. Nothing upstream stores it.
-5. **A zero-length table.** Upstream hangs (see B-92).
+5. **A zero-length table.** Upstream hangs (see BUG-UTILS-HASH-TABLES-1).
 6. **A non-power-of-two table.** `hash(key) & (n - 1)` is only a modulo for powers of two; upstream
    uses 8 and nothing else.
 7. **Any table size other than 8.** No small tables, no large ones.
@@ -67,7 +67,7 @@ in place of upstream's float/ToInt32 alternation with a straight face.
 
 ## Bugs this found
 
-**B-92 — `linearProbing.get`/`has`/`set` loop forever on a zero-length table.**
+**BUG-UTILS-HASH-TABLES-1 — `linearProbing.get`/`has`/`set` loop forever on a zero-length table.**
 `i %= n` with `n === 0` is `NaN`; `keys[NaN]` is `undefined`, which is neither the key nor `0`; and
 the "full turn" guard `i === j` can never be true because `NaN !== NaN`. So the `while (true)` never
 exits. Confirmed by running
@@ -76,9 +76,9 @@ exits. Confirmed by running
 require('mnemonist/utils/hash-tables').linearProbing.get(h, new Uint32Array(0), new Uint32Array(0), 1)
 ```
 
-under `timeout 5 node`, which exited 124. Not reproduced — see D-45.
+under `timeout 5 node`, which exited 124. Not reproduced — see DIV-UTILS-HASH-TABLES-3.
 
-**B-94 — the key `0` occupies a slot that still reads as empty, and the next colliding insert
+**BUG-UTILS-HASH-TABLES-2 — the key `0` occupies a slot that still reads as empty, and the next colliding insert
 silently destroys it.** `0` is the empty sentinel *and* a storable `Uint32Array` value. The precise
 behaviour is more interesting than "key 0 cannot be stored":
 
@@ -94,23 +94,23 @@ Verified on Node 24.18.1. Reproduced exactly, including the "still findable unti
 
 ## Deliberate divergences
 
-**D-44 — a full table returns `Err`, not a thrown error.** `mnemonist-core` has no exceptions. The
+**DIV-UTILS-HASH-TABLES-2 — a full table returns `Err`, not a thrown error.** `mnemonist-core` has no exceptions. The
 error value is the `&'static str` `TABLE_IS_FULL`, holding upstream's message verbatim
 (`mnemonist/utils/hash-tables.linearProbingSet: table is full.`) so a future bridge can re-throw it
 unchanged and upstream's `assert.throws(..., /full/)` still matches.
 
-**D-45 — a zero-length table is refused instead of hung.** B-92 is an infinite loop, and "reproduce
+**DIV-UTILS-HASH-TABLES-3 — a zero-length table is refused instead of hung.** BUG-UTILS-HASH-TABLES-1 is an infinite loop, and "reproduce
 upstream bug-for-bug" does not extend to hanging the process — a fuzz campaign or a `cargo test`
 would never terminate. `get`/`has` return "absent" and `set` returns `TABLE_IS_FULL`, all three
 guarded before the probe starts. This is the one place the port is deliberately *more* terminating
 than the original, and it is stated here rather than left implicit.
 
-**D-46 — keys are `u32`, values are generic.** Upstream is untyped, but the sentinel comparison
+**DIV-UTILS-HASH-TABLES-4 — keys are `u32`, values are generic.** Upstream is untyped, but the sentinel comparison
 `c === 0` and its one real call site both assume integer keys held in a typed array, and the
 `Uint32Array` in its own test fixes the width. Making the key type generic would mean inventing a
 "zero" trait for a function whose only observed key type is `u32`.
 
-**D-47 — an out-of-range initial slot is probed past, not bounds-checked.** Only reachable with a
+**DIV-UTILS-HASH-TABLES-1 — an out-of-range initial slot is probed past, not bounds-checked.** Only reachable with a
 non-power-of-two table (see above), where `hash(key) & (n - 1)` can select a slot at or past the
 end. Upstream reads `undefined`, treats it as "occupied but not equal", and probes on; the port does
 the same through an `Option`-returning read. If the probe wraps all the way back to a starting slot

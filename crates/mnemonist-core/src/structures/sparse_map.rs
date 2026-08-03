@@ -27,7 +27,7 @@
 //!   get(5) == 'a'                                      ^ should be 'c'
 //! ```
 //!
-//! Measured on Node 24.18.1, and reproduced here rather than fixed. See B-11.
+//! Measured on Node 24.18.1, and reproduced here rather than fixed. See BUG-SPARSE-MAP-1.
 //!
 //! # Two value stores, not one
 //!
@@ -43,7 +43,7 @@
 //! | store of `300` | `300` | `44` |
 //!
 //! [`Values`] is that choice, and the growth column is the interesting one:
-//! once an out-of-range `set` has pushed `size` past `length` (B-8, inherited
+//! once an out-of-range `set` has pushed `size` past `length` (BUG-SPARSE-SET-1, inherited
 //! wholesale from `SparseSet`), an `Array`-backed map keeps *every* value while
 //! `dense` has long since run out of room. `keys()` then yields `undefined`
 //! where `values()` still yields real data.
@@ -259,7 +259,7 @@ impl<V: TypedValue> SparseMap<V> {
     /// Entries currently in the map.
     ///
     /// Can exceed [`SparseMap::length`] after an out-of-range
-    /// [`set`](SparseMap::set); the mechanism is `SparseSet`'s B-8 unchanged.
+    /// [`set`](SparseMap::set); the mechanism is `SparseSet`'s BUG-SPARSE-SET-1 unchanged.
     pub fn size(&self) -> usize {
         self.size
     }
@@ -283,7 +283,7 @@ impl<V: TypedValue> SparseMap<V> {
     ///
     /// Public because it is public upstream, and because the differential
     /// fuzzer compares it slot for slot: `delete` deliberately leaves it
-    /// untouched (B-11), and only reading it directly distinguishes "the port
+    /// untouched (BUG-SPARSE-MAP-1), and only reading it directly distinguishes "the port
     /// reproduced the stale value" from "the port happened to agree on `get`".
     pub fn vals(&self) -> &Values<V> {
         &self.vals
@@ -325,7 +325,7 @@ impl<V: TypedValue> SparseMap<V> {
     /// Upstream returns `this` for chaining and exposes the answer only through
     /// `size`; the bridge drops this bool so the JS surface matches.
     ///
-    /// Out of range this corrupts the map rather than failing, inheriting B-8
+    /// Out of range this corrupts the map rather than failing, inheriting BUG-SPARSE-SET-1
     /// from `SparseSet` intact — with one addition of its own: the `vals` store
     /// still receives the value, and for the `Array` form it *grows* to hold it
     /// while `dense` cannot.
@@ -353,7 +353,7 @@ impl<V: TypedValue> SparseMap<V> {
 
     /// Remove `member`, returning whether it was there.
     ///
-    /// **Does not move the value.** That is B-11 and it is upstream's, not a
+    /// **Does not move the value.** That is BUG-SPARSE-MAP-1 and it is upstream's, not a
     /// simplification here — see the module docs.
     pub fn delete(&mut self, member: usize) -> bool {
         let Some(slot) = self.sparse.try_get(member) else {
@@ -365,7 +365,7 @@ impl<V: TypedValue> SparseMap<V> {
             return false;
         }
 
-        // The `SparseSet` swap, including the asymmetry of B-10 once `size` has
+        // The `SparseSet` swap, including the asymmetry of BUG-SPARSE-SET-3 once `size` has
         // run past `length`: the `dense` store still lands (a `NaN` element
         // store is `0`) while `sparse[undefined]` becomes a string-keyed
         // expando that leaves the array alone.
@@ -377,7 +377,7 @@ impl<V: TypedValue> SparseMap<V> {
             self.sparse.try_set(last as usize, slot as u32);
         }
 
-        // And `vals` is untouched. Deliberately. B-11.
+        // And `vals` is untouched. Deliberately. BUG-SPARSE-MAP-1.
         self.size -= 1;
 
         true
@@ -530,7 +530,7 @@ mod tests {
         );
     }
 
-    /// **B-11.** `delete` swaps the last *member* into the hole and leaves the
+    /// **BUG-SPARSE-MAP-1.** `delete` swaps the last *member* into the hole and leaves the
     /// last *value* where it was, so the moved member inherits the deleted
     /// member's value.
     ///
@@ -662,7 +662,7 @@ mod tests {
         assert_eq!(map.size(), 1);
     }
 
-    /// B-8, inherited from `SparseSet` intact — plus the value store, which
+    /// BUG-SPARSE-SET-1, inherited from `SparseSet` intact — plus the value store, which
     /// still receives the write.
     ///
     /// Verified against Node: `new SparseMap(10)` then `set(300, 7)` gives
@@ -773,7 +773,7 @@ mod tests {
         assert_eq!(plain.get(0), Some(300));
     }
 
-    /// B-10, on this module's arrays. Node gives `dense = [0, 0, 2]`,
+    /// BUG-SPARSE-SET-3, on this module's arrays. Node gives `dense = [0, 0, 2]`,
     /// `sparse = [0, 1, 2]`, `sparse.undefined = 1`, and `vals` unchanged.
     #[test]
     fn a_delete_past_capacity_writes_dense_but_not_sparse() {
@@ -796,7 +796,7 @@ mod tests {
         );
     }
 
-    /// D-06 / D-07 seen from Rust: each cursor is exhausted once, but the map
+    /// DIV-STACK-1 / DIV-STACK-2 seen from Rust: each cursor is exhausted once, but the map
     /// can be walked again — and the three walks are independent.
     #[test]
     fn cursors_do_not_restart_but_the_map_can_be_walked_again() {
@@ -815,8 +815,8 @@ mod tests {
         assert_eq!(entries(&map).len(), 2);
     }
 
-    /// D-08 on this module's data: a `delete` between two steps is visible,
-    /// because both arrays are read lazily — and B-11 makes the visible result
+    /// DIV-PROJ-10 on this module's data: a `delete` between two steps is visible,
+    /// because both arrays are read lazily — and BUG-SPARSE-MAP-1 makes the visible result
     /// a *mismatched pair*, which is the sharpest possible demonstration of it.
     ///
     /// Measured against Node with the equivalent JS.

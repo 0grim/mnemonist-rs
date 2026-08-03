@@ -29,7 +29,7 @@ Characterising the shape of that coverage:
   geometry the suite inspects.
 * **Both capacity throws are covered**, `push` and `unshift`, in the same block.
 * **`get` is called four times**, all on a *full* capacity-3 deque: `get(0..2)` and `get(3)`. That
-  is the whole of its coverage, and it is exactly the shape in which B-62 is invisible.
+  is the whole of its coverage, and it is exactly the shape in which BUG-CIRCULAR-BUFFER-1 is invisible.
 * **`forEach` is called once**, on a full capacity-3 deque, with no mutation and no `scope`.
 * **Three array classes** — `Array`, `Uint8Array`, `Float64Array`, plus `Int8Array` as an input.
 * **Every `from` call passes an array or typed array**, and none is oversized.
@@ -41,10 +41,10 @@ Characterising the shape of that coverage:
 
 1. **`get(index)` for `size <= index < capacity` is never called.** The guard is
    `index >= this.capacity`, not `index >= this.size`, so it returns whatever is in the slot —
-   debris a `pop` or `shift` left behind. See B-62.
+   debris a `pop` or `shift` left behind. See BUG-CIRCULAR-BUFFER-1.
 2. **`get` with a negative index is never called.** There is no lower bound at all, so `get(-1)` on
    a deque with `start === 2` returns the element at physical slot 1 — an element that was shifted
-   out. See B-62.
+   out. See BUG-CIRCULAR-BUFFER-1.
 3. **`get` with a fractional, `NaN` or non-numeric index is never called.**
 4. **`get` on a wrapped deque is never called** — every `get` in the file is on a deque with
    `start === 0`.
@@ -66,7 +66,7 @@ Characterising the shape of that coverage:
 **`from`**
 
 9. **`from` is never called with a non-array-like iterable** — that branch is a `TypeError`. See
-   B-60.
+   BUG-UTILS-ITERABLES-2.
 10. **`from` is never called with an iterable longer than the capacity**, which leaves
     `size > capacity` and makes the walk go round the ring *more than once*, repeating elements.
 11. **`from` is never called with an unguessable iterable and no capacity.**
@@ -80,8 +80,8 @@ Characterising the shape of that coverage:
 
 **Iteration**
 
-15. **A cursor is never re-drained** (D-06), and **`[...deque]` is never used** except through one
-    `for…of` (D-07).
+15. **A cursor is never re-drained** (DIV-STACK-1), and **`[...deque]` is never used** except through one
+    `for…of` (DIV-STACK-2).
 16. **Mutation during iteration is never performed**, in either direction — neither an
     element overwritten ahead of the cursor nor a `shift` moving the deque's start under it.
 17. **`values()` on an empty or cleared deque is never called.**
@@ -106,8 +106,8 @@ to back, the `start === 0` wrap reached from an empty deque, and a capacity-1/em
 behaving. Full test-to-gap mapping: evidence file.
 
 **Differential probes against the vendored upstream**, 23 cases for this class (50 across both this
-and `circular-buffer`), recorded because they are the evidence for the bridge half: B-60 for a
-`Set` and a generator; B-62 in both its forms including `get(-1)` and `get(-2)`; `get` with `1.5`,
+and `circular-buffer`), recorded because they are the evidence for the bridge half: BUG-UTILS-ITERABLES-2 for a
+`Set` and a generator; BUG-CIRCULAR-BUFFER-1 in both its forms including `get(-1)` and `get(-2)`; `get` with `1.5`,
 `NaN`, `Infinity` and `undefined`; coercion for `Uint8Array` and `Int8Array`; `toArray` on a wrapped
 deque; `forEach`'s three arguments and its `this`; `forEach` on an empty deque; a `forEach` whose
 callback shifts twice; oversized `from` for both backings; all five constructor error paths;
@@ -115,12 +115,12 @@ callback shifts twice; oversized `from` for both backings; all five constructor 
 `entries()`; and a cursor stepped across a `shift`. All agree.
 
 **Still untested, stated rather than glossed:** gap 19 (`inspect`, not ported), gap 3 in its
-non-numeric form (a deliberate divergence, D-65), gap 7 in its `arguments.length` form (D-61), and
-gap 14 for typed classes (D-62).
+non-numeric form (a deliberate divergence, DIV-CIRCULAR-BUFFER-1), gap 7 in its `arguments.length` form (DIV-FIXED-STACK-3), and
+gap 14 for typed classes (DIV-FIXED-STACK-4).
 
 ## Bugs this found
 
-**B-62 — `#.get` is bounded by the capacity, and has no lower bound at all.**
+**BUG-CIRCULAR-BUFFER-1 — `#.get` is bounded by the capacity, and has no lower bound at all.**
 Verified against Node 24.18.1. Every reader in the file guards on `this.size`. `get`
 guards on the capacity:
 
@@ -154,7 +154,7 @@ shape in which "bounded by the capacity" and "bounded by the size" are the same 
 `CircularBuffer` inherits this literally — upstream pastes the same function object onto its
 prototype — so the defect is one bug in two classes.
 
-**B-60 — `from` on a non-array-like iterable throws.** Shared with `fixed-stack` and
+**BUG-UTILS-ITERABLES-2 — `from` on a non-array-like iterable throws.** Shared with `fixed-stack` and
 `circular-buffer`; see `docs/modules/fixed-stack.md` for the full write-up. Confirmed for this
 class: `FixedDeque.from(new Set([1,2,3]), Array, 3)` is
 `TypeError: iterables.forEach is not a function`.
@@ -166,12 +166,12 @@ Both bugs were found by reading the file statement by statement against Node.
 
 | # | Divergence | Why |
 |---|---|---|
-| D-65 | **`get` with a non-numeric index returns `undefined`.** | Upstream reaches *string concatenation*: `this.start + "1"` is `"21"`, which the next comparison coerces back to a number, so on a large enough deque `get("1")` can return a real element at physical slot 21. The port refuses at the type check. Everything numeric — negative, fractional, `NaN`, infinite — is reproduced exactly. |
+| DIV-CIRCULAR-BUFFER-1 | **`get` with a non-numeric index returns `undefined`.** | Upstream reaches *string concatenation*: `this.start + "1"` is `"21"`, which the next comparison coerces back to a number, so on a large enough deque `get("1")` can return a real element at physical slot 21. The port refuses at the type check. Everything numeric — negative, fractional, `NaN`, infinite — is reproduced exactly. |
 | — | **`toArray()` produces the fast path's answer for a missing slot.** | Upstream has two paths: `items.slice(start, offset)` when `start + size < capacity`, which preserves a hole, and a slow path whose `array[j] = undefined` creates an own property. The port always produces the hole. Observable only through `in`/`hasOwnProperty`, and the elements are identical either way. |
 | — | **The wrap is one conditional subtraction, not `%`.** | Not a divergence — a *choice to reproduce* one. The two agree while `start + size < 2 * capacity`, which every path but an oversized `from` maintains; where they disagree, upstream keeps the out-of-range index and reads whatever is there. Writing `%` would have been the tidier code and the wrong answer. `values()` genuinely *is* `%`, because its loop steps and wraps on equality. |
 | — | **`items` is not exposed to JS.** | A public property upstream that a JS caller can write *through*; napi can only hand out a copy. Same call as `SparseSet`, `HashedArrayTree` and `FixedStack`. Exposed in Rust and compared slot for slot by the fuzzer. |
-| D-60, D-61, D-62, D-63, D-64, D-66 | See `docs/modules/fixed-stack.md`. | The `iterables`, arity, capacity, `ArrayClass`, B-60 and B-63 decisions are shared by all three fixed-capacity modules -- they live in one `from_parts`. |
-| D-06, D-07, D-39, D-43 | See `docs/modules/fixed-stack.md`. | Cursor and bridge decisions, shared repo-wide. |
+| DIV-FIXED-STACK-2, DIV-FIXED-STACK-3, DIV-FIXED-STACK-4, DIV-FIXED-STACK-5, DIV-FIXED-STACK-6, DIV-FIXED-STACK-7 | See `docs/modules/fixed-stack.md`. | The `iterables`, arity, capacity, `ArrayClass`, BUG-UTILS-ITERABLES-2 and BUG-FIXED-STACK-2 decisions are shared by all three fixed-capacity modules -- they live in one `from_parts`. |
+| DIV-STACK-1, DIV-STACK-2, DIV-FIXED-STACK-1, DIV-STACK-5 | See `docs/modules/fixed-stack.md`. | Cursor and bridge decisions, shared repo-wide. |
 | — | **`inspect()` is not ported.** | A Node display convenience with no upstream assertion. |
 
 ## Fuzz + bench
@@ -191,15 +191,15 @@ The op alphabet covers `push`/`unshift`/`pop`/`shift`/`peekFirst`/`peekLast`/`ge
 cursor ops and `$forEach`. Observable state is `size`, `capacity`, **`start`**, `items`, `toArray()`
 — `start` is in the set because the upstream file asserts on it and because it is the one number a
 wrong wrap moves first. `get` indices run 0..=11 against capacities of 1..=8, so both clauses of
-B-62's guard are exercised constantly: past the size (debris) and past the capacity (the guard that
+BUG-CIRCULAR-BUFFER-1's guard are exercised constantly: past the size (debris) and past the capacity (the guard that
 fires). Both backing classes are generated, capacities 1..=8, values to 320. Deliberately excluded:
 `from` (a static cannot appear in an op sequence; covered by the original test and the differential
-probes), `forEach`'s `scope` (D-61), and a **negative** `get` index — the fuzzer drives
+probes), `forEach`'s `scope` (DIV-FIXED-STACK-3), and a **negative** `get` index — the fuzzer drives
 `mnemonist-core`, whose `get` takes a `usize`, and the negative path is the bridge's, covered by
 four differential probes instead. Full grammar: evidence file.
 
 **The grammar was falsified before being trusted.** Sabotage: `get`'s guard changed from
-`index >= self.capacity` to `index >= self.size` — the "obvious correction" of B-62, and the change
+`index >= self.capacity` to `index >= self.size` — the "obvious correction" of BUG-CIRCULAR-BUFFER-1, and the change
 any reader who has not checked upstream would make. Caught in 823 cases (1.2 s), shrunk to five
 lines. Reverted; the seed is committed with provenance in
 `crates/difffuzz/proptest-regressions/fixed-deque.txt`. Full repro: evidence file.

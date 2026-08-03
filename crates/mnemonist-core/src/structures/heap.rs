@@ -33,7 +33,7 @@
 //! `Heap.prototype.clear` is `this.items = []` — a **new** array. An in-flight
 //! `push` captured the old one as an argument and keeps writing to it, so a
 //! comparator that clears the heap mid-sift leaves the sift finishing into an
-//! array nothing can reach. That is D-41 again, one module further on: [`Heap`]
+//! array nothing can reach. That is DIV-STACK-3 again, one module further on: [`Heap`]
 //! holds `RefCell<S>` and every algorithm is handed a `clone()` of the store,
 //! which shares the same cells.
 //!
@@ -628,7 +628,7 @@ where
         Source::ArrayLike(iterable) => {
             if n == 1.0 {
                 // `var min = Infinity` used as an "unset" sentinel, then
-                // `if (min === Infinity || compare(v, min) < 0)`. NOTES B-72:
+                // `if (min === Infinity || compare(v, min) < 0)`. NOTES BUG-HEAP-3:
                 // the sentinel is a real value, so an element that *is*
                 // Infinity resets it. Reproduced with a first-iteration flag
                 // plus the same identity test.
@@ -913,8 +913,8 @@ where
 ///
 /// Upstream's `n === 1` fast paths conflate the sentinel with the value: the
 /// test is `min === Infinity`, so an element that really *is* `Infinity` makes
-/// the next element unconditionally replace it (NOTES B-72), and an empty
-/// source makes the sentinel itself the answer (NOTES B-71). Modelling this as
+/// the next element unconditionally replace it (NOTES BUG-HEAP-3), and an empty
+/// source makes the sentinel itself the answer (NOTES BUG-HEAP-2). Modelling this as
 /// a plain `Option<Item>` would **fix** both bugs, so it is modelled the way
 /// upstream wrote it: a slot pre-loaded with the sentinel, plus the identity
 /// test [`Sentinel::is_infinity`].
@@ -961,10 +961,10 @@ impl<T: Clone + Sentinel> Unset<T> {
 /// A binary minimum heap.
 ///
 /// `size` is a separate quantity from `items.length`, exactly as upstream keeps
-/// it separate, because the two can genuinely disagree — see NOTES B-70.
+/// it separate, because the two can genuinely disagree — see NOTES BUG-HEAP-1.
 pub struct Heap<S: Store, C> {
     /// `this.items`, in a `RefCell` because `clear()` **rebinds** it and an
-    /// algorithm already running must keep the array it was handed (D-41).
+    /// algorithm already running must keep the array it was handed (DIV-STACK-3).
     items: RefCell<S>,
     /// `this.size`, in a `Cell` because a comparator can re-enter and change it
     /// while a method is on the stack.
@@ -1313,7 +1313,7 @@ mod tests {
 
     /// A comparator that throws leaves the heap with `items.length` one ahead
     /// of `size` — upstream's `push` grows the array before it sifts, and
-    /// `++this.size` never runs. NOTES B-70.
+    /// `++this.size` never runs. NOTES BUG-HEAP-1.
     #[test]
     fn a_throwing_comparator_desynchronises_size_from_the_array() {
         struct Boom;

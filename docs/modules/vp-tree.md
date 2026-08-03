@@ -69,7 +69,7 @@ for more neighbors than exist.
 Deliberate divergences for what each does upstream.
 
 **A distance function that mutates the tree, or calls back into it.** `this.heap`/`this.D` are
-single instance fields reused across calls (see D-403); nothing in the suite's metrics has a
+single instance fields reused across calls (see DIV-VP-TREE-4); nothing in the suite's metrics has a
 reason to reach into `this`.
 
 **Exact pruning-branch coverage on the pinned fixtures.** `should properly build the tree` and
@@ -84,13 +84,13 @@ below measures directly instead of assuming.
 `crates/mnemonist-core/src/structures/vp_tree.rs` — 9 tests: a 1:1 transcription of the pinned
 15-word construction, the 8-item duplicate-heavy case, both k-NN calls (order included), both
 radius calls, both cases of issue #147, an empty tree building cleanly and answering no queries (a
-resolved divergence, D-401), a failing distance function during construction leaving no tree
+resolved divergence, DIV-VP-TREE-2), a failing distance function during construction leaving no tree
 behind, a failing distance function during a query propagating, and pruning going both ways across
 radii (a radius of `0` prunes strictly more than an unbounded one on the pinned 15-word tree).
 
 The `k == 0` gap is closed by inspection (`try_nearest_neighbors` returns early) rather than by a
 dedicated assertion beyond what the pruning test's neighbor already implies; the reentrancy gap is
-a documented, deliberately unclosed divergence (D-403) — see below.
+a documented, deliberately unclosed divergence (DIV-VP-TREE-4) — see below.
 
 ## Bugs this found
 
@@ -107,12 +107,12 @@ that module).
 
 | # | Divergence | Why |
 |---|---|---|
-| D-400 | **Distance is passed per call, never stored on the struct.** | Same reasoning as `bk_tree.rs`: the JS callback belongs at the boundary. |
-| D-401 | **An empty tree's query returns no results** rather than crashing the caller's own distance function on an `undefined` vantage point. | No test builds an empty tree and queries it; the crash this would reproduce lives entirely in a caller-supplied metric, with no single "correct" answer to pick. |
-| D-402 | **`nearestNeighbors(0, query)` returns no results** rather than reading `undefined.distance`. | Untested; the crash is `mnemonist`'s own arithmetic, not a caller's. |
-| D-403 | **A reentrant distance function sees independent state, not upstream's shared `this.heap`/`this.D`.** | This port's queries hold no tree-wide mutable state to protect (see D-404), so a reentrant call is simply a second, correct query rather than an interleaved, corrupted one — *more* correct than upstream, and disclosed rather than left implicit. |
-| D-404 | **The napi bridge holds no `RefCell` at all.** | Unlike `bk_tree.rs`, no method ever needs exclusive access post-construction — stated to make D-403's mechanism legible. |
-| D-405 | **`this.D` is not exposed by the bridge.** | No test reads it; the same information (whether a query pruned anything) is measured directly in the fuzz harness instead by wrapping the distance function with a counter. |
+| DIV-VP-TREE-1 | **Distance is passed per call, never stored on the struct.** | Same reasoning as `bk_tree.rs`: the JS callback belongs at the boundary. |
+| DIV-VP-TREE-2 | **An empty tree's query returns no results** rather than crashing the caller's own distance function on an `undefined` vantage point. | No test builds an empty tree and queries it; the crash this would reproduce lives entirely in a caller-supplied metric, with no single "correct" answer to pick. |
+| DIV-VP-TREE-3 | **`nearestNeighbors(0, query)` returns no results** rather than reading `undefined.distance`. | Untested; the crash is `mnemonist`'s own arithmetic, not a caller's. |
+| DIV-VP-TREE-4 | **A reentrant distance function sees independent state, not upstream's shared `this.heap`/`this.D`.** | This port's queries hold no tree-wide mutable state to protect (see DIV-VP-TREE-5), so a reentrant call is simply a second, correct query rather than an interleaved, corrupted one — *more* correct than upstream, and disclosed rather than left implicit. |
+| DIV-VP-TREE-5 | **The napi bridge holds no `RefCell` at all.** | Unlike `bk_tree.rs`, no method ever needs exclusive access post-construction — stated to make DIV-VP-TREE-4's mechanism legible. |
+| DIV-VP-TREE-6 | **`this.D` is not exposed by the bridge.** | No test reads it; the same information (whether a query pruned anything) is measured directly in the fuzz harness instead by wrapping the distance function with a counter. |
 
 ## Fuzz + bench
 

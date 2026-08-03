@@ -11,7 +11,7 @@
 //! short version is what a reader of this file needs to know before touching
 //! anything:
 //!
-//! **B-90 — the radix sort silently narrows to 8 bits.** [`sort`] scans for the
+//! **BUG-SUFFIX-ARRAY-1 — the radix sort silently narrows to 8 bits.** [`sort`] scans for the
 //! largest symbol with `Math.max` in order to pick a radix width. Its scan
 //! reads `string[array[i] + offset]`, and for `offset` of 1 and 2 that index
 //! routinely runs past the padded sequence — the padding is `length % 3`
@@ -22,7 +22,7 @@
 //! character at or above U+0100, whose low byte can collide with the `0`
 //! padding — is then mis-sorted.
 //!
-//! **B-91 — the reduced string has no separator when `l % 3 == 1`.** DC3
+//! **BUG-SUFFIX-ARRAY-2 — the reduced string has no separator when `l % 3 == 1`.** DC3
 //! concatenates the ranks of the ≡1 positions with the ranks of the ≡2
 //! positions and recurses on the result. That is only sound if the first group
 //! ends in a rank nothing else can equal. Upstream sizes the groups from
@@ -38,7 +38,7 @@
 //! # Everything is read through [`Sparse`], and that is load-bearing
 //!
 //! The two defects above are both *consequences of reading past the end of an
-//! array*, and one of them (B-90) depends on the difference between "read a
+//! array*, and one of them (BUG-SUFFIX-ARRAY-1) depends on the difference between "read a
 //! zero" and "read `undefined`" — the first would still sort correctly, the
 //! second poisons `Math.max`. A port that indexed with `[]` would panic where
 //! upstream computes an answer, and a port that clamped to `0` would compute a
@@ -170,7 +170,7 @@ fn truthy(value: f64) -> bool {
 /// backwards and the gather pass drains each bucket backwards, so the two
 /// reversals cancel.
 ///
-/// **This is where B-90 lives.** The width scan uses `Math.max`, which returns
+/// **This is where BUG-SUFFIX-ARRAY-1 lives.** The width scan uses `Math.max`, which returns
 /// `NaN` the moment one read is out of range, and the `&&`/`||` ladder that
 /// turns the maximum into a bit count treats `NaN` as "no high bits" and yields
 /// `8`. See the module docs.
@@ -217,7 +217,7 @@ fn sort(string: &Sparse, array: &mut [i64], offset: i64) {
 
         for i in (0..l).rev() {
             // `undefined >> d & 15` is 0, so a missing symbol sorts as if it
-            // were zero -- which is precisely why B-90 collides U+0100 with the
+            // were zero -- which is precisely why BUG-SUFFIX-ARRAY-1 collides U+0100 with the
             // padding.
             let symbol = string.get(array[i] + offset).unwrap_or(0) as i32;
             let bucket = ((symbol >> d) & 15) as usize;
@@ -266,9 +266,9 @@ fn compare(string: &Sparse, lookup: &Sparse, m: i64, n: i64) -> f64 {
 ///
 /// `l` is the *unpadded* length; `string` may be longer (the top-level call
 /// pads it) or exactly `l` (every recursive call does not pad at all, which is
-/// where the out-of-range reads that trigger B-90 come from).
+/// where the out-of-range reads that trigger BUG-SUFFIX-ARRAY-1 come from).
 ///
-/// **This is where B-91 lives**, in `al`: `(2 * l / 3) | 0` omits the extra
+/// **This is where BUG-SUFFIX-ARRAY-2 lives**, in `al`: `(2 * l / 3) | 0` omits the extra
 /// ≡1 (mod 3) position that would separate the two halves of the reduced
 /// string when `l % 3 == 1`.
 fn build(string: &Sparse, l: usize) -> Vec<i64> {
@@ -387,7 +387,7 @@ fn build(string: &Sparse, l: usize) -> Vec<i64> {
 /// Upstream's `convert`: the sequence as an alphabet-indexed, padded array.
 ///
 /// The padding is `length % 3` zeros — upstream's choice, and not enough to
-/// keep `build`'s reads in range. See B-90.
+/// keep `build`'s reads in range. See BUG-SUFFIX-ARRAY-1.
 fn convert(sequence: &Sequence) -> Sparse {
     let length = sequence.len();
     let padding = length % 3;
@@ -464,7 +464,7 @@ impl SuffixArray {
     }
 
     /// `#.array` / `#.toJSON` — suffix start positions, lexicographically
-    /// ordered (modulo B-90 and B-91).
+    /// ordered (modulo BUG-SUFFIX-ARRAY-1 and BUG-SUFFIX-ARRAY-2).
     pub fn array(&self) -> &[usize] {
         &self.array
     }
@@ -674,7 +674,7 @@ mod tests {
 
     /// A reference suffix array: sort every start position by the suffix it
     /// begins, comparing element by element. `O(n² log n)` and obviously
-    /// correct, which is the point — it is the oracle B-90 and B-91 were found
+    /// correct, which is the point — it is the oracle BUG-SUFFIX-ARRAY-1 and BUG-SUFFIX-ARRAY-2 were found
     /// against.
     fn naive(sequence: &Sequence) -> Vec<usize> {
         let mut positions: Vec<usize> = (0..sequence.len()).collect();
@@ -758,7 +758,7 @@ mod tests {
 
     // ------------------------------------------------------------ the bugs
 
-    /// **B-91**, pinned. `l % 3 == 1` with a repeated triple loses the
+    /// **BUG-SUFFIX-ARRAY-2**, pinned. `l % 3 == 1` with a repeated triple loses the
     /// separator between the two halves of the reduced string, and the answer
     /// is wrong. Every value here is upstream's, from Node 24.18.1.
     ///
@@ -777,7 +777,7 @@ mod tests {
             assert_ne!(
                 sa.array().to_vec(),
                 naive(&text(input)),
-                "{input:?} is supposed to be WRONG -- see B-91"
+                "{input:?} is supposed to be WRONG -- see BUG-SUFFIX-ARRAY-2"
             );
         }
 
@@ -785,10 +785,10 @@ mod tests {
         assert_eq!(naive(&text("aaaaaaa")), [6, 5, 4, 3, 2, 1, 0]);
     }
 
-    /// **B-90**, pinned. Two symbols that share a low byte are not separated,
+    /// **BUG-SUFFIX-ARRAY-1**, pinned. Two symbols that share a low byte are not separated,
     /// because an out-of-range read during the width scan collapses the radix
     /// to 8 bits. `U+0100` collides with the `0` padding; `U+0141` collides
-    /// with `U+0041`. Both inputs have `length % 3 == 0`, so B-91 is not
+    /// with `U+0041`. Both inputs have `length % 3 == 0`, so BUG-SUFFIX-ARRAY-2 is not
     /// involved. Values from Node 24.18.1.
     #[test]
     fn b90_symbols_sharing_a_low_byte_are_mis_sorted() {
@@ -805,14 +805,14 @@ mod tests {
             assert_ne!(
                 sa.array().to_vec(),
                 naive(&sequence),
-                "{input:?} is supposed to be WRONG -- see B-90"
+                "{input:?} is supposed to be WRONG -- see BUG-SUFFIX-ARRAY-1"
             );
         }
     }
 
     /// The complement of the two bugs: pure-ASCII input whose length is not
     /// `1 (mod 3)` **is** correct, exhaustively over every binary string of
-    /// length 1..=14. That is what makes B-90 and B-91 precise claims rather
+    /// length 1..=14. That is what makes BUG-SUFFIX-ARRAY-1 and BUG-SUFFIX-ARRAY-2 precise claims rather
     /// than "it is sometimes wrong".
     #[test]
     fn ascii_inputs_off_the_bad_residue_are_exactly_right() {

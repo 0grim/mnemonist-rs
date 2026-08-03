@@ -53,11 +53,11 @@
 //! # The factory, and why `get` still cannot hold a borrow across it
 //!
 //! Same discipline as `crates/mnemonist-napi/src/default_map.rs`: the
-//! factory is a JS callback that can call back into this very map (B-31), so
+//! factory is a JS callback that can call back into this very map (PORTBUG-1), so
 //! every borrow of `inner` ends before it runs. [`DefaultWeakMap::peek`] is
 //! read-only and cheap to call twice; running the factory does not require
 //! constructing a [`WeakKey`] until AFTER it returns, on the miss path only,
-//! which is also what keeps a re-triggered factory (B-242) from allocating a
+//! which is also what keeps a re-triggered factory (BUG-DEFAULT-WEAK-MAP-1) from allocating a
 //! fresh weak reference on every read of a key that keeps returning
 //! `undefined`.
 
@@ -251,8 +251,8 @@ impl JsDefaultWeakMap {
     }
 
     /// Upstream's `get`: a mutating read that manufactures and stores a value
-    /// when the stored one is `undefined` — reproducing B-242, the same
-    /// "tests the value, not the key" defect `default-map.js` has as B-40,
+    /// when the stored one is `undefined` — reproducing BUG-DEFAULT-WEAK-MAP-1, the same
+    /// "tests the value, not the key" defect `default-map.js` has as BUG-DEFAULT-MAP-1,
     /// minus the `size` drift a `WeakMap` has no counter to exhibit.
     ///
     /// # A disclosed ordering divergence for a non-object key
@@ -291,7 +291,7 @@ impl JsDefaultWeakMap {
 
         // The factory runs with nothing borrowed, exactly as upstream's own
         // `this.factory(key)` runs between the read and the write -- and
-        // exactly as `default_map.rs`'s `get` does, for the identical B-31
+        // exactly as `default_map.rs`'s `get` does, for the identical PORTBUG-1
         // reason: a `RefCell` panic inside a `#[napi]` method does not unwind
         // into a JS exception, it aborts the process.
         let manufacture = self.factory.borrow_back(&env)?;

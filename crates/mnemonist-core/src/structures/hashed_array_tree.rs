@@ -441,7 +441,7 @@ impl HashedArrayTree {
     ///
     /// `length` is still decremented correctly, so only the returned value is
     /// wrong. Fixing it would be a silent behavioural divergence, so it is
-    /// reproduced and pinned by a test instead. See NOTES.md B-11.
+    /// reproduced and pinned by a test instead. See NOTES.md BUG-SPARSE-MAP-1.
     pub fn pop(&mut self) -> Option<u32> {
         if self.length == 0 {
             return None;

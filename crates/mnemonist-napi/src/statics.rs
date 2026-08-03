@@ -24,7 +24,7 @@
 //! script is a fixed literal — no interpolation, nothing caller-supplied — and
 //! it makes the addon self-contained: a shim that added `of` would mean
 //! `require('@port/addon').Stack` was incomplete without the test harness,
-//! which is exactly backwards (D-07's reasoning, applied to a static instead of
+//! which is exactly backwards (DIV-STACK-2's reasoning, applied to a static instead of
 //! to `Symbol.iterator`).
 //!
 //! # What this does NOT buy, corrected after measuring

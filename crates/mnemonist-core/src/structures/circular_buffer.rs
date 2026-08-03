@@ -20,7 +20,7 @@
 //! there is one ring implementation and one place a wrap can be wrong.
 //!
 //! It also means **every defect of `FixedDeque` is a defect here**, by
-//! construction and not by coincidence — including B-62, `get` being bounded by
+//! construction and not by coincidence — including BUG-CIRCULAR-BUFFER-1, `get` being bounded by
 //! the capacity rather than by the size.
 //!
 //! # The two overridden methods
@@ -69,7 +69,7 @@
 //! and therefore does not overwrite. An oversized iterable leaves a buffer with
 //! `size > capacity`, exactly as it does for a `FixedDeque`; the overwriting
 //! behaviour that is this class's entire purpose is bypassed. And its other
-//! branch is B-60 and cannot run at all.
+//! branch is BUG-UTILS-ITERABLES-2 and cannot run at all.
 
 use std::fmt;
 
@@ -202,7 +202,7 @@ impl<T: Clone> CircularBuffer<T> {
         self.inner.peek_last()
     }
 
-    /// Bounded by the capacity, not by the size — B-62, inherited literally.
+    /// Bounded by the capacity, not by the size — BUG-CIRCULAR-BUFFER-1, inherited literally.
     pub fn get(&self, index: usize) -> Option<T> {
         self.inner.get(index)
     }
@@ -539,7 +539,7 @@ mod tests {
         assert_eq!(present(&buffer), vec![9, 2, 3]);
     }
 
-    /// B-62 is inherited literally, because `get` is the same function object
+    /// BUG-CIRCULAR-BUFFER-1 is inherited literally, because `get` is the same function object
     /// upstream. Same transcript as the `FixedDeque` test.
     #[test]
     fn get_is_bounded_by_the_capacity_here_too() {
@@ -603,7 +603,7 @@ mod tests {
         assert_eq!(present(&buffer), vec![4]);
     }
 
-    /// D-08: a `push` that overwrites *behind* an open cursor is visible to it,
+    /// DIV-PROJ-10: a `push` that overwrites *behind* an open cursor is visible to it,
     /// because elements are read live while the geometry is frozen. This is the
     /// sharpest form of the hybrid capture in the whole wave — the cursor can
     /// yield an element that was not in the buffer when the walk started.
@@ -627,7 +627,7 @@ mod tests {
         assert_eq!(state.step(&buffer), Step::Done);
     }
 
-    /// D-06 / D-07 again, on this class: pasted `values` is still a factory,
+    /// DIV-STACK-1 / DIV-STACK-2 again, on this class: pasted `values` is still a factory,
     /// and the cursor it makes is still not restartable.
     #[test]
     fn cursors_do_not_restart_but_the_buffer_can_be_walked_again() {

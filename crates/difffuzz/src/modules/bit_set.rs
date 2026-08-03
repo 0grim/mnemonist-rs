@@ -5,14 +5,14 @@
 //! Three things in this module are only reachable by a generator that is
 //! deliberately careless about ranges and deliberately fond of `reset`:
 //!
-//! * **B-13.** `reset` on an already-clear bit decrements `size` whenever bit
+//! * **BUG-SPARSE-QUEUE-SET-2.** `reset` on an already-clear bit decrements `size` whenever bit
 //!   31 of the word is set. So `reset` carries weight 3, and indices reach past
 //!   `length`, which is how bit 31 of a word gets set in the first place on a
 //!   set whose length is not a multiple of 32.
-//! * **B-14.** `select` loses 32 positions per skipped all-zero word, so
+//! * **BUG-SPARSE-QUEUE-SET-3.** `select` loses 32 positions per skipped all-zero word, so
 //!   lengths run to 400 — thirteen words — and stay sparse enough that empty
 //!   words are common.
-//! * **B-19.** An index in `length .. 32 * ceil(length / 32)` is accepted and
+//! * **BUG-UTILS-BITWISE-1.** An index in `length .. 32 * ceil(length / 32)` is accepted and
 //!   then invisible to `rank`, `select` and iteration. `MAX_INDEX` overshoots
 //!   `length` by 64 precisely to generate those.
 //!
@@ -43,12 +43,12 @@ use crate::spec::{
 };
 
 /// Largest set the generator builds. Thirteen words, so empty words between
-/// set bits are routine and B-14 is reachable.
+/// set bits are routine and BUG-SPARSE-QUEUE-SET-3 is reachable.
 const MAX_LENGTH: u32 = 400;
 
 /// How far past `length` a generated index may reach.
 ///
-/// 64 covers both the "inside the last word but past `length`" band that B-19
+/// 64 covers both the "inside the last word but past `length`" band that BUG-UTILS-BITWISE-1
 /// lives in and the fully out-of-range band beyond it.
 const OVERSHOOT: u32 = 64;
 
@@ -100,7 +100,7 @@ impl ModuleSpec for BitSetSpec {
         prop_oneof![
             4 => index.clone().prop_map(|i| Op::new("set", vec![json!(i)])),
             2 => index.clone().prop_map(|i| Op::new("set", vec![json!(i), json!(0)])),
-            // Weighted up: `reset` is where B-13 lives, and it only misbehaves
+            // Weighted up: `reset` is where BUG-SPARSE-QUEUE-SET-2 lives, and it only misbehaves
             // on a bit that is ALREADY clear -- which a low weight would make
             // rare rather than routine.
             3 => index.clone().prop_map(|i| Op::new("reset", vec![json!(i)])),

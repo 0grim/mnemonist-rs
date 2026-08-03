@@ -150,7 +150,7 @@ anything if they differ.
 This makes "same workload" a verified claim rather than an assertion: it proves
 the two implementations executed the same ops *and computed the same answers*,
 not merely the same op count. For `static-disjoint-set` it also incidentally
-re-confirms that the port reproduces upstream's B-7 rank bug — a corrected
+re-confirms that the port reproduces upstream's BUG-STATIC-DISJOINT-SET-1 rank bug — a corrected
 implementation would elect different roots and the checksum would differ.
 
 Recorded in `results.json` as `checksum` per workload.

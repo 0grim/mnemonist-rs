@@ -25,7 +25,7 @@
 //! walks — see `mnemonist_core::structures::inverted_index`'s own docs for
 //! why one is not built on the other.
 //!
-//! # B-240 lives here as an invariant, not a mutation table
+//! # BUG-INVERTED-INDEX-1 lives here as an invariant, not a mutation table
 //!
 //! `$forEach` always drives `InvertedIndex::for_each`'s zero-length cursor,
 //! so `seen` is `[]` on every single generated case, regardless of `size`.
@@ -148,7 +148,7 @@ impl ModuleSpec for InvertedIndexSpec {
             ],
             4 => Just(Op::new("$next", vec![])),
             1 => Just(Op::new("$spread", vec![])),
-            // Always the plain-walk shape -- see the module docs on B-240.
+            // Always the plain-walk shape -- see the module docs on BUG-INVERTED-INDEX-1.
             1 => for_each_strategy(&[]),
         ]
         .boxed()
@@ -217,7 +217,7 @@ impl ModuleSpec for InvertedIndexSpec {
 
                 Value::Array(docs)
             }
-            // B-240: `InvertedIndex::for_each` hands back a cursor frozen at
+            // BUG-INVERTED-INDEX-1: `InvertedIndex::for_each` hands back a cursor frozen at
             // length zero, so this is always `[]` -- see the module docs.
             "$forEach" => {
                 let mut cursor = instance.index.for_each();

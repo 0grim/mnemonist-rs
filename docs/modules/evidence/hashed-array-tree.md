@@ -10,10 +10,10 @@ falsification record, full benchmark table.
 | Test | Closes gap |
 |---|---|
 | `reproduces_the_upstream_suite` | 1:1 port of all ten upstream blocks, as a baseline |
-| `pop_reads_the_last_block_rather_than_the_popped_index_s_block` | 2 — B-15, pinned value by value against Node |
+| `pop_reads_the_last_block_rather_than_the_popped_index_s_block` | 2 — BUG-HASHED-ARRAY-TREE-1, pinned value by value against Node |
 | `pop_after_a_shrinking_resize_reads_a_block_that_is_no_longer_live` | 2, 8 — the same defect reached a second way |
-| `get_at_length_reads_the_block_instead_of_reporting_absence` | 5 — B-16 |
-| `set_at_length_writes_a_slot_that_length_does_not_cover` | 6 — B-16's write half |
+| `get_at_length_reads_the_block_instead_of_reporting_absence` | 5 — BUG-HASHED-ARRAY-TREE-2 |
+| `set_at_length_writes_a_slot_that_length_does_not_cover` | 6 — BUG-HASHED-ARRAY-TREE-2's write half |
 | `indexing_at_capacity_raises_the_typeerror_upstream_raises` | 7 — including V8's exact message |
 | `the_out_of_bounds_message_names_the_array_class` | across all three widths; upstream matches `/bounds/` |
 | `stores_truncate_at_the_element_width` | 12, 13 |

@@ -2,7 +2,7 @@
  * Re-entrant callbacks — boundary specs (DoD gate 7, at the boundary).
  * ====================================================================
  *
- * B-31. A `#[napi]` method taking `&self` on a type with no interior
+ * PORTBUG-1. A `#[napi]` method taking `&self` on a type with no interior
  * mutability compiles to a `noalias readonly` pointer, so LLVM is entitled to
  * hoist reads out of the loop that calls a JS callback — and it did. A
  * `forEach` callback that mutated the collection was invisible to the walk it
@@ -83,7 +83,7 @@ function constructorName(name) {
   }).join('');
 }
 
-describe('re-entrant forEach callbacks (B-31)', function () {
+describe('re-entrant forEach callbacks (PORTBUG-1)', function () {
 
   describe('SparseSet', function () {
 
@@ -243,7 +243,7 @@ describe('re-entrant forEach callbacks (B-31)', function () {
         return [b.get(4), b.size];
       });
 
-      // The half that made B-31 visible: the walk did not see the write, but
+      // The half that made PORTBUG-1 visible: the walk did not see the write, but
       // the object must -- and a hoisted read would have hidden it here too.
       assert.deepStrictEqual(after, [1, 2]);
     });

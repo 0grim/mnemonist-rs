@@ -9,7 +9,7 @@
 //! `mnemonist-core`, exactly as `forEach` does — and it is built **on**
 //! [`crate::foreach`], not on a second copy of the dispatch.
 //!
-//! # `guessLength` trusts, and `toArray` preallocates on the trust (NOTES B-2)
+//! # `guessLength` trusts, and `toArray` preallocates on the trust (NOTES BUG-UTILS-ITERABLES-1)
 //!
 //! ```js
 //! function guessLength(target) {
@@ -41,11 +41,11 @@
 //!   `toArray({length: -1, …})` and `toArray({length: 3.5, …})` both die with
 //!   `RangeError: Invalid array length`.
 //!
-//! This is reproduced rather than fixed (D-60, resolving D-17): the array
+//! This is reproduced rather than fixed (DIV-FIXED-STACK-2, resolving DIV-PROJ-18): the array
 //! really is allocated by calling the running realm's `Array` constructor, so
 //! the `RangeError` is V8's own and the holes are real holes.
 //!
-//! The sharpest form of B-2, and the reason it is filed as a bug rather than a
+//! The sharpest form of BUG-UTILS-ITERABLES-1, and the reason it is filed as a bug rather than a
 //! quirk, is that `toArray({length: 5})` reaches `forEach`'s **plain-object**
 //! branch, which enumerates own properties — *including `length` itself* — so
 //! the array's first element is the number 5.
@@ -76,7 +76,7 @@ use crate::js_slot::JsSlot;
 ///
 /// `isTypedArray` is `ArrayBuffer.isView`, so a `DataView` counts and a string
 /// does not — which is why `FixedStack.from('abc', Array)` takes the *other*
-/// branch of `from` and dies in B-60, while `FixedStack.from([1,2,3], Array)`
+/// branch of `from` and dies in BUG-UTILS-ITERABLES-2, while `FixedStack.from([1,2,3], Array)`
 /// works.
 #[napi(js_name = "isArrayLike")]
 pub fn js_is_array_like(env: Env, target: Unknown) -> Result<bool> {
@@ -90,7 +90,7 @@ pub fn is_array_like(env: &Env, target: &Unknown) -> Result<bool> {
 /// `guessLength(target)` — `.length`, then `.size`, then `undefined`.
 ///
 /// `Either<f64, Undefined>` rather than `Option<f64>`: napi renders `None` as
-/// `null` and upstream returns a bare `undefined` (D-39).
+/// `null` and upstream returns a bare `undefined` (DIV-FIXED-STACK-1).
 #[napi(js_name = "guessLength")]
 pub fn js_guess_length(env: Env, target: Unknown) -> Result<Either<f64, Undefined>> {
     Ok(match guess_length(&env, &target)? {

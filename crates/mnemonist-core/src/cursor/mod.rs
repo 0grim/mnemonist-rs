@@ -13,7 +13,7 @@
 //! Rust's [`IntoIterator`] hands out a *fresh* iterator per `for` loop, which
 //! silently restarts. So a collection here never implements [`IntoIterator`];
 //! it exposes a `values()`-style method that constructs a [`Cursor`], and the
-//! cursor is the stateful thing. That is D-06.
+//! cursor is the stateful thing. That is DIV-STACK-1.
 //!
 //! **2. Hybrid capture — length frozen, elements live.** Upstream:
 //!
@@ -29,13 +29,13 @@
 //! iteration **is** visible; changing the *length* is **not**. [`Cursor`]
 //! reproduces this exactly: `len` is captured by [`Sequence::freeze`], and
 //! every element read goes back through [`Sequence::slot`] against the live
-//! source. That is D-08.
+//! source. That is DIV-PROJ-10.
 //!
 //! **3. The shrink window.** Because `i >= l` tests the *frozen* `l`, a source
 //! that shrinks mid-iteration is read past its new end and JS yields
 //! `{done: false, value: undefined}` — `undefined` values rather than
 //! termination. [`Step::Gap`] is that state, kept distinct from
-//! [`Step::Done`]. That is D-09 / DESIGN.md 3.7 Option A.
+//! [`Step::Done`]. That is DIV-SPARSE-SET-1 / DESIGN.md 3.7 Option A.
 //!
 //! # Where the gap can and cannot happen
 //!
@@ -488,7 +488,7 @@ mod tests {
         assert_eq!(cursor.step(), Step::Done);
     }
 
-    /// D-06: the cursor is stateful, so a second drain is empty.
+    /// DIV-STACK-1: the cursor is stateful, so a second drain is empty.
     #[test]
     fn is_not_restartable() {
         let source = Shrinkable::new(&[1, 2, 3]);
@@ -498,7 +498,7 @@ mod tests {
         assert_eq!(cursor.collect::<Vec<_>>(), Vec::<u32>::new());
     }
 
-    /// D-06 again, the mixed-consumption case: `next(); next(); [...c]`.
+    /// DIV-STACK-1 again, the mixed-consumption case: `next(); next(); [...c]`.
     #[test]
     fn partial_consumption_leaves_the_rest() {
         let source = Shrinkable::new(&[1, 2, 3]);
@@ -509,7 +509,7 @@ mod tests {
         assert_eq!(cursor.collect::<Vec<_>>(), vec![3]);
     }
 
-    /// D-08, first half: element mutation during iteration IS visible.
+    /// DIV-PROJ-10, first half: element mutation during iteration IS visible.
     #[test]
     fn element_writes_during_iteration_are_visible() {
         let source = Shrinkable::new(&[1, 2, 3]);
@@ -521,7 +521,7 @@ mod tests {
         assert_eq!(cursor.step(), Step::Item(99));
     }
 
-    /// D-08, second half: growth is NOT visible, because `l` is frozen.
+    /// DIV-PROJ-10, second half: growth is NOT visible, because `l` is frozen.
     #[test]
     fn growth_during_iteration_is_not_visible() {
         let source = Shrinkable::new(&[1, 2]);
@@ -534,7 +534,7 @@ mod tests {
         assert_eq!(cursor.frozen_len(), 2);
     }
 
-    /// D-09: shrinking below the frozen length opens gaps rather than ending
+    /// DIV-SPARSE-SET-1: shrinking below the frozen length opens gaps rather than ending
     /// the walk. This is the `undefined` window, and it is the assertion that
     /// distinguishes Option A from Option B.
     #[test]
@@ -782,7 +782,7 @@ mod tests {
         assert!(Step::<u32>::Done.is_done());
         assert!(!Step::Item(1).is_gap());
 
-        // `map` must not turn a gap into an end, which is the whole of D-09.
+        // `map` must not turn a gap into an end, which is the whole of DIV-SPARSE-SET-1.
         assert_eq!(Step::Item(7).map(|value| value * 2), Step::Item(14));
         assert_eq!(Step::<u32>::Gap.map(|value| value * 2), Step::Gap);
         assert_eq!(Step::<u32>::Done.map(|value| value * 2), Step::Done);

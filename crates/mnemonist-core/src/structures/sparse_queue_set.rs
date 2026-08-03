@@ -21,7 +21,7 @@
 //! `Uint8Array` and the sentinel truncates to **0** — a perfectly ordinary
 //! slot. The dequeued member then reads as present again as soon as slot 0 is
 //! back inside the window, and `enqueue` refuses to re-admit it. Same at
-//! `capacity === 65536`, one width up. Verified on Node 24.18.1; see B-12.
+//! `capacity === 65536`, one width up. Verified on Node 24.18.1; see BUG-SPARSE-QUEUE-SET-1.
 //!
 //! # `enqueue` never checks whether the ring is full
 //!
@@ -30,7 +30,7 @@
 //! duplicate — but one out-of-range member is enough, because `sparse[member]`
 //! is then `undefined` and the duplicate check cannot fire. The write lands on
 //! a **live slot**, silently evicting whoever was there, and `size` runs past
-//! `capacity`. See B-13.
+//! `capacity`. See BUG-SPARSE-QUEUE-SET-2.
 //!
 //! # `capacity === 0` divides by zero
 //!
@@ -38,7 +38,7 @@
 //! dropped, `size` still increments, `start` climbs forever because
 //! `start === capacity` is never true, and iteration yields `undefined` per
 //! phantom member. That is the [`Step::Gap`](crate::cursor::Step::Gap) window
-//! of DESIGN.md 3.7, reached here in two calls. See B-14.
+//! of DESIGN.md 3.7, reached here in two calls. See BUG-SPARSE-QUEUE-SET-3.
 //!
 //! # Example
 //!
@@ -102,7 +102,7 @@ impl SparseQueueSet {
     /// Members currently queued.
     ///
     /// Can exceed [`capacity`](SparseQueueSet::capacity) after an out-of-range
-    /// [`enqueue`](SparseQueueSet::enqueue); see B-13 in the module docs.
+    /// [`enqueue`](SparseQueueSet::enqueue); see BUG-SPARSE-QUEUE-SET-2 in the module docs.
     pub fn size(&self) -> usize {
         self.size
     }
@@ -163,7 +163,7 @@ impl SparseQueueSet {
     /// drops this bool so the JS surface matches.
     ///
     /// Out of range this evicts whatever occupies the target slot and pushes
-    /// `size` past `capacity` — deliberately. See B-13.
+    /// `size` past `capacity` — deliberately. See BUG-SPARSE-QUEUE-SET-2.
     pub fn enqueue(&mut self, member: usize) -> bool {
         // Upstream guards the duplicate check on `size !== 0` rather than
         // letting `in_window` decide, which matters: with `size == 0` the
@@ -222,11 +222,11 @@ impl SparseQueueSet {
         // Two ways this fails to do what it looks like, both upstream's:
         //
         // * `member` is `undefined` at capacity 0, and `sparse[undefined]` is a
-        //   string-keyed expando rather than element 0 — the B-10 asymmetry
+        //   string-keyed expando rather than element 0 — the BUG-SPARSE-SET-3 asymmetry
         //   again. Nothing reads it, and `sparse` is left alone.
         // * the sentinel itself is `capacity`, which does not fit a
         //   `getPointerArray(capacity)` element at 256 or 65536 and truncates
-        //   to 0. That is B-12, and `try_set` reproduces it by narrowing.
+        //   to 0. That is BUG-SPARSE-QUEUE-SET-1, and `try_set` reproduces it by narrowing.
         if let Some(member) = member {
             self.sparse.try_set(member as usize, self.capacity as u32);
         }
@@ -387,7 +387,7 @@ mod tests {
         assert_eq!(members(&queue), vec![3, 6, 9]);
     }
 
-    /// **B-12.** `dequeue`'s absence sentinel is `capacity`, and `sparse` is
+    /// **BUG-SPARSE-QUEUE-SET-1.** `dequeue`'s absence sentinel is `capacity`, and `sparse` is
     /// sized to hold indices `0..capacity` — so at exactly `capacity == 256`
     /// the sentinel truncates to `0`, an ordinary slot.
     ///
@@ -411,7 +411,10 @@ mod tests {
         queue.enqueue(7);
 
         // Now slot 0 is inside the window again — and `dense[0]` is still 5.
-        assert!(queue.has(5), "B-12: a dequeued member reads as present");
+        assert!(
+            queue.has(5),
+            "BUG-SPARSE-QUEUE-SET-1: a dequeued member reads as present"
+        );
         assert_eq!(members(&queue), vec![7]);
 
         // Worse than a wrong answer: `enqueue` believes it too, so 5 can never
@@ -454,7 +457,7 @@ mod tests {
         assert!(queue.has(5));
     }
 
-    /// **B-13.** `enqueue` never checks whether the ring is full, so one
+    /// **BUG-SPARSE-QUEUE-SET-2.** `enqueue` never checks whether the ring is full, so one
     /// out-of-range member evicts a live one and pushes `size` past `capacity`.
     ///
     /// Verified against Node: `dense` becomes `[100, 1, 2, 3]`, `size` 5 with
@@ -501,7 +504,7 @@ mod tests {
         assert_eq!(queue.dequeue(), Some(44));
     }
 
-    /// **B-14.** `capacity == 0` makes `(start + size) % capacity` `NaN`, so
+    /// **BUG-SPARSE-QUEUE-SET-3.** `capacity == 0` makes `(start + size) % capacity` `NaN`, so
     /// both stores are dropped, `size` still climbs, `start` never wraps, and
     /// iteration is all gaps.
     ///
@@ -624,7 +627,7 @@ mod tests {
         assert_eq!(members(&queue), vec![2, 3, 0]);
     }
 
-    /// D-06 / D-07 from Rust: the cursor is exhausted once, the queue is not.
+    /// DIV-STACK-1 / DIV-STACK-2 from Rust: the cursor is exhausted once, the queue is not.
     #[test]
     fn cursors_do_not_restart_but_the_queue_can_be_walked_again() {
         let mut queue = SparseQueueSet::new(10).unwrap();
@@ -640,7 +643,7 @@ mod tests {
         assert_eq!(members(&queue), vec![3, 6]);
     }
 
-    /// D-08: `start` is frozen, so a `dequeue` mid-walk does **not** move the
+    /// DIV-PROJ-10: `start` is frozen, so a `dequeue` mid-walk does **not** move the
     /// cursor — it keeps yielding the member it already passed the front of.
     ///
     /// Measured against Node: after `dequeue()` between the first and second
@@ -665,7 +668,7 @@ mod tests {
         assert_eq!(state.step(&queue), Step::Done);
     }
 
-    /// The other half of D-08: `dense` is read live, so an `enqueue` that
+    /// The other half of DIV-PROJ-10: `dense` is read live, so an `enqueue` that
     /// overwrites a slot the cursor has not reached yet **is** visible.
     #[test]
     fn an_enqueue_that_overwrites_an_unread_slot_is_visible() {

@@ -20,7 +20,7 @@
 //!    for objects still requires the same shape but not the same reference;
 //!    `JsSlot` gives both for free either way).
 //!
-//! # B-240 at the bridge: `forEach` never calls back, by construction
+//! # BUG-INVERTED-INDEX-1 at the bridge: `forEach` never calls back, by construction
 //!
 //! `mnemonist_core::structures::inverted_index::InvertedIndex::for_each`
 //! hands back a cursor frozen at length zero. [`JsInvertedIndex::for_each`]
@@ -226,7 +226,7 @@ impl JsInvertedIndex {
 
     /// Upstream's `add`. Tokenizes with the DOCUMENT tokenizer, then
     /// indexes — the borrow is released before the (possibly re-entrant,
-    /// B-31-shaped) tokenizer call and re-taken to write, same discipline as
+    /// PORTBUG-1-shaped) tokenizer call and re-taken to write, same discipline as
     /// every other bridge past `default-map`.
     #[napi]
     pub fn add<'a>(&self, this: This<'a>, env: Env, doc: Unknown) -> Result<This<'a>> {
@@ -247,7 +247,7 @@ impl JsInvertedIndex {
         Ok(self.inner.borrow().get(&tokens))
     }
 
-    /// Upstream's `forEach`. See the module docs and NOTES.md B-240: this
+    /// Upstream's `forEach`. See the module docs and NOTES.md BUG-INVERTED-INDEX-1: this
     /// walks `InvertedIndex::for_each`'s cursor, which core freezes at
     /// length zero unconditionally, so the loop body below runs zero times
     /// on every call, regardless of `size`.

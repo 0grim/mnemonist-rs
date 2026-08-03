@@ -11,13 +11,13 @@ upstream discards, and `n` being validated before upstream would validate it) we
 second, independent look at the code rather than by any of the gates. This is worth recording on its
 own: the unit had 21 upstream assertions, 47 boundary cases, three fuzz campaigns and 5 M operations
 all green when the review happened. It is the same category `docs/METHODOLOGY.md`'s "What these
-instruments cannot see" collects, and, like B-31, it was found by a person reading the code again
+instruments cannot see" collects, and, like PORTBUG-1, it was found by a person reading the code again
 rather than by the machinery. None of the three was reachable by the fuzzer by construction: the
 core-side store never calls JavaScript from `allocate`, it has a single array class, and
 `nsmallest`/`nlargest` are outside the fuzz alphabet — so the earlier green fuzz campaigns were not
 wrong, they were just never going to see these.
 
-The napi-rs name-table conflict (statics and prototype methods sharing one registration, D-75) and
+The napi-rs name-table conflict (statics and prototype methods sharing one registration, DIV-HEAP-6) and
 the `#[napi(factory)]` bare-call bug (`MaxHeap`'s factory needing its receiver bound before the
 temporary property is deleted) were found by the port's own machinery instead — nine of fourteen
 boundary cases failing loudly with `heap.push is not a function`, and a `Failed to create instance of

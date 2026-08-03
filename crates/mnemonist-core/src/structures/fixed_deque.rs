@@ -27,7 +27,7 @@
 //! position at a time and wrap on equality, which really is `% capacity` for
 //! any ordinal. Those two are written that way.
 //!
-//! # 2. `get` is bounded by the capacity, not by the size (NOTES B-62)
+//! # 2. `get` is bounded by the capacity, not by the size (NOTES BUG-CIRCULAR-BUFFER-1)
 //!
 //! ```js
 //! FixedDeque.prototype.get = function (index) {
@@ -178,7 +178,7 @@ impl<T: Clone> FixedDeque<T> {
     }
 
     /// `FixedDeque.from(arrayLike, ArrayClass, capacity)` — the only branch of
-    /// upstream's `from` that is reachable (NOTES B-60).
+    /// upstream's `from` that is reachable (NOTES BUG-UTILS-ITERABLES-2).
     ///
     /// Note what it does **not** do: reset `start` (it is already zero from
     /// `clear`), check the iterable against the capacity, or count. `size` is
@@ -292,7 +292,7 @@ impl<T: Clone> FixedDeque<T> {
         self.items.get(index).cloned().flatten()
     }
 
-    /// `#.get` — **bounded by the capacity, not by the size** (B-62).
+    /// `#.get` — **bounded by the capacity, not by the size** (BUG-CIRCULAR-BUFFER-1).
     ///
     /// See item 2 in the module docs: for `size <= index < capacity` this
     /// returns whatever is in the slot, which is debris rather than an element.
@@ -348,7 +348,7 @@ impl<T: Clone> FixedDeque<T> {
     /// and upstream's arithmetic on a negative or fractional one lands
     /// somewhere [`get`](FixedDeque::get) cannot express: `get(-1)` on a deque
     /// whose `start` is 2 really does return the element at physical slot 1.
-    /// See the bridge's `get` and B-62.
+    /// See the bridge's `get` and BUG-CIRCULAR-BUFFER-1.
     pub fn slot_at(&self, index: usize) -> Option<T> {
         self.items.get(index).cloned().flatten()
     }
@@ -613,7 +613,7 @@ mod tests {
         assert_eq!(deque.peek_first(), Some(5));
     }
 
-    /// B-62: `get`'s guard is the capacity, so it hands back debris for every
+    /// BUG-CIRCULAR-BUFFER-1: `get`'s guard is the capacity, so it hands back debris for every
     /// index between `size` and `capacity`.
     ///
     /// Pinned against Node 24.18.1: `new FixedDeque(Array, 3)`, push 1 and 2,
@@ -738,7 +738,7 @@ mod tests {
         assert_eq!(present(&deque), vec![1, 2, 1, 2]);
     }
 
-    /// D-06 / D-07: the cursor is stateful and does not restart, but the deque
+    /// DIV-STACK-1 / DIV-STACK-2: the cursor is stateful and does not restart, but the deque
     /// hands out a fresh one every time.
     #[test]
     fn cursors_do_not_restart_but_the_deque_can_be_walked_again() {
@@ -752,7 +752,7 @@ mod tests {
         assert_eq!(deque.values().collect::<Vec<_>>(), vec![1, 2, 3]);
     }
 
-    /// D-08, the frozen half: `values()` captures `start`, `capacity` and the
+    /// DIV-PROJ-10, the frozen half: `values()` captures `start`, `capacity` and the
     /// size, so a later `push` is invisible.
     #[test]
     fn a_push_during_iteration_is_not_visible_to_the_cursor() {
@@ -791,7 +791,7 @@ mod tests {
         assert_eq!(state.step(&deque), Step::Done);
     }
 
-    /// D-08, the live half: an element written ahead of the cursor is seen.
+    /// DIV-PROJ-10, the live half: an element written ahead of the cursor is seen.
     #[test]
     fn an_overwrite_ahead_of_the_cursor_is_visible() {
         let mut deque = plain(3);

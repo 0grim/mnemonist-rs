@@ -40,7 +40,7 @@
 //!
 //! # Why the `unsafe` is here and not in `mnemonist-core`
 //!
-//! The crate split doing its job (D-02). `mnemonist-core` keeps
+//! The crate split doing its job (DIV-PROJ-3). `mnemonist-core` keeps
 //! `#![forbid(unsafe_code)]` and never hears about any of this. Sharing is
 //! [`Rc`], so the reference counting Rust already has does that work, and the
 //! only hand-written lifetime rule is [`Handle`]'s `Drop` — N-API reference

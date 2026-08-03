@@ -18,7 +18,7 @@
 //! `trieToggle` factory (`fuzz/oracle.js`) exists specifically to reach that
 //! state on both sides.
 //!
-//! Also shared with `trie-map`: the D-201 regime split. `delete` and `clear`
+//! Also shared with `trie-map`: the DIV-TRIE-MAP-2 regime split. `delete` and `clear`
 //! never share a program with a persistent `$iter`/`$next` cursor, for the
 //! identical reason — `Trie` walks the same `mnemonist_core::structures::
 //! trie_map::Walk` engine `TrieMap` does, so it inherits the same
@@ -81,7 +81,7 @@ impl ModuleSpec for TrieSpec {
 
     fn ctor_strategy(&self) -> BoxedStrategy<Vec<Value>> {
         // `new Trie()` either way -- array mode is out of scope; see
-        // `crate::modules::trie_map`'s docs. `ctor[0]` is the same D-201
+        // `crate::modules::trie_map`'s docs. `ctor[0]` is the same DIV-TRIE-MAP-2
         // regime flag that module's docs describe, not a real `Token`.
         any::<bool>().prop_map(|prunes| vec![json!(prunes)]).boxed()
     }
@@ -100,7 +100,7 @@ impl ModuleSpec for TrieSpec {
             1 => Just(Op::new("$spread", vec![])),
         ];
 
-        // D-201, shared with `trie-map`: `delete`/`clear` never share a
+        // DIV-TRIE-MAP-2, shared with `trie-map`: `delete`/`clear` never share a
         // program with a persistent `$iter`/`$next` cursor. See the module
         // docs.
         if prunes {

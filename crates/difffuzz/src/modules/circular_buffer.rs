@@ -16,7 +16,7 @@
 //!
 //! That makes one thing routine here that is unreachable elsewhere in the
 //! wave: **an insert that overwrites a slot an open cursor has not yet
-//! reached.** Elements are read live while the geometry is frozen (D-08), so
+//! reached.** Elements are read live while the geometry is frozen (DIV-PROJ-10), so
 //! `$next` can yield a value that was not in the buffer when the walk started.
 //! The `$iter`/`$next`/`push` interleaving in this alphabet produces it
 //! constantly.

@@ -12,7 +12,7 @@
 //! the element sits at `j`, so `array[j - 1] > array[j]` *is* upstream's
 //! `array[j] > k`. Same comparisons, same order, same writes, no temporary.
 //!
-//! # B-80: upstream's loop counter is a global
+//! # BUG-SORT-1: upstream's loop counter is a global
 //!
 //! Both functions below open with `i = lo + 1` and **never declare `i`**.
 //! `sort/insertion.js` is not a module in the ESM sense and runs sloppy, so

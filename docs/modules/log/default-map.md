@@ -25,7 +25,7 @@ out-of-range index panic: the hint validation read `map.slots[hint - 1]` before 
 rejected. This is the same lesson gate 6 itself carries, one level down: a falsification test that
 cannot fail is just a second green light, and that applies to the tests as much as to the gate.
 
-## B-31 — `&self` on a `Freeze` type was `noalias readonly` (fixed 2026-08-01)
+## PORTBUG-1 — `&self` on a `Freeze` type was `noalias readonly` (fixed 2026-08-01)
 
 This bridge held a bare core value, so `&self` compiled to a `noalias readonly` pointer and LLVM
 was entitled to hoist reads across the JS callback — which it did. It now holds `RefCell<Core>`,
@@ -39,7 +39,7 @@ The divergences table previously carried this row:
 
 > ~~**A re-entrant factory or `forEach` callback is not supported.**~~ **WITHDRAWN 2026-08-01 —
 > both are now supported.** This row said fixing it "means interior mutability throughout and that
-> is a decision for the whole bridge, not for one module". That decision was then forced by B-31,
+> is a decision for the whole bridge, not for one module". That decision was then forced by PORTBUG-1,
 > which turned out to be the same exposure miscompiling rather than merely aliasing. The bridge now
 > holds `RefCell<Core>`, `forEach` re-borrows per step, and `get` runs the factory between its read
 > and its write exactly as upstream does — so a callback or factory that calls back into the same
@@ -48,9 +48,9 @@ The divergences table previously carried this row:
 Removed from the current document's divergences table because it is no longer a divergence; the
 capability is now supported and documented as such.
 
-## `$forEach` — the op that was missing (added 2026-08-01, B-31)
+## `$forEach` — the op that was missing (added 2026-08-01, PORTBUG-1)
 
-`default-map`'s grammar had no `forEach` op at all. That omission is what let B-31 — a `forEach`
+`default-map`'s grammar had no `forEach` op at all. That omission is what let PORTBUG-1 — a `forEach`
 callback mutating the collection it is walking — through 4.37 M clean operations: an op alphabet
 that omits a method omits every bug reachable only through it. `$forEach(method, rule, limit)` was
 added to close that hole; see the current document for what it covers now.

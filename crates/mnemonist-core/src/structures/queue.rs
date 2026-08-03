@@ -207,7 +207,7 @@ impl<T: Clone> Queue<T> {
     }
 }
 
-/// The Rust-caller form of `Queue.from(iterable)`; see D-03 and
+/// The Rust-caller form of `Queue.from(iterable)`; see DIV-QUEUE-1 and
 /// [`stack`](super::stack).
 impl<T> FromIterator<T> for Queue<T> {
     fn from_iter<I: IntoIterator<Item = T>>(iterable: I) -> Self {
@@ -383,7 +383,7 @@ mod tests {
         assert_eq!((queue.offset(), queue.items_len(), queue.size()), (0, 0, 0));
     }
 
-    /// D-06/D-07 again: the cursor is stateful, the collection is a factory.
+    /// DIV-STACK-1/DIV-STACK-2 again: the cursor is stateful, the collection is a factory.
     #[test]
     fn cursors_do_not_restart_but_the_queue_can_be_walked_again() {
         let queue: Queue<i32> = [1, 2, 3].into_iter().collect();

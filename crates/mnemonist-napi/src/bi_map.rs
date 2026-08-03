@@ -23,7 +23,7 @@
 //!
 //! Every method here is a single, self-contained `OrderedMap` operation with
 //! no user callback in the middle except `forEach`, whose borrow is taken and
-//! released per step exactly as `default-map`'s is (B-31). There is no
+//! released per step exactly as `default-map`'s is (PORTBUG-1). There is no
 //! `try_borrow` anywhere in this file: nothing here ever calls back into
 //! JavaScript while the map is locked, so an ordinary `borrow`/`borrow_mut`
 //! is the same guarantee `RefCell` gives every other T3 bridge.
@@ -206,7 +206,7 @@ impl JsBiMapInverse {
     /// Same upstream function as `BiMap::clear`, called with `this` being the
     /// inverse view: both `this.items` and `this.inverse.items` are cleared
     /// regardless of which view called it, but only `this.size` (i.e.
-    /// `inverse.size` from the outer `BiMap`'s perspective) is reset — B-120.
+    /// `inverse.size` from the outer `BiMap`'s perspective) is reset — BUG-BI-MAP-1.
     /// `Core::clear_reverse` is the direction-aware half of that; calling
     /// `Core::clear` here would zero the wrong counter.
     #[napi]

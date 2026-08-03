@@ -97,7 +97,7 @@ and never exercised by the original suite.
 
 **The consequence worth stating plainly**
 
-17. **The B-7 rank bug is structurally invisible to this suite.** Because every assertion is
+17. **The BUG-STATIC-DISJOINT-SET-1 rank bug is structurally invisible to this suite.** Because every assertion is
     partition-only (see above), and union-find produces the correct partition regardless of which
     tree is attached to which, no possible assertion in this file could detect that upstream reads
     `ranks[x]` where it means `ranks[xRoot]`. The suite is not merely thin here; it is the wrong
@@ -127,13 +127,13 @@ compared).
 
 ## Bugs this found
 
-**B-7 — `union` compares the ranks of the items, not the roots.** Upstream reads `this.ranks[x]` /
+**BUG-STATIC-DISJOINT-SET-1 — `union` compares the ranks of the items, not the roots.** Upstream reads `this.ranks[x]` /
 `this.ranks[y]` where union-by-rank requires `this.ranks[xRoot]` / `this.ranks[yRoot]`, while
 incrementing `this.ranks[xRoot]`. Non-root ranks are therefore never maintained, stay 0 forever, and
 the equal-ranks branch fires on nearly every union — disabling the heuristic and degrading `find`
 towards O(n). Results stay correct; the elected root does not.
 
-**D-30 — the second-order consequence, which is the more interesting half.** Because B-7 makes the
+**DIV-STATIC-DISJOINT-SET-1 — the second-order consequence, which is the more interesting half.** Because BUG-STATIC-DISJOINT-SET-1 makes the
 equal-ranks branch near-universal, one root's rank is bumped once per union, far past the
 `log2(size)` the array was sized for. And `ranks` is *always* a `Uint8Array` in practice: widening
 it would need `log2(size) > 256`, and `parents` already caps `size` at 2³². So it **wraps** — a
@@ -150,7 +150,7 @@ divergences.
 
 That is the expected outcome and not a failure of the fuzzer, for a reason worth recording: **a
 faithful port reproduces upstream's bugs, so differential fuzzing structurally cannot find them.**
-B-7 was found by reading. What the fuzzer is actually for on this module is the other direction —
+BUG-STATIC-DISJOINT-SET-1 was found by reading. What the fuzzer is actually for on this module is the other direction —
 catching the port drifting away from upstream, including drifting towards *correctness* — and it
 is proven to do that (see below).
 
@@ -158,8 +158,8 @@ is proven to do that (see below).
 
 | # | Divergence | Why |
 |---|---|---|
-| D-31 | **The rank bug is reproduced, not fixed.** | `find(x)` returns a root and which item becomes root is observable. "Fixing" it would be a silent behavioural divergence. Pinned by `reproduces_upstream_rank_bug` so a future cleanup fails the suite. |
-| D-30 | **`PointerVec` masks every write to the selected width.** | Selecting the right width is only half of typed-array semantics; the truncating *write* is the other half. A plain `Vec<u32>` would diverge at rank 256. |
+| DIV-STATIC-DISJOINT-SET-2 | **The rank bug is reproduced, not fixed.** | `find(x)` returns a root and which item becomes root is observable. "Fixing" it would be a silent behavioural divergence. Pinned by `reproduces_upstream_rank_bug` so a future cleanup fails the suite. |
+| DIV-STATIC-DISJOINT-SET-1 | **`PointerVec` masks every write to the selected width.** | Selecting the right width is only half of typed-array semantics; the truncating *write* is the other half. A plain `Vec<u32>` would diverge at rank 256. |
 | — | **`find`/`connected`/`mapping`/`compile` take `&mut self`.** | They all path-compress. Rust's type system forces the mutation to be declared where JS hides it — arguably an improvement in legibility, and it costs the caller nothing. |
 | — | **`union` returns `bool`; the bridge returns `this`.** | Core reports whether a merge happened, which upstream exposes only through `dimension`. The bridge drops it so the JS surface matches exactly. |
 | — | **`mapping()` returns `Mapping { width, values }`.** | Rust has no runtime array constructor. The chosen width travels with the values and the bridge rebuilds the matching `Uint8Array`/`Uint16Array`/`Uint32Array`, so the JS-observable type is preserved. |
@@ -192,7 +192,7 @@ Deliberately excluded from the grammar: out-of-range indices (see the divergence
 Nothing else is excluded. Full grammar: evidence file.
 
 **The fuzzer was falsified before it was trusted.** A fuzzer that has never been seen to fail is
-the same problem gate 6 exists to prevent. The sabotage chosen was to *fix* B-7 in the core — the
+the same problem gate 6 exists to prevent. The sabotage chosen was to *fix* BUG-STATIC-DISJOINT-SET-1 in the core — the
 most plausible way this port could realistically break, since it makes the port strictly more
 correct than upstream and therefore wrong. It was caught in **129 cases (0.3 s)** and shrunk from a
 600-op program to three operations. The sabotage was reverted; the seed is committed in

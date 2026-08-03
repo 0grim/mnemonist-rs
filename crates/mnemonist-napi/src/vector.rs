@@ -37,7 +37,7 @@
 //! [`crate::stack`]/[`crate::queue`]/[`crate::bit_vector`]: a plain `&self` is
 //! `noalias readonly` to LLVM, and a JS growth policy or a `forEach` callback
 //! can mutate the vector while a `&self` method is still on the stack. See
-//! `crate::cursor::CellCursor` and B-31.
+//! `crate::cursor::CellCursor` and PORTBUG-1.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -57,7 +57,7 @@ use crate::foreach;
 const REENTRANT_POLICY: &str = "mnemonist-rs/Vector: the growth policy called back into the \
      vector while it was growing. Upstream serves such a call from a half-grown vector; \
      this port refuses it, because the vector is mid-operation and cannot answer honestly. \
-     See the module docs and B-31.";
+     See the module docs and PORTBUG-1.";
 
 /// `Vector.from`'s own message when neither a capacity nor a guessable
 /// iterable is given.
@@ -184,7 +184,7 @@ impl JsVector {
     }
 
     /// `undefined` on an out-of-bound read -- `Either`, not `Option`: napi
-    /// renders `None` as `null` and upstream's miss is `undefined` (D-39).
+    /// renders `None` as `null` and upstream's miss is `undefined` (DIV-FIXED-STACK-1).
     #[napi]
     pub fn get(&self, index: f64) -> Result<Either<f64, Undefined>> {
         Ok(match self.read()?.get(count(index)) {

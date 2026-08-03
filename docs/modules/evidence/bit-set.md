@@ -9,18 +9,18 @@ record, full benchmark tables.
 
 | Test | Closes gap |
 |---|---|
-| `a_no_op_reset_decrements_size_when_the_top_bit_of_the_word_is_set` | 1 — B-17, including `size == -2` |
+| `a_no_op_reset_decrements_size_when_the_top_bit_of_the_word_is_set` | 1 — BUG-BIT-SET-1, including `size == -2` |
 | `a_no_op_reset_is_harmless_while_the_top_bit_is_clear` | 1 — the control that explains why upstream never noticed |
 | `rank_returns_zero_whenever_the_size_counter_is_zero` | 2 — the propagation into `rank` |
-| `select_loses_thirty_two_positions_per_skipped_word` | 5 — B-18 |
+| `select_loses_thirty_two_positions_per_skipped_word` | 5 — BUG-BIT-SET-2 |
 | `select_answers_minus_one_a_position_or_undefined` | 6, 7, 8 — all three return shapes |
 | `out_of_range_indices_are_inert_rather_than_corrupting` | 9 |
-| `a_bit_past_length_but_inside_the_word_is_counted_yet_invisible` | 9 — B-23 |
+| `a_bit_past_length_but_inside_the_word_is_counted_yet_invisible` | 9 — BUG-BIT-SET-3 |
 | `a_cursor_keeps_the_array_it_was_opened_over` | 11, 12 |
 | `writes_ahead_of_the_cursor_are_visible_but_not_within_the_current_word` | 12 — the word-granularity half |
 | `a_walk_is_not_restartable` | 13 |
 | `entries_pair_each_bit_with_its_ordinal` | — |
-| `the_last_word_is_full_when_the_length_is_a_multiple_of_thirty_two` | — B-22, the `\|\| 32` misfire |
+| `the_last_word_is_full_when_the_length_is_a_multiple_of_thirty_two` | — BUG-BIT-VECTOR-2, the `\|\| 32` misfire |
 | `cloning_copies_the_backing_store` | — a port-side invariant, not an upstream one |
 
 `crates/mnemonist-core/src/structures/bit_set.rs` — 15 tests:
@@ -40,7 +40,7 @@ record, full benchmark tables.
 | `repeated_sets_and_resets_are_idempotent_in_size` | 4 |
 | `a_zero_length_set_holds_and_yields_nothing` | 14 |
 | `iteration_yields_exactly_length_bits` | 14 — nine lengths across both word boundaries |
-| `cursors_do_not_restart_but_the_set_can_be_walked_again` | 13 — both levels of D-07 |
+| `cursors_do_not_restart_but_the_set_can_be_walked_again` | 13 — both levels of DIV-STACK-2 |
 | `writes_during_iteration_are_visible_only_beyond_the_current_word` | 12 |
 | `rank_saturates_past_the_end_rather_than_reading_off_it` | 9 |
 | `allocates_one_word_per_thirty_two_bits_rounded_up` | — |
@@ -55,11 +55,11 @@ record, full benchmark tables.
   diverged.
 * **Lengths:** `0..=400`, thirteen words. Zero is included because `new BitSet(0)` allocates nothing
   and is the degenerate end of every guard; 400 is sparse enough that empty words between set bits
-  are routine, which is what B-18 needs.
-* **Indices:** `0..length + 64`, so a steady fraction land in B-23's band and beyond it.
+  are routine, which is what BUG-BIT-SET-2 needs.
+* **Indices:** `0..length + 64`, so a steady fraction land in BUG-BIT-SET-3's band and beyond it.
 * **Program length:** 1..200 ops.
 * **Deliberately excluded: nothing.** Out-of-range indices, negative-adjacent behaviour and cursor
-  interleaving are all generated. `reset` is weighted **up** rather than down, because B-17 only
+  interleaving are all generated. `reset` is weighted **up** rather than down, because BUG-BIT-SET-1 only
   misfires on a bit that is already clear, and a low weight would make that rare rather than routine.
 
 `$iter` alternates between `values` and `entries`: they share an implementation in this port and are
@@ -70,18 +70,18 @@ alphabet *because* it interacts with an open cursor.
 
 ### Fuzzer falsification
 
-Sabotage: `reset` given the `>>> 0` upstream forgot — B-17 *fixed*, which is the single most
+Sabotage: `reset` given the `>>> 0` upstream forgot — BUG-BIT-SET-1 *fixed*, which is the single most
 plausible thing a future cleanup does to this file. Caught in **1,325 cases (2.0 s)** and shrunk from
 200 ops to **two**:
 
 ```js
 var s = new BitSet(1);
-s.set(31);      // inside word 0, past length 1 -- accepted (B-23)
+s.set(31);      // inside word 0, past length 1 -- accepted (BUG-BIT-SET-3)
 s.reset(0);     // clears nothing; upstream decrements anyway
 // port size 1, upstream size 0
 ```
 
-Worth noting what that two-op program shows: **B-23 and B-17 compound.** The `set(31)` is only
+Worth noting what that two-op program shows: **BUG-BIT-SET-3 and BUG-BIT-SET-1 compound.** The `set(31)` is only
 possible because an index past `length` but inside the last word is accepted, and it is what puts
 bit 31 into the word, which is the precondition for `reset`'s signed comparison to misfire. Neither
 defect alone reaches the state, and no upstream test passes an index past `length` at all. Reverted;
@@ -95,7 +95,7 @@ assertion in the file that depends on the last-word width calculation, and becau
 #117 exists precisely because that calculation was once wrong.
 
 **The sabotage:** `length % 32 || 32` reduced to `length % 32` — "fixing" a guard that genuinely
-looks like a bug, and which B-22 shows *is* one at length 0.
+looks like a bug, and which BUG-BIT-VECTOR-2 shows *is* one at length 0.
 
 **Confirmed red**, at exactly the named line: `11 passing, 1 failing`, `32 !== 64` at
 `test/bit-set.js:178`. Reverted; **confirmed green again**: 12 passing.

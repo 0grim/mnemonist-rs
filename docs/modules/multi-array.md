@@ -37,7 +37,7 @@ being ported as its own unit.
 `Container` — so `new MultiArray(Array, 10)` and `new MultiArray(Uint8Array)` are both
 syntactically constructible, and neither is exercised. The second would in fact break real upstream
 on first use (`this.items = new Uint8Array(); ...; this.items.push(item)` — typed arrays have no
-`.push`). See "Deliberate divergences" (D-450).
+`.push`). See "Deliberate divergences" (DIV-MULTI-ARRAY-1).
 
 **`get(index)` for an index below `dimension` that was never actually `set`** — the "insert out of
 order" test only ever reads the two indices it wrote, never one of the gap indices in between. By
@@ -69,7 +69,7 @@ fixed-capacity (small capacities) constructors; see "Fuzz + bench" for measured 
 `grammar_self_check` counting multi-value buckets and capacity-exceeded throws directly.
 
 **Still untested, stated rather than glossed:** a container mutated mid-walk (see above), and the
-two `(Container, capacity)` combinations D-450 records as out of scope.
+two `(Container, capacity)` combinations DIV-MULTI-ARRAY-1 records as out of scope.
 
 ## Bugs this found
 
@@ -89,7 +89,7 @@ the five, matching `multi_map.rs`'s and `vector.rs`'s own established pattern. S
 
 | # | Divergence | Why |
 |---|---|---|
-| D-450 | **Only two of the four syntactically-possible `(Container, capacity)` combinations are modelled**: the default/any-`Container` unbounded form, and a `Uint8Array`/`Uint16Array`/`Uint32Array` + truthy-`capacity` fixed form. A fixed-capacity `Array` and an unbounded typed array are refused with a message naming the supported set. | `test/multi-array.js` exercises exactly the two modelled combinations. The other two are not meaningfully supported by real upstream either — see "What upstream does NOT test." |
+| DIV-MULTI-ARRAY-1 | **Only two of the four syntactically-possible `(Container, capacity)` combinations are modelled**: the default/any-`Container` unbounded form, and a `Uint8Array`/`Uint16Array`/`Uint32Array` + truthy-`capacity` fixed form. A fixed-capacity `Array` and an unbounded typed array are refused with a message naming the supported set. | `test/multi-array.js` exercises exactly the two modelled combinations. The other two are not meaningfully supported by real upstream either — see "What upstream does NOT test." |
 
 `capacity || null` (any JS-falsy `capacity`, including `0` and `NaN`, means dynamic mode, not just
 an omitted argument) is reproduced exactly by `crates/mnemonist-napi/src/multi_array.rs`'s

@@ -129,7 +129,7 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
-    // Not a gate-10 module: a diagnostic for B-31 (`tests/scope.txt`,
+    // Not a gate-10 module: a diagnostic for PORTBUG-1 (`tests/scope.txt`,
     // `sparse_set.rs::run_mixed_refcell`). Measures what the napi bridge's
     // `RefCell<CoreSet>` borrow-flag check costs on the exact mixed workload
     // `sparse-set`'s own gate-10 entry uses, isolated from everything else

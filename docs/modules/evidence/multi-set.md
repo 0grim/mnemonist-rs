@@ -10,9 +10,9 @@ table.
 | Test | Closes gap |
 |---|---|
 | `deleting_an_existing_item_behaves_normally` | the upstream `delete` block, as a baseline |
-| `b_161_deleting_an_absent_item_corrupts_size_and_dimension_but_reports_true` | B-161 |
-| `b_162_edit_into_an_existing_key_does_not_adjust_dimension` | B-162 |
-| `set_replaces_a_missing_item_but_adds_to_an_existing_one` | B-160 |
+| `b_161_deleting_an_absent_item_corrupts_size_and_dimension_but_reports_true` | BUG-MULTI-SET-2 |
+| `b_162_edit_into_an_existing_key_does_not_adjust_dimension` | BUG-MULTI-SET-3 |
+| `set_replaces_a_missing_item_but_adds_to_an_existing_one` | BUG-MULTI-SET-1 |
 | `a_set_is_its_own_subset_and_superset_by_identity` | the `A === B` shortcut |
 
 ## Fuzz grammar
@@ -24,7 +24,7 @@ table.
 * **Item pool:** three items (`"a"`, `"b"`, `"c"`).
 * **Count pool:** `1`, `2`, `4`, `0`, `-1`, `-3` — positive (so multiplicities build up), zero (a
   documented no-op), and negative (the sign-flip delegation between `add` and `remove`). Fractional
-  and `NaN` counts are deliberately not in this grammar; see D-165 and the spec's own module docs.
+  and `NaN` counts are deliberately not in this grammar; see DIV-MULTI-SET-3 and the spec's own module docs.
 * **Observable state:** `size`, `dimension`, `items` (`[item, count]` pairs, in insertion order).
 
 ## Bench table

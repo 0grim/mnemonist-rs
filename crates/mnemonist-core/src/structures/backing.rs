@@ -21,7 +21,7 @@
 //! | store past the end | **grows** the array | silently **dropped** |
 //!
 //! Both differences are reachable through the public API. `FixedStack.forEach`
-//! walks `this.items.length` rather than `this.size` (NOTES B-61), so every
+//! walks `this.items.length` rather than `this.size` (NOTES BUG-FIXED-STACK-1), so every
 //! unused slot is handed to the callback — as `undefined` from an `Array` and
 //! as `0` from a `Uint8Array`. And `X.from(iterable, ArrayClass, capacity)`
 //! writes `items[i] = iterable[i]` for the *iterable's* whole length without

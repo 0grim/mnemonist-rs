@@ -55,7 +55,7 @@ impl<Owner: 'static, K: 'static, V: 'static> MapBridgeCursor<Owner, K, V> {
 /// A [`MapBridgeCursor`] over a source the JS side can mutate *while a `&self`
 /// method is on the stack* — the `Map` counterpart of
 /// [`crate::cursor::CellCursor`], and it exists for exactly the reason
-/// documented there (B-31: `&T` on a `Freeze` `T` is `noalias readonly`, so
+/// documented there (PORTBUG-1: `&T` on a `Freeze` `T` is `noalias readonly`, so
 /// LLVM may hoist reads across a re-entrant JS callback).
 ///
 /// `S` is the owner's whole core structure and `project` picks the

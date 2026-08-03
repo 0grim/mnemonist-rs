@@ -221,7 +221,7 @@ impl ModuleSpec for MultiSetSpec {
 }
 
 /// A JavaScript number, encoded as `fuzz/oracle.js`'s `encode()` would: a
-/// `NaN` this grammar never generates but `#.delete`'s B-161 bug (NOTES.md)
+/// `NaN` this grammar never generates but `#.delete`'s BUG-MULTI-SET-2 bug (NOTES.md)
 /// can still produce as *observed state* is rendered the same way the
 /// oracle renders a real one, so a divergence there is comparable rather
 /// than a JSON-encoding failure.

@@ -28,7 +28,7 @@
 //!   trip [`crate::foreach::display`] already performs for its own
 //!   `toString()` fallback — not upstream's full `ToPropertyKey` (which also
 //!   accepts a `Symbol` unchanged), because no test in either original suite
-//!   ever supplies one. See D-91's precedent for the same judgement call on
+//!   ever supplies one. See DIV-LRU-CACHE-3's precedent for the same judgement call on
 //!   `lru-cache`'s object keys.
 //!
 //! # 2. `find`/`values`/`keys`/`entries` echo the caller's own prefix, not a
@@ -54,7 +54,7 @@
 //! `update`'s callback and the map it is updating can alias — a callback
 //! that calls back into the same trie is legal JavaScript — so the core
 //! structure is held in a `RefCell` and no borrow is ever alive across a
-//! call into JavaScript. See `crate::default_map`'s module docs, and B-31.
+//! call into JavaScript. See `crate::default_map`'s module docs, and PORTBUG-1.
 
 use std::cell::RefCell;
 use std::ptr;

@@ -81,10 +81,22 @@ If other agents are working, do not benchmark; gate 10 is batched into a quiet s
   `{"$global": …}` encoding, the `tests/run.sh` fresh-clone bug, and a `$forEach` fuzz op built
   with *incompatible signatures* whose duplicate handlers landed in one JS `switch` — where the
   first silently wins and a syntax check passes. Before inventing shared machinery, grep for it.
-- **Bug-candidate IDs (`B-nn` in `planning/NOTES.md`) are allocated by the orchestrator.** Use the
-  range you were given and no other. Agents working in isolated worktrees cannot see each other's
-  allocations — two once claimed `B-11`–`B-14` for entirely different bugs, which had to be
-  untangled by hand at merge. If you need more than your range, say so rather than spilling past it.
+- **Bug and divergence IDs are module-scoped: `BUG-<MODULE>-<n>` and `DIV-<MODULE>-<n>`**, numbered
+  per module in `docs/modules/<unit>.md`. Allocate the next free number *within the module you are
+  working on* and no other — no orchestrator range, and no way for two agents in separate worktrees
+  to collide, because the module name is part of the ID.
+
+  This replaced a flat `B-nn`/`D-nn` space allocated centrally, which failed twice. Two agents once
+  claimed `B-11`–`B-14` for entirely different bugs and it had to be untangled by hand at merge; the
+  second failure survived undetected into judge-facing docs, where `D-40`–`D-46` and `D-60` each
+  named **two different decisions** (`D-44` was both "arbitrary JS values are stored as an enum" and
+  "a full table returns `Err`"). A flat namespace shared across isolated worktrees cannot be made
+  safe by discipline; scoping the name fixes it structurally.
+
+  Two IDs sit outside the scheme on purpose: `PORTBUG-n` is a bug in **our** port, not upstream's
+  (only `PORTBUG-1` so far), and `DIV-PROJ-n` covers project-level decisions with no module —
+  licensing, track choice, fuzz-batch policy. Neither belongs in `docs/BUGS.md`, which is upstream
+  bugs only.
 
 ## Prefer one agent at a time
 

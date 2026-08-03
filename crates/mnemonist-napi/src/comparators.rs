@@ -22,7 +22,7 @@
 //!
 //! Upstream has no `try`/`finally` anywhere in `heap.js`, so a comparator that
 //! throws mid-`push` leaves the heap with `items.length` one ahead of `size`.
-//! That is reproduced, not repaired — NOTES B-70.
+//! That is reproduced, not repaired — NOTES BUG-HEAP-1.
 //!
 //! # 3. The comparator's *return value* is a JavaScript number, coerced
 //!
@@ -177,7 +177,7 @@ impl MaybeUndefined for JsSlot {
 
 /// `Infinity` is an ordinary JS number, which is exactly why upstream's
 /// `var min = Infinity` sentinel is a bug rather than a convention. See
-/// `Unset` in [`mnemonist_core::structures::heap`] and NOTES B-71/B-72.
+/// `Unset` in [`mnemonist_core::structures::heap`] and NOTES BUG-HEAP-2/BUG-HEAP-3.
 impl Sentinel for JsSlot {
     fn infinity(negative: bool) -> Option<Self> {
         Some(JsSlot::Number(if negative {
@@ -499,7 +499,7 @@ fn read_tuple(env: &Env, value: Unknown, size: usize) -> Result<Vec<Operand>> {
 /// `reverseComparator` verbatim, plus the closure half of
 /// `createTupleComparator`.
 ///
-/// Evaluated once, at module load, for the reason D-45 gives about `X.of`: it
+/// Evaluated once, at module load, for the reason DIV-STACK-7 gives about `X.of`: it
 /// is arity/closure glue with no logic, and writing it as JavaScript keeps the
 /// addon self-contained instead of pushing a semantic into the test shim.
 const INSTALLER: &str = "(function (exports) { \

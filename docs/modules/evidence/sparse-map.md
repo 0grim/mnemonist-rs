@@ -20,9 +20,9 @@ falsification record, full benchmark table.
 | `an_array_value_store_outgrows_the_map_it_belongs_to` | **8, 20, 22** — `keys()` gapping while `values()` still yields real data, on the same map, at the same ordinals |
 | `a_typed_value_store_drops_the_write_and_gaps_with_the_keys` | 8, 20 — the contrasting store, where both sides gap together |
 | `typed_values_truncate_at_their_own_width` | 6, 7 — all three widths, and the independence of the value width from the index width |
-| `a_delete_past_capacity_writes_dense_but_not_sparse` | 16 — B-10 on this module's arrays |
-| `cursors_do_not_restart_but_the_map_can_be_walked_again` | 18, 19 — both levels of D-07, and all three projections |
-| `a_delete_during_iteration_is_visible_and_desynchronises_the_pair` | **17** — B-11 in one assertion: the walk yields `(3, 20)`, a key and a value that were never set together |
+| `a_delete_past_capacity_writes_dense_but_not_sparse` | 16 — BUG-SPARSE-SET-3 on this module's arrays |
+| `cursors_do_not_restart_but_the_map_can_be_walked_again` | 18, 19 — both levels of DIV-STACK-2, and all three projections |
+| `a_delete_during_iteration_is_visible_and_desynchronises_the_pair` | **17** — BUG-SPARSE-MAP-1 in one assertion: the walk yields `(3, 20)`, a key and a value that were never set together |
 | `a_set_during_iteration_is_not_visible_to_the_cursor` | 17 — the frozen-length half |
 | `picks_one_pointer_width_for_both_index_arrays` | 14 — five lengths across both width boundaries |
 | `rejects_a_length_no_pointer_array_can_index` | 14 (the throw), for both constructors |
@@ -36,7 +36,7 @@ falsification record, full benchmark table.
   `clear()` (1) · `$iter("keys")` / `$iter("values")` / `$iter("entries")` (1 each) · `$next()` (3)
   · `$spread()` (1).
 * **Observable state, compared after every op:** `size`, `length`, `dense`, `sparse` **and
-  `vals`**. `vals` is what makes B-11 checkable rather than inferable: a port that "tidied up" the
+  `vals`**. `vals` is what makes BUG-SPARSE-MAP-1 checkable rather than inferable: a port that "tidied up" the
   missing value move would still agree on `size`, on both index arrays and on every `has`.
 * **Constructors:** both upstream signatures, all four supported value stores. A JS constructor
   cannot travel over JSON, so it goes as `{"$global": "Uint8Array"}` and `fuzz/oracle.js` resolves
@@ -105,7 +105,7 @@ green again**: `9 passing`.
 
 **And a second falsification that was expected to stay green, and did.** Gate 6's own lesson is
 that a check which cannot fail is a second green light — so it is worth knowing *which* sabotages
-this suite cannot catch, not only that some can. Fixing B-11 in the core leaves the suite at
+this suite cannot catch, not only that some can. Fixing BUG-SPARSE-MAP-1 in the core leaves the suite at
 **9 passing, 0 failing** while turning **four** native tests red
 (`delete_moves_the_key_but_not_the_value`, `the_stale_value_is_not_an_artefact_of_the_array_store`,
 `a_delete_past_capacity_writes_dense_but_not_sparse`,

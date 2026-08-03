@@ -7,11 +7,11 @@
 #
 # PROVENANCE OF THE ENTRY BELOW -- read before assuming it recorded a real port
 # defect. It did not. It was produced by a deliberate falsification of the
-# fuzzer, in the spirit of DoD gate 6 and D-32: a fuzzer that has never been
+# fuzzer, in the spirit of DoD gate 6 and DIV-PROJ-30: a fuzzer that has never been
 # seen to fail is just a second green light.
 #
 # The sabotage was to make `Heap::clear` truncate the backing array in place
-# instead of REBINDING it -- i.e. to collapse D-41, which is the single most
+# instead of REBINDING it -- i.e. to collapse DIV-STACK-3, which is the single most
 # plausible way a future cleanup breaks this port, since `set_length(0)` and
 # `allocate(0)` leave an *identical* observable state for every program whose
 # comparator has no side effects.

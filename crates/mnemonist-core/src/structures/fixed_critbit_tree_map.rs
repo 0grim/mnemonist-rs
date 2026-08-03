@@ -6,7 +6,7 @@
 //! whole algorithm against typed arrays rather than importing anything from
 //! `critbit-tree-map.js`. Two upstream properties make the fixed variant
 //! genuinely different from "the same tree with a capacity check bolted on",
-//! and both are measured, not assumed — see NOTES.md B-260/B-261.
+//! and both are measured, not assumed — see NOTES.md BUG-FIXED-CRITBIT-TREE-MAP-1/BUG-FIXED-CRITBIT-TREE-MAP-2.
 //!
 //! # 1. There is no capacity guard at all
 //!
@@ -91,7 +91,7 @@
 //! would be a structural divergence with no upside — and reproduces the
 //! exact wrong write target (`self.lefts.set(0, ...)`, not
 //! `self.lefts.set(internal_index, ...)`) in case a future, wider campaign
-//! ever does reach it. See NOTES.md B-262.
+//! ever does reach it. See NOTES.md DIV-PROJ-60.
 //!
 //! # No `delete`
 //!
@@ -266,7 +266,7 @@ pub struct FixedCritBitTreeMap<V> {
     /// rather than appending past whatever was already there.
     size: usize,
     root: Ptr,
-    /// B-260: upstream's constructor sets `this.root = 0` (a number), but
+    /// BUG-FIXED-CRITBIT-TREE-MAP-1: upstream's constructor sets `this.root = 0` (a number), but
     /// `clear` sets `this.root = null` — a real `typeof`-visible
     /// inconsistency, verified against Node 24.18.1, confirmed in the
     /// source at `fixed-critbit-tree-map.js:99` vs `:120`. Both mean "empty
@@ -354,7 +354,7 @@ impl<V> FixedCritBitTreeMap<V> {
     /// tree-map.js` never builds `InternalNode`/`ExternalNode` objects at
     /// all, so `this.root` really is just the plain number it looks like --
     /// except right after a `clear`, where it is upstream's own `null`
-    /// instead (B-260, see `root_is_null`'s doc comment). `None` here is
+    /// instead (BUG-FIXED-CRITBIT-TREE-MAP-1, see `root_is_null`'s doc comment). `None` here is
     /// that `null`; `Some(pointer)` is the ordinary number, `0` included.
     /// Exposed for the differential fuzz spec's `root` observation, which
     /// therefore doubles as an exact check that this port's internal node
@@ -824,7 +824,7 @@ mod tests {
         assert_eq!(tree.get(b"b"), None);
     }
 
-    /// B-260: `root` is a number (`0`) fresh off the constructor but `null`
+    /// BUG-FIXED-CRITBIT-TREE-MAP-1: `root` is a number (`0`) fresh off the constructor but `null`
     /// right after a `clear` — a real, `typeof`-visible inconsistency,
     /// verified against Node 24.18.1 and confirmed in the source
     /// (`fixed-critbit-tree-map.js:99` vs `:120`). No method's *behaviour*

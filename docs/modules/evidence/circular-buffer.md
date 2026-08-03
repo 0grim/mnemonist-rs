@@ -33,7 +33,7 @@ falsification record, full benchmark table.
 * **The return value of every insert is compared**, which is what pins gaps 1 and 2.
 * **Both backing classes**, `get` indices 0..=11, values to 320.
 * **Deliberately excluded:** the same three as `fixed-deque` — `from` (a static), `forEach`'s
-  `scope` (D-61), and a negative `get` index (core takes a `usize`; covered by differential probes).
+  `scope` (DIV-FIXED-STACK-3), and a negative `get` index (core takes a `usize`; covered by differential probes).
 
 ## Falsification record
 

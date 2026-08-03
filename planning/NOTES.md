@@ -28,7 +28,7 @@ it happens. Nobody reconstructs a surprise at hour 70.
 Must be filed upstream **during the event** to count for **Bug Catcher (+3, $100)**.
 Status: `unverified` → `verified` → `filed #NNN` / `intentional`.
 
-### B-1 — `iter`/`forEach` asymmetry on plain objects
+### DIV-PROJ-1 — `iter`/`forEach` asymmetry on plain objects
 `status: VERIFIED against Node 24.18.1, by direct execution — Bug Catcher doc, lower-confidence section (plausibly intentional)` · `obliterator v2.0.4`
 `take({a: 1})` **throws** (`iter.js` has no plain-object branch) while `forEach({a: 1}, cb)`
 **iterates the values** (branch 5, `for…in`). Two helpers in the same library disagree about
@@ -36,7 +36,7 @@ whether a plain object is iterable.
 **Likely intentional?** Possibly — `iter` must return an *iterator*, `forEach` only needs to visit.
 Worth asking upstream regardless; even "intentional" is a documentation gap.
 
-### B-2 — `toArray` produces sparse arrays when `guessLength` lies
+### BUG-UTILS-ITERABLES-1 — `toArray` produces sparse arrays when `guessLength` lies
 `status: VERIFIED against Node 24.18.1, by direct execution — Bug Catcher doc, full treatment` · `mnemonist utils/iterables.js`
 `toArray` preallocates `new Array(guessLength(target))` then fills with `array[i++] = value`.
 `guessLength` trusts `.length` then `.size` without validating against actual yield count.
@@ -45,28 +45,28 @@ Sharpest case: `toArray({length: 5})` → `forEach` plain-object branch enumerat
 **including `length` itself** → `[5, <4 empty items>]`.
 **This is the strongest candidate.** Concrete, reproducible in isolation, clearly unintended.
 
-### B-3 — `take` with omitted `n`
+### DIV-PROJ-4 — `take` with omitted `n`
 `status: VERIFIED against Node 24.18.1, by direct execution — DEMOTED, not filed. Confirmed the guard is dead code with no observable wrong output: with n omitted, array starts as [] and "array.length = i" at the end is a no-op. No input makes it produce an incorrect result. Not in the Bug Catcher doc.` · `obliterator take.js`
 `l = arguments.length > 1 ? n : Infinity`, then on early exhaustion `if (i !== n) array.length = i`.
 With `n` omitted, `n === undefined`, so `i !== n` is **always** true. Benign today (no-op on a
 growing array) but the guard doesn't express what it appears to intend.
 **Low severity** — code-smell tier, not a behaviour bug. File only if others land.
 
-### B-4 — `forEach` falsy guard rejects empty string and zero
+### DIV-PROJ-5 — `forEach` falsy guard rejects empty string and zero
 `status: VERIFIED against Node 24.18.1, by direct execution — Bug Catcher doc, lower-confidence section (plausibly an intentional input guard)` · `obliterator foreach.js`
 `if (!iterable) throw`. So `forEach('', cb)` **throws** while `forEach('a', cb)` iterates.
 An empty string is a legitimately iterable value that should yield zero times. Same for `0`
 and `false` reaching a numeric path.
 **Arguably intentional** as an input guard, but the empty-string case looks like a genuine miss.
 
-### B-5 — `toString()` called on arbitrary input during dispatch
+### DIV-PROJ-7 — `toString()` called on arbitrary input during dispatch
 `status: VERIFIED against Node 24.18.1, by direct execution — confirmed the hijack: an object whose toString() returns exactly '[object Arguments]' is routed into the arguments-like branch and its real enumerable properties are never visited (forEach(obj, cb) with obj={a:1,toString(){...}} visits zero times). Bug Catcher doc, lower-confidence section.` · `obliterator foreach.js`
 Branch 1 tests `iterable.toString() === '[object Arguments]'`. This **invokes `toString` on an
 arbitrary user value** during type dispatch — a custom `toString` can throw, or return that exact
 string and hijack the branch.
 **Adversarially interesting**; low real-world impact.
 
-### B-7 — `StaticDisjointSet.union` compares ranks of the ITEMS, not the ROOTS
+### BUG-STATIC-DISJOINT-SET-1 — `StaticDisjointSet.union` compares ranks of the ITEMS, not the ROOTS
 `status: VERIFIED against Node 24.18.1, by direct execution — Bug Catcher doc, full treatment (last of the top-tier entries, included specifically as the one bug in the set that differential fuzzing structurally cannot find, since find() stays correct regardless of which root wins)` · `mnemonist static-disjoint-set.js`
 Union-by-rank requires comparing the ranks of the two **roots**. Upstream reads the ranks of the
 original arguments and then writes to the root:
@@ -91,7 +91,7 @@ observable; "fixing" it would be a silent behavioural divergence. Goes in `DECIS
 deliberate bug-for-bug reproduction, and upstream as an issue.
 *Also a good write-up beat: the class of bug that differential testing structurally cannot find.*
 
-### B-8 — `SparseSet.add(m)` with `m >= length` corrupts the set, three defects deep
+### BUG-SPARSE-SET-1 — `SparseSet.add(m)` with `m >= length` corrupts the set, three defects deep
 `status: VERIFIED against Node 24.18.1` · `mnemonist sparse-set.js`
 Neither guard in `add` fires for an out-of-range member, because `sparse[m]` is `undefined` and
 every comparison against `undefined` is false. Three separate silent failures then follow in three
@@ -108,9 +108,9 @@ either name.
 well-defined read, truncating store or dropped store, so the faithful port is expressible — and it
 is cheaper than a guard as well as more useful. See `docs/modules/sparse-set.md`.
 
-### B-9 — and therefore `size` can exceed `length`, so upstream's own iterator yields `undefined`
+### BUG-SPARSE-SET-2 — and therefore `size` can exceed `length`, so upstream's own iterator yields `undefined`
 `status: VERIFIED against Node 24.18.1` · `mnemonist sparse-set.js`
-The second-order consequence of B-8(3), and the more interesting half. `values()` freezes `size`
+The second-order consequence of BUG-SPARSE-SET-1(3), and the more interesting half. `values()` freezes `size`
 and `dense` is a fixed-length typed array, so:
 ```js
 var u = new SparseSet(2);
@@ -123,7 +123,7 @@ which measured Option B as costing zero on the 40% axis. That remains true and t
 right, but for a stronger reason than recorded: the window is not exotic, and the differential
 fuzzer finds it in 0.3s when the port takes Option B.
 
-### B-10 — `SparseSet.delete` past capacity writes a string-keyed expando onto a typed array
+### BUG-SPARSE-SET-3 — `SparseSet.delete` past capacity writes a string-keyed expando onto a typed array
 `status: VERIFIED against Node 24.18.1` · `mnemonist sparse-set.js`
 ```js
 index = this.dense[this.size - 1];        // undefined once size > length
@@ -138,7 +138,7 @@ as fuzzer falsification sabotage A — caught in 6.6s and shrunk to seven ops.
 *Lesson worth keeping: for a bug-for-bug port, read JS one statement at a time and confirm each
 against the runtime. Reading for intent is how you write the correct version by accident.*
 
-### B-11 — `SparseMap.delete` moves the key and leaves the value behind
+### BUG-SPARSE-MAP-1 — `SparseMap.delete` moves the key and leaves the value behind
 `status: VERIFIED against Node 24.18.1` · `mnemonist sparse-map.js`
 **The best find of the port so far, and the only one that needs no out-of-range input.**
 `delete` is `SparseSet`'s swap-with-last copied verbatim into a structure that has a third
@@ -165,7 +165,7 @@ three iterators), it just never builds a map big enough for its own `delete` to 
 every deletion it performs is a no-op by construction." Also the sharpest possible answer to
 "why differential-fuzz a library with 525 passing tests".*
 
-### B-12 — `SparseQueueSet.dequeue`'s absence sentinel does not fit its own array
+### BUG-SPARSE-QUEUE-SET-1 — `SparseQueueSet.dequeue`'s absence sentinel does not fit its own array
 `status: VERIFIED against Node 24.18.1` · `mnemonist sparse-queue-set.js`
 `dequeue` marks a member absent by writing the capacity, as a value no live slot can hold:
 ```js
@@ -188,7 +188,7 @@ of two where `getPointerArray` switches, and 2³² is unreachable.
 it and refuses to re-admit the member. Reproduced, not fixed — `try_set` narrows, so the port gets
 it for free.
 
-### B-13 — `SparseQueueSet.enqueue` never checks whether the ring is full
+### BUG-SPARSE-QUEUE-SET-2 — `SparseQueueSet.enqueue` never checks whether the ring is full
 `status: VERIFIED against Node 24.18.1` · `mnemonist sparse-queue-set.js`
 Nothing bounds `size` by `capacity`. In range that is unreachable — a queue holding every member of
 `0..capacity` rejects any further enqueue as a duplicate — but ONE out-of-range member is enough,
@@ -203,19 +203,19 @@ q.has(0)                 // false
 [...q]                   // [100, 1, 2, 3, 100]  — five members from a four-slot ring
 ```
 The out-of-range write lands on a **live slot** rather than off the end, which is what makes this
-different from B-8: `SparseSet.add(300)` corrupts a slot nobody was using, `enqueue(100)` evicts a
+different from BUG-SPARSE-SET-1: `SparseSet.add(300)` corrupts a slot nobody was using, `enqueue(100)` evicts a
 member that was legitimately queued.
 
-### B-14 — `SparseQueueSet` with `capacity === 0` divides by zero
+### BUG-SPARSE-QUEUE-SET-3 — `SparseQueueSet` with `capacity === 0` divides by zero
 `status: VERIFIED against Node 24.18.1` · `mnemonist sparse-queue-set.js`
 `(this.start + this.size) % this.capacity` is `NaN`, and `dense[NaN] = member` is a string-keyed
 expando rather than an element store, so both writes vanish while `size` still increments. Then:
 * `Array.from(q)` is `[undefined]` after one `enqueue` — DESIGN.md §3.7's shrink window, reached in
   **two calls**, on a different module from `sparse-set` and by a different route;
-* `dequeue()` returns `undefined` and sets `sparse.undefined = 0`, the B-10 expando again;
+* `dequeue()` returns `undefined` and sets `sparse.undefined = 0`, the BUG-SPARSE-SET-3 expando again;
 * and `start` climbs **without bound**, because the wrap check is `start === capacity`, i.e.
   `1 === 0`, which is never true. Every other structure in this family bounds its indices.
-### B-30 — `forEach` on a truthy primitive dies in the `in` operator, not in its own guard
+### BUG-STACK-1 — `forEach` on a truthy primitive dies in the `in` operator, not in its own guard
 `status: VERIFIED against Node 24.18.1` · `obliterator v2.0.4/2.0.5 foreach.js`
 A truthy primitive — a number, a boolean, a symbol, a bigint — survives `if (!iterable) throw`,
 is not an indexed sequence, and has no `.forEach`. It then reaches
@@ -237,14 +237,14 @@ number gets a message that reads like a bug in obliterator's internals.
 
 **Related, same file, same dispatch:** `forEach(Object.create(null), cb)` throws
 `TypeError: iterable.toString is not a function`, because branch 1 calls `toString()` unguarded
-on an arbitrary value (that is B-5, with a second symptom). Both are reproduced verbatim by the
+on an arbitrary value (that is DIV-PROJ-7, with a second symptom). Both are reproduced verbatim by the
 port and pinned in `tests/boundary/foreach.js`.
 
 **Severity: low, but it is a genuine gap in a guard that exists.** Two lines would close it
 (`typeof iterable !== 'object' && typeof iterable !== 'function'` before the `in`), and a
-one-line doc note would close it as documentation. Worth filing alongside B-4, which is the same
+one-line doc note would close it as documentation. Worth filing alongside DIV-PROJ-5, which is the same
 guard's other blind spot.
-### B-40 — `DefaultMap.get` tests the VALUE, not the key, and `size` then drifts without bound
+### BUG-DEFAULT-MAP-1 — `DefaultMap.get` tests the VALUE, not the key, and `size` then drifts without bound
 `status: VERIFIED against Node 24.18.1` · `mnemonist default-map.js`
 ```js
 DefaultMap.prototype.get = function(key) {
@@ -276,17 +276,17 @@ assertions green. Confirmed as gate-9 falsification sabotage A: the original sui
 7 passing while the differential fuzzer caught it in 136 cases (0.1 s) and shrank it to two
 operations. Full write-up in `docs/modules/default-map.md`.
 
-*Lesson: the same one B-10 taught, from the other side. B-10 was found by reading statement by
-statement; B-40 is a case where reading for intent gives you a **cleaner** program than upstream's,
+*Lesson: the same one BUG-SPARSE-SET-3 taught, from the other side. BUG-SPARSE-SET-3 was found by reading statement by
+statement; BUG-DEFAULT-MAP-1 is a case where reading for intent gives you a **cleaner** program than upstream's,
 and the original tests cannot tell the difference.*
 
-### B-6 — `Stack.values()` captures `items.length`, not `this.size`
+### DIV-PROJ-9 — `Stack.values()` captures `items.length`, not `this.size`
 `status: VERIFIED against Node 24.18.1, by direct execution — DEMOTED, not filed. Stack backs storage with a genuine unbounded Array, and push/pop mutate items and size in lockstep on every call; there is no code path in stack.js that can make items.length !== this.size. Real in the source, unreachable in behaviour. Not in the Bug Catcher doc.` · `mnemonist stack.js`
 Other structures capture `this.size`. These coincide for `Stack` today; the inconsistency is latent
 rather than active.
 **Probably not a bug** — log it, don't file it.
 
-### B-15 — `HashedArrayTree.pop` reads the last BLOCK, not the popped index's block
+### BUG-HASHED-ARRAY-TREE-1 — `HashedArrayTree.pop` reads the last BLOCK, not the popped index's block
 `status: VERIFIED against Node 24.18.1` · `mnemonist hashed-array-tree.js`
 ```js
 var lastBlock = this.blocks[this.blocks.length - 1];   // the LAST block
@@ -302,7 +302,7 @@ value is wrong and nothing downstream notices. A shrinking `resize` reaches it w
 all, because `resize` never deallocates: push `7,8,9,10`, `resize(1)`, `pop()` gives `9`.
 **Strong candidate** — a data structure returning the wrong element from `pop`.
 
-### B-16 — `HashedArrayTree`'s bounds guard is `length < index`, admitting `index === length`
+### BUG-HASHED-ARRAY-TREE-2 — `HashedArrayTree`'s bounds guard is `length < index`, admitting `index === length`
 `status: VERIFIED against Node 24.18.1` · `mnemonist hashed-array-tree.js`
 The same `if (this.length < index)` guards `set` and `get`, and the strict `<` lets one-past-the-end
 through. Three different outcomes depending on where `length` sits:
@@ -313,7 +313,7 @@ through. Three different outcomes depending on where `length` sits:
 * when the admitted index is also `capacity`, `blocks[capacity >> blockMask]` is `undefined` and
   upstream raises `TypeError: Cannot set properties of undefined (setting '0')`.
 
-### B-17 — `BitSet`/`BitVector.reset` omits the `>>> 0` that `set` and `flip` apply, so `size` drifts and can go NEGATIVE
+### BUG-BIT-SET-1 — `BitSet`/`BitVector.reset` omits the `>>> 0` that `set` and `flip` apply, so `size` drifts and can go NEGATIVE
 `status: VERIFIED against Node 24.18.1` · `mnemonist bit-set.js` + `bit-vector.js` (copy-pasted)
 `size` is never a popcount; it is maintained by comparing the word before and after each write,
 which only works if both readings are unsigned. `set` and `flip` say so explicitly:
@@ -336,7 +336,7 @@ Three no-op resets give `size === -2`. **Strongest of this batch**: it is a one-
 two correct call sites are three lines away, and the consequence propagates into `rank` and
 `select`, both of which bail on `size === 0`.
 
-### B-18 — `BitSet`/`BitVector.select` does not advance its position across skipped words
+### BUG-BIT-SET-2 — `BitSet`/`BitVector.select` does not advance its position across skipped words
 `status: VERIFIED against Node 24.18.1` · `mnemonist bit-set.js` + `bit-vector.js` (copy-pasted)
 ```js
 for (var i = 0; i < l; i++) {
@@ -350,7 +350,7 @@ for (var i = 0; i < l; i++) {
 a `BitSet(96)`, `select(1) === 3` (right, nothing skipped) and `select(2) === 38` (wrong by 32).
 Invisible upstream because both `select` tests use a length of 11 — a single word.
 
-### B-19 — `bitwise.msb32` returns 0 for every input whose bit 31 is set
+### BUG-UTILS-BITWISE-1 — `bitwise.msb32` returns 0 for every input whose bit 31 is set
 `status: VERIFIED against Node 24.18.1` · `mnemonist utils/bitwise.js`
 `x |= (x >> 1)` is an **arithmetic** shift, so an input with the top bit set smears to `-1` at the
 first step, and the final `x & ~(x >> 1)` is then `-1 & ~(-1)`, which is `-1 & 0`, which is `0`.
@@ -359,7 +359,7 @@ most obvious: `msb32(0xFFFFFFFF) === 0`, `msb32(2**31) === 0`, `msb32(-1) === 0`
 everywhere below the sign bit, which is why nothing has noticed. `msb8` has the same shape but the
 smear stops before bit 31, so it only misfires on input that is not a byte (`msb8(256) === 256`).
 
-### B-20 — `bitwise.criticalBit32Mask`'s trailing `& 0xffffffff` undoes its own `>>> 0`
+### BUG-UTILS-BITWISE-2 — `bitwise.criticalBit32Mask`'s trailing `& 0xffffffff` undoes its own `>>> 0`
 `status: VERIFIED against Node 24.18.1` · `mnemonist utils/bitwise.js`
 ```js
 exports.criticalBit32Mask = function (a, b) {
@@ -372,7 +372,7 @@ signed 32-bit — `0xffffffff` is `-1` there — so the mask is an identity that
 `criticalBit8Mask` ends in `& 0xff` and is correct, which makes the pair a nice illustration of the
 same idiom being right at one width and wrong at another. **Low severity** — file with the others.
 
-### B-21 — `BitVector.pop` never decrements `size` and `push(0)` never clears the slot
+### BUG-BIT-VECTOR-1 — `BitVector.pop` never decrements `size` and `push(0)` never clears the slot
 `status: VERIFIED against Node 24.18.1` · `mnemonist bit-vector.js`
 Three defects in six lines. `push(0)` returns `++this.length` without storing anything, so a slot a
 `pop` released keeps its stale `1`; `push(1)` does `this.size++` unconditionally, so a re-push over
@@ -387,7 +387,7 @@ v.get(0)                // 1, not 0     <-- the test asserts get(1) instead
 v.push(1);              // size 3, with two bits actually set
 ```
 
-### B-22 — `length % 32 || 32` treats a length of 0 as a full final word
+### BUG-BIT-VECTOR-2 — `length % 32 || 32` treats a length of 0 as a full final word
 `status: VERIFIED against Node 24.18.1` · `mnemonist bit-set.js` + `bit-vector.js`
 Both iteration paths size the last word as `length % 32 || 32`. The `|| 32` is there for a length
 that fills its last word exactly, and `0 % 32` is also falsy, so a length of **zero** over a
@@ -395,7 +395,7 @@ non-empty array yields 32 bits. `BitSet` cannot reach it — its array is empty 
 but a `BitVector` can, because capacity outlives length: `new BitVector(); v.grow();` then `forEach`
 calls back **32 times** on a vector of length 0.
 
-### B-23 — `BitSet.set` accepts an index past `length` but inside the last word, and then nothing can see it
+### BUG-BIT-SET-3 — `BitSet.set` accepts an index past `length` but inside the last word, and then nothing can see it
 `status: VERIFIED against Node 24.18.1` · `mnemonist bit-set.js` + `bit-vector.js`
 `new BitSet(10)` allocates one 32-bit word, and `set(20)` lands in it: `size === 1`, `array` is
 `[1048576]`, while `rank(10) === 0`, `select(1) === undefined` and iteration yields ten zeros. So
@@ -403,9 +403,9 @@ calls back **32 times** on a vector of length 0.
 `SparseSet` out-of-range family — **and it is worth recording that the family does NOT otherwise
 recur**: `set`/`reset`/`flip` past the *array* are inert no-ops and `get` is `0`, because a
 `BitSet`'s counter is derived from a before/after comparison that an `undefined` read makes false,
-where `SparseSet` increments its counter unconditionally after a dropped store (B-8).
+where `SparseSet` increments its counter unconditionally after a dropped store (BUG-SPARSE-SET-1).
 
-### B-95 — `binary-search.lowerBoundIndices` defaults `hi` from the wrong array
+### BUG-UTILS-BINARY-SEARCH-1 — `binary-search.lowerBoundIndices` defaults `hi` from the wrong array
 `status: VERIFIED against Node 24.18.1` · `mnemonist utils/binary-search.js`
 Every other reference in the function is to `indices`; the `hi` fallback is `array.length`. When
 `indices` is shorter than `array` — the normal shape for a partial argsort, which is what an index
@@ -423,7 +423,7 @@ Latent in the shipped library: `vp-tree.js`, the only caller, always passes an `
 length as `array`. Reachable from the public API, since `utils/` is `require`-able. Reproduced;
 see `docs/modules/utils-binary-search.md`.
 
-### B-96 — `binary-search.search` with an out-of-range `hi` reports a match at a hole
+### BUG-UTILS-BINARY-SEARCH-2 — `binary-search.search` with an out-of-range `hi` reports a match at a hole
 `status: VERIFIED against Node 24.18.1` · `mnemonist utils/binary-search.js`
 `undefined` loses **both** comparisons, so `current > value` and `current < value` are each false
 and the `else` arm — which means "equal" — returns the midpoint.
@@ -438,7 +438,7 @@ directions, `lowerBound(...)` walking right to `100` and `upperBound(...)` left 
 no single "undefined sorts high" rule to reason from — each call site has to be checked. The same
 `undefined`-loses-both rule makes `search([NaN, NaN, NaN], 1)` return `1`. Reproduced.
 
-### B-92 — `hash-tables.linearProbing.get`/`has`/`set` loop forever on a zero-length table
+### BUG-UTILS-HASH-TABLES-1 — `hash-tables.linearProbing.get`/`has`/`set` loop forever on a zero-length table
 `status: VERIFIED against Node 24.18.1` · `mnemonist utils/hash-tables.js`
 `i %= n` with `n === 0` is `NaN`. `keys[NaN]` is `undefined`, which is neither the key nor `0`, so
 neither exit fires; and the "full turn" guard `i === j` can never be true, because `NaN !== NaN`.
@@ -453,9 +453,9 @@ $ echo $?
 ```
 
 NOT reproduced — hanging a `cargo test` or a fuzz campaign is not a behaviour worth porting. The
-port guards all three entry points; see D-45 in `docs/modules/utils-hash-tables.md`.
+port guards all three entry points; see DIV-STACK-7 in `docs/modules/utils-hash-tables.md`.
 
-### B-94 — `hash-tables`: the key `0` occupies a slot that still reads as empty
+### BUG-UTILS-HASH-TABLES-2 — `hash-tables`: the key `0` occupies a slot that still reads as empty
 `status: VERIFIED against Node 24.18.1` · `mnemonist utils/hash-tables.js`
 `0` is the empty sentinel *and* an ordinary `Uint32Array` value. The sequence is subtler than "key
 0 cannot be stored":
@@ -475,7 +475,7 @@ lp.get(h, keys, values, 0);        // 0  -- the 42 is gone, silently
 So the entry is readable right up until something collides with it, then vanishes with no error.
 Reproduced exactly, including the readable-until-it-isn't part.
 
-### B-90 — `SuffixArray`'s radix sort silently narrows to 8 bits
+### BUG-SUFFIX-ARRAY-1 — `SuffixArray`'s radix sort silently narrows to 8 bits
 `status: VERIFIED against Node 24.18.1` · `mnemonist suffix-array.js`
 `sort()` picks its radix width from `j = Math.max(string[array[i] + offset], j)`, and that index runs
 past the padded sequence for `offset` 1 and 2 — `convert()` pads with `length % 3` zeros, which is
@@ -499,7 +499,7 @@ U+0100 whose low byte collides with the `0` padding. Measured: **81% wrong** ove
 inputs of length 1..30 drawn from `{'A', 'Ł'}` at `length % 3 == 0`. Pure ASCII is unaffected.
 Reproduced; see `docs/modules/suffix-array.md`.
 
-### B-91 — `SuffixArray` loses the DC3 sentinel when `length % 3 === 1`
+### BUG-SUFFIX-ARRAY-2 — `SuffixArray` loses the DC3 sentinel when `length % 3 === 1`
 `status: VERIFIED against Node 24.18.1` · `mnemonist suffix-array.js`
 The reduced string DC3 recurses on is the ≡1 ranks concatenated with the ≡2 ranks, which is only
 sound if the first group ends in a symbol nothing else can equal. `al = (2 * l / 3) | 0` omits the
@@ -524,7 +524,7 @@ suite is one repeated trigram away from having caught this.
 Distinct from the module's own `it.skip('should work with int values (issue #196)')`, which is about
 the token-case sentinel and needs token input; both of these fire on plain strings. Reproduced.
 
-### B-93 — `murmurhash3`'s `sum32` is not a 32-bit adder, and a swapped constant hides it
+### BUG-BLOOM-FILTER-1 — `murmurhash3`'s `sum32` is not a 32-bit adder, and a swapped constant hides it
 `status: VERIFIED against Node 24.18.1` · `mnemonist utils/murmurhash3.js`
 ```js
 function sum32(a, b) {
@@ -548,7 +548,7 @@ Demonstrated end to end through the original suite as a control on gate 6: repla
 `sum32(hash, N)` with `hash + 0xe6546b64` leaves all six `test/bloom-filter.js` cases green, while
 replacing it with `hash + N` turns two of them red. Reproduced, with both halves pinned by tests.
 
-### B-97 — `BloomFilter` with zero hash functions answers `true` to everything
+### BUG-BLOOM-FILTER-2 — `BloomFilter` with zero hash functions answers `true` to everything
 `status: VERIFIED against Node 24.18.1` · `mnemonist bloom-filter.js`
 `hashFunctions = (length * 8 / capacity * Math.LN2) | 0`, unchecked. When it truncates to `0`, `add`
 writes no bits and `test` returns `true` **vacuously** — the loop it would have returned `false`
@@ -566,7 +566,7 @@ error message beside it saying "positive **integer**". `{capacity: 10, errorRate
 same state with a **non-empty** `data`, so this is not merely "an empty filter": the bit array
 exists, is all zeros, and every query says yes. Reproduced.
 
-### B-98 — every non-string item hashes identically
+### BUG-BLOOM-FILTER-3 — every non-string item hashes identically
 `status: VERIFIED against Node 24.18.1` · `mnemonist bloom-filter.js`
 `stringToByteArray` does `new Uint16Array(string.length)`. On a number, `.length` is `undefined`,
 the typed array is **empty**, and the loop never runs — so the item hashes as the empty sequence,
@@ -586,7 +586,7 @@ coercion policy: `add(null)`/`add(undefined)` throw a `TypeError` from the prope
 `add(['a'])` throws `string.charCodeAt is not a function`, and `add(new String('hello'))` works and
 equals `add('hello')`. Reproduced, all four cases.
 
-### B-99 — an `errorRate` above 1 is a raw `RangeError`, but only for a large enough capacity
+### BUG-BLOOM-FILTER-4 — an `errorRate` above 1 is a raw `RangeError`, but only for a large enough capacity
 `status: VERIFIED against Node 24.18.1` · `mnemonist bloom-filter.js`
 `Math.log` of anything above 1 is positive, so `bits` goes negative and the allocation throws:
 
@@ -600,14 +600,14 @@ BloomFilter { capacity: 5, errorRate: 2, hashFunctions: 0, data: Uint8Array(0) [
 ```
 
 The third case is the interesting one: `(-7.2 / 8) | 0` truncates to `0`, so the *same* invalid
-option gives a silent B-97 always-true filter instead of an error, and which of the two you get
+option gives a silent BUG-BLOOM-FILTER-2 always-true filter instead of an error, and which of the two you get
 depends on the capacity. Neither is the module's own error message, and `errorRate` is the one
 option upstream believes it validates. Reproduced, including the split.
 
 > Differential fuzzing has not run yet. Expect the best candidates to come from there, not from
 > reading. Add them here with the minimised repro attached.
 
-### B-100 — `StaticIntervalTree` crashes on zero intervals with an unrelated `TypeError`
+### BUG-STATIC-INTERVAL-TREE-1 — `StaticIntervalTree` crashes on zero intervals with an unrelated `TypeError`
 `status: VERIFIED against Node 24.18.1` · `mnemonist static-interval-tree.js`
 `buildBST` is called unconditionally from the constructor, even when `length === 0`. With
 `high = length - 1 = -1`, `mid = (0 + (-1 - 0) / 2) | 0` truncates to `0`, so
@@ -628,7 +628,7 @@ empty input. Reproduced by [`Error::EmptyIntervals`] in
 boundary would be worse than the JS exception it stands in for — napi does not `catch_unwind` a
 sync call). See `docs/modules/static-interval-tree.md`.
 
-### B-101 — `Vector.get`/`set` admit `index === length`, one past the last element
+### BUG-VECTOR-1 — `Vector.get`/`set` admit `index === length`, one past the last element
 `status: VERIFIED against Node 24.18.1` · `mnemonist vector.js`
 Both bounds guards are `<`, not `<=`:
 
@@ -661,7 +661,7 @@ exact boundary is never probed. Reproduced by [`Vector::get`]/[`Vector::set`] in
 `crates/mnemonist-core/src/structures/vector.rs`, which compare against `length` with the same
 `<` upstream uses; see `docs/modules/vector.md`.
 
-### B-102 — a `Vector`'s growth carries a popped slot's stale data forward, and B-101 keeps it reachable
+### BUG-VECTOR-2 — a `Vector`'s growth carries a popped slot's stale data forward, and BUG-VECTOR-1 keeps it reachable
 `status: VERIFIED against Node 24.18.1` · `mnemonist vector.js`
 `pop()` never clears the slot it releases — `return this.array[--this.length];` is a read, not a
 write — so the region `length..capacity` can hold stale data from an earlier, larger `length`.
@@ -672,7 +672,7 @@ if (typed.isTypedArray(this.array))
   this.array.set(oldArray, 0);   // the WHOLE old array, capacity included
 ```
 
-So a value a caller has already popped survives a subsequent grow at the same position, and B-101's
+So a value a caller has already popped survives a subsequent grow at the same position, and BUG-VECTOR-1's
 `index === length` admission keeps it reachable afterwards:
 
 ```js
@@ -683,7 +683,7 @@ v.reallocate(4);        // array [9, 8, 0, 0] -- the 8 survived the copy
 v.get(1) === 8          // length(1) < index(1) is false: reads the stale 8
 ```
 
-Neither defect alone reaches this state: without B-101's admission the stale slot would be
+Neither defect alone reaches this state: without BUG-VECTOR-1's admission the stale slot would be
 unreadable, and without the whole-capacity copy a grow would zero it. `test/vector.js`'s own
 `pop`/`push`/`reallocate` tests never probe the boundary slot after a pop-then-grow, so the
 compounding is untested upstream. Reproduced by `Storage::grown` in
@@ -697,7 +697,7 @@ All ten below were found by reading the two files statement by statement and con
 against Node 24.18.1 (`bench/upstream/`, the pinned source). Every one is pinned by an assertion in
 `tests/boundary/heap.js`, which passes unchanged when re-pointed at upstream.
 
-### B-70 — a comparator that throws leaves `size` one behind `items.length`, permanently
+### BUG-HEAP-1 — a comparator that throws leaves `size` one behind `items.length`, permanently
 
 `status: verified against Node 24.18.1` · `heap.js` · found by reading, pinned by
 `tests/boundary/heap.js`
@@ -728,7 +728,7 @@ The two quantities disagree forever after. Every later `pop` reports one fewer t
 hold. Reproduced exactly; a port that pushed only after a successful sift would be *more* correct
 and therefore wrong.
 
-### B-71 — `nsmallest`/`nlargest` with `n === 1` answer with the `Infinity` sentinel itself
+### BUG-HEAP-2 — `nsmallest`/`nlargest` with `n === 1` answer with the `Infinity` sentinel itself
 
 `status: verified against Node 24.18.1` · `heap.js`
 
@@ -747,7 +747,7 @@ The typed-array case is the sharpest: `new iterable.constructor(1)` then `result
 stores `0`, so an empty source answers with a plausible-looking element. Only `n === 1` is
 affected, because every other `n` goes through the bounded-heap path, which has no sentinel.
 
-### B-72 — the same sentinel is a real value, so an `Infinity` element resets it
+### BUG-HEAP-3 — the same sentinel is a real value, so an `Infinity` element resets it
 
 `status: verified against Node 24.18.1` · `heap.js`
 
@@ -764,10 +764,10 @@ Heap.nlargest(descending, 1, [-Infinity, -5])  // [-5]       — the mirror
 
 Two adjacent `n` values give contradictory answers on the same input, which is the tell. Harmless
 under the default comparator, where `Infinity` really is the largest thing; visible the moment a
-custom comparator disagrees with `<`. Note the interaction with B-71: they are the same line, and
+custom comparator disagrees with `<`. Note the interaction with BUG-HEAP-2: they are the same line, and
 the empty-source case is the degenerate instance of this one.
 
-### B-73 — `FixedReverseHeap`'s capacity guard is `&&` where `||` was meant
+### BUG-FIXED-REVERSE-HEAP-1 — `FixedReverseHeap`'s capacity guard is `&&` where `||` was meant
 
 `status: verified against Node 24.18.1` · `fixed-reverse-heap.js`
 
@@ -786,7 +786,7 @@ Two second-order notes. `new FixedReverseHeap(Array, -1)` *does* throw, but with
 either guard. And the message the guard would have produced never appears for any negative number
 at all.
 
-### B-74 — `FixedReverseHeap#clear` leaves `items`, so `peek()` answers a discarded item
+### BUG-FIXED-REVERSE-HEAP-2 — `FixedReverseHeap#clear` leaves `items`, so `peek()` answers a discarded item
 
 `status: verified against Node 24.18.1` · `fixed-reverse-heap.js`
 
@@ -810,7 +810,7 @@ heap.consume() // []   ← and consume, which slices to size, agrees it is gone
 `consume` and `toArray` both slice to `size`, so the stale contents are invisible to them, which is
 why the bug is latent. Upstream's own test calls `clear()` and then only ever `push`es again.
 
-### B-75 — `MaxHeap.prototype = Heap.prototype`, so `instanceof` cannot tell them apart
+### BUG-HEAP-4 — `MaxHeap.prototype = Heap.prototype`, so `instanceof` cannot tell them apart
 
 `status: verified against Node 24.18.1` · `heap.js`
 
@@ -833,7 +833,7 @@ A `MaxHeap` also inherits `Heap.prototype.constructor`, so anything reconstructi
 `new x.constructor(...)` silently turns a max heap into a min heap. There is no way to distinguish
 the two at runtime except by behaviour.
 
-### B-76 — nothing stops a comparator from mutating the heap it is comparing
+### BUG-HEAP-5 — nothing stops a comparator from mutating the heap it is comparing
 
 `status: verified against Node 24.18.1` · `heap.js` · not a defect in isolation; recorded because
 it defines the hazard tier T2 exists for
@@ -861,9 +861,9 @@ Upstream has no defence and no error path; whatever the array looks like afterwa
 The reason this is written down as a bug candidate rather than as a curiosity is that it is a
 *porting constraint*: an implementation whose algorithms take `&mut Vec<T>` cannot express (a) or
 (b) at all, and one that models `items` as a `Vec` rather than as a reference answers (c)
-identically to (b) — which is D-41's collapse, one module further on.
+identically to (b) — which is DIV-STACK-3's collapse, one module further on.
 
-### B-77 — `#.consume` zeroes `size` first, so a throwing comparator strands the items
+### BUG-HEAP-6 — `#.consume` zeroes `size` first, so a throwing comparator strands the items
 
 `status: verified against Node 24.18.1` · `heap.js`
 
@@ -883,9 +883,9 @@ heap.size    // 0
 heap.items   // [3, 2]
 ```
 
-Same family as B-70 and the mirror image of it: there the count lags the array, here it leads.
+Same family as BUG-HEAP-1 and the mirror image of it: there the count lags the array, here it leads.
 
-### B-78 — a comparator's return value is coerced, never checked
+### BUG-HEAP-7 — a comparator's return value is coerced, never checked
 
 `status: verified against Node 24.18.1` · `heap.js`
 
@@ -904,7 +904,7 @@ The BigInt case is the interesting one and it is not a rounding error: `ToNumber
 result with `Number()` before comparing would throw where upstream sorts. A comparator returning a
 `Symbol` *does* throw, in both.
 
-### B-79 — a falsy comparator argument takes the default silently
+### BUG-HEAP-8 — a falsy comparator argument takes the default silently
 
 `status: verified against Node 24.18.1` · `heap.js`, `fixed-reverse-heap.js`
 
@@ -932,7 +932,7 @@ raw `n`. `-Infinity + 1` is `-Infinity`, so `i` never advances, `i < l` stays tr
 which is bug-for-bug correct and therefore untestable and unfuzzable.
 
 Found while probing the `n`-validation defect the T2 review turned up, by which point this agent's
-allocated range (B-70..B-79) was fully spent. CLAUDE.md says to say so rather than spill past the
+allocated range (BUG-HEAP-1..BUG-HEAP-8) was fully spent. CLAUDE.md says to say so rather than spill past the
 range, so it is recorded here without an ID.
 
 ### Sixth entry for the confident-green-signal table — the T2 review
@@ -954,7 +954,7 @@ None was reachable by the fuzzer **by construction**: its `VecStore` never calls
 `nsmallest`/`nlargest` are outside the grammar (so 3 cannot). All three were found by a reviewer
 poking the built addon by hand.
 
-*Same lesson as B-31, and it is now twice: passing your own verification is not the same as being
+*Same lesson as PORTBUG-1, and it is now twice: passing your own verification is not the same as being
 correct, and both times the only thing that caught it was a second, independent look. The specific
 generalisation is sharper than "fuzz more" — a differential fuzzer whose oracle-side store cannot
 run user code cannot find a bug that needs user code to run, however many operations it does.*
@@ -1010,7 +1010,7 @@ apart, opposite semantics. A uniform "iterable" abstraction gets exactly one wro
 
 **napi-rs already has the right semantics — measured, not assumed.** Smoke crate, napi 3.6.1,
 Node 24.18.1: `c[Symbol.iterator]() === c` → `true`; first `[...c]` → `[1,2,3]`; second → `[]`;
-`next(); next(); [...c]` → `[3]`. D-06 and half of D-07 need **no custom work**.
+`next(); next(); [...c]` → `[3]`. DIV-STACK-1 and half of DIV-STACK-2 need **no custom work**.
 *Good beat: the FFI layer handed over the exact JS semantics that idiomatic Rust would have broken.*
 
 **Node 26 breaks the test suite before a line of port code exists.** 26.5.1 runs fine standalone,
@@ -1063,7 +1063,7 @@ one-command fix.*
 
 ### H+2 — first real module ported (`StaticDisjointSet`)
 
-**The rank bug has a second-order consequence that nearly bit us.** B-7 leaves non-root ranks
+**The rank bug has a second-order consequence that nearly bit us.** BUG-STATIC-DISJOINT-SET-1 leaves non-root ranks
 permanently zero, so the equal-ranks branch fires on almost every union, so one root's rank climbs
 once per union — far past the `log2(size)` the array was sized for. And `ranks` is *always* a
 `Uint8Array` in practice. So it **wraps**: a 300-element set ends with `ranks[0] == 43`. Node agrees
@@ -1090,11 +1090,11 @@ shell — the reason we moved the session into WSL.*
 
 **The fuzzer found nothing, and that is the interesting result.** 4.23 M operations across two
 seeds, zero divergences. Expected, and worth saying out loud: **a faithful port reproduces
-upstream's bugs, so differential fuzzing structurally cannot find them.** B-7 was found by reading.
+upstream's bugs, so differential fuzzing structurally cannot find them.** BUG-STATIC-DISJOINT-SET-1 was found by reading.
 What the fuzzer is actually for on a bug-for-bug port is the *opposite* direction — catching the
 port drifting away from upstream, **including drifting towards correctness**.
 
-**So the fuzzer was falsified by "fixing" B-7.** Gate 6's lesson applies to the fuzzer itself: one
+**So the fuzzer was falsified by "fixing" BUG-STATIC-DISJOINT-SET-1.** Gate 6's lesson applies to the fuzzer itself: one
 that has never been observed to catch anything is a second green light, not a check. Changing
 `ranks[x]` to `ranks[x_root]` in the core — the single most plausible way a future cleanup breaks
 this port — was caught in **129 cases, 0.3 s**, and proptest shrank a 600-op program to three ops:
@@ -1135,7 +1135,7 @@ headline from 'faster' to 'faster at the median, worse at the tail'."*
 
 **Cost of the persistent oracle, quantified at last:** ~23,600 op/s *including* a full
 `mapping()` + `compile()` comparison after every op. At one `node` spawn per op the 120 s campaign
-would have taken ~33 hours. D-23 paid for itself on the first module.
+would have taken ~33 hours. DIV-PROJ-23 paid for itself on the first module.
 
 **Small trap:** JS bitwise operators produce *signed* 32-bit results, so the xorshift32 twin needs
 `>>> 0` or the two streams part company within a handful of draws — silently producing two
@@ -1155,7 +1155,7 @@ with a confident mechanism attached.
 **The mechanism was wrong, and one number proved it.** If footprint were the cause, resident memory
 should have dropped ~12 MB. `structure_rss_delta_mb` moved **12.8 → 13.0**. Nothing.
 
-**Why.** `ranks` is `vec![0; n]`, and because of the rank bug (B-7) almost every entry is *never
+**Why.** `ranks` is `vec![0; n]`, and because of the rank bug (BUG-STATIC-DISJOINT-SET-1) almost every entry is *never
 written* — only roots are ever bumped. Linux does not fault in untouched zero pages, so the extra
 12 MB was **never resident and never appeared in RSS in the first place**. We reasoned confidently
 about memory that did not exist.
@@ -1256,7 +1256,7 @@ broken" now has a companion, "and it took the semantics `&T` would have broken a
 
 ### The pattern these three share
 
-`sparse-map`'s B-11 is a plain correctness bug: `delete` moves the last *member* into the hole but
+`sparse-map`'s BUG-SPARSE-MAP-1 is a plain correctness bug: `delete` moves the last *member* into the hole but
 not the last *value*, so `set(3,'a') set(4,'b') set(5,'c'); delete(3)` leaves `get(5) === 'a'`.
 In-range input, no edge case, straightforwardly wrong.
 
@@ -1316,7 +1316,7 @@ verifying.*
 Pick after the event based on what the fuzzer actually found. **(2) and (5) are strong regardless
 of outcome; (1) depends on results.**
 
-### B-31 (OUR BUG, not upstream's) — `&self` on a `Freeze` type is `noalias readonly`, and LLVM used it
+### PORTBUG-1 (OUR BUG, not upstream's) — `&self` on a `Freeze` type is `noalias readonly`, and LLVM used it
 
 `status: VERIFIED, sparse-set DESCOPED pending fix` · found by the forEach agent probing its own bridge
 
@@ -1344,7 +1344,7 @@ immune. Check this count before scoping any future module.
 #### Why 2.94M fuzz ops missed it — a grammar gap, not bad luck
 
 `sparse-set`'s grammar had `$iter`/`$next`/`$spread` interleaved with mutation, which is exactly
-D-21's requirement, **but no `forEach` op at all** — and certainly not one whose callback mutates.
+DIV-PROJ-21's requirement, **but no `forEach` op at all** — and certainly not one whose callback mutates.
 The fuzzer could not express the program that breaks it.
 
 *The lesson generalises past this bug: an op alphabet that omits a method omits every bug reachable
@@ -1364,7 +1364,7 @@ correct, and the only thing that caught this was a second, independent look.*
 
 ---
 
-### B-31 — RESOLVED 2026-08-01, across every exposed bridge
+### PORTBUG-1 — RESOLVED 2026-08-01, across every exposed bridge
 
 `status: FIXED` · repro flipped from `*** DIVERGENCE ***` to `MATCH`
 
@@ -1428,7 +1428,7 @@ Every module whose bridge takes a callback now has a `$forEach(method, rule, lim
 both the callback argument sequence and the state left behind. Falsified: freezing the live
 `this.size` bound in the Rust `sparse-set` walk turns a campaign red in 0.7s.
 
-**It does not, and cannot, catch B-31.** `difffuzz` compares `mnemonist-core` against upstream JS;
+**It does not, and cannot, catch PORTBUG-1.** `difffuzz` compares `mnemonist-core` against upstream JS;
 the napi bridge is not in that loop. What the op does catch is the *loop shape*, where upstream is
 inconsistent on purpose — live `this.size` in `sparse-set`/`sparse-map`, a frozen bound in
 `sparse-queue-set`/`stack`/`queue`, a snapshotted word in `bit-set`/`bit-vector`, and a live `Map`
@@ -1436,7 +1436,7 @@ walk in `default-map`. Seven modules, four answers, and no program the old alpha
 told any of them apart.
 
 *So the honest version of the lesson is one step further than the entry above: the grammar gap was
-real and worth closing, but the layer gap was the one that let B-31 through. A differential fuzzer
+real and worth closing, but the layer gap was the one that let PORTBUG-1 through. A differential fuzzer
 that skips a layer cannot find bugs in it, however complete its alphabet — and the alphabet being
 incomplete made that easy to not notice.*
 
@@ -1449,13 +1449,13 @@ upstream's `sparse[NaN]` comparison falls through and increments `size`, and the
 because core takes a `usize`. A fuzzer bug, not a port bug; fixed by separating selection from
 arithmetic, seed kept, log line commented out with its reason rather than deleted.
 
-### The B-31 post-mortem corrects my own diagnosis: it was a LAYER gap, not a grammar gap
+### The PORTBUG-1 post-mortem corrects my own diagnosis: it was a LAYER gap, not a grammar gap
 
-I recorded — and put in a commit message — that 2.94M fuzz operations missed B-31 because
+I recorded — and put in a commit message — that 2.94M fuzz operations missed PORTBUG-1 because
 `sparse-set`'s alphabet had no `forEach` op. True, and not the reason.
 
 **`difffuzz` compares `mnemonist-core` against upstream JS. The napi bridge is not in that loop
-at all.** B-31 lives entirely in the bridge. So adding `$forEach` to the grammar — which we did,
+at all.** PORTBUG-1 lives entirely in the bridge. So adding `$forEach` to the grammar — which we did,
 across all eight callback-taking modules — **still cannot catch it.** A grammar gap is a hole in
 what you ask; a layer gap is a hole in what you are asking *about*, and no amount of asking
 harder closes it.
@@ -1466,7 +1466,7 @@ bounds in `sparse-queue-set`/`stack`/`queue`, snapshotted words in `bit-set`/`bi
 `Map` walk in `default-map`. **Seven modules, four different answers, and no program in the old
 alphabet could tell them apart.**
 
-B-31 needed a different instrument entirely: `tests/boundary/reentrancy.js`, 22 differential specs
+PORTBUG-1 needed a different instrument entirely: `tests/boundary/reentrancy.js`, 22 differential specs
 run through the *bridge*, of which **8 fail against the pre-fix build**. And it only works against
 a release build — a debug addon passes while wrong, because the hoist is an optimisation. That is
 the argument for fixing the **type** rather than rearranging the loop.
@@ -1479,20 +1479,20 @@ the argument for fixing the **type** rather than rearranging the loop.
   the port, but on the harness: `arg0+1` folded its arithmetic into argument *selection*, so
   `undefined + 1` became `NaN`, slipped the skip, and hit `SparseSet.add(NaN)`. A fuzzer bug
   wearing a divergence's clothes. Seed kept with provenance, log line commented rather than deleted.
-- **I broke my own falsification of the B-31 fix.** I stashed the fix, rebuilt, copied the
+- **I broke my own falsification of the PORTBUG-1 fix.** I stashed the fix, rebuilt, copied the
   artefact to `prefix.node` — and the repro loads `addon.node`. Both runs therefore tested the
   *fixed* addon and both said MATCH, which I nearly reported as confirmation. Redone against the
   file the repro actually reads: pre-fix `[1,2,3,4]` DIVERGENCE, post-fix `[1,2]` MATCH.
 
 *Seven instances now, and the through-line has sharpened: it is never "the check was wrong", it is
 always "the check was answering a different question than the one I thought I asked".*
-## Wave 1 — fixed-capacity modules (B-60..B-69 range)
+## Wave 1 — fixed-capacity modules (BUG-UTILS-ITERABLES-2..DIV-PROJ-37 range)
 
 Appended at the end of the file rather than into the bug-candidate section above: several agents
 edit this file at once and only an addition at the very end can never land inside another one's
 hunk.
 
-### B-60 — `X.from(iterable, ...)` calls `iterables.forEach`, which `utils/iterables.js` never exported
+### BUG-UTILS-ITERABLES-2 — `X.from(iterable, ...)` calls `iterables.forEach`, which `utils/iterables.js` never exported
 
 `status: verified against Node 24.18.1` · `mnemonist fixed-stack.js`, `fixed-deque.js`,
 `circular-buffer.js`
@@ -1520,7 +1520,7 @@ siblings already `require('obliterator/foreach')`.
 **Strong candidate.** Concrete, reproducible in three lines, obviously unintended, and it makes a
 documented API (`X.from(anyIterable)`) not work at all.
 
-### B-61 — `FixedStack.prototype.forEach` walks `items.length`, not `this.size`
+### BUG-FIXED-STACK-1 — `FixedStack.prototype.forEach` walks `items.length`, not `this.size`
 
 `status: verified against Node 24.18.1` · `mnemonist fixed-stack.js`
 
@@ -1554,7 +1554,7 @@ the cleanest available demonstration of why gate 6 insists the sabotage be chose
 assertion it must break: the sabotage that matters most here is precisely the one no assertion
 covers.
 
-### B-62 — `FixedDeque.prototype.get` is bounded by the CAPACITY, and has no lower bound
+### BUG-CIRCULAR-BUFFER-1 — `FixedDeque.prototype.get` is bounded by the CAPACITY, and has no lower bound
 
 `status: verified against Node 24.18.1` · `mnemonist fixed-deque.js`, and therefore
 `circular-buffer.js`
@@ -1592,19 +1592,19 @@ object. One bug, two classes.
 `test/circular-buffer.js` — are on a *full* capacity-3 deque with `start === 0`, which is the single
 shape in which "bounded by the capacity" and "bounded by the size" are the same statement.
 
-There is a third form that the port deliberately does **not** reproduce (D-65): a non-numeric index
+There is a third form that the port deliberately does **not** reproduce (DIV-CIRCULAR-BUFFER-1): a non-numeric index
 reaches string concatenation, so `this.start + "1"` is `"21"` and the next comparison coerces it
 back to a number. On a deque with capacity > 21, `get("1")` can therefore return the element at
 physical slot 21.
 
-**Also worth filing alongside B-60: `CircularBuffer.from` bypasses the overwriting this class exists
+**Also worth filing alongside BUG-UTILS-ITERABLES-2: `CircularBuffer.from` bypasses the overwriting this class exists
 for.** The `from` static is the same fourteen lines in all three modules, so its array-like branch
 copies by index and assigns `size` rather than pushing — leaving `size > capacity` on the one class
 whose entire purpose is to prevent that. `CircularBuffer.from([1,2,3], Array, 2)` gives `size 3`,
-`items [1,2,3]` and `toArray() [1, 2, 1]`. Verified on Node 24.18.1. Kept under B-60's umbrella
+`items [1,2,3]` and `toArray() [1, 2, 1]`. Verified on Node 24.18.1. Kept under BUG-UTILS-ITERABLES-2's umbrella
 rather than given its own ID: the shared `from` is one piece of code with two problems.
 
-### B-63 — `X.from` assigns `size` from `iterable.length` without checking it is a number
+### BUG-FIXED-STACK-2 — `X.from` assigns `size` from `iterable.length` without checking it is a number
 
 `status: verified against Node 24.18.1` · `mnemonist fixed-stack.js`, `fixed-deque.js`,
 `circular-buffer.js`
@@ -1637,19 +1637,19 @@ A `DataView` is the only reachable input — every value `Array.isArray` accepts
 
 **Found by probing the port against upstream rather than by reading the file**, which makes it the
 one bug in this wave that the differential method found rather than confirmed. It is also the one
-behaviour in the wave the port does **not** reproduce (D-66): a `usize` cannot hold `undefined`, and
+behaviour in the wave the port does **not** reproduce (DIV-FIXED-STACK-7): a `usize` cannot hold `undefined`, and
 a structure whose `size` is `undefined` is arithmetic on `NaN` from then on.
 
-**Moderate candidate.** Narrower than B-60 and B-61 — a `DataView` is an odd thing to hand a stack
+**Moderate candidate.** Narrower than BUG-UTILS-ITERABLES-2 and BUG-FIXED-STACK-1 — a `DataView` is an odd thing to hand a stack
 — but it is a genuine type confusion inside a predicate whose name says "array like", and the fix
 is one `typeof` check.
-## sort — upstream bug candidates (B-80, B-81)
+## sort — upstream bug candidates (BUG-SORT-1, BUG-SORT-2)
 
 Both are the same defect wearing different clothes: **shared mutable module state inside a function
 that can be re-entered through a comparison.** Both were found by reading, not by fuzzing, and the
 reason is worth recording — see the note at the end.
 
-### B-80 — `sort/insertion.js` declares its loop counter as a GLOBAL, and re-entry corrupts the sort
+### BUG-SORT-1 — `sort/insertion.js` declares its loop counter as a GLOBAL, and re-entry corrupts the sort
 `status: VERIFIED against Node 24.18.1` · `mnemonist sort/insertion.js`
 
 Both exported functions open with an undeclared assignment:
@@ -1685,7 +1685,7 @@ each other as readily as each corrupts itself. Under `'use strict'` the file wou
 
 **Strong candidate** — a one-word fix (`var i = lo + 1`) for a wrong-answer bug, plus a global leak.
 
-### B-81 — `sort/quick.js`'s partition stack is module state, shared by all four sorts
+### BUG-SORT-2 — `sort/quick.js`'s partition stack is module state, shared by all four sorts
 `status: VERIFIED against Node 24.18.1` · `mnemonist sort/quick.js`
 
 ```js
@@ -1694,7 +1694,7 @@ var LOS = new Float64Array(64),
 ```
 
 Allocated once at module scope and used by `inplaceQuickSort` *and* `inplaceQuickSortIndices`. Here
-`i` **is** a proper local, which makes the failure subtler than B-80's: the outer call's index keeps
+`i` **is** a proper local, which makes the failure subtler than BUG-SORT-1's: the outer call's index keeps
 pointing into a stack the inner call has overwritten, so the outer call resumes partitioning ranges
 that no longer describe its own array. Measured on a 40-element array whose first compared element
 re-enters:
@@ -1708,16 +1708,16 @@ The allocation is presumably deliberate — avoiding two `Float64Array(64)` per 
 not "make them locals" but "make them locals, or reference-count re-entry". Worth reporting as a
 correctness note rather than a style one.
 
-**Strong candidate**, with the same caveat as B-80: both need an element that runs JavaScript during
+**Strong candidate**, with the same caveat as BUG-SORT-1: both need an element that runs JavaScript during
 a comparison, which is legal and which mnemonist's own callers never do.
 
 #### Why the fuzzer could not have found either
 
-`crates/mnemonist-napi/src/sort.rs` accepts numbers and nothing else (D-80), so no user code can run
+`crates/mnemonist-napi/src/sort.rs` accepts numbers and nothing else (DIV-SORT-1), so no user code can run
 during a comparison and the port cannot enter the regime at all. The port has locals where upstream
 has module state, and with numeric elements the two are indistinguishable.
 
-*This is the mirror image of the B-31 lesson.* There, a grammar that omitted a method omitted every
+*This is the mirror image of the PORTBUG-1 lesson.* There, a grammar that omitted a method omitted every
 bug reachable only through it. Here the **bridge's accepted input domain** omits them, one layer
 earlier, and no grammar over that domain could have expressed the program. Both come out the same
 way: a clean campaign is coverage of what the harness can express, and saying which is part of
@@ -1751,7 +1751,7 @@ functions.add(A, new Set([2, 3]));
 Array.from(it);   // upstream [2, 3];  clear-and-rebuild [1, 2, 3]
 ```
 
-*The lesson is the one B-31 taught from the other side: the original suite's assertions define what
+*The lesson is the one PORTBUG-1 taught from the other side: the original suite's assertions define what
 it can catch, and a bridge decision that is invisible to all of them still needs its own test. Here
 the fix was to have core return the trace of `add`/`delete` calls and replay it, so the caller's
 `Set` experiences what upstream's experiences, call for call.*
@@ -1793,12 +1793,12 @@ also masked two further defects that only surfaced once the protocols were recon
 *Write-up beat: the cost of parallelism is not the merge, it is the convergent design you then have
 to reconcile — and the reconciliation is where the interesting bugs were hiding.*
 
-## Wave 2 — bi-map, fuzzy-map, bk-tree (B-120..B-139 range)
+## Wave 2 — bi-map, fuzzy-map, bk-tree (BUG-BI-MAP-1..DIV-PROJ-47 range)
 
 Appended at the end of the file rather than into the bug-candidate section above, for the same
 reason Wave 1 is: only an addition at the very end can never land inside another agent's hunk.
 
-### B-120 — `BiMap.prototype.clear` resets only ONE of its two size counters
+### BUG-BI-MAP-1 — `BiMap.prototype.clear` resets only ONE of its two size counters
 
 `status: verified against Node 24.18.1` · `bi-map.js` · found by differential fuzzing (proptest,
 seed 42), caught twice while fixing the port to match
@@ -1851,7 +1851,7 @@ clean on the current tree (5,000 cases / 38.3s, seed 42, zero divergences).
 
 **Strong candidate**, and a useful cautionary tale for this project's own porting discipline: the
 module doc for `mnemonist_core::structures::bi_map` had already analysed and named this exact bug
-(B-120) in prose before the implementation caught up to it — a reminder that a doc comment
+(BUG-BI-MAP-1) in prose before the implementation caught up to it — a reminder that a doc comment
 describing intended behaviour is not evidence the code behind it does that, only a claim to verify.
 
 ### fuzzy-map's difffuzz spec — a harness bug, not an upstream one
@@ -1877,11 +1877,11 @@ usually visits the whole tree — the closest thing to an observation of `root`'
 has, since core exposes no direct equivalent. 5,000 cases / ~35s at seed 42, zero divergences.
 ## lru-cache family (`lru-cache`, `lru-map`, `lru-cache-with-delete`, `lru-map-with-delete`)
 
-Allocated range B-140..B-159. Full write-ups also live in `docs/modules/lru-cache.md`; this is the
+Allocated range BUG-LRU-CACHE-1..DIV-PROJ-49. Full write-ups also live in `docs/modules/lru-cache.md`; this is the
 capture-log version, filed here because that file's own note said the previous agent died before
 writing one up.
 
-### B-140 — `setpop` silently drops the eviction report when the evicted key is JS-falsy
+### BUG-LRU-CACHE-1 — `setpop` silently drops the eviction report when the evicted key is JS-falsy
 
 `status: VERIFIED against Node 24.18.1` · `lru-cache.js`, `lru-map.js`, and both `-with-delete`
 siblings via prototype copy · found by the differential fuzzer's very first campaign against this
@@ -1917,13 +1917,13 @@ against the now-correctly-buggy behaviour rather than manufacturing a false dive
 that is supposed to be there. Found on the third generated case: the key pool includes four
 JS-falsy raw values out of ten, deliberately, for exactly this reason.
 
-### B-141 — reserved, unused
+### DIV-PROJ-48 — reserved, unused
 
 No second upstream defect surfaced during this unit's reading or its ~6.37M fuzzed operations
-beyond B-140 and B-142 below. Recorded so a future agent extending this range does not assume B-141
+beyond BUG-LRU-CACHE-1 and BUG-LRU-CACHE-2 below. Recorded so a future agent extending this range does not assume DIV-PROJ-48
 was skipped by mistake.
 
-### B-142 — `lru-map.js`'s own `.from` names the wrong module in its error message
+### BUG-LRU-CACHE-2 — `lru-map.js`'s own `.from` names the wrong module in its error message
 
 `status: VERIFIED against Node 24.18.1` · `lru-map.js:241` · found by reading
 
@@ -1983,13 +1983,13 @@ Nothing here was found to be blind.
 
 ## _utils (typed-arrays, binary-search, hash-tables, iterables, merge)
 
-Allocated range B-180..B-199. `typed-arrays`, `binary-search`, `hash-tables` and `iterables` were
+Allocated range BUG-UTILS-1..DIV-PROJ-51. `typed-arrays`, `binary-search`, `hash-tables` and `iterables` were
 already ported by earlier work (as members of this eventual unit — see each one's own module docs);
 this pass ported the missing sibling, `utils/merge.js` (563 LOC), wired the whole require-closure
 through the napi bridge, and ran the unit's first differential-fuzz campaigns. Full write-up in
 `docs/modules/_utils.md`.
 
-### B-180 — the k-way `merge`/`unionUnique` throw a `TypeError` whenever filtering an empty array
+### BUG-UTILS-1 — the k-way `merge`/`unionUnique` throw a `TypeError` whenever filtering an empty array
 ### out leaves three-or-more arrays live
 
 `status: VERIFIED against Node 24.18.1` · `utils/merge.js`, `kWayMergeArrays` and
@@ -2043,7 +2043,7 @@ Not one case in `test/_utils.js`'s own `'should properly merge k arrays.'` /
 two-or-more non-empty ones, so gate 4 cannot reach this. Reproduced in the port as
 `KWayError::StaleLengthMismatch` (`mnemonist_core::utils::merge`), surfaced at the napi boundary as
 the identical thrown message text, rather than as a panic — `mnemonist-core` has no exceptions, so
-this follows the same convention as `hash_tables::TABLE_IS_FULL` (D-44).
+this follows the same convention as `hash_tables::TABLE_IS_FULL` (DIV-STACK-6).
 
 ### Two port defects, not upstream's, both found by differential fuzzing and fixed before logging
 
@@ -2115,7 +2115,7 @@ once and only an addition at the very end can never land inside another one's hu
 - **Our own float decoding manufacturing divergences.** Both `vector` specs opened with 1-ULP
   disagreements indistinguishable from genuine port bugs. `serde_json`'s default float parser is
   not correctly-rounded: `38403.356486892444` lands one ULP from `f64::from_str`. Fixed with the
-  `float_roundtrip` feature (D-103). The inverse of the usual failure — a check answering a
+  `float_roundtrip` feature (DIV-PROJ-45). The inverse of the usual failure — a check answering a
   different question and reporting *red*.
 
 ### And the gate catching itself, which is the point of gate 6
@@ -2131,13 +2131,13 @@ and two of these could not fail.
 
 ### A green campaign that is narrower than it sounds
 
-`_utils` logs 1,012,101 ops and zero divergences, but D-105 is a real, **unfixed** divergence: the
+`_utils` logs 1,012,101 ops and zero divergences, but DIV-UTILS-2 is a real, **unfixed** divergence: the
 k-way tie-break uses a linear scan and disagrees with `FibonacciHeap`'s ordering whenever three or
 more arrays tie. Fixing it requires porting `fibonacci-heap`. The grammar was changed to generate
 globally distinct k-way values, so the campaign is green *over a region that excludes the known
 disagreement*. Documented rather than hidden — but it must be re-examined before `_utils` is
 scoped, on the same reasoning that descoped `sparse-set`.
-### B-200 — a token equal to `SENTINEL` corrupts the trie: `size` overcounts and the word is lost
+### BUG-TRIE-MAP-1 — a token equal to `SENTINEL` corrupts the trie: `size` overcounts and the word is lost
 
 `status: VERIFIED against Node 24.18.1` · `trie-map.js` and `trie.js` (inherited, same engine) ·
 found by reading, before any fuzz campaign for this unit ran
@@ -2171,13 +2171,13 @@ own (`!(SENTINEL in node)` is true for a fresh `{}`), so upstream's own bookkeep
 value was stored" from "a value was silently discarded into the void." Neither `test/trie.js` nor
 `test/trie-map.js` ever embeds the sentinel character in a real token — every key in both suites is
 an ordinary word — so gate 4 cannot reach this. The port's own `Node` (stores value and children in
-separate fields rather than a shared keyspace, per D-200 in DECISIONS-CANDIDATES.md) does not
+separate fields rather than a shared keyspace, per DIV-TRIE-MAP-1 in DECISIONS-CANDIDATES.md) does not
 reproduce the corruption; both operations in the sequence above succeed and are independently
 retrievable, pinned by
 `crates/mnemonist-core/src/structures/trie_map.rs`'s
 `a_token_equal_to_the_sentinel_character_is_an_ordinary_token`.
 
-### B-201 — a `delete` that prunes from an ancestor leaves an open walk still able to yield the
+### BUG-TRIE-MAP-2 — a `delete` that prunes from an ancestor leaves an open walk still able to yield the
 ### deleted word
 
 `status: VERIFIED against Node 24.18.1` · `trie-map.js` (and `trie.js`, same engine) · found by
@@ -2207,7 +2207,7 @@ Neither original test file interleaves a `delete` with an open `values`/`prefixe
 walk over the region being deleted, so gate 4 cannot reach this either. The port's walk
 (`mnemonist_core::structures::trie_map::Walk`) re-navigates from the root by token path on every
 step rather than holding a live reference, so it disagrees with upstream in exactly this scenario —
-recorded as D-201 in DECISIONS-CANDIDATES.md rather than reproduced, since doing so would mean
+recorded as DIV-TRIE-MAP-2 in DECISIONS-CANDIDATES.md rather than reproduced, since doing so would mean
 storing live aliased references inside a structure this port also needs to hand across the FFI
 boundary as a detached, resumable cursor.
 
@@ -2221,7 +2221,7 @@ not two bugs — `clear` is `delete` of everything at once, from the cursor's po
 campaigns were fixed by excluding `delete`/`clear` from ever sharing a generated program with a
 persistent `$iter`/`$next` cursor; see `crates/difffuzz/src/modules/trie_map.rs`'s module docs for
 the exact repros and the regime-flag mechanism.
-## multi-map, multi-set, fuzzy-multi-map (B-160..B-179 range)
+## multi-map, multi-set, fuzzy-multi-map (BUG-MULTI-SET-1..DIV-PROJ-50 range)
 
 Full write-ups live in `docs/modules/multi-map.md`, `multi-set.md`, `fuzzy-multi-map.md`; this is
 the capture-log version. All three units' original suites pass unmodified (17 + 26 + 11 blocks, 91 +
@@ -2229,7 +2229,7 @@ the capture-log version. All three units' original suites pass unmodified (17 + 
 zero divergences) plus `grammar_self_check` tests giving direct counts of multi-value-key and
 drain-to-zero states reached.
 
-### B-160 — `multi-set`'s `#.set` on an existing item adds, it does not replace
+### BUG-MULTI-SET-1 — `multi-set`'s `#.set` on an existing item adds, it does not replace
 
 `status: verified by reading` (deterministic plain JS, no runtime ambiguity to double-check against
 Node) · `multi-set.js`'s `set`. `set.set('hello', 4); set.set('hello', 3);` gives multiplicity `7`,
@@ -2238,7 +2238,7 @@ an existing one goes through `this.items.set(item, currentCount + count)`. `test
 double-`.set` case never calls it twice with two *positive* counts (its second call is negative,
 taking the early delete branch instead), so gate 4 never touches this. Reproduced bug-for-bug.
 
-### B-161 — `multi-set`'s `#.delete` on an absent item corrupts `size` to `NaN` and reports `true`
+### BUG-MULTI-SET-2 — `multi-set`'s `#.delete` on an absent item corrupts `size` to `NaN` and reports `true`
 
 `status: verified by reading` · `multi-set.js`'s `delete`. The guard `if (count === 0) return
 false;` is meant to catch "item not present", but `this.items.get(item)` on a missing item is
@@ -2248,9 +2248,9 @@ through to `this.size -= undefined` (`NaN`), `this.dimension--` unconditionally,
 `items.delete`, and returns `true` regardless. This is the one that forced `MultiSet::dimension` to
 be a real tracked counter rather than derived from `items.len()` the way `multi-map`'s is — a
 derived counter would have silently *fixed* this bug instead of reproducing it, the same trap the
-bi-map counters (B-120) already taught this project once.
+bi-map counters (BUG-BI-MAP-1) already taught this project once.
 
-### B-162 — `multi-set`'s `#.edit` never adjusts `dimension`, even when it removes a real key
+### BUG-MULTI-SET-3 — `multi-set`'s `#.edit` never adjusts `dimension`, even when it removes a real key
 
 `status: verified by reading` · `multi-set.js`'s `edit`. When `b` already exists, `edit(a, b)`
 merges `a`'s multiplicity into `b` and deletes `a` — the real distinct-key count drops by one — but
@@ -2283,7 +2283,7 @@ generated case in each instance. `fuzzy-multi-map`'s spec initially rendered `it
 shape its own enumerable properties are — diverged on case 0 of every run until fixed. Neither
 survived past the first campaign attempt; both are recorded in the fuzz specs' own doc comments.
 
-## fibonacci-heap (B-220..B-239 range)
+## fibonacci-heap (BUG-FIBONACCI-HEAP-1..DIV-PROJ-52 range)
 
 Full write-up: `docs/modules/fibonacci-heap.md`. `fibonacci-heap.js` (321 LOC) has **no
 `decreaseKey`, no `delete`, no `mark` field, no cut and no cascading cut anywhere in the source or
@@ -2292,7 +2292,7 @@ its `.d.ts`** — grepped, not assumed. The public surface is `clear`, `push`, `
 reached by any grammar, however wide, because there is no operation upstream that could ever
 trigger one. Stated plainly rather than glossed over, per this unit's own brief.
 
-### B-220 — a comparator that `clear()`s the heap during the first `pop`'s `consolidate` leaves
+### BUG-FIBONACCI-HEAP-1 — a comparator that `clear()`s the heap during the first `pop`'s `consolidate` leaves
 ### `this.size` at `-1`, and the next `pop` then crashes
 
 `status: verified by tracing upstream's own execution model` (deterministic JS integer/falsy
@@ -2308,7 +2308,7 @@ return z.item;
 ```
 
 `this.size--` runs **after** `consolidate`, unlike `heap.js`'s `pop`, which decrements `size`
-*before* its sift (see `docs/modules/heap.md`'s D-70-adjacent note on that method). A comparator
+*before* its sift (see `docs/modules/heap.md`'s DIV-HEAP-1-adjacent note on that method). A comparator
 invoked from inside `consolidate` that calls `heap.clear()` — a legitimate re-entrant call, no more
 exotic than the `pushy`/`popper`/`clearer` factories `heap.js`'s own fuzz grammar already
 uses — sets `this.size = 0` mid-consolidate. The pending `this.size--` then computes `0 - 1`,
@@ -2325,7 +2325,7 @@ one itself.
 test" in the module doc), so gate 4 cannot reach this from either half.
 
 **Port:** `size` is `i64`, not `usize`, in `mnemonist_core::structures::fibonacci_heap`'s
-`FibonacciHeap` — matching `multi-set`'s D-163 precedent for the identical class of problem (a
+`FibonacciHeap` — matching `multi-set`'s DIV-MULTI-SET-1 precedent for the identical class of problem (a
 tracked counter that upstream's own arithmetic can drive to a state a "cleaner" derived value would
 never reach). `-1` is reproduced exactly. The follow-on crash is reproduced as a Rust panic (core
 has no exceptions) rather than a `Result::Err`; pinned by
@@ -2346,16 +2346,16 @@ this constantly (see `docs/modules/fibonacci-heap.md`'s "Fuzz + bench"); it is c
 single generated case's crash, and the panic *message itself* is upstream's own `TypeError` text
 verbatim, so the harness needs no separate translation table — see that module's own doc comments.
 
-### B-221 — `MaxFibonacciHeap.prototype = FibonacciHeap.prototype`, so `instanceof` cannot tell them
+### BUG-FIBONACCI-HEAP-2 — `MaxFibonacciHeap.prototype = FibonacciHeap.prototype`, so `instanceof` cannot tell them
 ### apart
 
-`status: verified by reading` · `fibonacci-heap.js`. The same anti-pattern `heap.js`'s B-75
+`status: verified by reading` · `fibonacci-heap.js`. The same anti-pattern `heap.js`'s BUG-HEAP-4
 documents, one file over: `MaxFibonacciHeap.prototype = FibonacciHeap.prototype;` at load time means
 `new FibonacciHeap() instanceof MaxFibonacciHeap` is `true`, and `new MaxFibonacciHeap().constructor`
 is `FibonacciHeap`, not `MaxFibonacciHeap`. `test/fibonacci-heap.js` never inspects either. Reproduced
 verbatim in `crates/mnemonist-napi/src/fibonacci_heap.rs`'s `install_fibonacci_heap_statics`, the
 same load-time-JS-installer approach `crate::heap`'s `install_heap_statics` already established for
-B-75 — a second native `#[napi]` class for `MaxFibonacciHeap` would have its own prototype and
+BUG-HEAP-4 — a second native `#[napi]` class for `MaxFibonacciHeap` would have its own prototype and
 silently repair the blur instead of reproducing it.
 
 A related, smaller inconsistency in the same two constructors, not worth its own ID: both throw the
@@ -2363,14 +2363,14 @@ identical string `'mnemonist/FibonacciHeap.constructor: given comparator should 
 `MaxFibonacciHeap`'s own constructor never names itself in its error. Reproduced verbatim (one
 shared message constant in the bridge).
 
-### B-222 — a `clear()` fired from inside a **`push`'s** tie-break (not a `pop`'s `consolidate`)
+### BUG-FIBONACCI-HEAP-3 — a `clear()` fired from inside a **`push`'s** tie-break (not a `pop`'s `consolidate`)
 ### leaves `root` null while `min` is a real node, and the next `pop` crashes on a DIFFERENT
-### `TypeError` than B-220's
+### `TypeError` than BUG-FIBONACCI-HEAP-1's
 
 `status: verified by tracing upstream's own deterministic control flow` · `fibonacci-heap.js`'s
 `push`.
 
-B-220 is not the only way a re-entrant `clear()` corrupts this heap — it is the one reachable from
+BUG-FIBONACCI-HEAP-1 is not the only way a re-entrant `clear()` corrupts this heap — it is the one reachable from
 inside `pop`. This one is reachable from inside `push`:
 
 ```js
@@ -2390,23 +2390,23 @@ unconditionally setting `this.min` back to a real node whenever the comparison f
 result: `root === null`, `min` is a genuine node, `size` is off by whatever `push`'s own `++` and the
 clear's reset add up to. Neither field is inconsistent in isolation; the *pair* is.
 
-A later `pop()` then reads a perfectly valid `z` from `min` (no crash at B-220's site at all),
+A later `pop()` then reads a perfectly valid `z` from `min` (no crash at BUG-FIBONACCI-HEAP-1's site at all),
 proceeds through `removeFromRoot(z)` (a no-op on `heap.root`, since `heap.root !== z`), finds
 `z.right !== z` (that field was never touched by the `clear()`, so it still reflects the multi-node
 state `z` had when it was linked, before `root` went stale), and calls `consolidate(this)`.
 `consolidate`'s own `consumeLinkedList(heap.root)` receives `null`, pushes it into its own
 accumulator on the first loop iteration (its `flag` dance visits `head` once even when `head` is
 `null`), and then evaluates `node.right` on it: `TypeError: Cannot read properties of null (reading
-'right')` — one property name over from B-220's `'child'`, and a different call site.
+'right')` — one property name over from BUG-FIBONACCI-HEAP-1's `'child'`, and a different call site.
 
 **Port:** both crash sites are Rust panics whose message is upstream's exact `TypeError` text
 (`FibonacciHeap::pop`'s `self.min.get().expect("Cannot read properties of null (reading 'child')")`
-for B-220; `FibonacciHeap::consolidate`'s `self.root.get().expect("Cannot read properties of null
+for BUG-FIBONACCI-HEAP-1; `FibonacciHeap::consolidate`'s `self.root.get().expect("Cannot read properties of null
 (reading 'right')")` for this one) — chosen specifically so `crates/difffuzz/src/modules/
 fibonacci_heap.rs`'s `catch_unwind` wrapper can use the panic payload directly as the `$throw` text
 instead of a hand-maintained table that could drift from what Node actually says. Found by the
 differential fuzzer itself, inside the first few hundred generated cases once the `fibClearer`
-factory was in the grammar — not by reading, unlike B-220 and B-221.
+factory was in the grammar — not by reading, unlike BUG-FIBONACCI-HEAP-1 and BUG-FIBONACCI-HEAP-2.
 
 ## The falsification that stayed green and was caught anyway
 
@@ -2420,7 +2420,7 @@ reached a panic through the FFI boundary.
 The second was **predicted to stay green, and did**. Flipping `push`'s `<=` tie-break is invisible
 to this unit's 12 native tests and to the 6-block upstream suite, because identical tied values
 carry no information at the assertion level. The differential fuzzer caught it in 425 cases, and so
-did `merge.rs`'s D-105 regression test.
+did `merge.rs`'s DIV-UTILS-2 regression test.
 
 **This is the clearest evidence so far that the fuzzer and the test suite are not redundant
 instruments.** Every previous argument for the fuzzer was that it covers *more* of the same kind of
@@ -2444,14 +2444,14 @@ The honest answer to "make X fire" is sometimes "X does not exist", and that ans
 available to someone who reads the source rather than tuning the grammar until the report looks
 right.
 
-## linked-list, default-weak-map, inverted-index (B-240..B-259 range)
+## linked-list, default-weak-map, inverted-index (BUG-INVERTED-INDEX-1..DIV-PROJ-59 range)
 
 Full write-ups: `docs/modules/linked-list.md`, `docs/modules/default-weak-map.md`,
-`docs/modules/inverted-index.md`. Only three IDs used this batch (B-240..B-242); B-243..B-259 are
+`docs/modules/inverted-index.md`. Only three IDs used this batch (BUG-INVERTED-INDEX-1..BUG-DEFAULT-WEAK-MAP-1); DIV-PROJ-56..DIV-PROJ-59 are
 unused and available to a later agent working in this file, should one need them — do not assume
 they are claimed.
 
-### B-240 — `InvertedIndex.prototype.forEach` never calls its callback, on any index
+### BUG-INVERTED-INDEX-1 — `InvertedIndex.prototype.forEach` never calls its callback, on any index
 
 `status: verified against Node 24.18.1` · `inverted-index.js`.
 
@@ -2482,7 +2482,7 @@ walk visiting every document would be the useful, correct behaviour a careful po
 default, which is exactly why keeping it broken is the bug-for-bug-correct choice. Port:
 `InvertedIndex::for_each` hands back a cursor frozen at length zero unconditionally.
 
-### B-241 — `LinkedList.prototype.shift` never updates `tail`, so emptying the list leaves `last()` stale
+### BUG-LINKED-LIST-1 — `LinkedList.prototype.shift` never updates `tail`, so emptying the list leaves `last()` stale
 
 `status: verified against Node 24.18.1` · `linked-list.js`.
 
@@ -2505,14 +2505,14 @@ list.shift();      // -> 'a'
 list.last();        // 'a'  -- STALE: the removed item, not undefined
 ```
 
-Silent and self-healing, the same shape as B-40: the next `push`/`unshift` on an empty list
+Silent and self-healing, the same shape as BUG-DEFAULT-MAP-1: the next `push`/`unshift` on an empty list
 resynchronises `tail` unconditionally (`if (!this.head) { this.head = node; this.tail = node; }`),
 so the staleness is observable only in the narrow window between "shifted to empty" and "the next
 insert." `test/linked-list.js` never shifts a list fully empty and then reads `last()`, so gate 4
 has zero coverage. Port: `LinkedList::shift` deliberately does not touch `tail`; `LinkedList::last`
 reads it verbatim with no `size == 0` guard, matching upstream's own absence of one.
 
-### B-242 — `DefaultWeakMap.prototype.get` tests the *value*, not the key, so the factory re-runs on every read of a key holding `undefined`
+### BUG-DEFAULT-WEAK-MAP-1 — `DefaultWeakMap.prototype.get` tests the *value*, not the key, so the factory re-runs on every read of a key holding `undefined`
 
 `status: verified against Node 24.18.1` · `default-weak-map.js`.
 
@@ -2527,14 +2527,14 @@ DefaultWeakMap.prototype.get = function(key) {
 };
 ```
 
-The same defect class as `default-map.js`'s B-40 (`this.items.get(key)` cannot distinguish "no
-such key" from "the key is present and holds `undefined`"), minus B-40's `size++` side effect,
+The same defect class as `default-map.js`'s BUG-DEFAULT-MAP-1 (`this.items.get(key)` cannot distinguish "no
+such key" from "the key is present and holds `undefined`"), minus BUG-DEFAULT-MAP-1's `size++` side effect,
 because a `WeakMap` has no `size` to drift. The consequence that remains: the factory keeps
 re-running on every `get` of such a key, while `has()` correctly reports the key present the whole
 time. `test/default-weak-map.js`'s `FACTORY` never returns `undefined`, so this is entirely
 unreached by gate 4. Port: `DefaultWeakMap::peek` flattens "missing" and "stored `undefined`" into
 one `None`, and the bridge's `get` re-runs the factory whenever `peek` misses, mirroring
-`default_map.rs`'s identical `get`/B-40 shape.
+`default_map.rs`'s identical `get`/BUG-DEFAULT-MAP-1 shape.
 
 ## Two port defects found by fuzzing, both fixed before any campaign was logged (not upstream bugs, no B-id)
 
@@ -2554,7 +2554,7 @@ any grammar tuning:**
    pushed node too; the eager primitive missed it. Fixed by `ListCursor::current`/`::advance`, a
    peek-then-commit split `forEach` alone uses.
 2. `push()` branched on `self.tail` instead of `self.head` — indistinguishable from upstream's own
-   `if (!this.head) {...}` guard in every state except the one B-241 produces (`head` `None`,
+   `if (!this.head) {...}` guard in every state except the one BUG-LINKED-LIST-1 produces (`head` `None`,
    `tail` stale-`Some`), where the wrong branch linked onto the stale tail and left `head` stuck at
    `None` permanently. Fixed to check `head`, matching upstream's guard and this port's own
    (already-correct) `unshift`.
@@ -2587,7 +2587,7 @@ agent's hunk.
 `default-weak-map` produced the cleanest statement of the layer gap this project has found, because
 for once the gate was designed to expose it rather than stumbling into it.
 
-**B-242** is a bridge-composition bug: the default factory re-runs on `get` of a key whose stored
+**BUG-DEFAULT-WEAK-MAP-1** is a bridge-composition bug: the default factory re-runs on `get` of a key whose stored
 value is `undefined`. It was found by **reading**, not by fuzzing, and the agent then proved *why*
 fuzzing could never have found it. Gate 6 sabotaged the bridge's `get` and checked three
 instruments:
@@ -2600,7 +2600,7 @@ The fuzzer stayed green because `difffuzz` drives `mnemonist-core` directly. **T
 its loop at all.** This is not a gap in the grammar, reachable by generating better programs; it is
 a gap in *what the instrument is pointed at*. No amount of fuzzing effort closes it.
 
-That is the third independent arrival at the same lesson — after B-31 (a `&self` optimisation
+That is the third independent arrival at the same lesson — after PORTBUG-1 (a `&self` optimisation
 across a re-entrant JS callback) and the `heap` review (three defects every gate had passed). The
 sharpened form:
 
@@ -2620,12 +2620,12 @@ absence.
 Observable through the oracle: every return value of `get`/`peek`/`has`/`delete`/`set` — which is
 the entire public surface, since a real `WeakMap` has no `size` and no iteration to compare.
 
-## critbit-tree-map, fixed-critbit-tree-map (B-260..B-279 range)
+## critbit-tree-map, fixed-critbit-tree-map (BUG-FIXED-CRITBIT-TREE-MAP-1..DIV-PROJ-61 range)
 
-Two IDs used this batch (B-260, B-261); B-262..B-279 are unused and available to a later agent
+Two IDs used this batch (BUG-FIXED-CRITBIT-TREE-MAP-1, BUG-FIXED-CRITBIT-TREE-MAP-2); DIV-PROJ-60..DIV-PROJ-61 are unused and available to a later agent
 working in this file, should one need them — do not assume they are claimed.
 
-### B-260 — `FixedCritBitTreeMap`'s `root` property is a number fresh off the constructor, but
+### BUG-FIXED-CRITBIT-TREE-MAP-1 — `FixedCritBitTreeMap`'s `root` property is a number fresh off the constructor, but
 ### `null` right after a `clear`
 
 `status: verified against Node 24.18.1` · `fixed-critbit-tree-map.js:99` (constructor) vs `:120`
@@ -2670,7 +2670,7 @@ cannot reach this either way. Reproduced in the port via a `root_is_null` flag �
 `crates/mnemonist-core/src/structures/fixed_critbit_tree_map.rs`'s doc comment on that field and its
 `root_is_a_number_fresh_but_null_right_after_a_clear` test.
 
-### B-261 — `FixedCritBitTreeMap` has no capacity guard at all: exceeding it silently corrupts one
+### BUG-FIXED-CRITBIT-TREE-MAP-2 — `FixedCritBitTreeMap` has no capacity guard at all: exceeding it silently corrupts one
 ### node's children, then crashes a later `set` that walks through it
 
 `status: verified against Node 24.18.1` · `fixed-critbit-tree-map.js`'s constructor and `set`.
@@ -2731,7 +2731,7 @@ was exceeded" and "`Error::Corrupted` was actually reached" directly over 500 sa
 shape guarantees it.
 
 Reproduced in the port as `Error::Corrupted`, surfaced with upstream's own message text rather than
-a Rust panic (D-246, DECISIONS-CANDIDATES.md) — see
+a Rust panic (DIV-FIXED-CRITBIT-TREE-MAP-1, DECISIONS-CANDIDATES.md) — see
 `crates/mnemonist-core/src/structures/fixed_critbit_tree_map.rs`'s module docs, part 1.
 
 A second, narrower defect lives in the same neighbourhood: `set`'s "attach to an existing internal
@@ -2785,14 +2785,14 @@ logged in `fuzz/log.txt` — the logged campaigns for both units are clean.
 Observable through the oracle: every return value of `get`/`peek`/`has`/`delete`/`set` — which is
 the entire public surface, since a real `WeakMap` has no `size` and no iteration to compare.
 
-## multi-array, symspell, passjoin-index (B-300..B-319 range)
+## multi-array, symspell, passjoin-index (DIV-PROJ-63..DIV-PROJ-64 range)
 
 No upstream bugs found in any of the three units, stated plainly rather than padded: read against
 the real source, ported variable-for-variable (`passjoin-index`'s partition arithmetic especially,
 checked line-by-line against `~/upstream-mnemonist/passjoin-index.js` and against
 `test/passjoin-index.js`'s own pinned segment/position/interval examples), and exercised by
 ~1.7M differential-fuzz operations per unit (two seeds each, `fuzz/log.txt`) with zero divergences
-against real upstream on Node 24.18.1. B-300..B-319 are entirely unused; a later agent needing IDs
+against real upstream on Node 24.18.1. DIV-PROJ-63..DIV-PROJ-64 are entirely unused; a later agent needing IDs
 in this range should not assume any are claimed.
 
 ### Two port defects found by fuzzing or by the original suite itself, both fixed before any clean
@@ -2842,7 +2842,7 @@ A third defect, caught during a `cargo clippy` pass rather than by fuzzing: `sym
 `maxDistance` validation initially rejected `NaN`, the opposite of upstream's own guard
 (`maxDistance <= 0`, which is `false` for `NaN` and therefore lets it through uncaught). Fixed to
 match upstream's actual — surprising — behaviour rather than the "more defensive" one a first
-reading suggests. See `symspell.rs`'s `SymSpell::new` docs and D-451's neighbouring discussion in
+reading suggests. See `symspell.rs`'s `SymSpell::new` docs and DIV-SYMSPELL-1's neighbouring discussion in
 `DECISIONS-CANDIDATES.md` for the class of gap this is adjacent to (though this specific one is
 fidelity restored, not a disclosed divergence).
 

@@ -15,9 +15,9 @@ falsification recorded in the document as "a third attempt that stayed green": a
 cannot fail is just a second green light, and this one was informative precisely because it failed
 to fail.
 
-## `$forEach` — the op that was missing (added 2026-08-01, B-31)
+## `$forEach` — the op that was missing (added 2026-08-01, PORTBUG-1)
 
-`stack`'s grammar had no `forEach` op at all. That omission is what let B-31 — a `forEach` callback
+`stack`'s grammar had no `forEach` op at all. That omission is what let PORTBUG-1 — a `forEach` callback
 mutating the collection it is walking — through 4.40 M clean operations: an op alphabet that omits a
 method omits every bug reachable only through it. `$forEach(method, rule, limit)` was added to close
 that hole; see the current document for what it covers now.

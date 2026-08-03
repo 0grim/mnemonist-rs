@@ -36,7 +36,7 @@ Four `it` blocks, and every one of them is doing real work despite the small cou
 **The empty case — the whole regime**
 
 1. **Zero intervals is never constructed.** Every tree in the file has five real intervals (or
-   two, for the `Map` case). This is the precondition for B-100: `buildBST` is called
+   two, for the `Map` case). This is the precondition for BUG-STATIC-INTERVAL-TREE-1: `buildBST` is called
    unconditionally from the constructor, and nothing upstream ever supplies it a length of zero.
 
 **Tree shape, beyond five intervals**
@@ -69,7 +69,7 @@ Four `it` blocks, and every one of them is doing real work despite the small cou
 
 `crates/mnemonist-core/src/structures/static_interval_tree.rs` — 9 unit tests beyond
 `reproduces_the_upstream_suite` (the 1:1 port of all four upstream blocks), closing every gap
-above: zero intervals refused rather than silently accepted (B-100), a second, isolated height
+above: zero intervals refused rather than silently accepted (BUG-STATIC-INTERVAL-TREE-1), a second, isolated height
 computation, that a resolved `(start, end)` pair rather than the getter itself is what the core
 crate carries forward, a single-interval tree verified node-for-node against Node, ties in `start`
 broken by original insertion order, both interval boundaries closed (plus a point just outside
@@ -87,7 +87,7 @@ worth naming so it is not mistaken for an oversight.
 
 ## Bugs this found
 
-**B-100 — constructing from zero intervals crashes with an unrelated `TypeError`.**
+**BUG-STATIC-INTERVAL-TREE-1 — constructing from zero intervals crashes with an unrelated `TypeError`.**
 Verified against Node 24.18.1. `buildBST` runs unconditionally, even for
 `length === 0`:
 
@@ -121,7 +121,7 @@ call), which is a worse failure than the catchable `TypeError` it would stand in
 
 | # | Divergence | Why |
 |---|---|---|
-| — | **Zero intervals is a clean `Err`, not a reproduced panic.** | See B-100 above — the mechanism has no honest Rust expression; the outcome (construction fails, informatively) is the faithful port. |
+| — | **Zero intervals is a clean `Err`, not a reproduced panic.** | See BUG-STATIC-INTERVAL-TREE-1 above — the mechanism has no honest Rust expression; the outcome (construction fails, informatively) is the faithful port. |
 | — | **`startGetter`/`endGetter` are resolved once, at construction, not re-invoked on every visited node.** | Upstream calls them afresh on every node the query touches, in both query methods. Both getters are pure functions of an immutable stored interval in every case this port models — the original suite's own default and its one custom-getter test both fit that description — so re-invoking at query time can only reproduce the same `(start, end)` pair construction already computed. `mnemonist-core` takes the resolved bounds once ([`StaticIntervalTree::new`]'s `bounds` parameter); the getters themselves are a JS-value concern the core crate never sees. The bridge (`crates/mnemonist-napi/src/static_interval_tree.rs`) is where a getter actually runs: once per stored interval at construction, and once more per call for `intervalsOverlappingInterval`'s own query argument, which is not one of the stored intervals and so was never resolved in advance. |
 | — | **`tree` and `augmentations` are not exposed to JS.** | They are public typed arrays upstream; napi can only hand out a copy, which would silently break the write-through a real caller could otherwise rely on — the same call `sparse-set`'s and `sparse-map`'s bridges make for `dense`/`sparse`/`vals`. Both are `pub` on the core type, and the differential fuzzer compares both slot for slot after construction, so the representation is verified even though no JS caller can reach it directly. |
 | — | **`StaticIntervalTree.from`'s iterable resolution goes through upstream's real `Array.from`, not `obliterator/foreach`.** | Most of this port's other `.from()` statics route through `obliterator/foreach`'s five-branch dispatch, and this one deliberately does not, because the two are **not interchangeable** for this module's one `Map` test case: a `Map` owns a `.forEach` method, which `obliterator/foreach` prefers over `Symbol.iterator`, while `Array.from` always prefers `Symbol.iterator` when one exists. A `Map`'s default iterator yields `[key, value]` pairs — exactly the `[start, end]` shape this module wants — while its own `.forEach` invokes a callback with `(value, key, map)`. Routing `StaticIntervalTree.from(map)` through `obliterator/foreach` here would silently swap `start` and `end`, and it is exactly upstream's own `Map` test (gate 4) that would have caught it wrong. |

@@ -921,7 +921,7 @@ mod tests {
         assert_eq!(wide.get(0), Some(70_000.0 % 65_536.0));
     }
 
-    /// D-06/D-07 seen from Rust: each cursor is exhausted once, but the vector
+    /// DIV-STACK-1/DIV-STACK-2 seen from Rust: each cursor is exhausted once, but the vector
     /// can be walked again.
     #[test]
     fn cursors_do_not_restart_but_the_vector_can_be_walked_again() {
@@ -945,7 +945,7 @@ mod tests {
     /// the detached [`crate::cursor::CursorState`] rather than [`Cursor`],
     /// because `Cursor` borrows its source for the walk's whole lifetime and
     /// the borrow checker refuses the interleaved mutation outright -- which
-    /// is D-08's whole point (see `crate::cursor`'s module docs): reaching a
+    /// is DIV-PROJ-10's whole point (see `crate::cursor`'s module docs): reaching a
     /// mutation mid-walk from safe Rust needs interior mutability or the FFI
     /// boundary, not a plain `&mut`.
     #[test]

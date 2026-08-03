@@ -61,7 +61,7 @@ Everything below is reachable through the public API and never exercised by the 
 **The capacity boundary — where the structure's own sentinel stops working**
 
 1. **No capacity near a pointer-width boundary is ever constructed.** Only 4 and 10, both
-   comfortably inside `Uint8Array`. This hides B-12 entirely: `dequeue` marks a member absent by
+   comfortably inside `Uint8Array`. This hides BUG-SPARSE-QUEUE-SET-1 entirely: `dequeue` marks a member absent by
    writing `capacity` into `sparse`, and `sparse` is sized for indices `0..capacity-1`, so at
    `capacity === 256` the sentinel truncates to `0` — an ordinary slot.
 2. **The consequences of (1) are therefore all unreached:** a dequeued member reading as present
@@ -73,14 +73,14 @@ Everything below is reachable through the public API and never exercised by the 
 **The full ring**
 
 5. **The queue is never filled to capacity.** The wrap block holds three of four slots.
-6. **An `enqueue` into a full ring is never performed**, which hides B-13: nothing bounds `size` by
+6. **An `enqueue` into a full ring is never performed**, which hides BUG-SPARSE-QUEUE-SET-2: nothing bounds `size` by
    `capacity`, and an out-of-range member evicts a **live** one.
 7. **`size > capacity` is never reached**, and neither is any of what follows from it — a walk
    yielding more members than the ring has slots, with a duplicate in it.
 
 **Degenerate capacities**
 
-8. **`new SparseQueueSet(0)` is never constructed**, which hides B-14 entirely: `(start + size) %
+8. **`new SparseQueueSet(0)` is never constructed**, which hides BUG-SPARSE-QUEUE-SET-3 entirely: `(start + size) %
    capacity` is `NaN`, both stores vanish, `size` still climbs, `start` grows without bound, and
    iteration yields `undefined` per phantom member.
 9. **`new SparseQueueSet(1)` is never constructed** — the ring that wraps on every single dequeue.
@@ -111,9 +111,9 @@ Everything below is reachable through the public API and never exercised by the 
 15. **Mutation during iteration is never performed.** The cursor freezes `capacity`, `size` **and**
     `start`, and reads `dense` live, so a `dequeue` mid-walk does *not* move the walk while an
     `enqueue` that overwrites an unread slot *is* visible. Neither half is tested.
-16. **A cursor is never re-drained**, so D-06 non-restartability is unobserved.
+16. **A cursor is never re-drained**, so DIV-STACK-1 non-restartability is unobserved.
 17. **`[...queue]` is never used.** The suite reaches the cursor only through `values()`, so the
-    collection-level `Symbol.iterator` — the *factory* half of D-07 — has **zero** coverage despite
+    collection-level `Symbol.iterator` — the *factory* half of DIV-STACK-2 — has **zero** coverage despite
     being the last line of the module.
 18. **The `undefined` window is never reached**, which follows from 8.
 
@@ -144,7 +144,7 @@ Full test-to-gap mapping: evidence file.
 
 **Every expectation in these tests was run against real Node first**, including the 255/256/65536
 boundary trio and the two mutation-during-iteration cases, rather than reasoned about and hoped
-for. B-12's behaviour at 256 is not something reading the file makes obvious.
+for. BUG-SPARSE-QUEUE-SET-1's behaviour at 256 is not something reading the file makes obvious.
 
 The **differential fuzzer** then covers gaps 1–18 continuously, with `start` in the observed state
 so rotation is compared after every operation of every generated program.
@@ -156,7 +156,7 @@ code runs.
 
 ## Bugs this found
 
-**B-12 — `dequeue`'s absence sentinel does not fit the array it is written into.**
+**BUG-SPARSE-QUEUE-SET-1 — `dequeue`'s absence sentinel does not fit the array it is written into.**
 Verified against Node 24.18.1. `dequeue` marks a member absent by writing a value no live
 slot can hold:
 
@@ -187,7 +187,7 @@ Two symptoms, and the second is worse than the first: a false-positive `has`, an
 believes the false positive and silently refuses. Reproduced rather than fixed — the port gets it
 for free, because `PointerVec::try_set` narrows exactly as a typed-array store does.
 
-**B-13 — `enqueue` never checks whether the ring is full.**
+**BUG-SPARSE-QUEUE-SET-2 — `enqueue` never checks whether the ring is full.**
 Verified against Node 24.18.1. Nothing bounds `size` by `capacity`. In range that is
 unreachable: a queue holding every member of `0..capacity` rejects any further `enqueue` as a
 duplicate. But one out-of-range member is enough, because `sparse[member]` is then `undefined` and
@@ -203,12 +203,12 @@ q.has(0)               // false
 [...q]                 // [100, 1, 2, 3, 100] ← five members from a four-slot ring
 ```
 
-This is a strictly nastier corruption than B-8, `SparseSet`'s equivalent: there the out-of-range
+This is a strictly nastier corruption than BUG-SPARSE-SET-1, `SparseSet`'s equivalent: there the out-of-range
 write lands past the end of the array and destroys nothing, because the slot belonged to nobody.
 Here `(start + size) % capacity` keeps the index **inside** the ring by construction, so it always
 lands on a live slot once the ring is full.
 
-**B-14 — `capacity === 0` divides by zero.**
+**BUG-SPARSE-QUEUE-SET-3 — `capacity === 0` divides by zero.**
 Verified against Node 24.18.1. `(this.start + this.size) % this.capacity` is `NaN`, and
 `dense[NaN] = member` is a string-keyed expando rather than an element store, so both writes vanish
 while `size` still increments. Three consequences:
@@ -217,7 +217,7 @@ while `size` still increments. Three consequences:
 var q = new SparseQueueSet(0);
 q.enqueue(0);
 Array.from(q)      // [undefined]        ← the shrink window, in two calls
-q.dequeue()        // undefined, and sets sparse.undefined = 0 (the B-10 expando)
+q.dequeue()        // undefined, and sets sparse.undefined = 0 (the BUG-SPARSE-SET-3 expando)
 q.start            // 1, and it keeps climbing: the wrap check is
                    // `start === capacity`, i.e. `1 === 0`, which is never true
 ```
@@ -228,18 +228,18 @@ grows without limit, and nothing ever reads it back into range. It is also the o
 difference produced by fuzzer falsification B — which is why `start` is in the fuzzer's observed
 state.
 
-**B-8, B-9 and B-10 have analogues here**, since `has`'s guard structure and the out-of-range store
-behaviour are `SparseSet`'s. The `sparse[undefined]` expando of B-10 reappears in `dequeue` at
+**BUG-SPARSE-SET-1, BUG-SPARSE-SET-2 and BUG-SPARSE-SET-3 have analogues here**, since `has`'s guard structure and the out-of-range store
+behaviour are `SparseSet`'s. The `sparse[undefined]` expando of BUG-SPARSE-SET-3 reappears in `dequeue` at
 `capacity === 0`, where `member` is `undefined`.
 
 **What the fuzzer found: nothing new.** Two campaigns, 3.36 M operations, zero divergences — the
-expected outcome for a faithful port, and the third module in a row to produce it. B-12,
-B-13 and B-14 were all found by reading the file statement by statement and confirming each step
+expected outcome for a faithful port, and the third module in a row to produce it. BUG-SPARSE-QUEUE-SET-1,
+BUG-SPARSE-QUEUE-SET-2 and BUG-SPARSE-QUEUE-SET-3 were all found by reading the file statement by statement and confirming each step
 against Node. What the fuzzer is for is the other direction, and it is sharper than the original
 suite by a wide margin — see "Fuzz + bench".
 
 **The bridge held a bare core value behind `&self`**, which LLVM was entitled to compile as a
-`noalias readonly` pointer and hoist reads across a re-entrant JS callback (B-31). It now holds
+`noalias readonly` pointer and hoist reads across a re-entrant JS callback (PORTBUG-1). It now holds
 `RefCell<Core>`, which is not `Freeze`, and every `&mut self` method borrows via `borrow_mut()`
 taken per step and released before the callback runs, so a re-entrant callback never meets an
 outstanding borrow. See `crates/mnemonist-napi/src/cursor.rs`'s `CellCursor`. Full history in the
@@ -250,11 +250,11 @@ log.
 | # | Divergence | Why |
 |---|---|---|
 | — | **The window test reproduces upstream's precedence, not a simplification of it.** | `index < capacity && (index >= start && index < start + size) \|\| (index < (start + size) % capacity)` is one three-term conjunction **or** one comparison, because `&&` binds tighter than `\|\|` — not the capacity guard distributed over both arms. The guard is provably redundant, since `(start + size) % capacity < capacity` always holds; reproducing the shape anyway matters because at `size > capacity` the two arms overlap instead of partitioning, and a "simplified" version would have to be re-derived for that case. |
-| — | **The three defects are reproduced, not repaired.** | B-12, B-13 and B-14 are all observable through the public API, so fixing any of them would be a silent behavioural divergence. Each is pinned by native tests and, for B-13 and B-14, by a committed fuzz seed. |
+| — | **The three defects are reproduced, not repaired.** | BUG-SPARSE-QUEUE-SET-1, BUG-SPARSE-QUEUE-SET-2 and BUG-SPARSE-QUEUE-SET-3 are all observable through the public API, so fixing any of them would be a silent behavioural divergence. Each is pinned by native tests and, for BUG-SPARSE-QUEUE-SET-2 and BUG-SPARSE-QUEUE-SET-3, by a committed fuzz seed. |
 | — | **`x % 0` is `None`, not a panic.** | JS gives `NaN` and every comparison against it is false; Rust's `%` panics on a zero divisor. The two places that compute it return `Option` and the `None` arm reproduces what JS's `NaN` does — a dropped store in `enqueue`, a false membership test in `has`, an unwrapped index in the walk. |
-| D-09 | **The shrink window is reproduced (Option A), not collapsed.** | Reachable here at `capacity === 0`, in two calls, on a *different* module and by a *different* route from `sparse-set`'s. |
-| D-06 | **No collection implements `IntoIterator`.** | It would hand out a fresh iterator per `for` loop and silently restart. |
-| D-07 | **`Symbol.iterator` is installed from Rust**, aliased to `values`. | The factory half is the one napi does not provide. |
+| DIV-SPARSE-SET-1 | **The shrink window is reproduced (Option A), not collapsed.** | Reachable here at `capacity === 0`, in two calls, on a *different* module and by a *different* route from `sparse-set`'s. |
+| DIV-STACK-1 | **No collection implements `IntoIterator`.** | It would hand out a fresh iterator per `for` loop and silently restart. |
+| DIV-STACK-2 | **`Symbol.iterator` is installed from Rust**, aliased to `values`. | The factory half is the one napi does not provide. |
 | — | **The Rust-side `Iterator` impl skips gaps rather than stopping.** | As `sparse-set`. The faithful three-way primitive is `step()`. |
 | — | **`enqueue` returns `bool` in core; the bridge returns `this`.** | Core reports whether the member was newly enqueued, which upstream exposes only through `size`. |
 | — | **`dequeue` returns `Option<u32>` in core and `Either<u32, Undefined>` at the bridge.** | Upstream's empty-queue return is a bare `return;`. napi renders `Option::None` as `null`, which `assert.strictEqual` distinguishes from `undefined`. |
@@ -287,19 +287,19 @@ a mixture rather than one range, because the interesting capacities are not unif
 most of the mass sits on `0..=400` and `1..=8` (so a 200-op program wraps many times rather than
 filling once), with `{255, 256}` drawn as a point with its control, since a uniform draw over
 `0..=400` reaches 256 about once in 400 programs. Members are drawn `0..capacity + 64`, so roughly
-one in eight is out of range. **Deliberately excluded: capacity 65536**, the second B-12 boundary —
+one in eight is out of range. **Deliberately excluded: capacity 65536**, the second BUG-SPARSE-QUEUE-SET-1 boundary —
 the same defect one width up, covered instead by a dedicated core test. Including it in the grammar
 cost about 95% of throughput (measured, 880 op/s against 15,000), because the observable state is
 two backing arrays, serialised, sent and compared after every operation; a campaign that executes 5%
 of its programs is a worse check than a native test plus a fast campaign. Nothing else is excluded;
-every out-of-range member is generated. The B-12 sentinel needs no special op to observe: `sparse`
+every out-of-range member is generated. The BUG-SPARSE-QUEUE-SET-1 sentinel needs no special op to observe: `sparse`
 is in the observed state, so every `dequeue` compares the value written into it. Full grammar:
 evidence file.
 
 **The fuzzer was falsified twice, once per half of this module's new grammar, and both leave the
-original upstream suite green.** Sabotage A "fixes" `enqueue` to refuse a full ring (B-13 repaired)
+original upstream suite green.** Sabotage A "fixes" `enqueue` to refuse a full ring (BUG-SPARSE-QUEUE-SET-2 repaired)
 and is caught in 811 cases (0.8 s), shrunk to two operations on the smallest possible ring — the
-repro doubles as the smallest demonstration of B-13 itself, since at capacity 1 the second enqueue
+repro doubles as the smallest demonstration of BUG-SPARSE-QUEUE-SET-2 itself, since at capacity 1 the second enqueue
 evicts the first. Sabotage B tidies `dequeue`'s wrap check from `===` to `>=`, identical for every
 capacity but zero, and is caught in 854 cases (3.9 s), shrunk to two operations that differ from
 upstream in `start` alone — the seed that justifies observing `start` at all. Both reverted; both
@@ -315,7 +315,7 @@ from the second. The sabotage, `Sequence::slot` computing `start + ordinal` with
 reading the ring as linear), is confirmed red in precisely that place (6 passing, 1 failing, on the
 second cycle); reverted, confirmed green again (7 passing).
 
-A second falsification was expected to stay green, and did: the natural repair for B-13 —
+A second falsification was expected to stay green, and did: the natural repair for BUG-SPARSE-QUEUE-SET-2 —
 `if (size >= capacity) return this;` in `enqueue` — leaves the suite at 7 passing, 0 failing while
 turning three native tests red and being caught by the differential fuzzer in 0.8 seconds. The suite
 cannot see it because the only member that could enqueue into a full ring is one already present,
@@ -343,7 +343,7 @@ Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 10,0
 range: the port is 1.5× faster at p50 (8.4 vs 12.9 ns/op), 2.6× faster at p99 (23.4 vs 61.2), 1.8×
 faster at min. No regressions. Full table: evidence file.
 
-B-12 (the dequeue sentinel truncating at 256/65536) and B-13/B-14 are all reachable only through
+BUG-SPARSE-QUEUE-SET-1 (the dequeue sentinel truncating at 256/65536) and BUG-SPARSE-QUEUE-SET-2/BUG-SPARSE-QUEUE-SET-3 are all reachable only through
 out-of-range members, which this in-range workload never draws — consistent with `sparse-set`'s own
 bench, which makes the same call for the same reason: benchmarking the corruption path measures a
 bug, not a data structure.

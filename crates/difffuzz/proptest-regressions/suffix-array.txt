@@ -11,10 +11,10 @@
 # second green light.
 #
 # The sabotage: `sort()`'s `bits` fall-through was changed from 8 to 16, i.e.
-# upstream defect B-90 was "fixed" so that a symbol above 0xFF is no longer
+# upstream defect BUG-SUFFIX-ARRAY-1 was "fixed" so that a symbol above 0xFF is no longer
 # radix-sorted on its low byte alone. The campaign reported a state divergence
 # in `array`, `toJSON` and `toString` at construction time, on an input mixing
 # U+0141 (low byte 0x41, colliding with 'A') with U+0100 (low byte 0x00,
 # colliding with the padding). The sabotage was reverted; the seed is replayed
-# before any novel case on every run, so a future "tidy-up" of B-90 fails here.
+# before any novel case on every run, so a future "tidy-up" of BUG-SUFFIX-ARRAY-1 fails here.
 cc 71e08c97f0cc8b29c45a32ab8ea4af3262c4e4c1badbe46d5842dac5be6cc375 # shrinks to Program { ctor: [String("Ł\0ŁŁĀaȁabĀ\u{1}\u{1}A\u{1}AĀb\0a\0c\0AcbaAȁA\u{1}Āb\0AA\u{1}\0cbŁAc")], ops: [Op { name: "toString", args: [] }] }

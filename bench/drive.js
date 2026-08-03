@@ -456,7 +456,7 @@ const WORKLOADS = {
   'default-map': [
     {
       name: 'mixed-1e6', kind: 'mixed', size: 1000000, ops: 1000000,
-      label: 'mixed set/get-or-insert/delete (50/25/25); factory always defined, so B-40\'s size drift never fires here'
+      label: 'mixed set/get-or-insert/delete (50/25/25); factory always defined, so BUG-DEFAULT-MAP-1\'s size drift never fires here'
     },
     // `mixed-1e6` lost on p50/p99 -- the sharpest margin in this batch (§5.1:
     // "expect to lose somewhere and report it," and a clean sweep invites the
@@ -465,7 +465,7 @@ const WORKLOADS = {
     // publishing either figure as the final word.
     {
       name: 'mixed-4e6', kind: 'mixed', size: 4000000, ops: 1000000,
-      label: 'mixed set/get-or-insert/delete (50/25/25); factory always defined, so B-40\'s size drift never fires here'
+      label: 'mixed set/get-or-insert/delete (50/25/25); factory always defined, so BUG-DEFAULT-MAP-1\'s size drift never fires here'
     }
   ],
   'bi-map': [

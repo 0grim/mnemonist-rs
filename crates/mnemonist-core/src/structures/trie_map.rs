@@ -24,7 +24,7 @@
 //! write on it is a silent no-op in sloppy mode, and the loop's local `node`
 //! ends up rebinding to a chain of fresh, unlinked `{}` objects that vanish
 //! with the call. `size` still increments, because the final orphan object
-//! genuinely has no `SENTINEL` property of its own. See B-200 in NOTES.md.
+//! genuinely has no `SENTINEL` property of its own. See BUG-TRIE-MAP-1 in NOTES.md.
 //!
 //! Reproducing this exactly would mean modelling JavaScript's primitive/object
 //! duality — a plain value that is sometimes indexable and sometimes not —
@@ -35,7 +35,7 @@
 //! separate fields instead of one shared keyspace, which makes a token equal
 //! to the sentinel string an utterly ordinary token here — stored, retrieved
 //! and iterated like any other, never colliding with anything. This is a
-//! deliberate, disclosed divergence: D-200 in DECISIONS-CANDIDATES.md.
+//! deliberate, disclosed divergence: DIV-TRIE-MAP-1 in DECISIONS-CANDIDATES.md.
 //!
 //! # Enumeration order, which the test suite depends on
 //!
@@ -55,8 +55,8 @@
 //!
 //! # Deliberate divergences
 //!
-//! * **D-200** (above): the sentinel/token collision is not reproduced.
-//! * **D-201**: `values`/`keys`/`entries`/`prefixes` are implemented as
+//! * **DIV-TRIE-MAP-1** (above): the sentinel/token collision is not reproduced.
+//! * **DIV-TRIE-MAP-2**: `values`/`keys`/`entries`/`prefixes` are implemented as
 //!   [`Walk`], which re-navigates from the root by token path on every step
 //!   rather than holding upstream's live object references. The two agree on
 //!   every sequence of operations the original test suite performs, and agree
@@ -69,7 +69,7 @@
 //!   moves on. Confirmed against real Node 24.18.1 — no test in either
 //!   original suite interleaves a `delete` with an open walk over the deleted
 //!   region. See DECISIONS-CANDIDATES.md.
-//! * **D-202**: `Object.keys` order for a plain object special-cases
+//! * **DIV-TRIE-MAP-3**: `Object.keys` order for a plain object special-cases
 //!   integer-like keys (`"0"`, `"1"`, …), enumerating them ascending *before*
 //!   any other key regardless of insertion order. [`Node`] does not reproduce
 //!   this — every entry enumerates in insertion order, full stop. No token
@@ -149,7 +149,7 @@ impl<T, V> Node<T, V> {
     }
 
     /// Own entries, in insertion order — `for (k in node)`, minus the
-    /// integer-like-key rule (D-202).
+    /// integer-like-key rule (DIV-TRIE-MAP-3).
     fn iter(&self) -> impl Iterator<Item = &Slot<T, V>> {
         self.entries.iter()
     }
@@ -300,7 +300,7 @@ impl<T: PartialEq, V> Node<T, V> {
 /// reproduces the *shape* of that scan (see [`Walk::step`]) over **paths**
 /// rather than live references, which is what lets it be resumed from a
 /// fresh `&TrieMap` on every step — required at the FFI boundary, where
-/// nothing can hold a borrow across calls. See the module docs for D-201, the
+/// nothing can hold a borrow across calls. See the module docs for DIV-TRIE-MAP-2, the
 /// one place this design disagrees with upstream's.
 #[derive(Debug, Clone)]
 pub struct Walk<T> {
@@ -344,7 +344,7 @@ impl<T: Clone + PartialEq> Walk<T> {
     /// a node once it has been popped.
     pub fn step<'a, V>(&mut self, map: &'a TrieMap<T, V>) -> Option<(Vec<T>, &'a V)> {
         while let Some(path) = self.pending.pop() {
-            // D-201: re-navigate from the root rather than dereference a
+            // DIV-TRIE-MAP-2: re-navigate from the root rather than dereference a
             // held pointer. A path that no longer resolves — the node it
             // named, or an ancestor of it, was pruned since this frame was
             // queued — is simply skipped, which is where this walk can
@@ -481,7 +481,7 @@ impl<T: Clone + PartialEq, V> TrieMap<T, V> {
     /// single-pass "remember the highest safe truncation point" walk. The two
     /// are equivalent for every OBSERVABLE outcome (`root`, `size`, `has`,
     /// `find`, and every walk that is not already open across the delete —
-    /// see D-201): a node upstream's algorithm would prune from is, by
+    /// see DIV-TRIE-MAP-2): a node upstream's algorithm would prune from is, by
     /// construction, the root of a chain of nodes that each have fewer than
     /// two own keys, and removing the single reference at the top of that
     /// chain leaves exactly the same nodes unreachable as removing each one
@@ -796,7 +796,7 @@ mod tests {
         assert!(walk.step(&trie).is_none());
     }
 
-    /// D-200: a token equal to what upstream reserves as SENTINEL is an
+    /// DIV-TRIE-MAP-1: a token equal to what upstream reserves as SENTINEL is an
     /// ordinary token here, never colliding with a node's own value.
     #[test]
     fn a_token_equal_to_the_sentinel_character_is_an_ordinary_token() {
@@ -811,7 +811,7 @@ mod tests {
             "word-a0b",
         );
 
-        // Unlike upstream (B-200: size overcounts and the second value is
+        // Unlike upstream (BUG-TRIE-MAP-1: size overcounts and the second value is
         // lost), both words are genuinely stored here.
         assert_eq!(trie.size(), 2);
         assert_eq!(trie.get(tokens("a")), Some(&"word-a"));
@@ -825,7 +825,7 @@ mod tests {
         );
     }
 
-    /// D-201: an add reachable from a frame the walk has queued but not yet
+    /// DIV-TRIE-MAP-2: an add reachable from a frame the walk has queued but not yet
     /// expanded IS seen, because each step re-reads the live node — matching
     /// upstream, which is reading the same still-linked object live. Needs
     /// two branches so the walk returns with the interesting one

@@ -72,17 +72,17 @@ states `trie-map`'s campaign does, over `add` instead of `set`, plus the unteste
 
 ## Bugs this found
 
-Both upstream defects this unit's engine has — B-200 (a `SENTINEL`-shaped token corrupts the trie)
-and B-201 (a `delete`/`clear` under an open cursor leaves it yielding stale content) — are
+Both upstream defects this unit's engine has — BUG-TRIE-MAP-1 (a `SENTINEL`-shaped token corrupts the trie)
+and BUG-TRIE-MAP-2 (a `delete`/`clear` under an open cursor leaves it yielding stale content) — are
 documented in full in `docs/modules/trie-map.md`, since they are properties of the shared node
 representation and the shared lazy walk, not of anything `trie.js` adds. This unit's own fuzz
-campaign rediscovered B-201 independently, over `add`/`clear`/`keys` rather than `set`/`delete`/
+campaign rediscovered BUG-TRIE-MAP-2 independently, over `add`/`clear`/`keys` rather than `set`/`delete`/
 `entries` — see "Fuzz + bench" for that repro specifically.
 
 ## Deliberate divergences
 
-The three structural divergences — D-200 (sentinel collision not reproduced), D-201 (path-based
-walk, not a live reference), D-202 (no integer-key enumeration rule) — are inherited from the shared
+The three structural divergences — DIV-TRIE-MAP-1 (sentinel collision not reproduced), DIV-TRIE-MAP-2 (path-based
+walk, not a live reference), DIV-TRIE-MAP-3 (no integer-key enumeration rule) — are inherited from the shared
 `TrieMap` engine and documented in full in `docs/modules/trie-map.md`. Nothing here adds a new one;
 `Trie`'s own composition-over-copy-and-delete is an implementation-technique difference from
 upstream with no observable consequence (see that file's header note), not a behavioural divergence.
@@ -105,7 +105,7 @@ prefixes in practice, not merely in principle. There is no value alphabet here: 
 value is always the bare `true` `add` writes (or whatever `update`'s `trieToggle` factory flips it
 to — `(old) => !old`), so the only thing to compare per-node is presence.
 
-**The regime split (D-201), inherited.** Exactly `trie-map`'s split — an internal flag chooses
+**The regime split (DIV-TRIE-MAP-2), inherited.** Exactly `trie-map`'s split — an internal flag chooses
 whether a program exercises `delete`/`clear` or a persistent `$iter`/`$next` cursor over `keys()`,
 never both. This unit's *own* first campaign, run before the split existed, independently
 reproduced the divergence, minimised to:
@@ -129,7 +129,7 @@ path — confirmed independently in each unit rather than assumed to transfer.
 value). Same order-independent-object / order-sensitive-array split as `trie-map`; see that file.
 
 **What this grammar deliberately does not cover:** identical to `trie-map`'s list — array mode,
-digit tokens, a starting sub-prefix on `keys`, and `delete`/`clear` under an open cursor (D-201,
+digit tokens, a starting sub-prefix on `keys`, and `delete`/`clear` under an open cursor (DIV-TRIE-MAP-2,
 excluded by construction after being found reachable in practice). See that file for the reasoning
 behind each; it is not repeated here since the mechanism is the shared engine, not anything specific
 to `Trie`.

@@ -83,19 +83,19 @@ upstream's own JS and confirmed inherited rather than introduced.
   with correct behavior"*, so a defect whose upstream test **asserts** the wrong result outranks one
   the tests merely miss; (3) lift the best into `BUGS.md`.
 - **Unregistered divergences — do this before assembling `DECISIONS.md`.** Four module docs were
-  reconciled into the registry as D-300–323, and each doc's table now carries its D-number. **Later
+  reconciled into the registry as DIV-BK-TREE-1–323, and each doc's table now carries its D-number. **Later
   batches may have reintroduced the problem**, so re-run the check: any divergence row numbered `—`
   rather than `D-nnn` exists only in the module doc and will be dropped when `DECISIONS.md` is built
   from the registry. The docs are the more complete source.
-- **Four duplicate D-numbers** — D-01, D-80, D-81, D-89 each appear twice, from a merge collision
+- **Four duplicate D-numbers** — DIV-PROJ-2, DIV-SORT-1, DIV-SORT-2, DIV-LRU-CACHE-1 each appear twice, from a merge collision
   before D-ranges were allocated per batch. Untouched deliberately: renumbering means *editing*
   existing entries, which is how the first collision happened. Fix during the `DECISIONS.md` pass,
   when nothing else is writing to the file.
-- **D-106 — the one substantive caveat left.** `intersectionUnique`'s k-way path never used a heap
+- **DIV-UTILS-3 — the one substantive caveat left.** `intersectionUnique`'s k-way path never used a heap
   and has a NaN-sentinel gap; its fuzz campaign runs with `allow_nan` off **for that function only**,
   so it is green over a region excluding a known disagreement. Closing it needs no new unit — it is
   a gap in our own code.
-- **D-201 — accepted, not a defect.** `trie`'s cursor-versus-delete divergence: upstream's iterator
+- **DIV-TRIE-MAP-2 — accepted, not a defect.** `trie`'s cursor-versus-delete divergence: upstream's iterator
   holds a live object reference, ours is path-based because it must resume across the FFI boundary.
   State it in `DECISIONS.md` as architectural rather than revisiting it.
 - **Gate 7 flaked once**, reporting FAILING while `cargo test` by hand was green seconds later. It

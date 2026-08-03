@@ -9,7 +9,7 @@
 //!
 //! `distance` is a JS callback invoked repeatedly *from inside* both `add`'s
 //! descent and `search`'s traversal — the same shape as
-//! `crate::bit_vector`'s growth policy (B-31), and for the same reason: the
+//! `crate::bit_vector`'s growth policy (PORTBUG-1), and for the same reason: the
 //! `RefCell` borrow this bridge takes for the whole call cannot be released
 //! between distance calls, because `mnemonist-core`'s `try_add`/`try_search`
 //! own the loop and know nothing about `RefCell`. So, exactly as
@@ -59,7 +59,7 @@ const NOT_A_FUNCTION: &str = "mnemonist/BKTree.constructor: given `distance` sho
 const REENTRANT_DISTANCE: &str = "mnemonist-rs/BKTree: the distance function called back into \
      the tree while it was walking. Upstream would serve such a call from a tree that is \
      mid-traversal and get whatever half-built state it finds; this port refuses it instead, \
-     catchably. See B-31 and the module docs.";
+     catchably. See PORTBUG-1 and the module docs.";
 
 #[napi(js_name = "BKTree")]
 pub struct JsBkTree {

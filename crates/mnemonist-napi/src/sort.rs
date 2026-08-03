@@ -24,7 +24,7 @@
 //!    limit, where upstream would sort them by JavaScript's relational
 //!    comparison. Supporting them is DESIGN.md §3.3's T2 tier (callbacks into
 //!    JS mid-algorithm), which this unit deliberately does not reach for.
-//! 2. It follows that **B-80 and B-81 are unreachable here.** Both upstream
+//! 2. It follows that **BUG-SORT-1 and BUG-SORT-2 are unreachable here.** Both upstream
 //!    bugs need an element whose comparison re-enters the sorter, which needs a
 //!    `valueOf`, which needs an object element. With numbers only, upstream's
 //!    shared global counter and shared partition stack are unobservable, so

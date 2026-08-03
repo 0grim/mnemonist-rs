@@ -53,7 +53,7 @@
 //!
 //! **4. Not restartable, and identity under `Symbol.iterator`.** Shared with
 //! `obliterator`, and the reason [`OrderedMap`] does not implement
-//! [`IntoIterator`] either (D-06).
+//! [`IntoIterator`] either (DIV-STACK-1).
 //!
 //! # How delete is made O(1) without breaking live cursors
 //!

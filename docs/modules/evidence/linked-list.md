@@ -10,14 +10,14 @@ falsification record, full benchmark table.
 | Test | Closes gap |
 |---|---|
 | `reproduces_the_upstream_suite` | the eleven blocks, as a baseline |
-| `shifting_the_last_element_leaves_tail_stale`, `a_stale_tail_from_b_241_is_healed_by_the_next_push`, `a_stale_tail_from_b_241_is_healed_by_the_next_unshift`, `the_staleness_only_appears_once_the_list_is_shifted_fully_empty` | 5, 6 — B-241 |
+| `shifting_the_last_element_leaves_tail_stale`, `a_stale_tail_from_b_241_is_healed_by_the_next_push`, `a_stale_tail_from_b_241_is_healed_by_the_next_unshift`, `the_staleness_only_appears_once_the_list_is_shifted_fully_empty` | 5, 6 — BUG-LINKED-LIST-1 |
 | `a_push_after_the_cursor_opened_is_visible_if_not_yet_past_the_tail` | 1 |
 | `a_push_after_the_cursor_has_passed_the_tail_is_not_visible` | 1 |
 | `a_shift_is_invisible_to_a_cursor_already_open` | 2 |
 | `an_unshift_is_invisible_to_a_cursor_already_open` | 2 |
 | `a_cursor_opened_on_an_empty_list_never_yields_anything_even_after_pushes` | 3 |
 | `clear_does_not_affect_a_cursor_already_open` | 4 |
-| `a_cursor_is_not_restartable` | D-06 |
+| `a_cursor_is_not_restartable` | DIV-STACK-1 |
 | `a_for_each_shaped_walk_sees_a_push_made_from_its_own_callback_on_the_lone_tail_node`, `a_step_shaped_walk_does_not_see_a_push_made_between_two_of_its_own_steps` | the port defect the fuzzer found — pins both halves directly |
 | `push_after_for_each_shifts_the_list_to_empty_starts_a_fresh_one_element_list` | the second port defect the fuzzer found |
 | `interleaved_unshift_and_push_produce_the_expected_order`, `a_long_workout_of_push_shift_unshift_matches_a_vecdeque_reference` | general correctness, cross-checked against `std::collections::VecDeque` |
@@ -27,7 +27,7 @@ falsification record, full benchmark table.
 
 * **Op alphabet:** `push` (5), `unshift` (4) — both outweigh `shift` (3) so a program keeps enough
   live nodes to reach the liveness rules rather than emptying the list every few operations —
-  `first`/`last` (2 each, the pair B-241 depends on), `peek`/`clear` (1 each), `$iter` over
+  `first`/`last` (2 each, the pair BUG-LINKED-LIST-1 depends on), `peek`/`clear` (1 each), `$iter` over
   `values`/`entries` (2), `$next` (4), `$spread` (1), `$forEach` (3, the heaviest of the
   cursor-lifecycle ops — this is the one that reaches "push while the walk is mid-flight").
 * **Observable state:** `size`, `first()`, `last()`, `toArray()`, compared after every operation.
@@ -43,7 +43,7 @@ falsification record, full benchmark table.
 
 ## Falsification record (gate 6)
 
-Two Rust-level defects were falsified, plus B-241; all three were assertions the port's own
+Two Rust-level defects were falsified, plus BUG-LINKED-LIST-1; all three were assertions the port's own
 history had already made, so the sabotage is literally "revert the fix" in two cases.
 
 **A — the `forEach` timing fix.** This is the same shape as "Bugs this found" #1 in the document;

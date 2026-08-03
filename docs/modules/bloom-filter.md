@@ -39,15 +39,15 @@ coverage is whatever the byte arrays above happen to pin.
    `stringToByteArray` produces a `Uint16Array` — and that `murmurhash3` then reads each 16-bit
    element *as if it were a byte*, overlapping neighbours — is never exercised. Nor is an astral
    character, which becomes **two** code units.
-3. **Non-string items.** `add(42)` does not throw and does not hash 42; see B-98.
+3. **Non-string items.** `add(42)` does not throw and does not hash 42; see BUG-BLOOM-FILTER-3.
 4. **`clear`.** Defined, never called. It is also the one method that can throw after construction,
    because it re-derives the sizing rather than merely zeroing.
 5. **`toJSON`.** Defined, never called.
 6. **`errorRate` as anything but `-45`.** The three-way reading — omitted defaults, explicit `0`
    throws, explicit `NaN` **also** defaults — is entirely unexercised. So is any rate above the
    default.
-7. **`errorRate >= 1`,** where the sizing goes negative. See B-99.
-8. **A `hashFunctions` of zero,** where the filter answers `true` to everything. See B-97.
+7. **`errorRate >= 1`,** where the sizing goes negative. See BUG-BLOOM-FILTER-4.
+8. **A `hashFunctions` of zero,** where the filter answers `true` to everything. See BUG-BLOOM-FILTER-2.
 9. **Fractional and non-integer capacities.** The error message says "positive **integer**"; the
    check is `typeof capacity === 'number' && capacity > 0`, so `2.5` and `0.5` are both accepted and
    neither is tested.
@@ -64,8 +64,8 @@ checked against 23 (seed, data) pairs including the exact negative seeds `hashAr
 fresh capacity-10 filter per item (including U+0000, non-ASCII and an astral character) so a hash
 defect can't hide behind cumulative state, the empty sequence treated as an ordinary item, `clear`
 resetting bits while keeping the sizing, the error-rate option/default read, an error rate above 1
-producing a `RangeError` only sometimes (B-99), a zero-hash-function filter saying yes to everything
-(B-97), 15 (capacity, errorRate) pairs checked against Node, an infinite capacity producing an empty
+producing a `RangeError` only sometimes (BUG-BLOOM-FILTER-4), a zero-hash-function filter saying yes to everything
+(BUG-BLOOM-FILTER-2), 15 (capacity, errorRate) pairs checked against Node, an infinite capacity producing an empty
 filter, 200 items with zero false negatives, and a false-positive rate measured at 500 items in and
 2,000 queries out, asserted under 5% against a nominal 0.5%. Full test-to-gap mapping: evidence
 file.
@@ -78,7 +78,7 @@ unnoticed; a fresh filter per item makes each digest independently observable.
 
 Four, all verified against Node 24.18.1, all reproduced.
 
-### B-93 — `sum32` is not a 32-bit adder, and a swapped constant hides it
+### BUG-BLOOM-FILTER-1 — `sum32` is not a 32-bit adder, and a swapped constant hides it
 
 ```js
 function sum32(a, b) {
@@ -104,7 +104,7 @@ Demonstrated end to end through the *original* suite, as a control on the gate-6
 below: replacing `sum32(hash, N)` with `hash + 0xe6546b64` (the unswapped constant) leaves all six
 upstream tests green, while replacing it with `hash + N` (the swapped one) turns two of them red.
 
-### B-97 — a filter with zero hash functions says `true` to everything
+### BUG-BLOOM-FILTER-2 — a filter with zero hash functions says `true` to everything
 
 `hashFunctions` is `(length * 8 / capacity * Math.LN2) | 0`, and nothing checks the result. When it
 truncates to `0`, `add` writes no bits and `test` returns `true` **vacuously** — the loop it would
@@ -124,7 +124,7 @@ error message next to it saying "positive **integer**". `{capacity: 10, errorRat
 same state with a **non-empty** `data`, so it is not simply "an empty filter"; the bit array exists,
 is all zeros, and every query says yes.
 
-### B-98 — every non-string item hashes identically
+### BUG-BLOOM-FILTER-3 — every non-string item hashes identically
 
 ```js
 function stringToByteArray(string) {
@@ -151,7 +151,7 @@ a bug rather than a coercion policy: `add(null)` and `add(undefined)` throw a `T
 property read, `add(['a'])` throws `string.charCodeAt is not a function`, and
 `add(new String('hello'))` works and equals `add('hello')`.
 
-### B-99 — an `errorRate` above 1 is a raw `RangeError`, but only sometimes
+### BUG-BLOOM-FILTER-4 — an `errorRate` above 1 is a raw `RangeError`, but only sometimes
 
 `Math.log` of anything above 1 is positive, so `bits` goes negative and `new Uint8Array(-59)` throws
 from the *allocator*:
@@ -166,44 +166,44 @@ BloomFilter { capacity: 5, errorRate: 2, hashFunctions: 0, data: Uint8Array(0) [
 ```
 
 The third one is the interesting case: `(-7.2 / 8) | 0` truncates to `0`, so the same invalid option
-yields a silent B-97 filter instead of an error, and which of the two you get depends on the
+yields a silent BUG-BLOOM-FILTER-2 filter instead of an error, and which of the two you get depends on the
 capacity. Neither is the module's own error message, and `errorRate` is the one option upstream
 believes it validates.
 
 ## Deliberate divergences
 
-**D-54 — items are `&[u16]`, not `&str`.** Upstream hashes a string's UTF-16 code units via
+**DIV-BLOOM-FILTER-1 — items are `&[u16]`, not `&str`.** Upstream hashes a string's UTF-16 code units via
 `charCodeAt`. Taking `&str` in the core would mean hashing UTF-8, which produces different bits for
 every non-ASCII input and would silently make this a different filter. The `charCodeAt` conversion
 is at the bridge, where the JavaScript values are.
 
-**D-55 — `murmurhash3` takes `&[u16]`, and the overlap is preserved.** Upstream's JSDoc says
+**DIV-BLOOM-FILTER-2 — `murmurhash3` takes `&[u16]`, and the overlap is preserved.** Upstream's JSDoc says
 `ByteArray` and its loop composes four *bytes* per 32-bit word, but its only caller hands it a
 `Uint16Array`. So elements above `0xFF` overlap their neighbours' byte positions, and `data.length`
 counts code units rather than bytes. Not corrected: it is the function's only observed input and
 every published bit pattern depends on it.
 
-**D-56 — `BuildError` has three variants, not one message.** Upstream raises two *different*
+**DIV-BLOOM-FILTER-3 — `BuildError` has three variants, not one message.** Upstream raises two *different*
 JavaScript error classes here: its own `Error` for the two validation failures and the allocator's
 `RangeError` for a negative length. The core has no exceptions, so the distinction is carried as
 data and the bridge re-throws with upstream's message verbatim — which is what upstream's own
 `assert.throws(..., /capacity/)` matches on.
 
-**D-57 — a `RangeError` is thrown as a napi `GenericFailure` carrying the right message.** napi has
+**DIV-BLOOM-FILTER-4 — a `RangeError` is thrown as a napi `GenericFailure` carrying the right message.** napi has
 no direct `RangeError` constructor. The message is upstream's, character for character
 (`Invalid typed array length: -59`), and nothing in the upstream suite discriminates on the class.
 
-**D-58 — `#.data` hands back a fresh `Uint8Array` per read.** napi cannot lend out a typed array
+**DIV-BLOOM-FILTER-5 — `#.data` hands back a fresh `Uint8Array` per read.** napi cannot lend out a typed array
 whose backing store a later `add` may reallocate (`clear` genuinely reallocates). Every upstream
 assertion reads it through `Array.from`, and `filter.data.length` is a length either way. What this
 does *not* reproduce is upstream's `filter.data === filter.data`, which nothing checks.
 
-**D-59 — `from` collects before adding.** Upstream adds inside the `forEach` callback; the bridge
+**DIV-BLOOM-FILTER-6 — `from` collects before adding.** Upstream adds inside the `forEach` callback; the bridge
 runs `crate::foreach::collect` — the same five-branch coercion, unmodified — and then adds. The
 difference is observable only if a callback could reach the filter being built, and it cannot: the
 filter is local to `from` and is not yet a JavaScript object. Same pattern as `Stack.from`.
 
-**D-60 — `inspect` is not ported.** No upstream assertion, no Rust equivalent.
+**DIV-BLOOM-FILTER-7 — `inspect` is not ported.** No upstream assertion, no Rust equivalent.
 
 ## Fuzz + bench
 
@@ -218,15 +218,15 @@ are observations, compared after every step. `clear` is an op rather than an obs
 *mutates*: it re-derives `hashFunctions` and reallocates `data`, so putting it in the observation
 set would wipe the filter before every comparison.
 
-`add` and `test` take numbers and booleans as well as strings, deliberately — B-98 is reachable only
+`add` and `test` take numbers and booleans as well as strings, deliberately — BUG-BLOOM-FILTER-3 is reachable only
 if the grammar can express a non-string item. `null` and `undefined` are excluded because upstream
 throws a `TypeError` there and the oracle compares thrown messages verbatim, which would turn an
 engine-wording difference into a false divergence.
 
 `errorRate` is held strictly below 1, an explicit exclusion: at or above it the sizing goes negative
 and a large enough capacity throws from the *constructor*, which reaches the oracle's `init` and is
-apparatus failure by protocol. That is B-99, and it is pinned by a native test instead. The
-zero-hash-function region (B-97) is **not** excluded and is reached routinely.
+apparatus failure by protocol. That is BUG-BLOOM-FILTER-4, and it is pinned by a native test instead. The
+zero-hash-function region (BUG-BLOOM-FILTER-2) is **not** excluded and is reached routinely.
 
 A harness-side JSON number-encoding mismatch was found and fixed during this campaign's first run;
 full account: log.
@@ -235,9 +235,9 @@ full account: log.
 original test suite (gate 4): replacing `sum32`'s call with unswapped addition must break
 `'should be possible to add items to the filter.'` — confirmed red (4 passing, 2 failing, that
 assertion among them); reverted, 6 passing. The fuzz spec: an early `if hash_functions == 0 {
-return false }` in `test` (i.e. "fixing" B-97) must break a return-value divergence on a filter
+return false }` in `test` (i.e. "fixing" BUG-BLOOM-FILTER-2) must break a return-value divergence on a filter
 whose `hashFunctions` truncated to zero — confirmed red, minimised to two lines; reverted, clean.
-Control, to check the B-93 cancellation rather than assert it: swapping in the *unswapped* constant
+Control, to check the BUG-BLOOM-FILTER-1 cancellation rather than assert it: swapping in the *unswapped* constant
 should change nothing if the cancellation is real — confirmed green, 6 passing, so the cancellation
 is real. Full record: evidence file.
 

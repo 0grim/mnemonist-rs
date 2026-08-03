@@ -14,7 +14,7 @@
 //! in one step, which is the easy case and not the one the algorithm exists
 //! for. Four symbols is used here for the same reason, generated fresh per
 //! pass so the recursive case (repeated triples) is exercised rather than
-//! avoided — see the module's own docs on B-91, which only fires when the
+//! avoided — see the module's own docs on BUG-SUFFIX-ARRAY-2, which only fires when the
 //! recursion actually runs.
 //!
 //! # Fresh text every pass, materialised before any timing
@@ -33,7 +33,7 @@
 //!
 //! `array()`'s positions are a permutation of `0..size`, so a plain sum is
 //! always the same regardless of whether the sort order is right — sorting
-//! (or reproducing B-90/B-91's wrong order) cannot change which positions
+//! (or reproducing BUG-SUFFIX-ARRAY-1/BUG-SUFFIX-ARRAY-2's wrong order) cannot change which positions
 //! exist, only where they land. Weighting each position by its rank makes the
 //! checksum sensitive to the actual order, which is what proves the port
 //! reproduces upstream's construction bug-for-bug rather than merely
@@ -45,7 +45,7 @@ use crate::xorshift::XorShift32;
 
 /// Four symbols, `A`..`D` by code point -- large enough that the string is
 /// not the single-character degenerate case (already pinned by upstream's own
-/// `'aaaaaaa'` B-91 test), small enough that repeated triples -- and
+/// `'aaaaaaa'` BUG-SUFFIX-ARRAY-2 test), small enough that repeated triples -- and
 /// therefore the DC3 recursion -- are common rather than incidental.
 const ALPHABET: u16 = 4;
 const ALPHABET_BASE: u16 = 65;

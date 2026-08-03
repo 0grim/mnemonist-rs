@@ -7,7 +7,7 @@
 //! one repeatable pattern rather than a bespoke mix per module. `unshift`/
 //! `shift` exercise the same ring arithmetic from the other end and are not
 //! separately measured here; `get`, which `FixedDeque` also offers, is
-//! bounded by the *capacity* rather than the size (B-62) and reading it
+//! bounded by the *capacity* rather than the size (BUG-CIRCULAR-BUFFER-1) and reading it
 //! safely within `[0, size)` would need the same clamping `vector`'s `get`
 //! does, which is more machinery than this batched pass needs for one more
 //! pure-read data point.

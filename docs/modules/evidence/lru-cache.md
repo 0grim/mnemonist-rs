@@ -37,7 +37,7 @@ module=lru-map-with-delete     seed=20260801 cases=5988 ops=896591  wall=60.0s d
   `set` (6), `setpop` (3), `clear` (1), `$iter`/`$next`/`$spread` (2/4/2, the lazy-iterator lifecycle
   ops), `$forEach` (2, `for_each_strategy` over a small mutation table). The `-with-delete` variants
   add `delete` (4) and `remove` (3), both weighted above `clear` specifically because interleaving
-  them with eviction is where B-140's sibling defect and the two port defects above were found.
+  them with eviction is where BUG-LRU-CACHE-1's sibling defect and the two port defects above were found.
 * **Constructor alphabet:** capacity `1..=6` and nothing else — deliberately small relative to the
   op-count ceiling (`program_len` widened to `1..300`), so a generated program cycles the ring many
   times over at every capacity in range. The warning here is explicit: a campaign whose
@@ -46,11 +46,11 @@ module=lru-map-with-delete     seed=20260801 cases=5988 ops=896591  wall=60.0s d
   primitive shapes), including the one collision unique to this family — `Int(0)` and `Str("0")` are
   the same key for the object-backed pair (`ToPropertyKey` coerces both to `"0"`) and two different
   keys for the `Map`-backed pair (SameValueZero never conflates them) — and four JS-falsy values
-  (`Int(0)`, `Bool(false)`, `Null`, `Undefined`), which is what made B-140 reachable on the third
+  (`Int(0)`, `Bool(false)`, `Null`, `Undefined`), which is what made BUG-LRU-CACHE-1 reachable on the third
   generated case.
 * **Observable state, compared after every op:** `capacity`/`size`/`head`/`tail` always; the
   object-backed pair's full `items` (every live key's pointer, an order-independent JSON object —
-  see D-93 for why the `Map`-backed pair's own `items` is left out).
+  see DIV-LRU-CACHE-5 for why the `Map`-backed pair's own `items` is left out).
 
 **How often eviction actually fired** — measured directly, not inferred from the weights, by
 `grammar_self_check` (`crates/difffuzz/src/modules/lru_cache.rs`, no oracle, no `node`): over 400

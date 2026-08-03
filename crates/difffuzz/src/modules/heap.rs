@@ -2,7 +2,7 @@
 //!
 //! # The grammar's whole reason for existing: a comparator that mutates
 //!
-//! B-31 survived 2.94M operations because the `queue` alphabet had no
+//! PORTBUG-1 survived 2.94M operations because the `queue` alphabet had no
 //! `forEach`, and a grammar that omits a method omits every bug reachable only
 //! through it. The equivalent omission here would be a grammar whose
 //! comparators are all pure, which is what every one of `test/heap.js`'s
@@ -13,8 +13,8 @@
 //! |---|---|---|
 //! | [`Kind::Pushy`] | `items.push(99)` | grows it under an index the sift already chose |
 //! | [`Kind::Popper`] | `items.pop()` | shrinks it, so the walk reads past its frozen `endIndex` and gets `undefined` |
-//! | [`Kind::Clearer`] | `heap.clear()` | **rebinds** it, so the sift finishes into a detached array (D-41) |
-//! | [`Kind::Boom`] | throws | leaves `items.length` one ahead of `size`, permanently (B-70) |
+//! | [`Kind::Clearer`] | `heap.clear()` | **rebinds** it, so the sift finishes into a detached array (DIV-STACK-3) |
+//! | [`Kind::Boom`] | throws | leaves `items.length` one ahead of `size`, permanently (BUG-HEAP-1) |
 //!
 //! A port that modelled `items` as a `Vec<f64>` would answer identically for
 //! the first two and be silently wrong for the third. A port whose algorithms
@@ -31,7 +31,7 @@
 //! # Observable state
 //!
 //! `size` and `items`. They are separate quantities upstream and can genuinely
-//! disagree (B-70), so comparing both is the point; `toArray` is an *op* rather
+//! disagree (BUG-HEAP-1), so comparing both is the point; `toArray` is an *op* rather
 //! than an observation because it runs the comparator, and an observation with
 //! side effects would fire after every op and make every divergence report
 //! ambiguous.

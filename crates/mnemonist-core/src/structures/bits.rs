@@ -34,7 +34,7 @@
 //! s.rank(32)      // 0        -- because rank early-returns on size === 0
 //! ```
 //!
-//! Three no-op resets take `size` to `-2`. That is NOTES.md B-13, and it is
+//! Three no-op resets take `size` to `-2`. That is NOTES.md BUG-SPARSE-QUEUE-SET-2, and it is
 //! reproduced here, which is why [`Words::size`] is an `i64` rather than a
 //! `usize`: a `usize` could not hold the state upstream reaches.
 //!
@@ -50,7 +50,7 @@
 //!
 //! `p` only moves inside the inner loop, so every all-zero word before the
 //! answer costs the result 32. Measured: a `BitSet(64)` with only bit 40 set
-//! answers `select(1) === 8`. NOTES.md B-14, likewise present in both files.
+//! answers `select(1) === 8`. NOTES.md BUG-SPARSE-QUEUE-SET-3, likewise present in both files.
 //!
 //! # The last word's width, and why a length of 0 is not empty
 //!
@@ -60,7 +60,7 @@
 //! non-empty array yields 32 bits**. Unreachable for `BitSet`, whose array is
 //! empty when its length is; reachable for `BitVector`, where capacity outlives
 //! length. Measured: `new BitVector(); v.grow();` then `forEach` calls back 32
-//! times on a vector of length 0. NOTES.md B-18.
+//! times on a vector of length 0. NOTES.md BUG-BIT-SET-2.
 //!
 //! # Why the words live behind `Rc<RefCell<…>>`
 //!
@@ -288,7 +288,7 @@ impl Words {
         *slot = updated as u32;
 
         // The comparison upstream performs: a SIGNED new value against an
-        // UNSIGNED old one, both widened to JavaScript Numbers. This is B-13,
+        // UNSIGNED old one, both widened to JavaScript Numbers. This is BUG-SPARSE-QUEUE-SET-2,
         // and writing `updated as u32` here instead would silently fix it.
         if i64::from(updated) < i64::from(old) {
             self.size -= 1;
@@ -332,7 +332,7 @@ impl Words {
     /// `rank(i)` — set bits strictly before index `i`.
     ///
     /// Early-returns `0` when `size` is `0`, using the *counter*, not a real
-    /// count — so a `size` corrupted by B-13 makes `rank` answer `0` for a set
+    /// count — so a `size` corrupted by BUG-SPARSE-QUEUE-SET-2 makes `rank` answer `0` for a set
     /// that demonstrably holds bits.
     pub fn rank(&self, i: i64) -> i64 {
         if self.size == 0 {
@@ -369,7 +369,7 @@ impl Words {
     /// when the scan runs off the end**, which upstream reaches by falling out
     /// of the loop with no `return`.
     ///
-    /// Reproduces B-14: `p` is not advanced across the words `byte === 0`
+    /// Reproduces BUG-SPARSE-QUEUE-SET-3: `p` is not advanced across the words `byte === 0`
     /// skips.
     pub fn select(&self, r: i64) -> Option<i64> {
         if self.size == 0 {
@@ -576,7 +576,7 @@ mod tests {
         assert_eq!(words_for(74), 3);
     }
 
-    /// B-13, in isolation: a reset that clears nothing still decrements `size`
+    /// BUG-SPARSE-QUEUE-SET-2, in isolation: a reset that clears nothing still decrements `size`
     /// whenever bit 31 of the word is set.
     #[test]
     fn a_no_op_reset_decrements_size_when_the_top_bit_of_the_word_is_set() {
@@ -607,7 +607,7 @@ mod tests {
         assert_eq!(words.size, 1);
     }
 
-    /// B-14: every all-zero word skipped before the answer costs 32.
+    /// BUG-SPARSE-QUEUE-SET-3: every all-zero word skipped before the answer costs 32.
     #[test]
     fn select_loses_thirty_two_positions_per_skipped_word() {
         let mut words = Words::new(64);
@@ -648,7 +648,7 @@ mod tests {
         assert_eq!(words.select(0), Some(0));
     }
 
-    /// `rank` trusts the `size` counter, so B-13 propagates into it.
+    /// `rank` trusts the `size` counter, so BUG-SPARSE-QUEUE-SET-2 propagates into it.
     #[test]
     fn rank_returns_zero_whenever_the_size_counter_is_zero() {
         let mut words = Words::new(32);
@@ -665,7 +665,7 @@ mod tests {
     }
 
     /// Out-of-range reads and writes are inert here, which is the contrast with
-    /// `SparseSet`'s B-8/B-9/B-10 family.
+    /// `SparseSet`'s BUG-SPARSE-SET-1/BUG-SPARSE-SET-2/BUG-SPARSE-SET-3 family.
     #[test]
     fn out_of_range_indices_are_inert_rather_than_corrupting() {
         let mut words = Words::new(10);
@@ -682,7 +682,7 @@ mod tests {
     }
 
     /// But an index inside the last *word* and past `length` is accepted, and
-    /// then `size` disagrees with everything else. B-19.
+    /// then `size` disagrees with everything else. BUG-UTILS-BITWISE-1.
     #[test]
     fn a_bit_past_length_but_inside_the_word_is_counted_yet_invisible() {
         let mut words = Words::new(10);
@@ -743,7 +743,7 @@ mod tests {
         assert_eq!(rest[39], 1, "the next word is read live");
     }
 
-    /// D-06 on this module: the walk is not restartable.
+    /// DIV-STACK-1 on this module: the walk is not restartable.
     #[test]
     fn a_walk_is_not_restartable() {
         let mut words = Words::new(4);

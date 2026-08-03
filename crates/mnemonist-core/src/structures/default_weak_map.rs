@@ -59,7 +59,7 @@
 //! Correct, not fast, and stated as such: nothing about this 60-line upstream
 //! test file, or a `WeakMap`'s own contract, asks for anything faster.
 //!
-//! # The `get`/`peek` split reproduces the same defect class as B-40, minus the drift
+//! # The `get`/`peek` split reproduces the same defect class as BUG-DEFAULT-MAP-1, minus the drift
 //!
 //! ```js
 //! DefaultWeakMap.prototype.get = function(key) {
@@ -74,13 +74,13 @@
 //!
 //! Identical shape to `DefaultMap.prototype.get` — a stored value of
 //! `undefined` is indistinguishable, at this line, from "no such key" — but
-//! **without** the `this.size++` that makes B-40's drift visible, because a
+//! **without** the `this.size++` that makes BUG-DEFAULT-MAP-1's drift visible, because a
 //! `WeakMap` has no `size` to drift. The consequence that remains: the
 //! factory **re-runs on every `get`** of a key whose stored value is
 //! `undefined`, and [`DefaultWeakMap::has`] still reports that key present the
 //! whole time, because `has` asks the `WeakMap` about the key and `get`'s
 //! bug asks about the value. Confirmed against Node 24.18.1 and recorded as
-//! **B-242** in NOTES.md — the same defect, a different file, one fewer
+//! **BUG-DEFAULT-WEAK-MAP-1** in NOTES.md — the same defect, a different file, one fewer
 //! symptom.
 //!
 //! [`DefaultWeakMap::write_from_factory`] and [`DefaultWeakMap::set`] both
@@ -164,7 +164,7 @@ impl<K, V> DefaultWeakMap<K, V> {
     }
 
     /// Upstream's `has`: `this.items.has(key)`, which asks about the key and
-    /// not the value — the distinction B-242 depends on.
+    /// not the value — the distinction BUG-DEFAULT-WEAK-MAP-1 depends on.
     pub fn has(&self, matches: impl FnMut(&K) -> bool) -> bool {
         self.position(matches).is_some()
     }
@@ -197,7 +197,7 @@ impl<K, V> DefaultWeakMap<K, V> {
     ///
     /// `make_key` is called **at most once, and only on a miss** — the whole
     /// reason this is a method of its own rather than inlined twice. A
-    /// factory re-triggered by B-242 matches the *existing* entry and simply
+    /// factory re-triggered by BUG-DEFAULT-WEAK-MAP-1 matches the *existing* entry and simply
     /// overwrites its value, never allocating a second identity for the same
     /// underlying key. At the bridge, where `make_key` creates a weak
     /// `napi_ref`, that is what keeps re-reading an `undefined`-valued key
@@ -351,7 +351,7 @@ mod tests {
         assert!(!peeked.has(eq(two)));
     }
 
-    // ---- B-242 -------------------------------------------------------
+    // ---- BUG-DEFAULT-WEAK-MAP-1 -------------------------------------------------------
 
     #[test]
     fn b_242_the_factory_re_runs_on_every_get_of_a_stored_undefined_value() {

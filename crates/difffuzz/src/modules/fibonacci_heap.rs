@@ -48,7 +48,7 @@
 //!
 //! `size` is a signed `i64` on both sides of this comparison — see
 //! `mnemonist_core::structures::fibonacci_heap`'s own docs and NOTES.md
-//! B-220: a `fibClearer` comparator firing from inside a `pop`'s
+//! BUG-FIBONACCI-HEAP-1: a `fibClearer` comparator firing from inside a `pop`'s
 //! `consolidate` drives `this.size` to `-1` upstream, and the port
 //! reproduces that value exactly rather than clamping it to `0`.
 
@@ -66,7 +66,7 @@ use crate::modules::heap::{factory, factory_name, number, slot, thrown};
 use crate::spec::{ModuleSpec, Op};
 
 /// Range the generator draws pushed values from. Small, matching `heap`'s
-/// own reasoning: frequent duplicates make tie-breaking (D-105's whole
+/// own reasoning: frequent duplicates make tie-breaking (DIV-UTILS-2's whole
 /// subject) actually happen, not just theoretically possible.
 const VALUES: std::ops::Range<i64> = 0..24;
 
@@ -302,12 +302,12 @@ impl ModuleSpec for FibonacciHeapSpec {
     }
 }
 
-/// `#.pop`, with NOTES.md B-220/B-222's follow-on crashes caught and
+/// `#.pop`, with NOTES.md BUG-FIBONACCI-HEAP-1/BUG-FIBONACCI-HEAP-3's follow-on crashes caught and
 /// re-encoded.
 ///
 /// Once a `fibClearer` comparator has driven the heap into one of two
-/// inconsistent states (B-220: `size` negative and `min` null, from inside a
-/// `pop`'s own `consolidate`; B-222: `root` null while `min` is a real node,
+/// inconsistent states (BUG-FIBONACCI-HEAP-1: `size` negative and `min` null, from inside a
+/// `pop`'s own `consolidate`; BUG-FIBONACCI-HEAP-3: `root` null while `min` is a real node,
 /// from inside a `push`'s tie-break instead), upstream's *next* `pop` throws
 /// a real `TypeError` -- one of two, depending on which state it is. Both
 /// are reproduced in `FibonacciHeap::pop`/`consolidate` as Rust panics whose

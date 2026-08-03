@@ -118,7 +118,7 @@ Two, both in upstream, both verified against Node 24.18.1, and both **found by r
 by fuzzing** — for the reason given under "Deliberate divergences": the port cannot reach them,
 because reaching them requires an element that runs JavaScript during a comparison.
 
-### B-80 — `sort/insertion.js` declares its loop counter as a global
+### BUG-SORT-1 — `sort/insertion.js` declares its loop counter as a global
 
 Both exported functions open with
 
@@ -150,7 +150,7 @@ outer.map(Number);   // [1, 5, 3, 2]   — expected [1, 2, 3, 5]
 The file would also throw `ReferenceError` outright under `'use strict'`, and mnemonist ships
 `"type": "commonjs"` sloppy-mode files, so today it does not.
 
-### B-81 — `sort/quick.js`'s partition stack is module state, shared by all four sorts
+### BUG-SORT-2 — `sort/quick.js`'s partition stack is module state, shared by all four sorts
 
 ```js
 var LOS = new Float64Array(64),
@@ -158,7 +158,7 @@ var LOS = new Float64Array(64),
 ```
 
 allocated once at module scope and used by `inplaceQuickSort` *and*
-`inplaceQuickSortIndices`. `i` is a proper local here, so the failure is subtler than B-80's: the
+`inplaceQuickSortIndices`. `i` is a proper local here, so the failure is subtler than BUG-SORT-1's: the
 outer call's index keeps pointing into a stack the inner call has overwritten. Measured on a
 40-element array whose first compared element re-enters:
 
@@ -175,7 +175,7 @@ numbers only.
 
 Three, below.
 
-### D-80 — the port takes numbers, upstream takes anything
+### DIV-SORT-1 — the port takes numbers, upstream takes anything
 
 `crates/mnemonist-napi/src/sort.rs` reads elements as `f64`. Upstream is duck-typed and compares
 whatever it is given through JavaScript's relational operators, which coerce via
@@ -186,7 +186,7 @@ nothing in `test/sort.js` or in mnemonist's own callers passes a non-number.
 
 The refusal is loud: `mnemonist-rs: sort element 3 is not a number… see docs/modules/sort.md.`
 
-**This divergence is why B-80 and B-81 are unreachable in the port, and it is worth being precise
+**This divergence is why BUG-SORT-1 and BUG-SORT-2 are unreachable in the port, and it is worth being precise
 about the direction.** The port is not *fixing* those bugs; it is refusing the only inputs that can
 observe them. With numeric elements, no user code can run during a comparison, so upstream's shared
 global counter and shared partition stack are never re-entered and a local behaves identically.
@@ -196,7 +196,7 @@ to reproduce a defect nothing can see — the port would be *less* faithful, not
 port's own rule that "a divergence where our port is more correct is a bug in the port" does not
 apply to a regime the port does not admit.
 
-### D-81 — windows outside `0..=length` are refused
+### DIV-SORT-2 — windows outside `0..=length` are refused
 
 Upstream reads `undefined` past the end of an array and writes into holes, producing a sparse array
 with genuine `undefined` elements. A JS array hole has no Rust representation, and modelling one
@@ -204,7 +204,7 @@ would mean `Vec<Option<f64>>` throughout for a regime the original suite never e
 is checked instead, in `mnemonist_core::sort::check_window`, and the bridge reports it with a
 message naming the limit. Same position `PointerVec::get` already takes for the same reason.
 
-### D-83 — the export shape is re-assembled by the shim
+### DIV-SORT-3 — the export shape is re-assembled by the shim
 
 The addon exports at top level, so there is no `sort/quick` object to hand back and `indices` is far
 too generic a name to claim at the top of an addon that will eventually carry forty modules' worth
@@ -298,7 +298,7 @@ mistake `bit-set`'s `rank` was. The checksum is **position-weighted** (`Σ (inde
 than a sum, because a sum cannot distinguish a correctly sorted array from an unsorted one of the
 same multiset; weighting by final index makes it sensitive to quicksort's own (non-stable)
 tie-breaking, so checksum agreement is evidence both sides ran the identical statement-by-statement
-algorithm B-81's docs describe, not merely that both produced *a* sorted array.
+algorithm BUG-SORT-2's docs describe, not merely that both produced *a* sorted array.
 
 The port is 2.5× faster at p50 (31.9 vs 78.4 ns/element), 2.4× faster at p99, 2.5× faster at min. No
 regressions. Full table: evidence file. `structure_rss_delta_mb` (port 0.1 MB, upstream 5.8 MB) is a

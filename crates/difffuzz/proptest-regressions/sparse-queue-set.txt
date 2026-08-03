@@ -15,7 +15,7 @@
 # --- A: `enqueue` "fixed" to refuse a full ring ---
 #
 # Nothing upstream bounds `size` by `capacity`. Adding `if (size >= capacity)
-# return this;` is the obvious repair for B-13, and it is wrong for the same
+# return this;` is the obvious repair for BUG-SPARSE-QUEUE-SET-2, and it is wrong for the same
 # reason every repair in this port is wrong: it is not what the library does.
 # Found in 811 cases (0.8s) and shrunk to two operations on the smallest
 # possible ring:
@@ -26,7 +26,7 @@
 #                     // port dense [0] size 1, upstream dense [1] size 2
 #
 # Note what the repro also demonstrates: at capacity 1 the second enqueue
-# EVICTS the first, which is B-13 at its smallest.
+# EVICTS the first, which is BUG-SPARSE-QUEUE-SET-2 at its smallest.
 #
 # As with sparse-map's seed A, the same sabotage leaves the upstream mocha
 # suite at 7 passing / 0 failing, while turning three native tests red.
@@ -39,7 +39,7 @@ cc f4a192425ac07d6e36238d9fff10fa59ca8f7e8ffe5a8344482e1c888393cb46 # shrinks to
 # that as a bounds check and "hardening" it to `>=` is the most invisible
 # change in this module: the two are identical for every capacity but ZERO,
 # where upstream's `start` climbs without bound because `1 === 0` is false and
-# the hardened version resets it. That is the second half of B-14.
+# the hardened version resets it. That is the second half of BUG-SPARSE-QUEUE-SET-3.
 #
 # Found in 854 cases (3.9s) and shrunk to two operations:
 #
