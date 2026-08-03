@@ -29,13 +29,15 @@ sha256sum -c tests/SHA256SUMS --quiet
   If you must, check `${PIPESTATUS[0]}`.
 
 More generally: **before trusting a check, ask what it would look like if the thing it checks were
-broken.** `planning/NOTES.md` has a table of five separate occasions where a confident green
-signal turned out to be verifying something other than what was believed.
+broken.** `docs/METHODOLOGY.md`'s "What these instruments cannot see" has a table of eleven
+separate occasions where a confident green signal turned out to be verifying something other than
+what was believed.
 
 ## The Definition of Done
 
-`planning/DESIGN.md` §1.1. Ten gates. A unit is **the require-closure of one upstream test file**,
-not a source module — a missing sibling makes the whole file fail with zero partial credit.
+`docs/METHODOLOGY.md`. Ten gates, enforced by `tests/verify.sh`. A unit is **the require-closure of
+one upstream test file**, not a source module — a missing sibling makes the whole file fail with
+zero partial credit.
 
 `tests/scope.txt` is the done marker and must never list a unit whose evidence is not real.
 `tests/verify.sh` enforces that; `scripts/status.sh` reports current state (derived, never
@@ -46,13 +48,13 @@ break *before* running it, confirm red, then confirm green after revert. A falsi
 stays green is just a second green light.
 
 **Gate 10 — benchmarks — needs an idle machine.** A contended run inflated both sides 2–3× here.
-If other agents are working, do not benchmark; gate 10 is batched into a quiet serial pass
-(§7.3).
+If other agents are working, do not benchmark; gate 10 is batched into a quiet serial pass.
 
 ## Porting rules
 
 - **Reproduce upstream bug-for-bug.** A fuzz "divergence" where our port is *more correct* is a bug
-  in the port. Document divergences in `docs/modules/<unit>.md` and `planning/DECISIONS-CANDIDATES.md`.
+  in the port. Document divergences in `docs/modules/<unit>.md`, and project-level ones in
+  `docs/DECISIONS.md`.
 - `mnemonist-core` keeps `#![forbid(unsafe_code)]` and a **zero-dependency tree**. It must build
   and test with Node absent. JS-value handling belongs in `mnemonist-napi`.
 - **Do not overclaim causation**, especially about performance. Check an explanation against a
@@ -116,9 +118,11 @@ then merge them one at a time, never as a batch.
 
 | | |
 |---|---|
-| `planning/ROADMAP.md` | what we do next and why |
-| `planning/DESIGN.md` | how everything works (§1.1 DoD, §3.x semantics, §7.x schedule) |
-| `planning/NOTES.md` | raw capture log + upstream bug candidates |
-| `planning/DECISIONS-CANDIDATES.md` | divergences feeding the submission's DECISIONS.md |
+| `docs/METHODOLOGY.md` | the ten gates, what each caught, and what the instruments cannot see |
+| `docs/DECISIONS.md` | deliberate divergences from upstream, project-wide |
+| `docs/ARCHITECTURE.md` | crate split, the boundary rule, where fidelity displaced idiom |
+| `docs/BUGS.md` | upstream defects, with reproductions |
+| `docs/modules/<unit>.md` | per-unit state; `evidence/` for gate artifacts, `log/` for chronology |
+| `bench/methodology.md` | how both sides are measured |
 | `scripts/status.sh` | live derived status |
 | `~/upstream-mnemonist` | upstream source at the pinned commit — **port from the real file** |
