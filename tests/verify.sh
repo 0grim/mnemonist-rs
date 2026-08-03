@@ -17,9 +17,23 @@ cd "$ROOT"
 
 PASS=0; FAIL=0; FAILED_GATES=()
 
-ok()   { printf '  \033[32mPASS\033[0m  %s\n' "$1"; PASS=$((PASS+1)); }
-bad()  { printf '  \033[31mFAIL\033[0m  %s\n' "$1"; FAIL=$((FAIL+1)); FAILED_GATES+=("$1"); }
-note() { printf '        %s\n' "$1"; }
+# Every line is also written here, uncoloured. Gate 7 prints the names of the
+# failing tests precisely so a failure can be read rather than re-run -- and
+# then a caller pipes this script through `tail -4` for the verdict and throws
+# those names away. That has now happened, to a real gate 7 failure that did
+# not reproduce, leaving nothing to diagnose. The log survives the pipe.
+#
+# NOT under tests/.work/: gate 4 calls tests/run.sh, which empties that
+# directory of everything but node_modules on every invocation. The first
+# version of this log lived there and came out five lines long -- the tail of
+# the last unit -- which is a smaller version of the same mistake it exists to
+# prevent.
+LOG=tests/.verify-last.log
+: > "$LOG"
+
+ok()   { printf '  \033[32mPASS\033[0m  %s\n' "$1"; printf '  PASS  %s\n' "$1" >> "$LOG"; PASS=$((PASS+1)); }
+bad()  { printf '  \033[31mFAIL\033[0m  %s\n' "$1"; printf '  FAIL  %s\n' "$1" >> "$LOG"; FAIL=$((FAIL+1)); FAILED_GATES+=("$1"); }
+note() { printf '        %s\n' "$1"; printf '        %s\n' "$1" >> "$LOG"; }
 
 scoped_units() { grep -vE '^[[:space:]]*(#|$)' tests/scope.txt 2>/dev/null || true; }
 

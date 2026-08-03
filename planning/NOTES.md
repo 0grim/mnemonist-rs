@@ -2845,3 +2845,32 @@ match upstream's actual — surprising — behaviour rather than the "more defen
 reading suggests. See `symspell.rs`'s `SymSpell::new` docs and D-451's neighbouring discussion in
 `DECISIONS-CANDIDATES.md` for the class of gap this is adjacent to (though this specific one is
 fidelity restored, not a disclosed divergence).
+
+---
+
+## 2026-08-03 — gate 7 failed once, and the diagnostic was thrown away
+
+Running `./tests/verify.sh 2>&1 | tail -4` after the module-doc cleanup reported
+`1 GATE(S) FAILED — gate 7 Rust native tests FAILING`, 258 of 259 checks passing.
+
+`cargo test` immediately afterwards was green (exit 0, no failing test named). A second
+`./tests/verify.sh` was green: 259 checks, all gates pass.
+
+**What is actually known:** gate 7 failed once, and there is nothing to diagnose, because
+`tail -4` discarded the failing test names that gate 7 prints for exactly this purpose. This
+is the trap CLAUDE.md documents, committed against the gate that was hardened to survive it —
+the hardening prints the names, and the caller dropped them.
+
+The green second run is **not** evidence the gate passes; it is a second green light of the
+kind this project has already been burned by. The failure stands unexplained. The standing
+suspect remains the timing-sensitive fuzz-harness test in
+`crates/difffuzz/tests/differential.rs`, whose earlier escalating-deadline fix reduced but has
+never been shown to eliminate this.
+
+**Fixed forward:** `tests/verify.sh` now mirrors every `PASS`/`FAIL`/note line, uncoloured, to
+`tests/.verify-last.log`. A caller can pipe stdout however they like and the diagnostics
+survive. The log deliberately does **not** live under `tests/.work/` — gate 4 calls
+`tests/run.sh`, which empties that directory of everything but `node_modules` on every
+invocation, and the first version of the log came out five lines long because of it. That was
+a smaller instance of the same failure the log exists to prevent, caught by checking the log's
+line count against the known check count (259) rather than by looking at it and seeing text.
