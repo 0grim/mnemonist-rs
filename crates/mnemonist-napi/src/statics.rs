@@ -99,10 +99,14 @@ const CURSOR_FACTORIES: &[(&str, &str)] = &[
 /// `GetMethod(iterator, "return")` and skips a `undefined` one, so deleting the
 /// property *is* the fix, and it is what upstream has.
 ///
-/// This corrects a claim in `crate::sparse_set`'s docs — that napi's default
-/// `complete` is observably the same as having no `return` — which was reasoned
-/// about rather than measured, and is wrong. `SparseSet` is left alone here
-/// because it is already in `tests/scope.txt`; the same two rows would fix it.
+/// **The table below is not exhaustive, and that is a known gap rather than a
+/// decision.** It lists ten factories across five sequence classes. The addon
+/// hands out 57 generator-backed cursors, so 47 of them keep napi's `return`
+/// and still answer `{done: true}` after a `break`. Two rows here fix a class,
+/// and no new mechanism is needed. No gate detects the difference: the upstream
+/// suites never resume a cursor after `break`, and the differential fuzzer
+/// compares `mnemonist-core`, where there is no `return` to latch.
+/// `docs/DECISIONS.md` states the gap for a reader of the port.
 const CURSOR_PATCH: &str = "(function (Ctor, method) { \
      var original = Ctor.prototype[method]; \
      Ctor.prototype[method] = function () { \

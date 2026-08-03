@@ -190,10 +190,16 @@ impl Generator for JsSparseSetValues {
     /// `Generator.return()`, which is what a `break` out of a `for…of` calls.
     ///
     /// Upstream cursors have no `return` method at all, so `break` leaves the
-    /// cursor exactly where it stopped and a later `next()` resumes. napi's
-    /// default `complete` returns `None`, which is the same observable
-    /// behaviour — the walk is not reset and not force-finished — so it is
-    /// left alone rather than overridden.
+    /// cursor exactly where it stopped and a later `next()` resumes.
+    ///
+    /// Returning `None` here does **not** reproduce that, and this comment
+    /// previously claimed it did. napi installs `return` as an own property on
+    /// the cursor, and it latches `[[GeneratorState]]` before any Rust-side
+    /// completion logic runs, so `complete` cannot prevent it. Measured: after
+    /// a `break`, `SparseSet.values().next()` answers `{done: true}` where
+    /// upstream resumes. Deleting the property is the only fix — see
+    /// [`crate::statics`] — and this class is not yet in that table.
+    /// `docs/DECISIONS.md` records the gap.
     fn complete(&mut self, _value: Option<()>) -> Option<Self::Yield> {
         None
     }

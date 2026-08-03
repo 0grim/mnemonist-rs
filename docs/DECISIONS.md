@@ -575,14 +575,32 @@ survive on the constructor and cannot be deleted, because napi declares a class'
 non-configurable: they are non-enumerable and are the bridge's only addition to upstream's surface,
 noted rather than hidden.
 
-**napi's generator `#.return` is deleted from every cursor the addon hands out, because upstream's
-own cursors have none.** `obliterator`'s iterator type defines a constructor and a self-returning
-`Symbol.iterator` and nothing else, so breaking out of a `for...of` loop over one leaves it exactly
-where it stopped, resumable by a later `next()`. napi's generated iterator installs `return` as an
-own property, and that `return` sets an internal generator-state flag *before* any Rust-side
-completion logic runs, so nothing on the Rust side can prevent it from taking effect. The addon
-removes the method from every cursor it constructs, so a `break` behaves like upstream's rather than
-like a real generator's.
+**napi's generator `#.return` is deleted from the five sequence classes' cursors, because upstream's
+own cursors have none — and it is *not* deleted from the other 47, which is a known gap.**
+`obliterator`'s iterator type defines a constructor and a self-returning `Symbol.iterator` and
+nothing else, so breaking out of a `for...of` loop over one leaves it exactly where it stopped,
+resumable by a later `next()`. napi's generated iterator installs `return` as an own property, and
+that `return` sets an internal generator-state flag *before* any Rust-side completion logic runs, so
+nothing on the Rust side can prevent it from taking effect. Deleting the property is the only fix,
+because `IteratorClose` does `GetMethod(iterator, "return")` and skips one that is absent.
+
+The addon applies that deletion through a table in `crates/mnemonist-napi/src/statics.rs`, and the
+table lists ten cursor factories: `values` and `entries` on `Stack`, `Queue`, `FixedStack`,
+`FixedDeque` and `CircularBuffer`. The port hands out **57** generator-backed cursors in total. On
+the remaining 47 — `SparseSet`, `BitSet`, `SparseMap`, the `Map`-backed family and the rest — a
+`break` runs `IteratorClose`, latches the generator, and a later `next()` answers `{done: true}`
+where upstream would resume. Measured, not inferred:
+
+```
+Stack.values       return absent   after break, next() -> 2           (matches upstream)
+SparseSet.values   return present  after break, next() -> done: true  (diverges)
+```
+
+The fix is two rows per class in that table and no new mechanism. It was applied to the five classes
+that were in scope when the latching was discovered and not extended afterwards, which is an
+omission rather than a decision. It is recorded here because no gate detects it: the upstream suites
+never resume a cursor after `break`, and the differential fuzzer compares the native crate, where no
+`return` exists to latch — the layer gap described in `docs/METHODOLOGY.md`, with a live instance.
 
 ---
 
