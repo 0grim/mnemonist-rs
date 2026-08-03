@@ -308,13 +308,6 @@ clause left all 22 assertions passing — see "Bugs this found". A falsification
 just a second green light; this one was informative precisely because it failed to fail, and the
 claim it disproved was withdrawn from two source comments.
 
-### Bench
-
-**Not run.** Benchmarks need an idle machine, and this machine was under contention at the time;
-gate 10 is batched into a quiet pass. `stack` is ready for it: the workloads it needs are
-push/pop churn and a full drain, both of which the existing `bench/runner` shape already supports.
-Until that pass lands, this unit is **not** in `tests/scope.txt` and does not claim to be done.
-
 ### `$forEach` — the op that was missing (added 2026-08-01, B-31)
 
 `stack`'s grammar had no `forEach` op at all. That omission is what let B-31 — a `forEach`

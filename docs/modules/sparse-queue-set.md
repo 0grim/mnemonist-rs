@@ -380,14 +380,6 @@ and being caught by the differential fuzzer in 0.8 seconds. The suite cannot see
 only member that could enqueue into a full ring is one already present, and the wrap block never
 fills the ring anyway.
 
-### Bench
-
-**Not yet run.** Gate 10 is deliberately batched into a separate quiet serial pass — a benchmark
-taken under load is not a slow benchmark, it is a wrong one, and this host has already demonstrated
-a contended run inflating both sides 2–3×. This module is therefore
-**not** in `tests/scope.txt`: gates 1–9 are green and gate 10 is outstanding, which is exactly what
-`tests/verify.sh` will report.
-
 ### `$forEach` — the op that was missing (added 2026-08-01, B-31)
 
 `sparse-queue-set`'s grammar had no `forEach` op at all. That omission is what let B-31 — a `forEach`

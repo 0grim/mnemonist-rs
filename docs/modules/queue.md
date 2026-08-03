@@ -237,14 +237,6 @@ the compaction schedule itself is invisible to the original suite. A sabotage of
 is not a weakness in the choice of sabotage; it is the measurement of how thin the upstream
 coverage is, and it is why `offset` and `items` are both in the fuzzer's observation set.
 
-### Bench
-
-**Not run.** Benchmarks need an idle machine, and this machine was under contention at the time;
-gate 10 is batched into a quiet pass. `queue` is ready for it, and its interesting workload
-is not the same as `stack`'s: the compaction makes enqueue/dequeue churn amortised rather than
-flat, so a workload that dequeues in bursts is worth having alongside a balanced one. Until that
-pass lands, this unit is **not** in `tests/scope.txt` and does not claim to be done.
-
 ### `$forEach` — the op that was missing (added 2026-08-01, B-31)
 
 `queue`'s grammar had no `forEach` op at all. That omission is what let B-31 — a `forEach`

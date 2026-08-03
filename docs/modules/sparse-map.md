@@ -378,14 +378,6 @@ this suite cannot catch, not only that some can. Fixing B-11 in the core leaves 
 `a_delete_during_iteration_is_visible_and_desynchronises_the_pair`) and being caught by the
 differential fuzzer in 3.0 seconds. Both numbers were measured, not reasoned about.
 
-### Bench
-
-**Not yet run.** Gate 10 is deliberately batched into a separate quiet serial pass — a benchmark
-taken under load is not a slow benchmark, it is a wrong one, and this host has already demonstrated
-a contended run inflating both sides 2–3×. This module is therefore
-**not** in `tests/scope.txt`: gates 1–9 are green and gate 10 is outstanding, which is exactly what
-`tests/verify.sh` will report.
-
 ### `$forEach` — the op that was missing (added 2026-08-01, B-31)
 
 `sparse-map`'s grammar had no `forEach` op at all. That omission is what let B-31 — a `forEach`

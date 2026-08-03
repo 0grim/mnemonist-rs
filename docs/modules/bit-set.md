@@ -285,14 +285,6 @@ its `select` test uses a length of 11 and never skips a word. Both would have be
 incapable of failing — the exact failure mode gate 6 exists to catch, and here there were two of
 them waiting.
 
-### Bench
-
-**Not run.** Gate 10 is deliberately outstanding: benchmarks need an idle machine, and this unit was
-ported alongside two other modules in the same window, where a contended run has already been
-measured on this project to inflate both sides 2–3×. It is batched into a separate quiet pass,
-and `bit-set` is therefore **not** in `tests/scope.txt` yet — it is not done until
-it is. Gates 1–9 are green.
-
 ### `$forEach` — the op that was missing (added 2026-08-01, B-31)
 
 `bit-set`'s grammar had no `forEach` op at all. That omission is what let B-31 — a `forEach`

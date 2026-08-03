@@ -292,21 +292,6 @@ Both would have been sabotages incapable of failing — which is exactly the fai
 exists to catch. Across this group of four modules, **five** plausible-looking sabotages were
 rejected on that ground before a usable one was found.
 
-### Bench
-
-**Not run.** Gate 10 is deliberately outstanding: benchmarks need an idle machine, and this unit was
-ported alongside two other modules in the same window, where a contended run has already been
-measured on this project to inflate both sides 2–3×. It is batched into a separate quiet pass,
-and `bit-vector` is therefore **not** in `tests/scope.txt` yet — it is not done
-until it is. Gates 1–9 are green.
-
-One thing the eventual benchmark should watch for, recorded now so it is not rationalised later: the
-shared store is an `Rc<RefCell<Vec<u32>>>`, and every `set`/`reset`/`flip` takes a `RefCell` borrow
-that upstream does not pay for. On operations that are otherwise one load, one OR and one store,
-that overhead is not obviously negligible. It bought exact reproduction of `clear`/`reallocate`
-detaching an open cursor; whether it costs anything measurable is an open question, not an assumed
-answer.
-
 ### `$forEach` — the op that was missing (added 2026-08-01, B-31)
 
 `bit-vector`'s grammar had no `forEach` op at all. That omission is what let B-31 — a `forEach`
@@ -351,9 +336,17 @@ uniform-weighted mix would put a domain-scaling cost next to three genuinely O(1
 |---|---|---|---|
 | p50 ns/op | 8.1 | **8.3** | tie |
 
-**Re-measured 2026-08-03: 1.30× faster.** No change was made to this module. It shares `split` with
-`bit-set`, whose `ToInt32` fast path is described in that unit's document, and moved with it — from
-a tie to a clear win, port p50 8.20 ns to 6.42 ns.
+**1.30× faster.** No change was made to this module: it shares `split` with `bit-set`, whose
+`ToInt32` fast path is described in that unit's document, and moved with it — from a tie at 8.20 ns
+to 6.42 ns.
+
+That also answers a question this document had recorded as open. The shared store is an
+`Rc<RefCell<Vec<u32>>>`, and every `set`/`reset`/`flip` takes a borrow upstream does not pay for; on
+operations that are otherwise a load, an OR and a store, that was not obviously negligible. The
+borrow is still there and the module is now faster than upstream, so whatever the borrow costs, it
+was not what stood between this port and a win — the index conversion was. The `RefCell` bought
+exact reproduction of `clear`/`reallocate` detaching an open cursor, and it is still paying for
+itself.
 | p99 ns/op | **12.9** | 14.5 | 1.1× faster |
 | min ns/op | **7.5** | 7.8 | tie |
 | RSS delta MB | **6.1** | 17.8 | |
