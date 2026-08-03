@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 0f78d9ab9eb1df40ae013c0b81e539b6a01c44a31f3b5fd06558e268ef25dbfd # shrinks to Program { ctor: [Array [Array [Number(0), Array [Number(0)]], Array [Number(1), Array [Number(0)]]], Number(2)], ops: [Op { name: "kNearestNeighbors", args: [Number(1), Array [Number(0), Number(0)]] }] }

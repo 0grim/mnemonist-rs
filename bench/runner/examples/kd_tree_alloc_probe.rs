@@ -147,7 +147,7 @@ fn main() {
     for query in &queries {
         if let Ok(hits) = tree.k_nearest_neighbors(K, query) {
             for label in &hits {
-                knn_checksum += u64::from(*label);
+                knn_checksum += label.map_or(0, u64::from);
             }
         }
     }

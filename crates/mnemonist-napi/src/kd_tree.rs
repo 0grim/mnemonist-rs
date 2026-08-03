@@ -153,9 +153,17 @@ impl JsKdTree {
     /// `#.kNearestNeighbors`.
     #[napi]
     pub fn k_nearest_neighbors(&self, k: u32, query: Vec<f64>) -> Result<Vec<JsSlot>> {
-        self.inner
+        // A `None` slot is upstream's own `undefined` element, not an absence
+        // to be filtered: `k === 1` returns `[this.nearestNeighbor(query)]`
+        // whatever that gave, and a `NaN` coordinate makes it give
+        // `undefined`. Dropping it would shorten the array.
+        Ok(self
+            .inner
             .k_nearest_neighbors(k as usize, &query)
-            .map_err(|message| Error::new(Status::GenericFailure, message))
+            .map_err(|message| Error::new(Status::GenericFailure, message))?
+            .into_iter()
+            .map(|label| label.unwrap_or(JsSlot::Undefined))
+            .collect())
     }
 
     /// `#.linearKNearestNeighbors`.

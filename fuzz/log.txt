@@ -1079,3 +1079,4 @@
 2026-08-02T10:09:33Z  module=heap seed=42 cases=1376 ops=139663 wall=5.0s divergences=0
 2026-08-02T16:51:24Z  module=heap seed=42 cases=1323 ops=134104 wall=5.0s divergences=0
 2026-08-02T16:55:53Z  module=heap seed=42 cases=1367 ops=138789 wall=5.0s divergences=0
+2026-08-03T12:40:00Z  module=kd-tree seed=424242 cases=11619 ops=1136937 wall=60.0s divergences=0

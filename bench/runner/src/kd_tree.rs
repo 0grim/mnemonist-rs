@@ -132,7 +132,7 @@ pub fn run_mixed(workload: &Workload, k: usize) -> (Vec<u64>, u64) {
                 }
             } else if let Ok(hits) = tree.k_nearest_neighbors(K, &query) {
                 for (position, label) in hits.iter().enumerate() {
-                    checksum += (position as u64 + 1) * u64::from(*label);
+                    checksum += (position as u64 + 1) * label.map_or(0, u64::from);
                 }
             }
         }

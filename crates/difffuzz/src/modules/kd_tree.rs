@@ -80,12 +80,33 @@ impl ModuleSpec for KdTreeSpec {
 
     fn ctor_strategy(&self) -> BoxedStrategy<Vec<Value>> {
         // `.from(iterable, dimensions)`'s own argument order.
-        prop::collection::vec((0..RANGE, 0..RANGE), 2..60)
+        //
+        // One point in eight is generated *shorter* than `DIMENSIONS`.
+        // Upstream reads `row[1][d]` past the end, gets `undefined`, and
+        // stores it into a `Float64Array` as `NaN` -- it does not throw, so
+        // this is a shape a caller can really hand `.from`, and one every
+        // program here used to be unable to produce. Before the fix this
+        // grammar could not have found it; a short row aborted the host
+        // process rather than diverging.
+        //
+        // NaN coordinates are worth reaching in their own right: every
+        // comparison against NaN is false in both languages, so a sort or a
+        // distance test that treats "not less than" as "greater or equal"
+        // parts company from upstream exactly here.
+        let point = (0..RANGE, 0..RANGE, 0..8u8).prop_map(|(x, y, short)| {
+            if short == 0 {
+                json!([x])
+            } else {
+                json!([x, y])
+            }
+        });
+
+        prop::collection::vec(point, 2..60)
             .prop_map(|points| {
                 let rows: Vec<Value> = points
                     .into_iter()
                     .enumerate()
-                    .map(|(label, (x, y))| json!([label as i64, [x, y]]))
+                    .map(|(label, point)| json!([label as i64, point]))
                     .collect();
 
                 vec![Value::Array(rows), json!(DIMENSIONS)]
@@ -149,7 +170,18 @@ impl ModuleSpec for KdTreeSpec {
                 let query = query_point(&op.args[1]);
 
                 match instance.k_nearest_neighbors(k, &query) {
-                    Ok(labels) => Value::Array(labels.into_iter().map(|l| json!(l)).collect()),
+                    // A `None` is upstream's `undefined` *element*, which the
+                    // oracle encodes the same way -- not a JSON `null`, and
+                    // not an absence to be dropped.
+                    Ok(labels) => Value::Array(
+                        labels
+                            .into_iter()
+                            .map(|l| match l {
+                                Some(label) => json!(label),
+                                None => json!({"$undefined": true}),
+                            })
+                            .collect(),
+                    ),
                     Err(message) => json!({"$throw": message}),
                 }
             }

@@ -377,7 +377,19 @@ impl<L: Clone> KdTree<L> {
     }
 
     /// `#.kNearestNeighbors`.
-    pub fn k_nearest_neighbors(&self, k: usize, query: &[f64]) -> Result<Vec<L>, &'static str> {
+    /// Returns `Option<L>` per slot, not `L`. Upstream's `k === 1` branch is
+    /// `return [this.nearestNeighbor(query)]` — an array of length one
+    /// *whatever* `nearestNeighbor` gave, `undefined` included, and it can
+    /// give `undefined` whenever a coordinate is `NaN`, since every
+    /// comparison against `NaN` is false and no candidate is ever accepted.
+    /// Collapsing that to an empty vector changed the array's **length**, not
+    /// just its contents. Found by differential fuzzing once the grammar was
+    /// widened to generate points shorter than `dimensions`.
+    pub fn k_nearest_neighbors(
+        &self,
+        k: usize,
+        query: &[f64],
+    ) -> Result<Vec<Option<L>>, &'static str> {
         if k == 0 {
             return Err(NON_POSITIVE_K);
         }
@@ -389,7 +401,7 @@ impl<L: Clone> KdTree<L> {
         }
 
         if k == 1 {
-            return Ok(self.nearest_neighbor(query).into_iter().cloned().collect());
+            return Ok(vec![self.nearest_neighbor(query).cloned()]);
         }
 
         let comparator = TupleOfOption::<3>(create_tuple_comparator(3));
@@ -405,7 +417,7 @@ impl<L: Clone> KdTree<L> {
         for idx in 0..count {
             if let Some(tuple) = best.get(idx).expect("VecStore never fails") {
                 let pivot = tuple[2] as usize;
-                out.push(self.labels[pivot].clone());
+                out.push(Some(self.labels[pivot].clone()));
             }
         }
 
@@ -611,14 +623,15 @@ mod tests {
 
         for (_, point) in data() {
             assert_eq!(
-                tree.nearest_neighbor(&point),
-                tree.k_nearest_neighbors(1, &point).unwrap().first()
+                tree.nearest_neighbor(&point).copied(),
+                tree.k_nearest_neighbors(1, &point).unwrap()[0]
             );
 
             let by_tree: std::collections::BTreeSet<&str> = tree
                 .k_nearest_neighbors(2, &point)
                 .unwrap()
                 .into_iter()
+                .flatten()
                 .collect();
             assert_eq!(by_tree, brute_force_knn(2, &point));
 
@@ -626,6 +639,7 @@ mod tests {
                 .k_nearest_neighbors(3, &point)
                 .unwrap()
                 .into_iter()
+                .flatten()
                 .collect();
             assert_eq!(by_tree, brute_force_knn(3, &point));
         }
@@ -784,5 +798,28 @@ mod tests {
         let error = KdTree::from_rows(vec![("a", vec![1.0]), ("b", vec![2.0])], 0).unwrap_err();
 
         assert_eq!(error.0, "Cannot read properties of undefined (reading '0')");
+    }
+
+    #[test]
+    fn k_of_one_returns_a_one_element_array_even_when_it_holds_nothing() {
+        // Upstream: `if (k === 1) return [this.nearestNeighbor(query)]`. With
+        // every point shorter than `dimensions`, axis 1 is all NaN, every
+        // comparison against it is false, no candidate is ever accepted, and
+        // `nearestNeighbor` gives `undefined` -- which upstream still wraps in
+        // an array of length one. Verified against Node 24.18.1:
+        // `KDTree.from([[0,[0]],[1,[0]]], 2).kNearestNeighbors(1, [0,0])` is
+        // `[undefined]`, length 1.
+        let tree = KdTree::from_rows(vec![(0i64, vec![0.0]), (1, vec![0.0])], 2).unwrap();
+
+        assert_eq!(tree.nearest_neighbor(&[0.0, 0.0]), None);
+
+        let hits = tree.k_nearest_neighbors(1, &[0.0, 0.0]).unwrap();
+
+        assert_eq!(
+            hits.len(),
+            1,
+            "the array's length is upstream's, not its contents'"
+        );
+        assert_eq!(hits[0], None);
     }
 }
