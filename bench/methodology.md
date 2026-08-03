@@ -225,6 +225,38 @@ Recorded per run in `results.json` under `host`. The governor reads
 rather than guessed, and it does mean frequency scaling is uncontrolled on this
 host. The A/B/A/B interleaving is what limits the damage.
 
+## How stable the published figures are
+
+**Within a session, back-to-back runs of the same workload agree to about 0.9% on both sides. Across
+sessions they do not.** `kd-tree`'s upstream figure moved 22% on unchanged code between two
+sessions; `multi-array`'s moved 13%. That is why every figure in `results.json` comes from a single
+serial pass on an idle machine: a table whose rows were measured on different days cannot be read
+down the column, however carefully each row was taken.
+
+The instability is not symmetric, and the JavaScript side is the mobile one. Three consequences, all
+of which changed what is published.
+
+**Two rows changed sign.** `multi-set` and `bi-map` were once recorded as wins. In the serial pass
+both measured as losses, and a spot-check of each in isolation on a settled machine measured them
+worse still. Both are published as losses at the worse of the two figures, on the principle that
+between two honest measurements the unflattering one is the safer claim.
+
+**One row moved the other way, and it is worth reading as a caution rather than a result.**
+`fixed-critbit-tree-map` was documented as a real, reproducible p50 loss at ~1.06–1.08×, complete
+with a candidate cause. It now measures 1.18× *faster*. The port's own p50 barely moved between the
+two passes — 325.78 ns to 322.66 ns, inside noise — while upstream's moved 24%, from 306.50 ns to
+380.33 ns. Nothing about the port got faster. A regression that disappears because the baseline
+drifted is not a fix, and recording it as one would have been the easiest possible way to claim
+credit for noise.
+
+**One figure should not be read as a single number at all.** `bi-map`'s ratio spanned 1.14× to 1.59×
+across six interleaved runs, where every other module reproduces to about 1%. Its published 1.51×
+means "slower, by somewhere between a little and a half".
+
+The same effect sets the floor on what a single run can show: run-to-run noise reaches ~32% on p99
+between two otherwise clean runs, which is why no figure here comes from one run and every number is
+a median of ten.
+
 ## How a module plugs in — the registry
 
 `bench/runner/src/harness.rs` holds a table of function pointers, one row per module: a `mixed`

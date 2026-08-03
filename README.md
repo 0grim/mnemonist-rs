@@ -173,28 +173,19 @@ The largest wins, for scale:
 All 44 are in [`bench/results.json`](bench/results.json), keyed per unit and per workload, each with
 its own `regressions` array. `scripts/status.sh` reads the same file.
 
-### How stable these figures are
-
-Every workload above was re-measured in one serial pass on an idle machine, because the JavaScript
-baseline is not stable across sessions and a table whose rows come from different days cannot be
-read down the column. Within a session, back-to-back runs of the same workload agree to 0.9% on both
-sides. Across sessions they do not: `kd-tree`'s upstream figure moved 22% and `multi-array`'s 13% on
-unchanged code.
-
-That instability is not symmetric, and it cost this table two rows. `multi-set` and `bi-map` were
-previously recorded as wins. In this pass both measured as losses, and a spot-check of each in
-isolation measured them worse still, so both are published as losses at the worse of the two
-figures — between two honest measurements the unflattering one is the safer claim.
-
-`bi-map` is the least stable measurement here: its ratio spanned 1.14× to 1.59× across six runs,
-where every other module reproduces to about 1%. Its published figure should be read as "slower, by
-somewhere between a little and a half", not as 1.51.
+Every row above comes from one serial pass on an idle machine. That matters more than it sounds:
+within a session both sides reproduce to about 0.9%, but *across* sessions the JavaScript baseline
+moves — up to 24% on unchanged code — so a table assembled from different days cannot be read down
+the column. Two rows changed sign under re-measurement and are published at the worse of the two
+figures; `bi-map`'s should be read as "slower, by somewhere between a little and a half" rather than
+as 1.51. [bench/methodology.md](bench/methodology.md) has the full account.
 
 Being counted as a loss is what got a module looked at, and five left the loss column that way —
 including `kd-tree`, previously the largest regression in this table at 2.18× slower and now 1.23×
 faster, once a per-node heap allocation in its nearest-neighbour search became a stack copy. Each
-diagnosis is in that module's own document under *Fuzz + bench*. Two of the five losses that remain
-say something the table cannot.
+diagnosis is in that module's own document under *Fuzz + bench*.
+
+### The two losses that say something the table cannot
 
 **`default-map` is the largest regression left, and it is the one whose cause this port does not
 claim to know.** The obvious explanation — a duplicate hash lookup — was measured and refuted: a
