@@ -114,7 +114,7 @@ is given and the unit's divergence document states it; a missing benchmark still
 Measured against the vendored upstream JavaScript using matched operation streams, interleaved, on
 an idle machine. Full methodology in [docs/METHODOLOGY.md](docs/METHODOLOGY.md).
 
-**44 benchmarked workloads across 40 structures. 37 are faster than upstream, 7 are slower.** The
+**44 benchmarked workloads across 40 structures. 39 are faster than upstream, 5 are slower.** The
 median is 1.46× faster. Two further units carry a benchmark exemption, described below.
 
 **Every workload that is slower**, without exception — this is the complete list, not a selection:
@@ -126,8 +126,6 @@ median is 1.46× faster. Two further units carry a benchmark exemption, describe
 | `multi-array` | `mixed-1e6` | 1.31× slower |
 | `heap` | `mixed-1e6` | 1.31× slower |
 | `default-map` | `mixed-4e6` | 1.13× slower |
-| `fixed-critbit-tree-map` | `mixed-2e5` | 1.11× slower |
-| `bit-set` | `mixed-1e6` | 1.10× slower |
 
 The largest wins, for scale:
 
@@ -164,6 +162,19 @@ since a JavaScript `Map` has no look-up-and-update-in-place operation, but `Orde
 can. On `multi-set`, where `add` is half the workload's operations and every operation is O(1) map
 bookkeeping, that halved the hashing and took the port from 24.80 ns to 16.1–16.4 ns across four
 runs — **1.36× faster than upstream**, out of the loss column entirely.
+
+The two regressions nobody had ever looked at turned out to be the cheapest to fix, which is the
+pattern this project keeps rediscovering. `bit-set` converted its index to `f64` and ran JavaScript's
+full `ToInt32` — truncate, `rem_euclid(2^32)`, sign fixup — on every `set`, `get`, `reset` and
+`flip`, although `ToInt32` is the identity for any value already inside `i32`'s range. An
+`i32::try_from` fast path, falling back to the float path only for indices that genuinely need it,
+took the port from **8.68 ns to 5.91 ns**, and `bit-vector`, which shares the same code, came with
+it. `fixed-critbit-tree-map`'s `set` allocated two fresh `Vec`s per call as scratch for its walk;
+they are now reused struct fields, cleared on entry, taking the port from **405 ns to 292 ns**.
+
+Both figures come from six runs alternating the old and new code, and in both the upstream side held
+steady across all six — 7.85–7.91 ns for `bit-set` — so the port-side change is unambiguous.
+`bit-set`, `bit-vector` and `fixed-critbit-tree-map` are all now faster than upstream.
 
 `bi-map` got the same treatment and it made no measurable difference. Six interleaved runs of the
 old and new code under identical conditions put the port at 169.9 ns before and 164.6 ns after, a 3%

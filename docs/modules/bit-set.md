@@ -335,6 +335,24 @@ account.
 | metric | port | upstream | |
 |---|---|---|---|
 | p50 ns/op | 8.87 | **7.94** | 1.12× slower |
+
+**Fixed 2026-08-03 — the index conversion was the whole margin.** `split` in
+`crates/mnemonist-core/src/structures/bits.rs`, reached by every one of `set`, `reset`, `flip` and
+`get`, converted its `i64` index to `f64` and ran JavaScript's full `ToInt32`: `trunc`, then
+`rem_euclid(2^32)`, then a sign fixup. That path exists for indices outside `i32`'s range — which is
+exactly what upstream's out-of-range reads reach, and those are reproduced bug-for-bug here — but
+`ToInt32` is the *identity* for any value already inside that range: `trunc` is a no-op on an
+integral value, and `rem_euclid` of a value already in `[-2^31, 2^31)` returns it unchanged once the
+sign fixup is applied.
+
+`split` now tries `i32::try_from` first and falls back to the float path only when the index really
+does not fit. The equivalence was checked over 2.6 million values including every boundary
+(`i32::MIN`, `i32::MAX`, ±2^31, ±2^32) rather than argued from the definition alone.
+
+Six runs alternating the old and new code: the port's p50 is **8.66–8.70 ns before and 5.86–5.93 ns
+after**, with upstream steady at 7.85–7.91 ns throughout, so the port-side change is unambiguous —
+about 32%. This module now reads **1.31× faster** than upstream where it read 1.10× slower.
+`bit-vector` shares `split` and moved with it, from a tie to 1.30× faster.
 | p99 ns/op | 16.30 | **14.87** | 1.10× slower |
 | RSS delta MB | **6.1** | 17.6 | |
 | structure-only RSS delta MB | **1.3** | 9.8 | |

@@ -281,6 +281,16 @@ pub struct FixedCritBitTreeMap<V> {
     /// "tree is empty" fast path once `clear` has run (`clear` resets
     /// `size` to `0` too, so nothing else can run first).
     root_is_null: bool,
+    /// Scratch storage for `set`'s walk, reused across calls rather than
+    /// allocated fresh each time. Neither vector is observable outside a
+    /// single `set` call (cleared on entry, filled to that call's own
+    /// traversal depth, read only within the same call) — reusing the
+    /// backing allocation cannot change any result, only avoid two `Vec`
+    /// allocations `set` would otherwise make on essentially every call once
+    /// the tree is non-trivial (any walk that descends through at least one
+    /// internal node before reaching an external one).
+    ancestors_scratch: Vec<usize>,
+    path_scratch: Vec<bool>,
 }
 
 impl<V> FixedCritBitTreeMap<V> {
@@ -301,6 +311,8 @@ impl<V> FixedCritBitTreeMap<V> {
             size: 0,
             root: EMPTY,
             root_is_null: false,
+            ancestors_scratch: Vec::new(),
+            path_scratch: Vec::new(),
         })
     }
 
@@ -415,8 +427,11 @@ impl<V> FixedCritBitTreeMap<V> {
         }
 
         let mut pointer = self.root;
-        let mut ancestors: Vec<usize> = Vec::new();
-        let mut path: Vec<bool> = Vec::new();
+        // Reused scratch storage rather than fresh `Vec`s -- see the field
+        // doc comments. Cleared here, filled to this call's own traversal
+        // depth below, read only within this call.
+        self.ancestors_scratch.clear();
+        self.path_scratch.clear();
 
         loop {
             if pointer > 0 {
@@ -458,8 +473,8 @@ impl<V> FixedCritBitTreeMap<V> {
                     return Ok(None);
                 }
 
-                ancestors.push(internal_index);
-                path.push(!go_right);
+                self.ancestors_scratch.push(internal_index);
+                self.path_scratch.push(!go_right);
                 pointer = child;
             } else {
                 let external_index = (-pointer - 1) as usize;
@@ -495,8 +510,9 @@ impl<V> FixedCritBitTreeMap<V> {
 
                 let mut best: Option<usize> = None;
 
-                for i in (0..ancestors.len()).rev() {
-                    let Some((ancestor_byte, ancestor_mask)) = self.critbits.get(ancestors[i])
+                for i in (0..self.ancestors_scratch.len()).rev() {
+                    let Some((ancestor_byte, ancestor_mask)) =
+                        self.critbits.get(self.ancestors_scratch[i])
                     else {
                         // An ancestor's own critbit is unreadable: cannot
                         // happen in practice (see the module docs, part 1 --
@@ -541,7 +557,7 @@ impl<V> FixedCritBitTreeMap<V> {
                         // relied upon.
                         self.root_is_null = false;
 
-                        if let Some(&parent) = ancestors.first() {
+                        if let Some(&parent) = self.ancestors_scratch.first() {
                             let slots = if new_goes_left {
                                 &mut self.rights
                             } else {
@@ -550,9 +566,9 @@ impl<V> FixedCritBitTreeMap<V> {
                             slots.set(internal_index, internal_ptr(parent));
                         }
                     }
-                    Some(best) if best == ancestors.len() - 1 => {
-                        let parent = ancestors[best];
-                        let went_left = path[best];
+                    Some(best) if best == self.ancestors_scratch.len() - 1 => {
+                        let parent = self.ancestors_scratch[best];
+                        let went_left = self.path_scratch[best];
                         let slots = if went_left {
                             &mut self.lefts
                         } else {
@@ -561,9 +577,9 @@ impl<V> FixedCritBitTreeMap<V> {
                         slots.set(parent, internal_ptr(internal_index));
                     }
                     Some(best) => {
-                        let parent = ancestors[best];
-                        let went_left = path[best];
-                        let child = ancestors[best + 1];
+                        let parent = self.ancestors_scratch[best];
+                        let went_left = self.path_scratch[best];
+                        let child = self.ancestors_scratch[best + 1];
 
                         let parent_slots = if went_left {
                             &mut self.lefts

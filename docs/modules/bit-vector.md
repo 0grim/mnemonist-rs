@@ -350,6 +350,10 @@ uniform-weighted mix would put a domain-scaling cost next to three genuinely O(1
 | metric | port | upstream | |
 |---|---|---|---|
 | p50 ns/op | 8.1 | **8.3** | tie |
+
+**Re-measured 2026-08-03: 1.30× faster.** No change was made to this module. It shares `split` with
+`bit-set`, whose `ToInt32` fast path is described in that unit's document, and moved with it — from
+a tie to a clear win, port p50 8.20 ns to 6.42 ns.
 | p99 ns/op | **12.9** | 14.5 | 1.1× faster |
 | min ns/op | **7.5** | 7.8 | tie |
 | RSS delta MB | **6.1** | 17.8 | |

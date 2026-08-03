@@ -106,8 +106,23 @@ pub const WORD_BITS: usize = 32;
 ///
 /// Returns `None` when the word index is negative, i.e. where JavaScript reads
 /// `undefined` off the front of the array.
+///
+/// `to_int32` is ToInt32's full float path (`trunc` + `rem_euclid` on an
+/// `f64`), needed only for inputs outside `i32`'s range — JavaScript numbers
+/// with a fractional part or a magnitude past 2^31 never occur here since the
+/// caller's `index` is already an integer, but out-of-`i32`-range `i64`
+/// values do (a huge or very negative index is exactly what `set`/`get`
+/// reaching past the array is testing). For any index that already fits in
+/// `i32`, ToInt32 is the identity: `trunc` is a no-op on an already-integral
+/// value, and `rem_euclid(2^32)` of a value already inside `[-2^31, 2^31)`
+/// returns that same value once the sign-fixup below it is undone. So the
+/// `i32::try_from` fast path below produces bit-for-bit the same result as
+/// `to_int32` always would, without ever going through `f64`.
 fn split(index: i64) -> (Option<usize>, u32) {
-    let index = to_int32(index as f64);
+    let index = match i32::try_from(index) {
+        Ok(value) => value,
+        Err(_) => to_int32(index as f64),
+    };
     let word = index >> 5;
 
     (usize::try_from(word).ok(), (index & 0x1f) as u32)
