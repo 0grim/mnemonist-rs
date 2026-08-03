@@ -37,7 +37,8 @@ of callback it expects and nothing about the delegation is simulated.
 ## What upstream tests
 
 **Nothing directly.** The four functions are exercised only incidentally, through the `.from()`
-statics of the modules that import them — and in this wave's three modules, only `guessLength` and
+statics of the modules that import them — and in the `fixed-stack`, `fixed-deque` and
+`circular-buffer` units, only `guessLength` and
 `isArrayLike` are ever reached, because the `from` branch that would call `toArray` does not exist
 (B-60).
 

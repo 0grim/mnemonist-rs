@@ -126,7 +126,7 @@ evidence that the code behind it does that.
 | — | **`InverseMap` is a view, not a second value.** | Upstream constructs a real second object whose six generic methods delegate to `Map.prototype[name].apply(this.items, ...)`. One `BiMap<K>` backs both directions here; the bridge's `JsBiMapInverse` holds a `SharedReference` to the *same* `RefCell<Core>` the `JsBiMap` owns, so a write through either object is visible to the other, exactly as upstream's shared `Map`s are. |
 | — | **`size`/`inverse_size` are real stored counters, not `OrderedMap::len()`.** | Required to reproduce B-120 at all — a derived counter cannot desync from anything. |
 | — | **`inspect()` is not ported.** | A Node display convenience with no upstream assertion, the same call made for `bit-set`. |
-| — | **`forEach`'s third callback argument** is the bridge object, not upstream's inner `Map`. | Same divergence made once for the whole T3 family (`docs/modules/default-map.md`); there is no Rust equivalent to hand out. |
+| — | **`forEach`'s third callback argument** is the bridge object, not upstream's inner `Map`. | Same divergence made once for the whole `Map`-backed family (`docs/modules/default-map.md`); there is no Rust equivalent to hand out. |
 
 ## Fuzz + bench
 

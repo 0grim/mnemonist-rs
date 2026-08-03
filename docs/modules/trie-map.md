@@ -166,7 +166,7 @@ bad` — chosen so prefix relationships exist *before a single op runs*, rather 
 long strings collide by luck: 5 of the 8 pool entries are themselves a strict prefix of another
 entry, and a self-check on the actual generated stream confirms these relationships are revisited
 constantly rather than only present in principle. Values are a small alphabet (`undefined`, `null`,
-small integers, one string) so equal values recur constantly, matching every T3-style spec in this
+small integers, one string) so equal values recur constantly, matching every `Map`-backed spec in this
 crate. `update` uses one named factory (`trieIncrement`) that increments a stored number, treating
 anything else as `0`.
 

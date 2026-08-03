@@ -17,14 +17,15 @@ the difference is observable. See "Deliberate divergences".
 
 ## What upstream tests
 
-Sixteen `it` blocks, the most thorough test file of the three in this wave. It genuinely covers the
+Sixteen `it` blocks, the most thorough test file of the three fixed-capacity modules (`fixed-stack`,
+`fixed-deque`, `circular-buffer`). It genuinely covers the
 ring: `should handle tricky situations.` interleaves `push`, `unshift`, `pop` and `shift` on a
 capacity-6 deque and asserts `start` directly, and `should be consistent over time.` walks a
 capacity-3 deque through eleven operations checking `toArray()` after each phase.
 
 Characterising the shape of that coverage:
 
-* **`start` is asserted twice**, at lines 151 and 274 — the only module in the wave whose internal
+* **`start` is asserted twice**, at lines 151 and 274 — the only one of the three whose internal
   geometry the suite inspects.
 * **Both capacity throws are covered**, `push` and `unshift`, in the same block.
 * **`get` is called four times**, all on a *full* capacity-3 deque: `get(0..2)` and `get(3)`. That

@@ -12,10 +12,10 @@ Shims: `tests/bridge/heap.js`, `tests/bridge/utils/comparators.js`.
 `test/heap.js` requires `../heap.js` **and** `../utils/comparators.js`, so the
 two are one unit and neither can land alone.
 
-This is the module that opens **capability tier T2**: a comparator is a JavaScript function called
-*from inside* a Rust operation, once per comparison, in the middle of a sift. That re-entrancy — not
-the heap algorithm, which is thirty lines — is what the tier is about, and it is the same hazard
-shape as B-31, reached through a different door.
+This is the module that opens the port's **re-entrant comparator callback**: a comparator is a
+JavaScript function called *from inside* a Rust operation, once per comparison, in the middle of a
+sift. That re-entrancy — not the heap algorithm, which is thirty lines — is what the capability is
+about, and it is the same hazard shape as B-31, reached through a different door.
 
 ---
 
@@ -351,7 +351,7 @@ The `RefCell` is not incidental: it exists because upstream's comparator is arbi
 JavaScript that can call back into the very heap it is comparing (`clear()` rebinding `this.items`
 mid-sift is the concrete case this module's own opening paragraph names), and a plain `&mut Vec`
 could not express that without either a runtime panic or `unsafe`. Removing it would remove the
-capability this module exists to test (capability tier T2), not merely optimise it. A fix would need
+capability this module exists to test — the re-entrant JavaScript comparator — not merely optimise it. A fix would need
 a design that keeps re-entrancy safety for the general `Comparator` case while giving a
 non-re-entrant concrete comparator a faster path — e.g. specialising `Heap` for `S: Store`
 combinations known not to re-enter — which is a `crates/mnemonist-core` design change, not a local

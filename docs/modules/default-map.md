@@ -8,8 +8,8 @@ Port: `crates/mnemonist-core/src/map/mod.rs` (the `Map` itself),
 Bridge: `crates/mnemonist-napi/src/js_key.rs`, `crates/mnemonist-napi/src/js_value.rs`,
 `crates/mnemonist-napi/src/map_cursor.rs`, `crates/mnemonist-napi/src/default_map.rs`.
 
-This is the **pilot for bridge tier T3**. T3 is not a family of related structures; it is one
-capability — *reproduce JavaScript's `Map`* — that eleven modules share, because `default-map`,
+This is the **pilot for the `Map`-backed bridge**. That is not a family of related structures; it is
+one capability — *reproduce JavaScript's `Map`* — that eleven modules share, because `default-map`,
 `bi-map`, `fuzzy-map`, `fuzzy-multi-map`, `multi-map`, `multi-set`, `lru-map` and
 `lru-map-with-delete` all keep their state in a `new Map()`. `default-map` was chosen because it
 is the *thinnest* wrapper over one: 162 lines, of which four are not delegation. The hard part is
@@ -83,7 +83,7 @@ Everything below is reachable through the public API and never exercised by the 
 10. **No non-string key is ever used.** `NaN` as a key (which `Map` treats as equal to itself,
     unlike `===`), `-0` and `+0` collapsing to one key, `0` versus `'0'` being two keys, and
     `null`/`undefined`/booleans as keys are all untested.
-11. **An object key is never used** — which is also true of every other T3 test file; see
+11. **An object key is never used** — which is also true of every other `Map`-backed test file; see
     "Deliberate divergences".
 
 **Values**
@@ -121,7 +121,7 @@ Everything below is reachable through the public API and never exercised by the 
 
 **`crates/mnemonist-core/src/map/mod.rs` — 21 tests** on the `Map` itself, deliberately against a
 plain `OrderedMap<&str, u32>` rather than through `DefaultMap`, so the semantics are pinned once
-for all eleven T3 modules. They cover insertion-order and overwrite behaviour (gap 4), all four
+for all eleven `Map`-backed modules. They cover insertion-order and overwrite behaviour (gap 4), all four
 iterator-liveness rules (gap 5), `clear()` under a live cursor in both operation orders (gap 6),
 and compaction under, ahead of, and between live cursors (gap 9). Full test-to-gap mapping:
 `docs/modules/evidence/default-map.md`.
@@ -234,7 +234,7 @@ log.
 
 | # | Divergence | Why |
 |---|---|---|
-| — | **Object, symbol, function and bigint keys are rejected**, with an error naming the limit. | `Map` compares objects by identity, and there is no identity hash for a JS object reachable from Rust. Two designs are implementable and both cost something real: tagging each object with a hidden id under a private `Symbol` is O(1) but mutates the caller's object (visible to `Object.getOwnPropertySymbols`) and fails on a frozen one; an association list of `napi_ref` probed with `napi_strict_equals` touches nothing but is O(n) per operation and holds a strong reference to every key it has ever seen, making release a leak problem in its own right. **No upstream test in the entire T3 family uses an object key** — audited across `default-map`, `set`, `bi-map`, `fuzzy-map`, `fuzzy-multi-map`, `multi-map`, `multi-set`, `lru-cache` (all four variants) and `sparse-map`; every key that reaches a `Map` is a string or a number, and `fuzzy-map` hashes its object arguments to strings *before* the `Map` sees one. Building machinery no test can reach is worse than a stated limit; answering silently and wrongly is worse than both. |
+| — | **Object, symbol, function and bigint keys are rejected**, with an error naming the limit. | `Map` compares objects by identity, and there is no identity hash for a JS object reachable from Rust. Two designs are implementable and both cost something real: tagging each object with a hidden id under a private `Symbol` is O(1) but mutates the caller's object (visible to `Object.getOwnPropertySymbols`) and fails on a frozen one; an association list of `napi_ref` probed with `napi_strict_equals` touches nothing but is O(n) per operation and holds a strong reference to every key it has ever seen, making release a leak problem in its own right. **No upstream test in the entire `Map`-backed family uses an object key** — audited across `default-map`, `set`, `bi-map`, `fuzzy-map`, `fuzzy-multi-map`, `multi-map`, `multi-set`, `lru-cache` (all four variants) and `sparse-map`; every key that reaches a `Map` is a string or a number, and `fuzzy-map` hashes its object arguments to strings *before* the `Map` sees one. Building machinery no test can reach is worse than a stated limit; answering silently and wrongly is worse than both. |
 | — | **Primitive values are stored by value; only objects are stored by reference.** | Forced twice over. `napi_create_reference` **rejects a number** at `NAPI_VERSION` 9, which this addon declares — measured, not assumed: it is what made two of the seven upstream assertions fail on this bridge's first run. And it is right independently: a `napi_ref` is a V8 global handle, and one per stored value would mean a million global handles for a million-entry `lru-cache` against upstream's inline SMIs. Nothing is observable: a JS primitive has no identity, so `0 === 0` and `'a' === 'a'` regardless of provenance. `-0` and `NaN` survive verbatim, because only *keys* are normalised. |
 | — | **`forEach`'s third callback argument is the `DefaultMap`, not the inner `Map`.** | Upstream delegates to `this.items.forEach(...)`, and a native `Map` passes *itself* to the callback — so upstream's third argument is the internal map, an object this port does not have. The `DefaultMap` is passed instead. Untested upstream (gap 18); the first two arguments, which the original test does use, are exact. |
 | — | **`forEach(cb, undefined)` binds `this` to the map.** | Upstream keys off `arguments.length > 1`, which napi's typed signature cannot see: "omitted" and "passed as `undefined`" are the same value. Identical to `SparseSet::for_each` and recorded the same way. The omitted-argument case — the only one the original suite uses — is exact, and passing a real scope object is exact. |

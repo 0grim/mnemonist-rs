@@ -105,9 +105,9 @@ compaction.
   verifies is that the normalisation **rule** is right against a real `Map`; that the bridge
   **applies** that rule is verified by the eight `js_key` tests and by the 27 probes.
 
-Three additive changes to `fuzz/oracle.js`, all of which the remaining ten T3 modules need:
+Three additive changes to `fuzz/oracle.js`, all of which the remaining ten `Map`-backed modules need:
 `encode` now handles `Map` (a `Map` has no own enumerable properties, so the generic object branch
-was encoding a T3 module's whole state as `{}` — an observation that could never disagree with
+was encoding such a module's whole state as `{}` — an observation that could never disagree with
 anything); arguments and constructor arguments are now `decode`d, because JSON has no `undefined`,
 no `-0`, no `NaN` and no functions and all four are ordinary inputs here; and factories are named
 rather than transmitted as source, so a program stays reproducible from its seed and a repro stays

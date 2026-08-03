@@ -11,7 +11,7 @@ Shim: `tests/bridge/set.js`.
 Two things about this unit are worth stating before anything else, because both were checked rather
 than assumed and both would have led the port somewhere different if taken on faith.
 
-**It is not a `Map`-backed module.** The filename suggests the T3 family, and the audit in
+**It is not a `Map`-backed module.** The filename suggests it belongs to that family, and the audit in
 `crates/mnemonist-core/src/map/mod.rs` covers every module that is one. `set.js` has **zero**
 `new Map(` and **six** `new Set(`. It holds no state, exports no constructor, and needs no storage
 from the port. The capability it does need is native JS `Set` **at the boundary** — read sets in,
@@ -270,4 +270,4 @@ A fresh native JS `Set` per pass (`new Set()` called eagerly for both `A` and `B
 `union` itself for the result) is a plausible, but unconfirmed, source of upstream's heavier tail:
 each `union` call upstream makes constructs one `Set` and does one `.add` per member visited, all
 through general-purpose `Set` machinery, while the port's `OrderedSet` is backed by the same
-`OrderedMap` every T3 module in this project already shares.
+`OrderedMap` every `Map`-backed module in this project already shares.

@@ -9,7 +9,7 @@ Port: `crates/mnemonist-core/src/structures/fuzzy_map.rs`. Bridge:
 
 A `FuzzyMap` is a `Map` whose keys are computed by a hash function before every read or write, so
 several distinct queries can resolve to the same stored item — "a map with lowercased keys" is
-upstream's own example. It is `default-map`'s T3 shape minus the one thing `default-map` has that
+upstream's own example. It is `default-map`'s `Map`-backed shape minus the one thing `default-map` has that
 this does not (a factory that manufactures a *missing* value): a miss here is just `undefined`,
 exactly like a plain `Map`.
 
@@ -69,7 +69,7 @@ and an empty map reporting nothing.
 Gaps 3, 5 and 6 are stated rather than closed — 3 and 5 are bridge-level (the hash-function split is
 JavaScript, not core), covered instead by the differential campaign below and by
 `mnemonist_napi::fuzzy_map`'s own construction tests; 6 is the same disclosed absence as every other
-unit in this wave.
+unit in this port — `.inspect()` is a repo-wide scope cut, listed in `docs/DECISIONS.md`.
 
 ## Bugs this found
 

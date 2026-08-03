@@ -18,7 +18,7 @@ falsification record, full benchmark table.
 | `from_bypasses_the_overwriting_that_this_class_exists_for` | 6 |
 | `many_wraps_still_walk_in_order` | — thirteen pushes on a capacity-4 ring |
 | `a_capacity_of_one_replaces_in_place` | 4 |
-| `an_overwriting_push_is_visible_to_an_open_cursor` | 13 — the sharpest hybrid-capture case in the wave: the length is frozen at construction, the elements are not |
+| `an_overwriting_push_is_visible_to_an_open_cursor` | 13 — the sharpest hybrid-capture case of the three fixed-capacity modules: the length is frozen at construction, the elements are not |
 | `cursors_do_not_restart_but_the_buffer_can_be_walked_again` | 13 |
 
 ## Fuzz grammar

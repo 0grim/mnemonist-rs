@@ -106,7 +106,7 @@ Characterising the shape of that coverage:
 11. **`pop`, `shift` and `clear` leaving the elements in place.**
 12. **Element coercion**, a non-constructor `ArrayClass`, and a non-integral capacity.
 13. **Cursor re-draining, `[...buffer]`, and mutation during iteration** — the last of which is
-    sharper here than anywhere else in the wave, because an overwriting `push` can rewrite a slot
+    sharper here than in `fixed-stack` or `fixed-deque`, because an overwriting `push` can rewrite a slot
     the cursor has not reached, so `next()` yields a value that was not in the buffer when the walk
     started.
 14. **`inspect()`** and the inspect symbol. Worth a note of its own: the pasted `inspect` closes
@@ -121,7 +121,7 @@ error-text and `Debug` checks), closing every gap above except 7, 8, 10, 11, 12 
 reproduction of all eighteen upstream blocks (`#223` included with its issue number), both
 overwriting inserts' return sequences pinned against Node along with the `start` walk, `push` and
 `unshift` overwriting opposite ends, a capacity-1 buffer replacing in place, thirteen pushes on a
-capacity-4 ring, and the sharpest hybrid-capture case in the wave (an overwriting push visible to an
+capacity-4 ring, and the sharpest hybrid-capture case of the three fixed-capacity modules (an overwriting push visible to an
 open cursor whose length is frozen but whose elements are not). Full test-to-gap mapping: evidence
 file.
 

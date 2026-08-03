@@ -165,7 +165,8 @@ with `vals` in the observed state so the value store is compared slot for slot a
 operation of every generated program.
 
 **Still untested, stated rather than glossed:** gap 25 (`inspect`, not bridged), gaps 23/24 in
-their `arguments.length` form (see the divergence table), non-numeric values (the T3 boundary, see
+their `arguments.length` form (see the divergence table), non-numeric values (the arbitrary-JS-value
+boundary, see
 the table), and the signed/floating value constructors, which the bridge refuses with an error
 that says so.
 
@@ -248,7 +249,7 @@ log.
 | # | Divergence | Why |
 |---|---|---|
 | — | **`delete` does not move the value.** | B-11, reproduced bug-for-bug. Fixing it would be a silent behavioural divergence on in-range input, and `get` after `delete` is observable. Pinned by four native tests and by a committed fuzz seed, so a future "cleanup" fails loudly. |
-| — | **Values are JS numbers (`f64`), not arbitrary JS values.** | The core is generic over the value type; the bridge instantiates it at `f64`. Arbitrary values are the T3 tier — a per-slot `Ref` and an `Env` to drop it — and this module does not reach for it. The upstream test file stores only numbers. `map.set(3, 'x')` throws here and works upstream. |
+| — | **Values are JS numbers (`f64`), not arbitrary JS values.** | The core is generic over the value type; the bridge instantiates it at `f64`. Arbitrary values need the `Map`-backed bridge machinery — a per-slot `Ref` and an `Env` to drop it — and this module does not reach for it. The upstream test file stores only numbers. `map.set(3, 'x')` throws here and works upstream. |
 | — | **Only `Array`, `Uint8Array`, `Uint16Array` and `Uint32Array` are accepted as `Values`.** | `PointerVec` models the three unsigned widths. `Int8Array`, `Float64Array` and the rest are refused with an error naming the gap, rather than silently coerced into the nearest supported width — which would be a wrong answer dressed as a right one. |
 | — | **`Values` is resolved by identity, not by name.** | `strict_equals` against the real `globalThis.Uint8Array`, because `{name: 'Uint8Array'}` is trivial to forge and reading `.name` would accept it. |
 | — | **The constructor branches on "was a second argument passed", not on `arguments.length`.** | napi cannot see `arguments.length`. The two agree on every call except `new SparseMap(x, undefined)`, where upstream sees two arguments and this sees one. Same blind spot as `forEach`'s `scope`, below. The two shapes upstream *throws* on are reproduced: `new SparseMap(Ctor)` reaches `getPointerArray(NaN)` and so throws the pointer-array message verbatim, and `new SparseMap(10, 20)` reaches `new (10)(20)`. |

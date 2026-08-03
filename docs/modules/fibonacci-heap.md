@@ -10,10 +10,11 @@ Fuzz spec: `crates/difffuzz/src/modules/fibonacci_heap.rs`.
 `test/fibonacci-heap.js` `require`s only `../fibonacci-heap.js`; that file's own require-closure
 also needs `./utils/comparators.js` (79 LOC), but that file is already a ported unit — the
 `DEFAULT_COMPARATOR`/`reverseComparator` machinery this module reuses verbatim rather than
-reimplementing, per the T2-tier table (`heap` 576 · `fixed-reverse-heap` 209 ·
-`fibonacci-heap` 321). So this unit's own LOC is the 321 alone, and it opens no new capability tier:
-T2 (a comparator called from inside a Rust sift, and able to re-enter the very structure it is
-comparing) was already established by `heap`, and this module is the second and sharpest test of it.
+reimplementing, per the comparator-callback table (`heap` 576 · `fixed-reverse-heap` 209 ·
+`fibonacci-heap` 321). So this unit's own LOC is the 321 alone, and it opens no new capability: the
+re-entrant comparator — called from inside a Rust sift, and able to re-enter the very structure it
+is comparing — was already established by `heap`, and this module is the second and sharpest test
+of it.
 
 ---
 

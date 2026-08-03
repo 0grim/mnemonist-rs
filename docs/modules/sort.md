@@ -180,7 +180,8 @@ Three, below.
 `crates/mnemonist-napi/src/sort.rs` reads elements as `f64`. Upstream is duck-typed and compares
 whatever it is given through JavaScript's relational operators, which coerce via
 `valueOf`/`toString`. Supporting that means calling back into JavaScript from inside the sort
-loop — the **T2 tier** — which this unit deliberately does not reach for, since
+loop — the **re-entrant callback capability** `heap` establishes — which this unit
+deliberately does not reach for, since
 nothing in `test/sort.js` or in mnemonist's own callers passes a non-number.
 
 The refusal is loud: `mnemonist-rs: sort element 3 is not a number… see docs/modules/sort.md.`
@@ -189,7 +190,8 @@ The refusal is loud: `mnemonist-rs: sort element 3 is not a number… see docs/m
 about the direction.** The port is not *fixing* those bugs; it is refusing the only inputs that can
 observe them. With numeric elements, no user code can run during a comparison, so upstream's shared
 global counter and shared partition stack are never re-entered and a local behaves identically.
-Reproducing the bugs bug-for-bug would require first implementing T2 and then adding shared state
+Reproducing the bugs bug-for-bug would require first admitting JavaScript callbacks into the sort
+loop and then adding shared state
 to reproduce a defect nothing can see — the port would be *less* faithful, not more, and this
 port's own rule that "a divergence where our port is more correct is a bug in the port" does not
 apply to a regime the port does not admit.
