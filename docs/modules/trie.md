@@ -56,13 +56,11 @@ and fuzzed (the `trieToggle` factory) rather than silently dropped.
 
 ## What we test in addition
 
-**Rust native tests** (`crates/mnemonist-core/src/structures/trie.rs`, 8):
-
-| Test | Closes gap |
-|---|---|
-| `reproduces_the_upstream_suite`, `adding_the_same_item_again_does_not_increase_size`, `the_null_sequence_is_a_valid_member`, `delete_removes_and_prunes_singleton_chains`, `find_returns_the_suffix_beyond_the_given_prefix`, `walk_visits_every_word`, `clear_resets_size_and_removes_everything` | the upstream blocks, as a baseline |
-| `has_distinguishes_a_stored_word_from_a_mere_prefix_of_one` | the gate 6 falsification target |
-| `update_is_inherited_from_trie_map_and_still_works` | the "not tested, but reachable" gap above — pins that `update` genuinely still works through the `Trie` wrapper, including that a second `update` on the same prefix does not grow `size` |
+`crates/mnemonist-core/src/structures/trie.rs` — 8 tests: a baseline reproduction of the upstream
+blocks (including the null sequence, `delete`'s pruning, `find`'s suffix, a full walk, `clear`), the
+gate-6 falsification target (`has` distinguishing a stored word from a mere prefix of one), and
+`update` still working through the `Trie` wrapper (including that a second `update` on the same
+prefix does not grow `size`).
 
 Everything `trie-map`'s own native tests pin about `Node`/`Walk`/the sentinel-collision/the
 delete-and-open-walk interaction is exercised through the shared engine and is not duplicated here;
@@ -93,22 +91,23 @@ upstream with no observable consequence (see that file's header note), not a beh
 
 ### Fuzz
 
+Two campaigns, two seeds:
+
 ```
 module=trie   seed=42       cases=6498  ops=652034  wall=60.0s  divergences=0
 module=trie   seed=20260801 cases=6141  ops=612873  wall=60.0s  divergences=0
 ```
 
-**Grammar:** `crates/difffuzz/src/modules/trie.rs`, sharing `crate::modules::trie_map::PREFIX_POOL`
-and its tokenisation directly rather than re-deriving them — see that module's docs for why the pool
-is shaped `a, ab, abc, abcd, b, ba, bc, bad` and for the measured evidence (`pool_self_check_*`)
-that it produces shared prefixes in practice, not merely in principle. There is no value alphabet
-here: a `Trie` node's own value is always the bare `true` `add` writes (or whatever `update`'s
-`trieToggle` factory flips it to — `(old) => !old`), so the only thing to compare per-node is
-presence.
+`crates/difffuzz/src/modules/trie.rs` shares `crate::modules::trie_map::PREFIX_POOL` and its
+tokenisation directly rather than re-deriving them — see that module's docs for why the pool is
+shaped `a, ab, abc, abcd, b, ba, bc, bad` and for the measured evidence that it produces shared
+prefixes in practice, not merely in principle. There is no value alphabet here: a `Trie` node's own
+value is always the bare `true` `add` writes (or whatever `update`'s `trieToggle` factory flips it
+to — `(old) => !old`), so the only thing to compare per-node is presence.
 
-**The regime split (D-201), inherited.** Exactly `trie-map`'s split — `ctor[0]` is an internal flag
-choosing whether a program exercises `delete`/`clear` or a persistent `$iter`/`$next` cursor over
-`keys()`, never both. This unit's *own* first campaign, run before the split existed, independently
+**The regime split (D-201), inherited.** Exactly `trie-map`'s split — an internal flag chooses
+whether a program exercises `delete`/`clear` or a persistent `$iter`/`$next` cursor over `keys()`,
+never both. This unit's *own* first campaign, run before the split existed, independently
 reproduced the divergence, minimised to:
 
 ```
@@ -151,12 +150,12 @@ Host: AMD Ryzen 5 7600X, 12 threads, WSL2, Node 24.18.1, rustc 1.97.1, quiet ser
 Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 10,000 samples/side.
 
 **`mixed-2e5`** — 1e6 mixed `add`/`has`/`delete` (50/25/25) over a 200,000-value domain, keys the
-lowercase hex encoding of each drawn `u32` (`bench/runner/src/trie.rs`), xorshift32 seed 42. The
-domain is an order of magnitude below the other modules' 1e6 on purpose: every distinct key here is
-a multi-node walk through a per-node hash map, not a flat array index, and an equal domain would
-have made this module by far the slowest wall-clock component of the pass for no representativeness
-gained — 200,000 keys already exercises deep prefix sharing (values under `0x1000` alone number in
-the thousands).
+lowercase hex encoding of each drawn `u32`. The domain is an order of magnitude below the other
+modules' 1e6 on purpose: every distinct key here is a multi-node walk through a per-node hash map,
+not a flat array index, and an equal domain would have made this module by far the slowest
+wall-clock component of the pass for no representativeness gained — 200,000 keys already exercises
+deep prefix sharing (values under `0x1000` alone number in the thousands). xorshift32 seed 42: the
+port is 2.6× faster at p50 (172.5 vs 454.8 ns/op), 3.0× faster at p99 (265.6 vs 792.5).
 
 | metric | port | upstream | |
 |---|---|---|---|
@@ -167,8 +166,8 @@ the thousands).
 | startup ms | **0.6** | 16.2 | 27× (reported separately; not throughput) |
 
 **A clean win on every metric — no regressions.** This is the allocation-heavy, string-keyed
-profile flagged as genuinely different from the array/typed-array modules, and the
-port's per-node `HashMap<char, Node>` fan-out costs V8 noticeably more than the equivalent plain-
-object node upstream uses, both in time and in the RSS delta (upstream's is 7× the port's here). The
-0.1 MB structure-only delta versus 6.6 MB is the widest such gap measured across all seven modules
-in this pass.
+profile flagged as genuinely different from the array/typed-array modules, and the port's per-node
+`HashMap<char, Node>` fan-out costs V8 noticeably more than the equivalent plain-object node
+upstream uses, both in time and in the RSS delta (upstream's is 7× the port's here). The 0.1 MB
+structure-only delta versus 6.6 MB is the widest such gap measured across all seven modules in this
+pass.

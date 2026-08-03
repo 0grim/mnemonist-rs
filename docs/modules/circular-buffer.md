@@ -42,8 +42,7 @@ The port mirrors the same shape. `CircularBuffer` holds a `FixedDeque` and deleg
 deque's, because the addon exports both classes directly.
 
 **Practical consequence for the scope table:** the two must be scoped in that order, and a
-regression in `fixed-deque` fails both files. Neither is in `tests/scope.txt` yet — gate 10 is
-outstanding for both.
+regression in `fixed-deque` fails both files.
 
 ## What upstream tests
 
@@ -117,22 +116,14 @@ Characterising the shape of that coverage:
 
 ## What we test in addition
 
-`crates/mnemonist-core/src/structures/circular_buffer.rs` — **13 tests**; the eleven substantive
-ones are below, plus the error-text and `Debug` checks:
-
-| Test | Closes gap |
-|---|---|
-| `reproduces_the_upstream_suite` | 1:1 port of all eighteen upstream blocks, `#223` included with its issue number |
-| `a_push_that_overwrites_returns_the_unchanged_size` | 1 — the return sequence `1, 2, 3, 3, 3` and the `start` walk `0, 0, 0, 1, 2`, pinned against Node |
-| `an_unshift_that_overwrites_returns_the_unchanged_size` | 2 |
-| `a_full_push_overwrites_the_slot_start_is_on` | 5 — asserts the array *and* `start` after one overwriting push, which is what a reversed store/test pair would break |
-| `push_and_unshift_overwrite_opposite_ends` | 3 |
-| `get_is_bounded_by_the_capacity_here_too` | 9 |
-| `from_bypasses_the_overwriting_that_this_class_exists_for` | 6 |
-| `many_wraps_still_walk_in_order` | — thirteen pushes on a capacity-4 ring |
-| `a_capacity_of_one_replaces_in_place` | 4 |
-| `an_overwriting_push_is_visible_to_an_open_cursor` | 13 — the sharpest hybrid-capture case in the wave: the length is frozen at construction, the elements are not |
-| `cursors_do_not_restart_but_the_buffer_can_be_walked_again` | 13 |
+`crates/mnemonist-core/src/structures/circular_buffer.rs` — **13 tests** (11 substantive plus the
+error-text and `Debug` checks), closing every gap above except 7, 8, 10, 11, 12 and 14: a 1:1
+reproduction of all eighteen upstream blocks (`#223` included with its issue number), both
+overwriting inserts' return sequences pinned against Node along with the `start` walk, `push` and
+`unshift` overwriting opposite ends, a capacity-1 buffer replacing in place, thirteen pushes on a
+capacity-4 ring, and the sharpest hybrid-capture case in the wave (an overwriting push visible to an
+open cursor whose length is frozen but whose elements are not). Full test-to-gap mapping: evidence
+file.
 
 Plus the whole of `fixed_deque.rs`'s 17 tests and `backing.rs`'s 4, which this class inherits by
 construction rather than by copy — the delegation is what makes that true rather than merely
@@ -144,8 +135,8 @@ with their `start` walks, thirteen pushes on a `Uint8Array` ring, a capacity-1 b
 overwriting push stepped against an open cursor. All agree.
 
 **Still untested, stated rather than glossed:** gap 14 (`inspect` is not ported, and its
-constructor-name quirk -- confirmed on Node 24.18.1:
-`new CircularBuffer(Array, 3).inspect().constructor.name === 'FixedDeque'` -- is therefore
+constructor-name quirk — confirmed on Node 24.18.1:
+`new CircularBuffer(Array, 3).inspect().constructor.name === 'FixedDeque'` — is therefore
 neither reproduced nor contradicted), and the same three
 divergence-shaped gaps as `fixed-deque` — D-65, D-61, D-62.
 
@@ -190,57 +181,42 @@ expected outcome.
 
 ### Fuzz
 
+Two campaigns, two seeds, **3.10 M operations, zero divergences**:
+
 ```
 module=circular-buffer seed=42       cases=18564 ops=1899965 wall=90.0s divergences=0
 module=circular-buffer seed=20260801 cases=11652 ops=1203311 wall=60.0s divergences=0
 ```
 
-Two campaigns, two seeds, **3.10 M operations, zero divergences**. Reproduce with
-`target/release/difffuzz --module circular-buffer --seed 42 --cases 18564`.
+Reproduce with `target/release/difffuzz --module circular-buffer --seed 42 --cases 18564`.
 
-* **Op alphabet:** `push(v)` (weight 5) · `unshift(v)` (3) · `pop()` (2) · `shift()` (2) ·
-  `peekFirst()` (1) · `peekLast()` (1) · `get(i)` (2) · `clear()` (1) · `$iter("values")` (2) ·
-  `$next()` (4) · `$spread()` (1) · `$forEach(mutation, at)` (3).
-* **Observable state, compared after every op:** `size`, `capacity`, `start`, `items`, `toArray()`.
-* **Neither insert can throw here**, so a generated program never stops growing and spends almost
-  all of its length *past* the capacity, where every insert overwrites and `start` walks. With
-  capacities of 1..=8 and 200-op programs, a program wraps the ring tens of times. That is the
-  contrast with the `fixed-deque` grammar, whose programs stall at the ceiling.
-* **The return value of every insert is compared**, which is what pins gaps 1 and 2 — the only
-  visible signal that an element was dropped.
-* **Both backing classes**, `get` indices 0..=11, values to 320.
-* **Deliberately excluded:** the same three as `fixed-deque` — `from` (a static), `forEach`'s
-  `scope` (D-61), and a negative `get` index (core takes a `usize`; covered by differential probes).
+The op alphabet covers `push`/`unshift`/`pop`/`shift`/`peekFirst`/`peekLast`/`get`/`clear` plus the
+cursor ops and `$forEach`. Neither insert can throw here, so a generated program never stops growing
+and spends almost all of its length *past* the capacity, where every insert overwrites and `start`
+walks — with capacities of 1..=8 and 200-op programs, a program wraps the ring tens of times. That
+is the contrast with the `fixed-deque` grammar, whose programs stall at the ceiling. The return
+value of every insert is compared, which is what pins gaps 1 and 2 — the only visible signal that an
+element was dropped. Both backing classes are generated, `get` indices run 0..=11, values to 320.
+Deliberately excluded: the same three as `fixed-deque` — `from` (a static), `forEach`'s `scope`
+(D-61), and a negative `get` index (core takes a `usize`; covered by differential probes). Full
+grammar: evidence file.
 
 **The grammar was falsified before being trusted.** Sabotage: `push` returning `size + 1` when it
 overwrites — reading upstream's `return this.size` as `return ++this.size`, which is what the
-non-overwriting branch two lines below actually does. Caught in **497 cases (0.4 s)**, shrunk to
-three lines:
-
-```js
-var s = new CircularBuffer(Array, 1);
-s.push(0); s.push(0);      // port 2, upstream 1
-```
-
-Reverted; the seed is committed with provenance in
+non-overwriting branch two lines below actually does. Caught in 497 cases (0.4 s), shrunk to three
+lines. Reverted; the seed is committed with provenance in
 `crates/difffuzz/proptest-regressions/circular-buffer.txt`. Note what this sabotage would have
-survived: the entire original suite, which never asserts an overwriting insert's return value.
+survived: the entire original suite, which never asserts an overwriting insert's return value. Full
+repro: evidence file.
 
-### Falsification of the port (gate 6)
-
-**The assertion the sabotage had to break was named first:**
+**Falsification of the port (gate 6):** the assertion named first was
 `should be possible to wrap buffer around when pushing.` —
-`assert.deepStrictEqual(buffer.toArray(), [2, 3, 4])`, at `test/circular-buffer.js:46`. Chosen
+`assert.deepStrictEqual(buffer.toArray(), [2, 3, 4])` at `test/circular-buffer.js:46` — chosen
 because it is the first assertion in the file that reaches an *overwriting* push, which is the only
-code this module adds to `FixedDeque`.
-
-**The sabotage:** the overwriting branch of `push` no longer advancing `start` — it still writes the
-slot and still returns the unchanged size, so the buffer keeps its capacity and its size, and only
-the oldest element is wrong.
-
-**Confirmed red**, and red in precisely the named place: `16 passing, 2 failing`, the first failure
-being that assertion with `actual` `[4, 2, 3]` against `expected` `[2, 3, 4]`. Reverted;
-**confirmed green again**: `18 passing`.
+code this module adds to `FixedDeque`. The sabotage, the overwriting branch of `push` no longer
+advancing `start` (it still writes the slot and still returns the unchanged size, so only the oldest
+element is wrong), is confirmed red in precisely the named place (16 passing, 2 failing, `[4, 2, 3]`
+against `[2, 3, 4]`); reverted, confirmed green again (18 passing).
 
 ### Bench
 
@@ -252,20 +228,13 @@ Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 10,0
 same shape as `fixed-stack`/`fixed-deque`. **No guard here**: this is the one fixed-capacity module
 where `push` cannot fail — overwriting the oldest element when full is its whole reason to exist —
 so unlike its two siblings the timed loop calls `push` unconditionally, and the benchmark spends its
-saturated majority actually exercising the overwrite path rather than a guarded no-op.
+saturated majority actually exercising the overwrite path rather than a guarded no-op: the port is
+1.3× faster at p50 (4.9 vs 6.2 ns/op), 1.2× faster at p99, 1.3× faster at min. No regressions. Full
+table: evidence file.
 
-| metric | port | upstream | |
-|---|---|---|---|
-| p50 ns/op | **4.9** | 6.2 | 1.3× faster |
-| p99 ns/op | **8.5** | 10.4 | 1.2× faster |
-| min ns/op | **4.3** | 5.8 | 1.3× faster |
-| RSS delta MB | **6.1** | 21.0 | |
-| structure-only RSS delta MB | **0.1** | 0.3 | |
-| startup ms | **0.6** | 16.1 | 27× (reported separately; not throughput) |
-
-No regressions, though the margin is the **narrowest of the three fixed-capacity modules** — p50
-1.3× here against 1.7–2.1× for the guarded pair. Plausible mechanism, not confirmed: every push here
-does real work (the overwrite-and-advance branch) rather than sometimes taking a guarded early exit,
-so both sides are doing strictly more per call than `fixed-stack`/`fixed-deque` see once saturated,
-and V8's overwrite path (a plain indexed store, no capacity exception ever reachable) has less
-distance to close.
+The margin is the **narrowest of the three fixed-capacity modules** — p50 1.3× here against
+1.7–2.1× for the guarded pair. Plausible mechanism, not confirmed: every push here does real work
+(the overwrite-and-advance branch) rather than sometimes taking a guarded early exit, so both sides
+are doing strictly more per call than `fixed-stack`/`fixed-deque` see once saturated, and V8's
+overwrite path (a plain indexed store, no capacity exception ever reachable) has less distance to
+close.

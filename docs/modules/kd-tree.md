@@ -61,7 +61,7 @@ cross-plane-shaped query in the suite, `[8, 5]` in `should be keep sane`, turns 
 hand against the pinned `pivots`/`lefts`/`rights` — to resolve on the very first recursive step
 (the root's primary descent lands directly on `'two'`'s leaf node, which is closer than anything
 else in the tree), so it does not actually require backtracking into the other subtree at all. See
-Bugs/gate 6 below: this was discovered only by trying to *falsify* that branch and watching the
+"Fuzz + bench" below: this was discovered only by trying to *falsify* that branch and watching the
 pinned assertion stay green.
 
 **A distance metric other than squared Euclidean.** `squaredDistanceAxes` is not parameterised —
@@ -69,19 +69,12 @@ nothing to test here upstream, and nothing to diverge from either.
 
 ## What we test in addition
 
-`crates/mnemonist-core/src/structures/kd_tree.rs` — 9 tests:
-
-| Test | Closes gap |
-|---|---|
-| `builds_the_tree_upstream_pins` | 1:1 transcription of `should be keep sane` |
-| `builds_from_axes_directly_and_agrees_with_from_rows` | 1:1 transcription of the `fromAxes` test |
-| `builds_from_axes_without_labels_using_positional_indices` | 1:1 transcription of the no-labels case |
-| `k_nearest_neighbors_matches_brute_force_membership` | 1:1 transcription of the knn test |
-| `linear_k_nearest_neighbors_matches_upstreams_pinned_case` | 1:1 transcription of the pinned `['five', 'four', 'one']` order |
-| `k_is_clamped_to_size_rather_than_padding_with_nothing` | the `k` > size gap |
-| `zero_k_is_rejected_with_upstreams_message` | the `k <= 0` gap (narrowed — see D-408) |
-| `an_empty_tree_builds_cleanly_and_answers_no_queries` | the empty-tree gap (D-407) |
-| `finds_neighbors_across_the_splitting_plane` | the "proven necessary" gap above — see Bugs/gate 6 |
+`crates/mnemonist-core/src/structures/kd_tree.rs` — 9 tests: a 1:1 transcription of all five
+upstream blocks as a baseline, `k` clamped to size rather than padding with nothing, a zero `k`
+rejected with upstream's message (narrowed — see D-408), an empty tree building cleanly and
+answering no queries (D-407), and a dedicated cross-splitting-plane test — see "Fuzz + bench" for
+why that last one needed a dense grid rather than a hand-picked shape to actually exercise the
+branch it is named for.
 
 ## Bugs this found
 
@@ -90,7 +83,7 @@ independent copies of the pruning bound (`nearestNeighbor`'s and `kNearestNeighb
 closely, ported faithfully, checked against both fixed fixtures byte-for-byte on the first attempt,
 fuzzed for 90-plus seconds at two seeds (1.62M operations total, zero divergences), and put through
 gate 6's falsification below — which stayed green on its first target and was investigated to a
-cause rather than accepted or swapped out (see Fuzz + bench). No genuine defect surfaced anywhere.
+cause rather than accepted or swapped out (see "Fuzz + bench"). No genuine defect surfaced anywhere.
 Reported plainly, per this project's "set — no upstream bugs, and that is the finding" precedent.
 
 ## Deliberate divergences
@@ -107,88 +100,49 @@ Reported plainly, per this project's "set — no upstream bugs, and that is the 
 
 ### Fuzz
 
+**1.62M operations across two seeds, zero divergences**:
+
 ```
 module=kd-tree seed=42  cases=9713  ops=970441  wall=90.0s  divergences=0
 module=kd-tree seed=7   cases=6462  ops=650306  wall=60.0s  divergences=0
 ```
 
-**1.62M operations across two seeds, zero divergences.** Reproduce with `target/release/difffuzz
---module kd-tree --seed 42 --cases 9713` (or `--seed 7 --cases 6462`).
+Reproduce with `target/release/difffuzz --module kd-tree --seed 42 --cases 9713` (or
+`--seed 7 --cases 6462`).
 
-* **Op alphabet:** `nearestNeighbor(query)` (weight 3) · `kNearestNeighbors(k, query)` (3) ·
-  `linearKNearestNeighbors(k, query)` (3).
-* **`.from`, not `new KDTree(...)`.** Upstream's own raw constructor takes an already-built
-  internal shape (D-406), so this is the first module in the port whose `ModuleSpec` needs an
-  alternate entry point: `static_factory()` names `"from"`, and `fuzz/oracle.js`'s `init` case
-  grew an additive `staticFactory` field (`Ctor[name](...)` instead of `new Ctor(...)`) —
-  optional, defaulted to the prior behaviour for every other module.
-* **A dense 12×12 integer grid, not a sparse or wide-ranging one.** The sharp risk for this module
-  is named directly — "queries whose nearest neighbor lies across a splitting plane from the
-  query point ... precisely the case a naive implementation gets wrong" — and a dense grid is the
-  direct answer: many points share a coordinate on whichever axis the tree splits on (which is
-  what puts a query close to a plane at all), and many points sit at genuinely equal squared
-  distance from a query (forcing `kNearestNeighbors`' `[dist, visited++, pivot]` tie-break to
-  actually run). Query points are drawn from a *wider* window than the grid
-  (`-6..18` against a `0..12` grid) so some land well outside the point cloud and some deep inside
-  it.
-* **Observable state: `size`, `dimensions`, `pivots`, `lefts`, `rights`** — the tree's exact shape,
-  compared on every generated construction.
+The op alphabet covers `nearestNeighbor`/`kNearestNeighbors`/`linearKNearestNeighbors`, all
+constructed via `.from`, not `new KDTree(...)` — upstream's own raw constructor takes an
+already-built internal shape (D-406), so this was the first module in the port whose `ModuleSpec`
+needed an alternate entry point. Points are a dense 12×12 integer grid rather than a sparse or
+wide-ranging one: many points share a coordinate on whichever axis the tree splits on (which is
+what puts a query close to a plane at all), and many points sit at genuinely equal squared distance
+from a query (forcing `kNearestNeighbors`' tie-break to actually run). Query points are drawn from a
+*wider* window than the grid so some land well outside the point cloud and some deep inside it.
+Observable state is `size`, `dimensions`, `pivots`, `lefts`, `rights` — the tree's exact shape,
+compared on every generated construction. Full grammar: evidence file.
 
-**Measured evidence of splitting-plane crossings and genuine ties** (`cargo test -p difffuzz --lib
-grammar_self_check_queries_land_across_the_splitting_plane -- --nocapture`, 500 sampled queries
-against a random 60-point instance of the grid):
+**Measured evidence of splitting-plane crossings and genuine ties** (500 sampled queries against a
+random 60-point instance of the grid): 191 of 500 queries have a true nearest neighbor that a "just
+trust the first split" implementation would miss entirely, and 100 of 500 have more than one point
+at the exact minimum distance. Both named risks for this module are measured occurring directly, not
+inferred from op weights. Full figures: evidence file.
 
-```
-kd-tree grammar_self_check: 191/500 queries had their true nearest neighbor across a naive
-single-axis split; 100/500 had a genuine distance tie
-```
-
-191 of 500 queries have a true nearest neighbor that a "just trust the first split" implementation
-would miss entirely; 100 of 500 have more than one point at the exact minimum distance. Both named
-risks for this module are measured occurring directly, not inferred from op weights.
-
-### Falsification of the port (gate 6)
-
-**Named first:** two targets, in order.
-
-**Target 1 (as originally named): `builds_the_tree_upstream_pins`'s
-`assert_eq!(tree.nearest_neighbor(&[8.0, 5.0]), Some(&"two"))`.** **The sabotage:**
-`recurse_nearest`'s "go the other way too" branch (`if dx * dx < *best_distance`) forced to `false`
-unconditionally, disabling backtracking into the sibling subtree entirely.
-
-**Stayed green.** Investigated rather than swapped for an easier target: by hand, against the
-tree's own pinned `pivots = [5, 1, 0, 3, 2, 4]`/`lefts = [2, 3, 0, 0, 6, 0]`/`rights = [5, 4, 0, 0,
-0, 0]`, the root's primary descent for query `[8, 5]` goes directly to node 4 (`'two'` at `(9,
-6)`), a leaf, on the very first recursive call — before the disabled branch is ever consulted. The
-assertion is not incapable of expressing the defect (contrast the three green falsifications
-catalogued under `docs/METHODOLOGY.md`'s "Gate 6 — falsification" heading, none of which are
-this); this specific query, against this specific six-point tree, simply does not exercise the
-branch at all. A first attempt at a stronger
-native regression test (`finds_neighbors_across_the_splitting_plane`, a 64-point diagonal line)
-*also* stayed green under the same sabotage — investigated to the same root cause: every point's
-`x` equalling its `y` lets the primary "trust the split" descent converge on the right answer by
-construction, coordinate by coordinate, without ever needing to look at the other side.
-
-**Target 2 (after investigation): the differential fuzzer's own `grammar_self_check`
-(`crates/difffuzz/src/modules/kd_tree.rs`), whose dense-grid construction (not a line) is exactly
-what the Fuzz section above measures as producing splitting-plane crossings.** Run against the
-still-sabotaged core: **confirmed red** at `assertion left == right failed ... for [9.0, 3.0]:
-left: Some(1.0), right: Some(0.0)` — the sabotaged tree's answer was a full unit of squared
-distance worse than the true nearest neighbor.
-
-`finds_neighbors_across_the_splitting_plane` was then rebuilt on the same kind of dense grid (a
-10×10 grid, 200 sampled random queries, comparing `nearest_neighbor` specifically — not
-`kNearestNeighbors`, whose recursion is a *different* function with its own independent copy of
-this branch and would not have exercised the sabotage at all) and **confirmed red** at the intended
-assertion. Reverted; **confirmed green again**: all 9 `kd_tree` unit tests pass, `cargo test
---workspace` clean.
-
-**What this is a finding about:** neither the pinned upstream fixture nor a naively-adversarial
-native test (a line) is dense enough to force the one query pattern this branch exists for. The
-project's differential fuzzer, built specifically because a fixed fixture and a hand-written test
-share the same author's blind spots, caught what both missed on the first try — the clearest
-demonstration in this port so far that a native unit test and a differential fuzz campaign are not
-redundant instruments, even when both are written by the same person who wrote the code under test.
+**Falsification of the port (gate 6), two targets in order.** The first sabotage — disabling
+`recurse_nearest`'s backtracking branch entirely — stayed green against both the pinned upstream
+fixture assertion and a first native regression attempt (a 64-point diagonal line), and was
+investigated rather than swapped for an easier target: by hand, against the tree's own pinned
+shape, the query used resolves on the very first recursive call, before the disabled branch is ever
+consulted, and every point on a diagonal line lets the primary descent converge coordinate by
+coordinate without needing the other side either. The second target — the differential fuzzer's own
+`grammar_self_check`, whose dense-grid construction is exactly what produces splitting-plane
+crossings — is confirmed red against the same sabotaged core; a rebuilt native test on the same kind
+of dense grid (10×10, 200 sampled queries) is then also confirmed red at the intended assertion.
+Reverted; confirmed green again across all 9 unit tests and the full workspace suite. What this is a
+finding about: neither the pinned upstream fixture nor a naively-adversarial native test (a line) is
+dense enough to force the one query pattern this branch exists for — the differential fuzzer caught
+what both missed on the first try, the clearest demonstration in this port so far that a native unit
+test and a differential fuzz campaign are not redundant instruments, even when both are written by
+the same person who wrote the code under test. Full record: evidence file.
 
 ### Bench
 
@@ -200,79 +154,19 @@ Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 10,0
 each level's window by raw axis value, the same fixed-pivot quicksort weak spot `vp-tree.rs`
 documents). No `add`: the tree is built once, untimed. A single query shape already exercises both
 outcomes of the cross-plane backtrack for real 2-D data, so no second radius parameter was needed
-(contrast `bk-tree`/`vp-tree`). xorshift32 seed 42:
+(contrast `bk-tree`/`vp-tree`): the port is now 1.23× faster at p50 (755.10 vs 927.85 ns/op). Full
+current table and the fix that got it there: evidence file and log.
 
-| metric | port | upstream | |
-|---|---|---|---|
-| p50 ns/op | 2049.08 | **939.76** | upstream 2.2× faster |
-| p99 ns/op | 2536.66 | **1375.66** | upstream 1.8× faster |
-| min ns/op | 1677.52 | **828.60** | upstream 2.0× faster |
-| RSS delta MB | **9.6** | 51.3 | |
-| structure-only RSS delta MB | **0.2** | 6.0 | |
-| startup ms | **0.6** | 15.3 | 26× (reported separately; not throughput) |
+`k_nearest_neighbors` used to heap-allocate a fresh 3-element `Vec<f64>` per node visited into
+`FixedReverseHeap`'s backing store; `k_nearest_neighbors` and `linear_k_nearest_neighbors` now hold
+`[f64; 3]` and `[f64; 2]` instead, which are `Copy`, so the sift-step clone is a stack copy rather
+than a `malloc`. `TupleComparator` gained a matching `Comparator<[T; N], E>` impl, appended beside
+the existing `Vec<T>` one rather than replacing it — the two are the same lexicographic rule, and
+since every tuple here is exactly `N` long, the "shorter than `N`" case only the `Vec` impl needs is
+unreachable from either. Full before/after allocation counts and the investigation history: log.
 
-**A real, measured loss on p50/p99/min — the sharpest among this group of modules.** Isolated with
-a standalone probe (200,000 calls of each method alone, same tree, both sides): `nearest_neighbor` alone is 331 ns/call
-here against upstream's 620 ns (the port wins, consistent with the rest of this group), but
-`k_nearest_neighbors` alone is 6.6 µs/call here against upstream's 2.1 µs — a genuine reversal, and
-disproportionate: this port's own k-NN path costs **20×** its own `nearest_neighbor`, where
-upstream's costs only **3.4×** its own. `recurse_knn` heap-allocates a fresh 3-element `Vec<f64>`
-per node visited into `FixedReverseHeap`'s backing store — a plausible mechanism (V8's generational
-GC can bump-allocate the equivalent short-lived array far more cheaply than repeated small
-`malloc`s), consistent with where the two sides' costs diverge, but originally not confirmed with a
-profiler or allocation count, so it was labelled a hypothesis rather than a finding.
-
-**Confirmed 2026-08-02**, with an allocation-counting global allocator (no `perf`/`cargo flamegraph`
-available on this host — see the investigation's own report for the full tool inventory).
-`bench/runner/examples/kd_tree_alloc_probe.rs` builds the same shape of tree (100,000 scattered 2-D
-points) and runs 20,000 calls of each method alone, counting real heap allocations rather than
-reading the source and assuming them:
-
-| method | ns/call | allocations/call | bytes/call |
-|---|---|---|---|
-| `nearest_neighbor` | 362.9 | **0.000** | 0 |
-| `k_nearest_neighbors` | 8071.0 | **499.312** | 12,863 |
-
-Zero allocations for `nearest_neighbor`, essentially one allocation per node visited for
-`k_nearest_neighbors` (≈499 of them per call, each the 3-element `Vec<f64>` `recurse_knn` pushes) —
-the self-ratio this probe measures, 22.2×, reproduces the 20× the original gate-10 run found (a
-different, unmatched PRNG and a smaller call count, so exact agreement was not expected; the same
-order of magnitude is what confirms it). **Verdict: confirmed.** The per-node allocation is real,
-measured directly rather than inferred, and its count tracks the disproportionate cost one-for-one.
-RSS and startup still favour the port. Checksum `723901217380`, identical on both sides for the
-original gate-10 measurement (the allocation probe uses its own smaller, unmatched workload and is
-not itself gate-10 evidence — see the file's own docs for why).
-
-**Fixed 2026-08-03**, by the route this section proposed: `k_nearest_neighbors` and
-`linear_k_nearest_neighbors` now hold `[f64; 3]` and `[f64; 2]` instead of `Vec<f64>`. Both are
-`Copy`, so the `Store::get`/`set` clone on every sift step is a stack copy rather than a `malloc`.
-`TupleComparator` gained a matching `Comparator<[T; N], E>` impl, appended beside the `Vec<T>` one
-rather than replacing it; the two are the same lexicographic rule, and since every tuple here is
-exactly `N` long the "shorter than `N`" case only the `Vec` impl needs is unreachable from either.
-
-The same allocation probe, re-run unchanged:
-
-| method | ns/call | allocations/call | bytes/call |
-|---|---|---|---|
-| `nearest_neighbor` | 352.4 | **0.000** | 0 |
-| `k_nearest_neighbors` | 1909.3 | **7.000** | 1,392 |
-
-499.3 allocations per call became 7.0 — a 71× reduction — and the time per call fell 4.2×, from
-8,071 ns to 1,909 ns. The self-ratio this probe measures fell from 22.2× to 5.4×, against upstream's
-own 3.4×. This is the metric that would have falsified the explanation had it been wrong: had the
-cost been the pointer chase through `lefts`/`rights`/`pivots`, or `squared_distance`'s per-dimension
-loop, removing the allocations would have left the time where it was.
-
-The full gate-10 workload, re-measured in the same session as every other figure in this port's
-performance table:
-
-| metric | port | upstream | |
-|---|---|---|---|
-| p50 ns/op | **755.10** | 927.85 | port 1.23× faster |
-
-One caution against reading the swing as larger than it is. The upstream figure in the table above
-this one, 939.76 ns, and this pass's 927.85 ns are the *same code on the same host*; an intervening
-run of the same workload measured 1159.03 ns, 22% away from both. Back to back within one session
-the harness reproduces to 0.9% on each side, so the honest statement of the improvement is the
-port's own time — **2049 ns to 755 ns** — rather than the ratio's move from 2.2× slower to 1.23×
-faster, which carries that drift.
+One caution against reading the current 1.23× as the full story: back-to-back measurements of the
+identical code on the same host have shown up to 22% run-to-run drift, so the honest statement of
+the improvement this fix produced is the port's own absolute time — roughly 2049 ns down to 755 ns —
+rather than the ratio against upstream, which carries that drift. RSS and startup favour the port
+throughout and are unaffected by any of this: 9.6 MB against 51.3 MB, and a 26× faster startup.

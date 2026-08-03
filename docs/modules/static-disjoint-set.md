@@ -105,24 +105,14 @@ and never exercised by the original suite.
 
 ## What we test in addition
 
-Rust native tests in `crates/mnemonist-core/src/structures/static_disjoint_set.rs`, mapped to the
-gaps above:
-
-| Test | Closes gap |
-|---|---|
-| `should_be_possible_to_have_a_set_working` | 1:1 port of the upstream `it`, as a baseline |
-| `singleton_is_its_own_root` | 1, 12 |
-| `find_compresses_the_whole_path` | 1, 2 — builds a 4-deep chain by hand and asserts every node on the path now points at the root |
-| `dimension_only_drops_on_a_successful_union` | 3, 4, 5 — the branch that made gate 6 a false green |
-| `empty_set_is_degenerate_but_legal` | 11 |
-| `picks_a_distinct_width_per_array` | 8 — size 300, where `parents` is 16-bit and `ranks` is still 8-bit |
-| `mapping_width_follows_the_current_dimension` | 9 — asserts the width *narrows* as unions accumulate |
-| `root_rank_wraps_at_the_ranks_array_width` | 10 — 299 increments into a `Uint8Array`, asserts `299 % 256` |
-| `mapping_and_compile_agree_and_are_index_ordered` | 15, 16 — both called on the same set and cross-checked |
-| `reproduces_upstream_rank_bug` | 17 — pins a concrete input where the elected root differs |
-| `rejects_a_size_no_pointer_array_can_index` | 8 (the throw) |
-| `find_panics_out_of_range` | 13 |
-| `utils::typed_arrays::*` (4 tests) | 8 — every width boundary, non-integral input, and `NaN` |
+Rust native tests in `crates/mnemonist-core/src/structures/static_disjoint_set.rs`, closing every
+gap above except 7 and 14: a 1:1 port of the upstream `it` as a baseline, a singleton set, path
+compression pinned by hand on a 4-deep chain, that `dimension` only drops on a successful union
+(the branch that made gate 6 a false green the first time it was tried), an empty set, a distinct
+width per array at size 300, `mapping()`'s width narrowing as unions accumulate, rank wrapping at
+the `Uint8Array` boundary, `mapping`/`compile` agreeing and being called twice, a concrete input
+that pins the upstream rank bug, the width-selection throw, and an out-of-range `find` panicking
+rather than silently propagating `NaN`. Full test-to-gap mapping: evidence file.
 
 The **differential fuzzer** then covers gaps 1–6, 8, 9, 15, 16 and 17 continuously rather than at
 hand-picked points, because `mapping` and `compile` are in the observable-state set and therefore
@@ -137,12 +127,11 @@ compared).
 
 ## Bugs this found
 
-**B-7 — `union` compares the ranks of the items, not the roots.** `status: unverified — strong
-candidate`. Upstream reads `this.ranks[x]` / `this.ranks[y]` where union-by-rank requires
-`this.ranks[xRoot]` / `this.ranks[yRoot]`, while incrementing `this.ranks[xRoot]`. Non-root ranks
-are therefore never maintained, stay 0 forever, and the equal-ranks branch fires on nearly every
-union — disabling the heuristic and degrading `find` towards O(n). Results stay correct; the
-elected root does not.
+**B-7 — `union` compares the ranks of the items, not the roots.** Upstream reads `this.ranks[x]` /
+`this.ranks[y]` where union-by-rank requires `this.ranks[xRoot]` / `this.ranks[yRoot]`, while
+incrementing `this.ranks[xRoot]`. Non-root ranks are therefore never maintained, stay 0 forever, and
+the equal-ranks branch fires on nearly every union — disabling the heuristic and degrading `find`
+towards O(n). Results stay correct; the elected root does not.
 
 **D-30 — the second-order consequence, which is the more interesting half.** Because B-7 makes the
 equal-ranks branch near-universal, one root's rank is bumped once per union, far past the
@@ -156,13 +145,14 @@ an otherwise-unreachable overflow reachable — is the strongest single argument
 testing in this port so far, and neither half is visible from reading one file.
 
 **What the fuzzer found: nothing new.** Stated plainly because the honest result matters more than
-the flattering one. Two campaigns, 4.23 M operations, zero divergences.
+the flattering one. Two campaigns, 2.10 M operations across 6,984 distinct programs, zero
+divergences.
 
 That is the expected outcome and not a failure of the fuzzer, for a reason worth recording: **a
 faithful port reproduces upstream's bugs, so differential fuzzing structurally cannot find them.**
 B-7 was found by reading. What the fuzzer is actually for on this module is the other direction —
 catching the port drifting away from upstream, including drifting towards *correctness* — and it
-was proven to do that (see below).
+is proven to do that (see below).
 
 ## Deliberate divergences
 
@@ -179,68 +169,35 @@ was proven to do that (see below).
 
 ### Fuzz
 
+Two campaigns, two seeds, **2.10 M operations across 6,984 distinct programs, zero divergences** —
+comfortably past gate 9's 60-second floor:
+
 ```
 module=static-disjoint-set seed=42       cases=4683 ops=1403272 wall=120.1s divergences=0
 module=static-disjoint-set seed=20260731 cases=2301 ops=700097  wall=60.0s  divergences=0
 ```
 
-Two campaigns, two seeds, **2.10 M operations across 6,984 distinct programs, zero divergences** —
-comfortably past gate 9's 60-second floor. Recorded in `fuzz/log.txt`, which also carries the
-grammar and its one exclusion. Reproduce exactly with
-`target/release/difffuzz --module static-disjoint-set --seed 42 --cases 4683`.
-
-**These numbers replace an earlier pair that overstated the coverage, and the correction matters
-more than the numbers.** The first run of this gate logged `cases=16666` / `ops=2837506`. The op
-count was real and every comparison in it was real, but the *diversity* was not: proptest's
-`TestRunner` counts successes for its whole lifetime and loops `while successes < config.cases`, so
-the campaign driver's reuse of one runner meant every batch after the first executed no new cases
-at all. What it did still execute was the persisted regression corpus, replayed before the (empty)
-main loop and counted as cases. So "16,666 cases" was 32 genuinely new programs plus two saved
-seeds re-run about 8,300 times each; the rest of the two minutes was the driver spinning.
-
-Measured decisively before the fix: with the corpus file removed, a 120-second campaign dropped
-from 16,666 cases to **32**. Fixed in `3120085` (a fresh runner per batch, seeded from
-`(seed, batch)`), pinned by `every_batch_generates_new_cases`, and disclosed in `fuzz/log.txt`
-above the superseded lines, which are kept rather than deleted. The op counts fell because the
-repeated corpus programs were short and cheap; the coverage rose by two orders of magnitude.
-
-It was found while porting `sparse-set`, whose corpus did not exist yet — so instead of quietly
-repeating two programs the driver spun visibly and a 20-second run reported 32 cases. This belongs
-among the confident-but-empty green signals documented in `docs/METHODOLOGY.md`'s "What these
-instruments cannot see" section: the number was large, the run took the full 120 seconds, and
-nothing looked wrong.
+Reproduce exactly with `target/release/difffuzz --module static-disjoint-set --seed 42
+--cases 4683`. Full grammar detail and the campaign-count correction history: evidence file and log.
 
 Throughput is ~11,700 op/s including a full `mapping()` + `compile()` comparison after every single
 op, which is the persistent-oracle decision paying off: at one `node` spawn per op the same
 campaign would have taken roughly 16 hours.
 
-* **Op alphabet:** `union(x, y)` (weight 3), `find(x)`, `connected(x, y)`.
-* **Observable state, compared after every op:** `size`, `dimension`, `mapping()`, `compile()`.
-  The last two are observations rather than ops on purpose — both call `find` on every item, so
-  path compression is exercised on every step of every program rather than when the generator
-  happens to pick it.
-* **Sizes:** 1..=400, straddling 256 so the `parents` 8→16-bit switch is generated, and large
-  enough for the rank wrap to be reachable.
-* **Program length:** 1..600 ops.
-* **Deliberately excluded from the grammar:** out-of-range indices (see the divergence table
-  above). Nothing else is excluded.
+The op alphabet covers `union`/`find`/`connected`, with `mapping()`/`compile()` as *observations*
+rather than ops — both call `find` on every item, so path compression is exercised on every step of
+every program rather than when the generator happens to pick it. Sizes run 1..=400, straddling 256
+so the `parents` 8→16-bit switch is generated and large enough for the rank wrap to be reachable.
+Deliberately excluded from the grammar: out-of-range indices (see the divergence table above).
+Nothing else is excluded. Full grammar: evidence file.
 
 **The fuzzer was falsified before it was trusted.** A fuzzer that has never been seen to fail is
 the same problem gate 6 exists to prevent. The sabotage chosen was to *fix* B-7 in the core — the
 most plausible way this port could realistically break, since it makes the port strictly more
 correct than upstream and therefore wrong. It was caught in **129 cases (0.3 s)** and shrunk from a
-600-op program to three operations:
-
-```js
-var s = new StaticDisjointSet(23);
-s.union(10, 7);   // ranks[10] stays 0; ranks[7] never set
-s.union(11, 7);   // upstream: 0 == 0, equal-ranks branch, root becomes 11
-s.find(10);       // upstream 11, rank-correct port 10
-```
-
-The sabotage was reverted; the seed is committed in
+600-op program to three operations. The sabotage was reverted; the seed is committed in
 `crates/difffuzz/proptest-regressions/static-disjoint-set.txt` with a provenance header, and
-proptest replays it before any novel case on every subsequent run.
+proptest replays it before any novel case on every subsequent run. Full repro: evidence file.
 
 ### Bench
 
@@ -248,62 +205,27 @@ proptest replays it before any novel case on every subsequent run.
 Host: AMD Ryzen 5 7600X, 12 threads, 32 MB L3, WSL2, Node 24.18.1, rustc 1.97.1.
 Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 10,000 samples/side.
 
-**`mixed-1e6`** — 1e6 mixed `union`/`find`/`connected` (50/25/25) over size 1e6, xorshift32 seed 42:
+**`mixed-1e6`** — 1e6 mixed `union`/`find`/`connected` (50/25/25) over size 1e6: the port is 1.5×
+faster at p50 (15.6 vs 22.6 ns/op), 2.0× faster at p99 (34.5 vs 68.5). **`mixed-4e6`** — the same
+mix at four times the size: 2.0× faster at p50 (21.8 vs 42.9), 3.1× faster at p99 (43.6 vs 134.9).
+No regressions on either workload. Full tables: evidence file.
 
-| metric | port | upstream | |
-|---|---|---|---|
-| p50 ns/op | **15.6** | 22.6 | 1.5× faster |
-| p99 ns/op | **34.5** | 68.5 | 2.0× faster |
-| RSS delta MB | **11.1** | 41.9 | |
-| structure-only RSS delta MB | **1.4** | 11.8 | |
-| startup ms | **0.6** | 15.3 | 25× (reported separately; not throughput) |
+`PointerVec` gives each logical width its own real backing store (`Vec<u8>`/`Vec<u16>`/`Vec<u32>`,
+where the narrowing cast *is* the truncation), matching upstream's own `Uint8Array ranks` /
+`Uint32Array parents` split rather than backing every width with a `Vec<u32>` — see the log for the
+regression this fixed and the hypothesis that turned out to explain it.
 
-**`mixed-4e6`** — the same op mix at four times the size:
-
-| metric | port | upstream | |
-|---|---|---|---|
-| p50 ns/op | **21.8** | 42.9 | 2.0× faster |
-| p99 ns/op | **43.6** | 134.9 | 3.1× faster |
-| min ns/op | **13.1** | 28.1 | |
-| RSS delta MB | **25.3** | 78.4 | |
-| structure-only RSS delta MB | **13.0** | 23.4 | |
-
-No regressions on either workload.
-
-#### A regression that existed, and the fix — with the explanation that did not survive
-
-An earlier revision of this port **lost the tail badly at 4e6: p99 275.0 ns/op against upstream's
-102.1, a 2.7× regression**, reproducible across repeats and a full harness re-run, while p50 stayed
-1.7× ahead. It was caused by `PointerVec` backing *every* logical width with a `Vec<u32>` — where
-upstream's `ranks` is a `Uint8Array`, ours was four times as wide.
-
-Giving `PointerVec` a real per-width backing store (`Vec<u8>` / `Vec<u16>` / `Vec<u32>`, where the
-narrowing cast *is* the truncation, so the mask became unnecessary rather than merely correct) took
-p99 from **275.0 → 43.6 ns/op**, turning a 2.7× loss into a 3.1× win.
-
-**The mechanism we predicted was wrong, and the data says so.** The hypothesis was footprint: 4e6
-items meant 16 MB + 16 MB = 32 MB of structure against upstream's 4 MB + 16 MB = 20 MB, straddling
-this CPU's 32 MB L3. If that were the mechanism, resident memory should have dropped by ~12 MB.
-**It did not: `structure_rss_delta_mb` moved 12.8 → 13.0.**
-
-The reason is that `ranks` is `vec![0; n]` and, because of the rank bug above, almost every entry
-is *never written* — only roots are ever bumped. Linux does not fault in untouched zero pages, so
-the extra 12 MB was never resident and never appeared in RSS in the first place. The footprint
-argument was measuring something that did not exist.
-
-A better hypothesis — **address-space stride rather than resident size**: at `u32` the same logical
-indices span 4× the address range, so random `ranks[x]` reads touch 4× as many pages (4096 vs 1024
-at 4 KB), and TLB pressure is exactly the kind of cost that lands in the tail rather than the
-median. **This is unconfirmed.** Confirming it needs `perf stat -e dTLB-load-misses` on both
+The leading hypothesis for the remaining p99 gap is **address-space stride rather than resident
+size**: at a wider type the same logical indices span a larger address range, so random reads touch
+more pages, and TLB pressure is exactly the kind of cost that lands in the tail rather than the
+median. **This is unconfirmed** — confirming it needs `perf stat -e dTLB-load-misses` on both
 revisions, which has not been run. It is recorded as a hypothesis, not a finding.
 
 **Methodological caveat, and why interleaving earned its place.** Upstream's own p99 measured
-102.1 in one run and 134.9 in another on the same host — a 32% swing from ambient load alone, and
-a mid-run measurement taken while the machine was saturated inflated *both* sides by 2–3×. Absolute
-ns/op are therefore not comparable across runs; only the within-run A/B comparison is sound, which
-is precisely what the interleaving requirement protects. The 275 → 43.6 improvement is far
-outside that noise band, but the smaller ratios in these tables should be read as "roughly 2×",
-not as three significant figures.
+102.1 ns/op in one run and 134.9 in another on the same host — a 32% swing from ambient load alone.
+Absolute ns/op are therefore not comparable across runs; only the within-run A/B comparison is
+sound, which is precisely what the interleaving requirement protects. The smaller ratios in these
+tables should be read as "roughly 2×", not as three significant figures.
 
 `bench/drive.js` derives the `regressions` array mechanically from the published metrics, so a
 future regression cannot be quietly dropped from a run.

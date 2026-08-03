@@ -68,23 +68,17 @@ Four `it` blocks, and every one of them is doing real work despite the small cou
 ## What we test in addition
 
 `crates/mnemonist-core/src/structures/static_interval_tree.rs` — 9 unit tests beyond
-`reproduces_the_upstream_suite`, the 1:1 port of all four upstream blocks:
+`reproduces_the_upstream_suite` (the 1:1 port of all four upstream blocks), closing every gap
+above: zero intervals refused rather than silently accepted (B-100), a second, isolated height
+computation, that a resolved `(start, end)` pair rather than the getter itself is what the core
+crate carries forward, a single-interval tree verified node-for-node against Node, ties in `start`
+broken by original insertion order, both interval boundaries closed (plus a point just outside
+each), a non-overlapping query finding nothing, fifty intervals with every point checked, and a
+length too large to index refused. Full test-to-gap mapping: evidence file.
 
-| Test | Closes gap |
-|---|---|
-| `zero_intervals_is_refused_rather_than_silently_accepted` | 1 — B-100 |
-| `a_two_entry_source_gives_a_height_of_two` | — a second, isolated height computation, since the upstream `Map` case bundles it with iterable resolution |
-| `getters_resolve_to_the_same_bounds_object_values_survive` | — pins that a resolved `(start, end)` pair, not the getter itself, is what the core crate carries forward (see the bridge divergence below) |
-| `a_single_interval_tree_has_one_node` | — the smallest possible tree, verified node-for-node against Node (`tree === [1]`, `augmentations === [0]`) |
-| `ties_in_start_are_broken_by_original_insertion_order` | 2 |
-| `intervals_are_closed_on_both_ends` | 4 — both boundaries, plus one point just outside each |
-| `a_non_overlapping_query_interval_finds_nothing` | 5 |
-| `a_larger_tree_answers_every_point_correctly` | 3 — fifty intervals, height beyond what five ever reaches, every point checked |
-| `a_length_too_large_to_index_is_refused` | 7 |
-
-**Differential fuzzing (see Fuzz below)** covers gaps 2 and 3 far more thoroughly than any hand-written
-test could: every generated tree has up to 40 intervals with repeated starts, so the stable
-tie-break is exercised on essentially every case rather than the one hand-picked example above.
+**Differential fuzzing** covers gaps 2 and 3 far more thoroughly than any hand-written test could:
+every generated tree has up to 40 intervals with repeated starts, so the stable tie-break is
+exercised on essentially every case rather than the one hand-picked example above.
 
 **Still untested, stated rather than glossed:** gap 6 (`StackOverflow`) has no test anywhere in
 this port either, native or fuzzed — it is not reachable by construction from any input this
@@ -94,7 +88,7 @@ worth naming so it is not mistaken for an oversight.
 ## Bugs this found
 
 **B-100 — constructing from zero intervals crashes with an unrelated `TypeError`.**
-`status: VERIFIED against Node 24.18.1`. `buildBST` runs unconditionally, even for
+Verified against Node 24.18.1. `buildBST` runs unconditionally, even for
 `length === 0`:
 
 ```js
@@ -136,64 +130,37 @@ call), which is a worse failure than the catchable `TypeError` it would stand in
 
 ### Fuzz
 
+Two campaigns, two seeds, **1,454,763 operations, zero divergences**:
+
 ```
 module=static-interval-tree seed=42       cases=7143 ops=715440 wall=60.0s divergences=0
 module=static-interval-tree seed=20260801 cases=7377 ops=739323 wall=60.0s divergences=0
 ```
 
-Two campaigns, two seeds, **1,454,763 operations, zero divergences**. Reproduce with
-`target/release/difffuzz --module static-interval-tree --seed 42 --cases 7143`.
+Reproduce with `target/release/difffuzz --module static-interval-tree --seed 42 --cases 7143`.
 
-* **Constructor:** 1..40 intervals, each `[start, start + delta]` with `start, delta` in
-  `0..150`/`0..50` — always well-formed and closed, and with starts repeating often enough that
-  the stable-sort tie-break (gap 2 above) is exercised on essentially every generated tree, not
-  just the one hand-picked case in the native suite. At least one interval always, since zero is
-  B-100's refusal rather than a queryable tree.
-* **Op alphabet:** `intervalsContainingPoint(p)` (weight 3) · `intervalsOverlappingInterval([a,
-  b])` (2), `a <= b` enforced by construction so every query interval is well-formed.
-* **Query range:** points and interval bounds drawn from `0..150`, wider than any constructed
-  interval's own range, so "contains nothing" is a routine outcome rather than an edge case.
-* **Observable state, compared after construction (this module's queries never mutate it):**
-  `size`, `height`, and both augmented arrays, **`tree`** and **`augmentations`**, encoded exactly
-  as the oracle encodes each JS typed array. Every query's own **result** — the matched interval
-  list, in traversal order — is compared after every op; see the module's "read-only" note above
-  for why that carries the whole signal past construction.
+Constructors draw 1..40 intervals, each `[start, start + delta]` with `start, delta` in
+`0..150`/`0..50` — always well-formed and closed, and with starts repeating often enough that the
+stable-sort tie-break is exercised on essentially every generated tree, not just the one
+hand-picked case in the native suite. The op alphabet covers `intervalsContainingPoint`/
+`intervalsOverlappingInterval` (query bounds enforced `a <= b` by construction). Query ranges are
+drawn from `0..150`, wider than any constructed interval's own range, so "contains nothing" is a
+routine outcome rather than an edge case. Observable state, compared after construction (this
+module's queries never mutate it): `size`, `height`, and both augmented arrays, **`tree`** and
+**`augmentations`**, encoded exactly as the oracle encodes each JS typed array. Every query's own
+**result** — the matched interval list, in traversal order — is compared after every op, which is
+what carries the whole signal past construction on a read-only module. Full grammar: evidence file.
 
-**A harness bug this campaign's own design surfaced, fixed before trusting any result from it**
-(shared with `vector`): query results are `Vec<(f64, f64)>` pairs built from generated
-`i32` bounds carried as `f64`. `serde_json`'s default float parser is not always correctly rounded
-for the oracle's JSON responses; the same `float_roundtrip` fix that `vector` needed applies here
-too, since this module's query results round-trip through the identical wire protocol. Confirmed
-fixed by the same scratch test recorded in `vector.md` and by both campaigns above running clean.
+A harness bug shared with `vector` (`serde_json`'s float parser not always correctly rounded for
+JSON responses carrying `f64`-encoded query bounds) was found and fixed during this campaign's
+first run; full account: log.
 
-### Falsification of the port (gate 6)
-
-**Named first:** `static_interval_tree_matches_upstream`
-(`crates/difffuzz/tests/differential.rs`) should go red, because the fuzz grammar's query points
-land exactly on a generated interval's own `start` routinely (starts repeat across up to 40
-intervals per tree, and query points are drawn from the same range), and the sabotage removes
-exactly the inclusive comparison that admits that case.
-
-**The sabotage:** `intervals_containing_point`'s match condition tightened from
-`point >= start && point <= end` to `point > start && point <= end` — excluding a point exactly on
-an interval's `start`, which reads as a plausible "shouldn't `start` be exclusive?" cleanup and is
-the kind of one-character change a future refactor could make without noticing it flips a
-documented, upstream-verified semantic (see `intervals_are_closed_on_both_ends`).
-
-**Confirmed red**, on the campaign's very first case:
-
-```
-divergence in return value after op #43: intervalsContainingPoint(28)
-  value:
-    port:     []
-    upstream: [[28,41]]
-minimal repro:
-var s = new StaticIntervalTree([[7,13],[118,158],[28,41],[77,80]]);
-...
-s.intervalsContainingPoint(28);
-```
-
-Reverted; **confirmed green again**: `static_interval_tree_matches_upstream ... ok`.
+**Falsification of the port (gate 6):** the sabotage, `intervals_containing_point`'s match
+condition tightened from `point >= start && point <= end` to `point > start && point <= end`
+(excluding a point exactly on an interval's `start`, a plausible "shouldn't `start` be exclusive?"
+cleanup), is confirmed red on the campaign's very first case — a divergence on
+`intervalsContainingPoint(28)`, port returning `[]` against upstream's `[[28,41]]`. Reverted;
+confirmed green again. Full record: evidence file.
 
 ### Bench
 
@@ -201,16 +168,15 @@ Reverted; **confirmed green again**: `static_interval_tree_matches_upstream ... 
 Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 10,000 samples/side.
 
 **`mixed-1e5`** — 1e6 mixed `intervalsContainingPoint`/`intervalsOverlappingInterval` (50/50) over
-100,000 overlapping intervals, each `(start, start + LENGTH)` with `LENGTH` **0.1%** of the domain
-rather than the 10% first tried: at 10%, average matches per query ran into the thousands, and
-collecting (cloning, position-weighting) that many hits per call made a 200,000-op pass take **22
-seconds** — the same shape as `bit_set.rs`'s `rank` trap. At 0.1%, `intervalsContainingPoint`
-averages ~101 matches per call and `intervalsOverlappingInterval` averages ~202 — both a real,
-meaningful fraction of the 100,000-interval tree pruned around, not 0 and not "the whole set". No
-`add`: the tree is built once (untimed), same shape as `vp-tree`/`kd-tree`; `new` itself sorts by
-start with a proper comparison sort, not the fixed-pivot `inplace_quick_sort_indices` those two
-modules have to guard against, so no input-order trap applies here. Position-weighted checksum,
-since neither query method sorts its own output. xorshift32 seed 42:
+100,000 overlapping intervals, each `(start, start + LENGTH)` with `LENGTH` **0.1%** of the
+domain — `intervalsContainingPoint` averages ~101 matches per call and
+`intervalsOverlappingInterval` averages ~202, both a real, meaningful fraction of the
+100,000-interval tree pruned around, not 0 and not "the whole set" (see the log for why 0.1% was
+chosen over an initial 10% attempt). No `add`: the tree is built once (untimed), same shape as
+`vp-tree`/`kd-tree`; `new` itself sorts by start with a proper comparison sort, not the fixed-pivot
+`inplace_quick_sort_indices` those two modules have to guard against, so no input-order trap
+applies here. Position-weighted checksum, since neither query method sorts its own output.
+xorshift32 seed 42:
 
 | metric | port | upstream | |
 |---|---|---|---|

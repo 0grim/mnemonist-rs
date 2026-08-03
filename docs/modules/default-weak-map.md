@@ -101,23 +101,15 @@ Characterising the shape of that coverage:
 
 ## What we test in addition
 
-**`crates/mnemonist-core/src/structures/default_weak_map.rs` — 12 tests:**
+`crates/mnemonist-core/src/structures/default_weak_map.rs` — 12 tests, closing gaps 1, 2, 3 and 5
+in addition to reproducing all four upstream blocks as a baseline: B-242 pinned call-by-call, that
+a defined value written by the factory ends the re-run, that a re-triggered factory overwrites in
+place rather than duplicating the key's identity, `has`/`peek` disagreeing on a stored `undefined`,
+`delete` distinguishing a missing key from a stored `undefined`, `clear` dropping every entry, and
+that the matcher (not core) decides identity so two structurally-equal-but-distinct keys never
+collapse to one entry. Full test-to-gap mapping: evidence file.
 
-| Test | Closes gap |
-|---|---|
-| `reproduces_the_upstream_suite` | the four blocks, as a baseline |
-| `b_242_the_factory_re_runs_on_every_get_of_a_stored_undefined_value` | 1 — B-242, pinned call-by-call |
-| `a_defined_value_written_by_the_factory_ends_the_b_242_re_run` | 1 |
-| `a_re_triggered_factory_overwrites_in_place_rather_than_duplicating_the_key` | 1 — no duplicate identity leaks out of a re-triggered factory |
-| `has_and_peek_disagree_on_a_stored_undefined` | 2 |
-| `set_overwrites_an_existing_key_in_place` | — |
-| `delete_distinguishes_a_missing_key_from_a_stored_undefined` | 2 |
-| `clear_drops_every_entry` | 5 |
-| `an_empty_map_reports_nothing` | — |
-| `values_mut_reaches_every_stored_slot_including_the_undefined_ones` | — |
-| `identity_not_content_decides_a_match_two_equal_but_distinct_keys` | 3 — pins that the matcher, not core, decides identity, and that two predicates that never consider each other equal never collapse to one entry |
-
-**`crates/mnemonist-napi/src/default_weak_map.rs`** carries the object-identity and
+`crates/mnemonist-napi/src/default_weak_map.rs` carries the object-identity and
 weak-reference machinery (`WeakKey`) core cannot express; see "Bugs this found" for the one real
 port defect found there during development, and the "Deliberate divergences" table for what is
 scoped out.
@@ -136,7 +128,7 @@ argument with a non-object value its own signature refuses to carry.
 
 **B-242 — `DefaultWeakMap.get` tests the *value*, not the key, so the factory re-runs on every
 read of a key holding `undefined`.**
-`status: verified against Node 24.18.1`.
+Verified against Node 24.18.1.
 
 ```js
 DefaultWeakMap.prototype.get = function(key) {
@@ -172,8 +164,8 @@ existing key predicate on a hit rather than allocating a fresh identity, which i
 re-triggered factory from leaking a new weak reference on every re-run — a correctness property
 this port needs and upstream gets for free from a single native `WeakMap` slot.
 
-**A real port defect, found during development by a direct probe under `node --expose-gc`, not by
-any gate.** `mnemonist_core::structures::default_weak_map::DefaultWeakMap::delete`'s first cut
+**A real port defect, found by a direct probe under `node --expose-gc`, not by any gate.**
+`mnemonist_core::structures::default_weak_map::DefaultWeakMap::delete`'s first cut
 returned only the removed *value* (`Option<Option<V>>`), silently dropping the removed *key*
 inline as part of the `Vec::remove` tuple's discarded half. At the bridge, the key
 (`WeakKey`) owns a `napi_ref` that must be explicitly deleted with an `Env` — which core does not
@@ -204,71 +196,45 @@ the original suite's own third block) was isolated. Fixed by having `delete` han
 
 ### Fuzz
 
+Two campaigns, two seeds, **2.18M operations, zero divergences**:
+
 ```
 module=default-weak-map  seed=42       cases=10931 ops=1089673 wall=60.0s divergences=0
 module=default-weak-map  seed=20260801 cases=10814 ops=1090089 wall=60.0s divergences=0
 ```
 
-Two campaigns, two seeds, **2.18M operations, zero divergences**.
 Reproduce with `target/release/difffuzz --module default-weak-map --seed 42 --cases 10931`.
 
-* **Op alphabet:** `get` (5, the mutating read and the only route to a factory call),
-  `set` (4), `delete` (3), `peek`/`has` (2 each), `clear` (1). No cursor ops — this module has no
-  iteration surface at all (see "What is and is not observable").
-* **Key pool:** eight slots, mirrored on the Rust side as `FuzzKey(u8)` — an index, not an object,
-  since `mnemonist-napi` is a `cdylib` and cannot be linked into this binary (identical reasoning
-  to `default-map`'s own `FuzzKey`). `fuzz/oracle.js`'s `WEAK_KEY_POOL` is the real-object side:
-  eight plain objects, created once at oracle start-up, held by a module-level array for the
-  process's entire life, so none of them is ever eligible for collection during any campaign — see
-  "What is and is not observable."
-* **Values:** `undefined` (weight 2, the only route to B-242), `null`, small integers, `'v'`.
-* **Constructors:** `undefined`/`null` factories, both already in `fuzz/oracle.js`'s shared
-  `FACTORIES` table (added for `default-map`) and reused verbatim: both accept upstream's
-  one-argument `(key) -> value` signature unchanged, since they ignore every argument they are
-  called with regardless of arity.
-* **Observable state, compared after every op:** none (`observations()` is empty — see "What is
-  and is not observable"). Every comparison is a return value; this is the entire observable
-  surface, not a narrowed one.
-* **Deliberately excluded:** any observation of key collection/reclamation (impossible to fuzz
-  honestly — see above); object keys with distinguishable identity but coincidental *structural*
-  equality (every pool slot is a bare `{}`, so this grammar alone cannot distinguish "compares by
-  identity" from "compares by deep equality" the way a real adversarial case would — that
-  distinction is instead pinned by the core module's own
-  `identity_not_content_decides_a_match_two_equal_but_distinct_keys` Rust test, which controls the
-  matcher directly); a non-object argument to any method (bridge-specific, and this grammar only
-  ever generates pool-object keys by construction).
+The op alphabet covers `get`/`set`/`delete`/`peek`/`has`/`clear`; there are no cursor ops, since
+this module has no iteration surface at all. The key pool is eight slots, mirrored on the Rust side
+as `FuzzKey(u8)` — an index, not an object, since `mnemonist-napi` is a `cdylib` and cannot be
+linked into this binary. `fuzz/oracle.js`'s `WEAK_KEY_POOL` is the real-object side: eight plain
+objects, created once at oracle start-up and held by a module-level array for the process's entire
+life, so none of them is ever eligible for collection during any campaign — see "What is and is not
+observable". Values are `undefined` (weighted, the only route to B-242), `null`, small integers and
+`'v'`. Observable state is empty (`observations()` returns nothing — see above); every comparison is
+a return value, which is the entire observable surface, not a narrowed one. Deliberately excluded:
+any observation of key collection/reclamation (impossible to fuzz honestly), structurally-equal
+but distinct-identity keys (every pool slot is a bare `{}`, so this is instead pinned by the core
+module's own `identity_not_content_decides_a_match_two_equal_but_distinct_keys` test), and a
+non-object argument to any method (bridge-specific; this grammar only generates pool-object keys by
+construction). Full grammar: evidence file.
 
-### Falsification (gate 6)
+**Falsification (gate 6).** The assertion named first was the probe script's `calls === 3`
+(mirroring the core Rust test `b_242_the_factory_re_runs_on_every_get_of_a_stored_undefined_value`'s
+own assertion), run against the real compiled addon rather than against core directly — because the
+bridge is where B-242's *composition* (peek-miss triggers the factory) actually lives. The sabotage —
+`get` changed to check `has()` before running the factory, instead of `peek()`, the "fix" a careful
+porter would reach for — is confirmed red on a direct script (`calls === 0`, not `3`).
 
-**The assertion named first:** the probe script's `calls === 3` (mirroring the core Rust test
-`b_242_the_factory_re_runs_on_every_get_of_a_stored_undefined_value`'s own `assert_eq!(calls, 3, ...)`),
-run against the real compiled addon rather than against core directly — because the bridge is
-where B-242's *composition* (peek-miss triggers the factory) actually lives; core's `peek`/
-`write_from_factory` are neutral primitives a caller composes, the same way upstream's own bug is
-a composition of two lines, neither wrong on its own.
-
-**The sabotage:** `crates/mnemonist-napi/src/default_weak_map.rs`'s `get` changed to check
-`has()` (key presence) before running the factory, instead of `peek()` (value definedness) — the
-"fix" a careful porter would reach for.
-
-**Confirmed red:** a direct script against the rebuilt addon (`set(key, undefined); get(key) x3`)
-reported `calls === 0`, not `3` — even sharper than expected, since with this sabotage `has()` is
-already `true` from the `set()` call, so the factory never runs even once.
-
-**Confirmed green where expected, for a stated reason — and this IS the interesting finding for
-this unit.** The original mocha suite stayed green (`4 passing`): it never counts factory
-invocations, so it cannot see this class of bug either way. **The differential fuzzer *also*
-stayed green** (`500 cases, 49416 ops, 0 divergences`) — and this is not a miss, it is a structural
-fact stated up front in this document's own module docs and `default_map.rs`'s: *the differential
-fuzzer compares `mnemonist-core` against upstream JS; the napi bridge is not in that loop at all.*
-A bridge-only composition bug is invisible to it by construction, the same way B-31 was before this
-port started holding core state in a `RefCell`. This is the sharpest illustration this group has of
-the point that passing every available check is not the same as being correct, and knowing
-*which* check would have to exist to catch a given class of bug is worth more than another green
-campaign.
-
-**Reverted; confirmed green again:** the same script reports `calls === 3`, and the original suite
-still passes (`4 passing`).
+**The interesting finding for this unit is what stayed green, and why.** The original mocha suite
+stayed green (4 passing): it never counts factory invocations, so it cannot see this class of bug
+either way. **The differential fuzzer *also* stayed green** (500 cases, 49,416 ops, 0 divergences) —
+and this is not a miss, it is a structural fact: the differential fuzzer compares `mnemonist-core`
+against upstream JS, and the napi bridge is not in that loop at all, so a bridge-only composition
+bug is invisible to it by construction, the same way B-31 was before this port started holding core
+state in a `RefCell`. Reverted; confirmed green again on the direct script and the original suite.
+Full record: evidence file.
 
 ### Bench
 
@@ -296,10 +262,10 @@ premise at the root.
   structure as it is actually used.
 
 This is the same call the correctness work already made about GC timing (see "What is and is not
-observable" above) and recorded rather than working around: a stated
-exclusion is worth more than a benchmark result nobody could trust. `default-weak-map` is therefore
-**complete except gate 10**, correctly absent from `tests/scope.txt`, and is expected to *stay*
-absent from it rather than merely waiting for a quiet machine the way the other nine units were.
+observable" above): a stated exclusion is worth more than a benchmark result nobody could trust.
+`default-weak-map` is therefore **complete except gate 10**, correctly absent from
+`tests/scope.txt`, and is expected to *stay* absent from it rather than merely waiting for a quiet
+machine the way the other nine units were.
 
 One thing worth recording for if this call is ever revisited: `WeakKey::matches` is O(n) per lookup
 (a linear scan with one `napi_strict_equals` call per live entry), which is the honest cost of not

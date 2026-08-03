@@ -81,23 +81,16 @@ below measures directly instead of assuming.
 
 ## What we test in addition
 
-`crates/mnemonist-core/src/structures/vp_tree.rs` — 9 tests:
-
-| Test | Closes gap |
-|---|---|
-| `builds_the_tree_upstream_pins` | 1:1 transcription of the pinned 15-word construction |
-| `builds_the_worst_case_tree_upstream_pins` | 1:1 transcription of the 8-item duplicate-heavy case |
-| `finds_the_k_nearest_neighbors_in_the_upstream_order` | 1:1 transcription of both k-NN calls, order included |
-| `finds_every_neighbor_within_radius` | 1:1 transcription of both radius calls |
-| `returns_every_neighbor_at_zero_distance` | issue #147, both of its cases |
-| `an_empty_tree_builds_cleanly_and_answers_no_queries` | the empty-tree gap, resolved as D-401 |
-| `a_failing_distance_during_construction_leaves_no_tree_behind` | the throwing-distance gap, construction side |
-| `a_failing_distance_during_a_query_propagates` | the throwing-distance gap, query side |
-| `pruning_goes_both_ways_across_radii` | confirms a radius of `0` prunes strictly more than an unbounded one on the pinned 15-word tree |
+`crates/mnemonist-core/src/structures/vp_tree.rs` — 9 tests: a 1:1 transcription of the pinned
+15-word construction, the 8-item duplicate-heavy case, both k-NN calls (order included), both
+radius calls, both cases of issue #147, an empty tree building cleanly and answering no queries (a
+resolved divergence, D-401), a failing distance function during construction leaving no tree
+behind, a failing distance function during a query propagating, and pruning going both ways across
+radii (a radius of `0` prunes strictly more than an unbounded one on the pinned 15-word tree).
 
 The `k == 0` gap is closed by inspection (`try_nearest_neighbors` returns early) rather than by a
-dedicated assertion beyond what `pruning_goes_both_ways_across_radii`'s neighbor already implies;
-the reentrancy gap is a documented, deliberately unclosed divergence (D-403) — see below.
+dedicated assertion beyond what the pruning test's neighbor already implies; the reentrancy gap is
+a documented, deliberately unclosed divergence (D-403) — see below.
 
 ## Bugs this found
 
@@ -125,66 +118,52 @@ that module).
 
 ### Fuzz
 
+**1.37M operations across two seeds, zero divergences**:
+
 ```
 module=vp-tree seed=42  cases=8256  ops=819286  wall=90.0s  divergences=0
 module=vp-tree seed=7   cases=5532  ops=552919  wall=60.0s  divergences=0
 ```
 
-**1.37M operations across two seeds, zero divergences.** Reproduce with `target/release/difffuzz
---module vp-tree --seed 42 --cases 8256` (or `--seed 7 --cases 5532`).
+Reproduce with `target/release/difffuzz --module vp-tree --seed 42 --cases 8256` (or `--seed 7
+--cases 5532`).
 
-* **Op alphabet:** `nearestNeighbors(k, query)` (weight 5) · `neighbors(radius, query)` (5).
-* **Items and queries are integers in `0..24`**, with `distance(a, b) = |a - b|` — reusing
-  `bk-tree`'s own `bkAbsDiff` oracle factory rather than adding a near-duplicate. This is the
-  answer to the sharp risk named for this module: a wide item range would make every
-  distance from a vantage point distinct, so the median split would never have to choose between
-  two *equal* distances, and the "genuine near-ties" this module's brief demands would never occur.
-  With up to 80 items packed into 24 distinct values, repeated collisions on the same distance from
-  any given node are constant.
-* **`neighbors`' radius is drawn across the whole possible span, `0..=24`**, specifically so a
-  campaign's radii include both extremes.
-* **Observable state: `size`, `nodes`, `lefts`, `rights`, `mus`** — the tree's exact shape,
-  compared byte-for-byte on every one of the thousands of randomly generated constructions in a
-  campaign, not only the two fixed fixtures the native tests above pin. This is stronger
-  construction coverage than `bk-tree`'s campaign has room for, because `VPTree` exposes real
-  getters for its internal arrays where `BKTree` has none.
-* **Deliberately excluded:** a throwing distance function (`|a-b|` cannot throw) and non-integer
-  items — both covered by native tests instead, per Deliberate divergences.
+The op alphabet covers `nearestNeighbors(k, query)` and `neighbors(radius, query)`. Items and
+queries are integers in `0..24`, with `distance(a, b) = |a - b|` — reusing `bk-tree`'s own
+`bkAbsDiff` oracle factory rather than adding a near-duplicate. This is the answer to the sharp
+risk named for this module: a wide item range would make every distance from a vantage point
+distinct, so the median split would never have to choose between two *equal* distances, and the
+"genuine near-ties" this module's brief demands would never occur. With up to 80 items packed into
+24 distinct values, repeated collisions on the same distance from any given node are constant.
+`neighbors`' radius is drawn across the whole possible span, `0..=24`, specifically so a campaign's
+radii include both extremes. Observable state is `size`, `nodes`, `lefts`, `rights`, `mus` — the
+tree's exact shape, compared byte-for-byte on every one of the thousands of randomly generated
+constructions in a campaign, not only the two fixed fixtures the native tests above pin; this is
+stronger construction coverage than `bk-tree`'s campaign has room for, because `VPTree` exposes real
+getters for its internal arrays where `BKTree` has none. Deliberately excluded: a throwing distance
+function (`|a-b|` cannot throw) and non-integer items — both covered by native tests instead, per
+Deliberate divergences. Full grammar: evidence file.
 
-**Measured evidence that near-ties occurred and the pruning decision went both ways** (`cargo test
--p difffuzz --lib grammar_self_check_radius_spans_full_pruning_and_none -- --nocapture`, an
-80-item tree built from the same narrow-range distribution, every `(radius, query)` pair the
-grammar's own ranges cover, distance calls counted directly):
+**Measured evidence that near-ties occurred and the pruning decision went both ways** (an 80-item
+tree built from the same narrow-range distribution, every `(radius, query)` pair the grammar's own
+ranges cover, distance calls counted directly): 396 of 600 sampled queries took the "skip this
+subtree" branch at least once; the other 204 took the "search everything" path with zero pruning
+possible at all — both branches of the pruning decision are live, not merely reachable in
+principle. Full figures: evidence file.
 
-```
-vp-tree grammar_self_check: 396/600 queries pruned at least one node; 204/600 visited every node
-(radius large enough that no pruning was possible)
-```
-
-396 of 600 sampled queries took the "skip this subtree" branch at least once; the other 204 took
-the "search everything" path with zero pruning possible at all — both branches of the pruning
-decision are live, not merely reachable in principle.
-
-### Falsification of the port (gate 6)
-
-**Named first:** `finds_the_k_nearest_neighbors_in_the_upstream_order`'s
+**Falsification of the port (gate 6):** the assertion named first was
+`finds_the_k_nearest_neighbors_in_the_upstream_order`'s
 `assert_eq!(neighbors, vec![... "lock", "book", "bock", "mack", "back" ...])` for
-`nearestNeighbors(5, 'look')`.
-
-**The sabotage:** in `try_nearest_neighbors`'s `d < mu` branch, the push order onto the traversal
-stack was reversed — pushing the right subtree before the left, rather than left-before-right (the
-`else` branch already pushes right-before-left, so this made both branches push in the same
-order).
-
-**Confirmed red**, at exactly the named assertion — and more sharply than a mere reordering: the
-sabotaged run returned a *different result set*, not just a different order (`shock` in place of
-`mack`), because visiting subtrees in a different sequence changes how `tau` (the running best-`k`
-bound) tightens, which changes which later subtrees get pruned. Reverted; **confirmed green
-again**: all 9 `vp_tree` unit tests pass, `cargo test --workspace` clean.
-
-This is the sharpest kind of gate 6 result available: the sabotaged assertion did not merely
-disagree on tie order, it proved that traversal order is load-bearing for *correctness*, not only
-for which of several equally-valid ties comes first.
+`nearestNeighbors(5, 'look')`. The sabotage — reversing the traversal-stack push order in
+`try_nearest_neighbors`'s `d < mu` branch, so both branches push in the same order instead of
+opposite orders — is confirmed red at exactly the named assertion, and more sharply than a mere
+reordering: the sabotaged run returned a *different result set*, not just a different order,
+because visiting subtrees in a different sequence changes how `tau` (the running best-`k` bound)
+tightens, which changes which later subtrees get pruned. Reverted; confirmed green again (all 9
+`vp_tree` unit tests pass, `cargo test --workspace` clean). This is the sharpest kind of gate 6
+result available: the sabotaged assertion did not merely disagree on tie order, it proved that
+traversal order is load-bearing for *correctness*, not only for which of several equally-valid ties
+comes first.
 
 ### Bench
 
@@ -195,16 +174,11 @@ Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 2,00
 domain, metric `distance(a, b) = |a - b|`. No `add` at all: `VPTree` is built once and never
 mutated, so the tree is constructed (untimed) before the timed batches and every op is a query —
 40% `neighbors` at a radius that mostly prunes, 40% at a radius that reaches real matches (still
-~1.6% of the tree), 20% `nearestNeighbors` (the heap-based query, its own pruning bound). See
-`bench/runner/src/vp_tree.rs`'s own module docs for two things worth reading before trusting this
-number: **the domain is shuffled, not `0..size` in order**, because construction sorts by distance
-from a vantage point using upstream's own fixed-pivot quicksort, and sequential input is that
-algorithm's classic worst case (a 300,000-item sequential build measured over 45 seconds of CPU
-time before this was caught); and **even after shuffling, construction stays measurably
-superlinear** — verified against a standalone probe of `bench/upstream/vp-tree.js` itself, which
-took a comparable ~2 seconds building 80,000 shuffled items, confirming this is a genuine property
-of the ported algorithm over a one-dimensional metric, not a Rust-only regression. `size` was
-reduced from an initial 300,000 to 50,000 for exactly this reason. xorshift32 seed 42:
+~1.6% of the tree), 20% `nearestNeighbors` (the heap-based query, its own pruning bound). The domain
+is shuffled, not `0..size` in order, because construction sorts by distance from a vantage point
+using upstream's own fixed-pivot quicksort, and sequential input is that algorithm's classic worst
+case — see the log for the measurement that caught this and for why `size` here is 50,000 rather
+than an earlier, larger attempt. xorshift32 seed 42:
 
 | metric | port | upstream | |
 |---|---|---|---|

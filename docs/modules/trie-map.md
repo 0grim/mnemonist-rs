@@ -68,20 +68,14 @@ truthiness) is untested by the original suite.
 
 ## What we test in addition
 
-**Rust native tests** (`crates/mnemonist-core/src/structures/trie_map.rs`, 15, plus 8 more in
-`trie.rs` for the wrapper):
-
-| Test | Closes gap |
-|---|---|
-| `reproduces_the_upstream_suite`, `setting_the_same_prefix_again_does_not_increase_size`, `the_null_sequence_is_a_valid_prefix`, `update_calls_back_with_the_old_value_and_creates_when_absent`, `delete_removes_and_prunes_singleton_chains`, `find_returns_the_suffix_beyond_the_given_prefix`, `clear_resets_size_and_removes_everything` | the upstream blocks, as a baseline |
-| `delete_does_not_prune_an_ancestor_that_is_itself_a_stored_word` | a sharper version of the file's own pruning check: the word one level up must survive |
-| `has_distinguishes_a_stored_word_from_a_mere_prefix_of_one` | the gate 6 falsification target, pinned directly |
-| `walk_over_a_prefix_that_does_not_exist_is_empty` | gap 1 |
-| `walk_visits_every_word_in_the_same_order_as_find` | cross-checks the lazy walk against the eager `find` DFS, which upstream never does explicitly (they are two separate code paths upstream too) |
-| `an_addition_inside_an_already_queued_branch_is_visible_to_an_open_walk` | the *matching* half of the D-201 story: a live addition (not a prune) to a node an open walk has already queued IS seen, on both sides |
-| `a_token_equal_to_the_sentinel_character_is_an_ordinary_token` | gap 3 / B-200 — pins that the port does **not** reproduce the corruption |
-| `root_exposes_entries_in_insertion_order` | the shared value/child enumeration order `NodeView` exposes, which is what makes `find`'s DFS order correct in the first place |
-| `values_mut_reaches_every_stored_value` | bridge plumbing: every stored value must be reachable to release a JS reference on `clear`/finalize |
+`crates/mnemonist-core/src/structures/trie_map.rs` — 15 tests, plus 8 more in `trie.rs` for the
+wrapper, closing every gap above except 5: a baseline reproduction of every upstream block, a
+sharper pruning check (the word one level up survives), the gate-6 falsification target
+(`has` distinguishing a stored word from a mere prefix of one), an empty walk over a non-existent
+prefix, the lazy walk cross-checked against the eager `find` DFS, an addition inside an
+already-queued branch staying visible to an open walk, a token equal to the sentinel character
+proven ordinary, insertion-order enumeration, and every stored value reachable for bridge release.
+Full test-to-gap mapping: evidence file.
 
 **Differential fuzzer** — see "Fuzz + bench". Its grammar closes gap 6 (the value alphabet includes
 `undefined`) and, through `PREFIX_POOL`'s deliberate self-prefixing, exercises the shared-prefix and
@@ -140,9 +134,8 @@ it.next();                          // {value: ['ab', 2]} -- the just-deleted en
 ```
 
 Neither original test file interleaves a mutation with an open walk over the region being mutated.
-**Found twice independently**: first by reading (recorded before
-this unit's fuzz spec existed), then again by the differential fuzzer's own first, ungated campaign
-for each unit — see "Fuzz + bench" for both minimised repros. **Not reproduced**:
+Found by reading and confirmed independently by the differential fuzzer's own first campaign for
+this unit — see "Fuzz + bench" for the minimised repro. **Not reproduced**:
 `mnemonist_core::structures::trie_map::Walk` re-navigates from the root by token path rather than
 holding a reference, which is required for it to be resumable from a fresh `&TrieMap` at the FFI
 boundary. See D-201.
@@ -161,121 +154,74 @@ boundary. See D-201.
 
 ### Fuzz
 
+Two campaigns, two seeds:
+
 ```
 module=trie-map   seed=42       cases=6315  ops=635470  wall=60.0s  divergences=0
 module=trie-map   seed=20260801 cases=6351  ops=628731  wall=60.0s  divergences=0
 ```
 
-**Grammar:** `crates/difffuzz/src/modules/trie_map.rs`. Every prefix comes from `PREFIX_POOL`, a
-small, hand-built alphabet — `a, ab, abc, abcd, b, ba, bc, bad` — chosen so prefix relationships
-exist *before a single op runs*, rather than hoping random long strings collide by luck. Measured,
-not asserted by eye: `pool_self_check_most_entries_are_a_prefix_of_another_entry` confirms **5 of
-the 8 pool entries are themselves a strict prefix of another entry** (`a`⊂`ab`⊂`abc`⊂`abcd`,
-`b`⊂`ba`⊂`bad`, `b`⊂`bc`); `pool_self_check_generated_programs_revisit_prefix_relationships` draws
-2,000 samples from the real `set` op strategy across both regimes (below) and confirms the *actual
-generated stream* — not just the pool in principle — mostly revisits these relationships. Both are
-plain `cargo test` assertions, no oracle, no `node`.
+Every prefix comes from `PREFIX_POOL`, a small, hand-built alphabet — `a, ab, abc, abcd, b, ba, bc,
+bad` — chosen so prefix relationships exist *before a single op runs*, rather than hoping random
+long strings collide by luck: 5 of the 8 pool entries are themselves a strict prefix of another
+entry, and a self-check on the actual generated stream confirms these relationships are revisited
+constantly rather than only present in principle. Values are a small alphabet (`undefined`, `null`,
+small integers, one string) so equal values recur constantly, matching every T3-style spec in this
+crate. `update` uses one named factory (`trieIncrement`) that increments a stored number, treating
+anything else as `0`.
 
-Values are a small alphabet (`undefined`, `null`, small integers, one string) so equal values recur
-constantly, matching every T3-style spec in this crate. `update` uses one named factory
-(`trieIncrement`, `fuzz/oracle.js`) that increments a stored number, treating anything else as `0`.
+**The regime split (D-201).** The constructor strategy generates one internal flag deciding whether
+a program exercises `delete`/`clear` or a persistent `$iter`/`$next` cursor, never both in the same
+program — because the campaign run *without* the split diverged inside a few hundred operations,
+independently rediscovering B-201. `$spread` (`Array.from`) is exempt from the split in both
+regimes: it opens and fully drains a fresh cursor within a single op, so nothing is ever left queued
+across a later mutation.
 
-**The regime split (D-201).** `ctor_strategy` generates one internal flag (not a real `Token`
-argument — see the module's own docs) deciding whether a program exercises `delete`/`clear` or a
-persistent `$iter`/`$next` cursor, never both in the same program. This exists because the campaign
-run *without* the split diverged inside a few hundred operations, independently rediscovering B-201:
+Observed state is `size` and `root`, the latter rebuilt into the identical nested JSON shape
+upstream's plain object already is; `root` is compared as an order-independent JSON object, so it
+verifies structure, while `find`/`$spread`/`$next` sequences (JSON arrays) verify DFS *order*.
 
-```
-divergence in return value after op #4: $next()
-  done:  port: true   upstream: false
-  value: port: undefined   upstream: "a"
-```
-
-`$spread` (`Array.from`) is exempt from the split in both regimes: it opens and fully drains a fresh
-cursor within a single op, so nothing is ever left queued across a later mutation.
-
-**Observed state:** `size` and `root`, the latter rebuilt from
-`mnemonist_core::structures::trie_map::NodeView` into the identical nested JSON shape upstream's
-plain object already is. `root` is compared as a JSON object (order-independent by construction),
-so it verifies structure; `find`/`$spread`/`$next` sequences (JSON arrays) are what verify DFS
-*order*, which is where a wrong enumeration order would actually show up.
-
-**What this grammar deliberately does not cover**, each stated rather than left to be assumed found:
-
-* **Array mode**, entirely. `ToPropertyKey` coercion is a bridge-only concern (core has no notion of
-  it); fuzzing it here would mean a third, independent reimplementation of the same coercion rule
-  purely to compare against itself. Covered by the original suite's custom-tokens block and by
-  `mnemonist_napi::trie_map`'s own reasoning instead.
-* **Digit tokens** — see D-202.
-* **A starting sub-prefix on `values`/`keys`/`entries`** — every walk in this grammar starts at the
-  root. Covered by `mnemonist_core::structures::trie_map::tests::walk_visits_every_word_in_the_same_order_as_find`
-  and by gate 4 (`test/trie-map.js` exercises `keys('rate')` directly).
-* **`delete`/`clear` interleaved with an open cursor** — D-201, above. Excluded by construction
-  rather than by luck, after the campaign showed it was reachable in practice, not merely in theory.
+**What this grammar deliberately does not cover:** array mode entirely (`ToPropertyKey` coercion is
+a bridge-only concern; covered by the original suite's custom-tokens block instead), digit tokens
+(D-202), a starting sub-prefix on the lazy iterators (every walk in this grammar starts at the
+root; covered by a dedicated Rust test and by gate 4), and `delete`/`clear` interleaved with an open
+cursor (D-201, excluded by construction after the campaign showed it was reachable in practice, not
+merely in theory). Full grammar: evidence file.
 
 ### Falsification (gate 6)
 
 **The assertion the sabotage had to break was named first:** the "should be possible to check the
-existence of a sequence" blocks in both `test/trie.js` and `test/trie-map.js`
-(`assert.strictEqual(trie.has('roman'), false)` after `trie.add('romanesque')`/
-`trie.set('romanesque', 1)` — `'roman'` is a stored prefix of `'romanesque'` but never itself a
-word), and the equivalent Rust assertion,
-`has_distinguishes_a_stored_word_from_a_mere_prefix_of_one` in both `trie_map.rs` and `trie.rs`
-(the same core method backs both, so one sabotage exercises both units at once).
+existence of a sequence" blocks in both `test/trie.js` and `test/trie-map.js` — `'roman'` is a
+stored prefix of `'romanesque'` but never itself a word — and the equivalent Rust assertion,
+`has_distinguishes_a_stored_word_from_a_mere_prefix_of_one` in both `trie_map.rs` and `trie.rs` (the
+same core method backs both, so one sabotage exercises both units at once).
 
-**The sabotage:** `TrieMap::has` changed from checking word presence
-(`node.word_index().is_some()`) to merely checking that the prefix path resolves at all
-(`self.navigate(prefix).is_some()`) — collapsing exactly the distinction the falsification brief
-named.
+**The sabotage:** `TrieMap::has` changed from checking word presence to merely checking that the
+prefix path resolves at all — collapsing exactly the distinction the falsification brief named.
 
-**Confirmed red, in all three places:**
-
-* The named Rust assertions, in both modules: `assertion failed: !trie.has(tokens("roman"))`,
-  plus incidental fallout in `reproduces_the_upstream_suite` and
-  `delete_removes_and_prunes_singleton_chains` (both also assert a mere-prefix `has` at some point) —
-  5 of 30 core tests failed.
-* The original suite: 6 of the 23 `it` blocks failed across both files (17 passing, 6 failing), at
-  exactly the named lines (`test/trie.js:143`, `test/trie-map.js:154`, plus the custom-tokens
-  blocks, which assert the same distinction on a different prefix, and incidental fallout in the
-  delete blocks, which also read `has` on a mere prefix at some point).
-* **The differential fuzzer**, on both modules, minimised to two operations:
-
-  ```
-  var s = new TrieMap(false);
-  s.set("abcd", {"$undefined":true});
-  s.has("a");   // port: true, upstream: false
-  ```
-
-  and, for `trie`, `s.add("ba"); s.has("b");` with the same shape.
-
-**Reverted; confirmed green again** at all three: 30/30 core tests, 23/23 original `it` blocks
-(across both files), and a 200-case replay of each fuzz module comes back clean.
-
-**Nothing was found to be blind.** Every instrument caught the sabotage independently.
+**Confirmed red, in all three places:** the named Rust assertions in both modules (5 of 30 core
+tests failed, including incidental fallout in tests that assert the same distinction elsewhere); the
+original suite (6 of the 23 `it` blocks failed across both files, 17 passing, 6 failing, at exactly
+the named lines and their custom-tokens/delete-block counterparts); and the differential fuzzer, on
+both modules, minimised to two operations. Reverted; confirmed green again at all three: 30/30 core
+tests, 23/23 original `it` blocks, and a 200-case replay of each fuzz module comes back clean.
+Nothing was found to be blind — every instrument caught the sabotage independently. Full record:
+evidence file.
 
 ### Bench
 
 `bench/results.json` → `modules["trie-map"]`. Methodology: `bench/methodology.md`.
 Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 10,000 samples/side.
 
-**`mixed-2e5`** — 1e6 mixed `set`/`get`/`delete` (50/25/25) over hex-encoded keys
-(`format!("{value:x}")` / `value.toString(16)` — byte-identical, no second matched generator; see
-`bench/runner/src/trie_map.rs`), `size` 200,000 kept an order of magnitude below the flat-structure
-modules' 1e6 so genuine prefix-sharing (every value under 0x1000 shares its leading digits with
-thousands of others) stays the dominant cost rather than sheer key count — same reasoning
-`trie.rs`'s own workload already established, reused rather than re-derived. `delete`'s checksum
-contribution is upstream's own plain boolean, not the `Option<V>` core's richer API exposes, so the
-two sides are proven to compute the *same* answer rather than merely the same count. xorshift32
-seed 42:
+**`mixed-2e5`** — 1e6 mixed `set`/`get`/`delete` (50/25/25) over hex-encoded keys, `size` 200,000
+kept an order of magnitude below the flat-structure modules' 1e6 so genuine prefix-sharing (every
+value under 0x1000 shares its leading digits with thousands of others) stays the dominant cost
+rather than sheer key count — same reasoning `trie.rs`'s own workload already established, reused
+rather than re-derived: the port is 2.8× faster at p50 (146.96 vs 406.22 ns/op), 3.2× faster at p99.
+No regressions. Full table: evidence file.
 
-| metric | port | upstream | |
-|---|---|---|---|
-| p50 ns/op | **146.96** | 406.22 | 2.8× faster |
-| p99 ns/op | **215.70** | 695.65 | 3.2× faster |
-| RSS delta MB | **30.8** | 224.6 | |
-| structure-only RSS delta MB | **0.1** | 6.7 | |
-| startup ms | **0.6** | 15.9 | 26× (reported separately; not throughput) |
-
-**No regressions.** Checksum `12349076899`, identical on both sides — the shared workload walked
-the same prefix-sharing tree and both implementations computed the same answer at every step,
-including upstream's own `delete` return shape.
+`delete`'s checksum contribution is upstream's own plain boolean, not the `Option<V>` core's richer
+API exposes, so the two sides are proven to compute the *same* answer rather than merely the same
+count. Checksum `12349076899`, identical on both sides — the shared workload walked the same
+prefix-sharing tree and both implementations computed the same answer at every step, including
+upstream's own `delete` return shape.

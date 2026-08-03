@@ -93,30 +93,19 @@ Characterising the shape of that coverage:
 
 ## What we test in addition
 
-`crates/mnemonist-core/src/structures/fixed_deque.rs` — **17 tests**; the sixteen substantive
-ones are below, plus a `Debug` smoke test:
-
-| Test | Closes gap |
-|---|---|
-| `reproduces_the_upstream_suite` | 1:1 port of all sixteen upstream blocks |
-| `get_is_bounded_by_the_capacity_and_returns_debris_below_it` | 1 — for both backing classes, so the `undefined` and the class-zero halves are both pinned |
-| `get_past_the_size_wraps_around_to_the_shifted_element` | 1, 4 — the debris is the *wrapped* slot, not a stale tail |
-| `removals_leave_the_elements_in_place` | 8 |
-| `a_refused_insert_leaves_the_deque_untouched_and_names_its_method` | — the two messages differ by method name |
-| `an_oversized_from_walks_the_ring_more_than_once` | 10 — `[1,2,1,2]`, and the single conditional subtraction in `pop` |
-| `an_oversized_from_is_truncated_by_a_typed_class` | 10 |
-| `cursors_do_not_restart_but_the_deque_can_be_walked_again` | 15 |
-| `a_push_during_iteration_is_not_visible_to_the_cursor` | 16 |
-| `a_shift_during_iteration_does_not_move_the_cursor` | 6, 16 — the frozen-`start` half, which is this module's sharpest cursor behaviour |
-| `an_overwrite_ahead_of_the_cursor_is_visible` | 16 |
-| `a_wrapped_deque_walks_front_to_back` | 4, 18 |
-| `unshift_from_the_zero_start_wraps_to_the_last_slot` | — the `start === 0` wrap, reached here from an *empty* deque rather than a full one |
-| `a_capacity_of_one_and_an_empty_deque_both_behave` | 17 |
-| `from_array_like_accepts_any_iterator` | D-03 |
-| `error_text_is_upstreams` | — the message constants, verbatim |
+`crates/mnemonist-core/src/structures/fixed_deque.rs` — **17 tests** (16 substantive plus a `Debug`
+smoke test), closing every gap above except 3, 7, 9, 11, 12, 13, 14 and 19: a 1:1 reproduction of
+all sixteen upstream blocks as a baseline, `get` bounded by the capacity and returning debris below
+it (for both backing classes), the debris shown to be the *wrapped* slot rather than a stale tail,
+removals leaving elements in place, an oversized `from` walking the ring more than once (and being
+truncated by a typed class), cursor non-restartability, a push during iteration staying invisible,
+a shift during iteration not moving the cursor (the frozen-`start` half, this module's sharpest
+cursor behaviour), an overwrite ahead of the cursor staying visible, a wrapped deque walking front
+to back, the `start === 0` wrap reached from an empty deque, and a capacity-1/empty deque both
+behaving. Full test-to-gap mapping: evidence file.
 
 **Differential probes against the vendored upstream**, 23 cases for this class (50 across both this
-and `circular-buffer`), recorded here because they are the evidence for the bridge half: B-60 for a
+and `circular-buffer`), recorded because they are the evidence for the bridge half: B-60 for a
 `Set` and a generator; B-62 in both its forms including `get(-1)` and `get(-2)`; `get` with `1.5`,
 `NaN`, `Infinity` and `undefined`; coercion for `Uint8Array` and `Int8Array`; `toArray` on a wrapped
 deque; `forEach`'s three arguments and its `this`; `forEach` on an empty deque; a `forEach` whose
@@ -131,7 +120,7 @@ gap 14 for typed classes (D-62).
 ## Bugs this found
 
 **B-62 — `#.get` is bounded by the capacity, and has no lower bound at all.**
-`status: verified against Node 24.18.1`. Every reader in the file guards on `this.size`. `get`
+Verified against Node 24.18.1. Every reader in the file guards on `this.size`. `get`
 guards on the capacity:
 
 ```js
@@ -169,8 +158,8 @@ prototype — so the defect is one bug in two classes.
 class: `FixedDeque.from(new Set([1,2,3]), Array, 3)` is
 `TypeError: iterables.forEach is not a function`.
 
-**What the fuzzer found: nothing new.** Two campaigns, zero divergences — the expected outcome
-. Both bugs were found by reading the file statement by statement against Node.
+**What the fuzzer found: nothing new.** Two campaigns, zero divergences — the expected outcome.
+Both bugs were found by reading the file statement by statement against Node.
 
 ## Deliberate divergences
 
@@ -188,61 +177,42 @@ class: `FixedDeque.from(new Set([1,2,3]), Array, 3)` is
 
 ### Fuzz
 
+Two campaigns, two seeds, **2.88 M operations, zero divergences**:
+
 ```
 module=fixed-deque seed=42       cases=16921 ops=1730822 wall=90.0s divergences=0
 module=fixed-deque seed=20260801 cases=11127 ops=1149893 wall=60.0s divergences=0
 ```
 
-Two campaigns, two seeds, **2.88 M operations, zero divergences**. Reproduce with
-`target/release/difffuzz --module fixed-deque --seed 42 --cases 16921`.
+Reproduce with `target/release/difffuzz --module fixed-deque --seed 42 --cases 16921`.
 
-* **Op alphabet:** `push(v)` (weight 5) · `unshift(v)` (3) · `pop()` (2) · `shift()` (2) ·
-  `peekFirst()` (1) · `peekLast()` (1) · **`get(i)` (2)** · `clear()` (1) · `$iter("values")` (2) ·
-  `$next()` (4) · `$spread()` (1) · `$forEach(mutation, at)` (3).
-* **Observable state, compared after every op:** `size`, `capacity`, **`start`**, `items`,
-  `toArray()`. `start` is in the set because the upstream file asserts on it and because it is the
-  one number a wrong wrap moves first.
-* **`get` indices run 0..=11 against capacities of 1..=8**, so both clauses of B-62's guard are
-  exercised constantly: past the size (debris) and past the capacity (the guard that fires).
-* **Both backing classes**, capacities 1..=8, values to 320.
-* **Deliberately excluded:** `from` (a static cannot appear in an op sequence; covered by the
-  original test and the differential probes), `forEach`'s `scope` (D-61), and a **negative** `get`
-  index — the fuzzer drives `mnemonist-core`, whose `get` takes a `usize`, and the negative path is
-  the bridge's. It is covered by four differential probes instead, and this exclusion is the reason
-  they are recorded above rather than left as scratch work.
+The op alphabet covers `push`/`unshift`/`pop`/`shift`/`peekFirst`/`peekLast`/`get`/`clear` plus the
+cursor ops and `$forEach`. Observable state is `size`, `capacity`, **`start`**, `items`, `toArray()`
+— `start` is in the set because the upstream file asserts on it and because it is the one number a
+wrong wrap moves first. `get` indices run 0..=11 against capacities of 1..=8, so both clauses of
+B-62's guard are exercised constantly: past the size (debris) and past the capacity (the guard that
+fires). Both backing classes are generated, capacities 1..=8, values to 320. Deliberately excluded:
+`from` (a static cannot appear in an op sequence; covered by the original test and the differential
+probes), `forEach`'s `scope` (D-61), and a **negative** `get` index — the fuzzer drives
+`mnemonist-core`, whose `get` takes a `usize`, and the negative path is the bridge's, covered by
+four differential probes instead. Full grammar: evidence file.
 
 **The grammar was falsified before being trusted.** Sabotage: `get`'s guard changed from
 `index >= self.capacity` to `index >= self.size` — the "obvious correction" of B-62, and the change
-any reader who has not checked upstream would make. Caught in **823 cases (1.2 s)**, shrunk to five
-lines:
+any reader who has not checked upstream would make. Caught in 823 cases (1.2 s), shrunk to five
+lines. Reverted; the seed is committed with provenance in
+`crates/difffuzz/proptest-regressions/fixed-deque.txt`. Full repro: evidence file.
 
-```js
-var s = new FixedDeque(Array, 2);
-s.push(0); s.push(0);
-s.forEach(function (v, i) { if (i === 0) s.pop(); });
-s.get(1);        // port undefined, upstream 0
-```
-
-Reverted; the seed is committed with provenance in
-`crates/difffuzz/proptest-regressions/fixed-deque.txt`.
-
-### Falsification of the port (gate 6)
-
-**The assertion the sabotage had to break was named first:**
-`should be possible to unshift the deque.` — `assert.strictEqual(deque.start, 3)`, at
-`test/fixed-deque.js:151`. Chosen because `start` is the one piece of internal geometry the file
+**Falsification of the port (gate 6):** the assertion named first was
+`should be possible to unshift the deque.` — `assert.strictEqual(deque.start, 3)` at
+`test/fixed-deque.js:151` — chosen because `start` is the one piece of internal geometry the file
 inspects directly, so it is the assertion that most specifically exercises the ring rather than its
-results.
-
-**The sabotage:** `previous_start()` returning `self.start.saturating_sub(1)` instead of wrapping to
-`capacity - 1` when `start` is zero — dropping the one line that makes `unshift` a ring operation
-rather than a bounded one.
-
-**Confirmed red**, and red in precisely the named place: `13 passing, 3 failing`, and the second
-failure is that assertion, at `test/fixed-deque.js:151`, with `actual` `0` against `expected` `3`.
-The other two are `should be possible to pop the deque.` and `should handle tricky situations.`,
-which both reach `unshift` on a deque whose `start` is zero. Reverted; **confirmed green again**:
-`16 passing`.
+results. The sabotage, `previous_start()` returning `self.start.saturating_sub(1)` instead of
+wrapping to `capacity - 1` when `start` is zero (dropping the one line that makes `unshift` a ring
+operation rather than a bounded one), is confirmed red in precisely the named place (13 passing, 3
+failing, the second failure being the named assertion with `actual` `0` against `expected` `3`; the
+other two also reach `unshift` on a deque whose `start` is zero). Reverted; confirmed green again
+(16 passing). Full record: evidence file.
 
 ### Bench
 
@@ -254,17 +224,9 @@ Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 10,0
 `fixed-stack`'s shape rather than adding `unshift`/`shift`, which exercise the same ring arithmetic
 from the other end), capacity 10,000 against 1e6 ops, guarded the same way `fixed-stack`'s `push`
 is — see that module's bench doc for why an unguarded push into a full structure would benchmark
-V8's `Error` construction rather than the ring.
+V8's `Error` construction rather than the ring: the port is 1.6× faster at p50 (4.6 vs 7.5 ns/op),
+2.3× faster at p99 (5.9 vs 13.4), 1.7× faster at min. No regressions. Full table: evidence file.
 
-| metric | port | upstream | |
-|---|---|---|---|
-| p50 ns/op | **4.6** | 7.5 | 1.6× faster |
-| p99 ns/op | **5.9** | 13.4 | 2.3× faster |
-| min ns/op | **4.1** | 7.0 | 1.7× faster |
-| RSS delta MB | **6.2** | 19.3 | |
-| structure-only RSS delta MB | **0.1** | 0.2 | |
-| startup ms | **0.6** | 16.7 | 28× (reported separately; not throughput) |
-
-No regressions, and the numbers track `fixed-stack`'s closely — expected, since the timed op mix
-touches the same three primitives at the same shape and the ring's extra geometry (`start`,
-wrap-once arithmetic) is a few integer operations per call, not a different asymptotic cost.
+The numbers track `fixed-stack`'s closely — expected, since the timed op mix touches the same three
+primitives at the same shape and the ring's extra geometry (`start`, wrap-once arithmetic) is a few
+integer operations per call, not a different asymptotic cost.

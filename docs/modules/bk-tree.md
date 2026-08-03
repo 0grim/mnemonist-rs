@@ -65,18 +65,13 @@ sibling subtree explored earlier on the stack.
 
 ## What we test in addition
 
-`crates/mnemonist-core/src/structures/bk_tree.rs` — 8 tests:
-
-| Test | Closes gap |
-|---|---|
-| `reproduces_the_upstream_suite` | 1:1 port of all five substantive upstream blocks |
-| `a_search_with_no_root_returns_nothing` | 1 |
-| `search_visits_higher_distance_children_before_lower_distance_ones` | 2 — four nodes at four distinct distances from the root, confirming the rule holds one level deeper than upstream's own test reaches |
-| `a_failing_distance_leaves_add_with_no_trace` | 3 — a throw on the very first call (root comparison) |
-| `a_failing_distance_during_descent_leaves_no_trace_either` | 3 — a throw after a successful first call, once the walk has already descended |
-| `a_failing_distance_during_search_discards_the_partial_result` | 3 — the search-side mirror |
-| `size_counts_only_successful_inserts` | 6 — the same item added twice, both counted |
-| `clear_resets_size_and_forgets_every_node` | — baseline, mirrored from upstream's own `clear` block with a `search` added afterwards |
+`crates/mnemonist-core/src/structures/bk_tree.rs` — 8 tests: a 1:1 reproduction of all five
+substantive upstream blocks, a search with no root returning nothing, search visiting
+higher-distance children before lower-distance ones (four nodes at four distinct distances from the
+root, confirming the rule holds one level deeper than upstream's own test reaches), a failing
+distance leaving `add` with no trace whether it fails on the first call or during descent, the
+search-side mirror discarding the partial result, the same item added twice both being counted, and
+`clear` resetting `size` and forgetting every node.
 
 Gaps 2, 4 and 5 are stated rather than closed: 2 and 4 are the bridge's documented narrowing (a real
 `f64` distance and `n`, not upstream's implicit `ToPropertyKey` string coercion) — see Deliberate
@@ -105,45 +100,34 @@ clean result plainly is part of the porting discipline this project holds itself
 
 ### Fuzz
 
+**1.33M operations, zero divergences:**
+
 ```
 module=bk-tree seed=42  cases=13238  ops=1325206  wall=90.0s  divergences=0
 ```
 
-**1.33M operations, zero divergences.** Reproduce with `target/release/difffuzz --module bk-tree
---seed 42 --cases 13238`.
+Reproduce with `target/release/difffuzz --module bk-tree --seed 42 --cases 13238`.
 
-* **Op alphabet:** `add(item)` (weight 5) · `search(n, query)` (4) · `clear()` (1).
-* **Items and queries are small integers in a 12-wide range**, with `distance(a, b) = |a - b|` (a
-  real metric, cheap to mirror identically on both sides as `fuzz/oracle.js`'s `bkAbsDiff`). This is
-  the deliberate answer to the sharp risk named for this module: a wide or random
-  alphabet would generate a stream of unrelated items that never collide on distance, and a tree
-  that never grows past one child per node tests almost nothing about the algorithm. Twelve values is
-  narrow enough that repeated `add`s land on the same distance from any given node constantly, which
-  is the *only* way a node ever grows more than one child.
-* **`search`'s radius reaches up to twice the item range**, so most calls visit the whole tree —
-  standing in for an observation of `root`'s shape, which core exposes no direct equivalent of (see
-  below). The weight on `search` (4, against `add`'s 5) keeps it running after nearly every mutation
-  rather than only at the end of a long program.
-* **Observable state: `size` only.** Deliberately thin — `search`'s return value, run after every
-  op with a wide radius, reveals the same information `root` would (which items exist, at what
-  distance from every point queried, and in what order), so it stands in for a shape observation
-  this module has no `pub` equivalent for.
-* **Deliberately excluded:** a throwing distance function (`Math.abs` cannot throw) and non-integer
-  items — both covered by native tests instead, per Deliberate divergences.
+The op alphabet covers `add`/`search`/`clear`. Items and queries are small integers in a 12-wide
+range, with `distance(a, b) = |a - b|` (a real metric, cheap to mirror identically on both sides).
+This is the deliberate answer to the sharp risk named for this module: a wide or random alphabet
+would generate a stream of unrelated items that never collide on distance, and a tree that never
+grows past one child per node tests almost nothing about the algorithm. Twelve values is narrow
+enough that repeated `add`s land on the same distance from any given node constantly, which is the
+*only* way a node ever grows more than one child. `search`'s radius reaches up to twice the item
+range, so most calls visit the whole tree — standing in for an observation of `root`'s shape, which
+core exposes no direct equivalent of. Observable state is `size` only, deliberately thin —
+`search`'s return value, run after every op with a wide radius, reveals the same information `root`
+would. Deliberately excluded: a throwing distance function (`Math.abs` cannot throw) and
+non-integer items — both covered by native tests instead.
 
-### Falsification of the port (gate 6)
-
-**Named first:** `search_visits_higher_distance_children_before_lower_distance_ones`'s assertion
-`assert_eq!(order, vec!["aaaa", "bbba", "bbaa", "baaa"])`.
-
-**The sabotage:** the child-probing loop in `try_search` changed from ascending (`i = lo..=hi`,
-pushing lowest-distance children onto the stack first) to descending (`i = hi..=lo`) — reversing
-which children a LIFO stack pops first, and therefore the traversal order upstream's own `search`
-test also depends on.
-
-**Confirmed red**, at exactly the named assertion, with exactly the predicted reversed order:
-`left: ["aaaa", "baaa", "bbaa", "bbba"], right: ["aaaa", "bbba", "bbaa", "baaa"]`. Reverted;
-**confirmed green again**: all 8 `bk_tree` unit tests pass, `cargo test --workspace` clean.
+**Falsification of the port (gate 6):** the assertion named first was
+`search_visits_higher_distance_children_before_lower_distance_ones`'s
+`assert_eq!(order, vec!["aaaa", "bbba", "bbaa", "baaa"])`. The sabotage — reversing the child-probing
+loop in `try_search` from ascending to descending, reversing which children a LIFO stack pops first
+— is confirmed red at exactly the named assertion, with exactly the predicted reversed order
+(`["aaaa", "baaa", "bbaa", "bbba"]` against `["aaaa", "bbba", "bbaa", "baaa"]`). Reverted; confirmed
+green again (all 8 `bk_tree` unit tests pass, `cargo test --workspace` clean).
 
 ### Bench
 
@@ -153,13 +137,11 @@ Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 10,0
 **`mixed-3e5`** — 1e6 mixed `add`/`search` (50/25/25) over a 300,000-item domain, metric
 `distance(a, b) = |a - b|` rather than upstream's own Levenshtein: a BK-tree is metric-agnostic, and
 a numeric metric both sides compute identically carries zero risk of a Levenshtein port drifting
-apart in an edge case (see `bench/runner/src/bk_tree.rs`'s own module docs). The load-bearing split
-is the search radius: 25% of ops search at a small radius that mostly prunes, 25% at a larger radius
-that mostly descends — both exercised on the same tree built by the `add` stream, not two
-benchmarks glued together. Domain size was chosen by ruling out two failure modes first: 2,000 (too
-small — duplicate `add`s chain onto each other and both `add`/`search` degrade superlinearly, a
-200,000-op run took 21 seconds) and 1,000,000 (too large — the tree collapses to depth 1, so
-`search`'s recursive descent never actually runs). xorshift32 seed 42:
+apart in an edge case. The load-bearing split is the search radius: 25% of ops search at a small
+radius that mostly prunes, 25% at a larger radius that mostly descends — both exercised on the same
+tree built by the `add` stream, not two benchmarks glued together. The domain size (300,000) was
+chosen by ruling out two failure modes first — see the log for the measurements that ruled out
+2,000 (too small) and 1,000,000 (too large). xorshift32 seed 42:
 
 | metric | port | upstream | |
 |---|---|---|---|

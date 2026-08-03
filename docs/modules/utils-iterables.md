@@ -96,7 +96,7 @@ outcomes are compared with a description that distinguishes a hole from an `unde
 `Uint8Array` from an `Array`, and a length from a filled prefix. The inline copy exists because the
 vendored `bench/upstream/utils/iterables.js` cannot resolve its own `require('obliterator/foreach')`
 from inside the assembled work tree; a further spec checks the copy against the vendored source
-line by line, so it cannot silently drift.
+line by line, so it cannot silently drift. Full spec list: evidence file.
 
 `crates/mnemonist-core/src/utils/typed_arrays.rs` supplies `get_pointer_array`, which is the one
 part of this file that *is* pure computation and which already has ten native tests of its own.
@@ -107,8 +107,8 @@ a `Proxy` with a throwing `get` trap. Neither is reachable from any module in sc
 
 ## Bugs this found
 
-**B-2 — `toArray` produces sparse arrays when `guessLength` lies.** `status: verified against Node
-24.18.1`. Recorded before kickoff as the strongest of the pre-port bug candidates; this is its
+**B-2 — `toArray` produces sparse arrays when `guessLength` lies.** Verified against Node
+24.18.1. Recorded before kickoff as the strongest of the pre-port bug candidates; this is its
 confirmation and its reproduction. The three measured forms are gaps 8, 9 and 10 above, and the
 sharpest is gap 11 — `toArray({length: 5})` returning `[5, <4 empty items>]`, where the `5` is the
 `length` property itself, enumerated by `forEach`'s plain-object branch.
@@ -140,8 +140,8 @@ statics (`fixed-stack`, `fixed-deque`, `circular-buffer`; 8.79 M operations, zer
 
 Stating the shape of that gap precisely: a generated program can reach `guessLength` and
 `isArrayLike` only through construction, never as an op, and `toArray`/`toArrayWithIndices` are not
-reached at all by any module currently in the port. They will be, by `vector` and the spatial
-structures, and the honest position until then is that their coverage is 19 hand-written cases.
+reached at all by any module currently in the port. Their coverage until a module reaches them is
+the 19 hand-written cases.
 
 ### Falsification (gate 6)
 
@@ -150,19 +150,14 @@ original suite, so the gate has no target — the same position as `utils/bitwis
 
 What was performed instead, on `tests/boundary/iterables.js`, and named before it was run: the
 sabotage had to break `getPointerArray throws BEFORE new Array(l) does.`, which is the one spec
-whose subject is the *order of two statements* rather than the result of either. The sabotage was
-`js_to_array_with_indices` allocating the value array before choosing the index width — the tidier
-reading, and the one a port written from the function's description rather than from its source
-would produce.
-
-**Confirmed red**, and red only there: `18 passing, 1 failing`, that spec, with the port raising
-`RangeError: Invalid array length` where upstream raises
-`Error: mnemonist: Pointer Array of size > 4294967295 is not supported.`. Reverted; **confirmed
-green again**: `19 passing`.
-
-The spec that checks the inline reference against the vendored upstream source is a second guard of
-a different kind: it pins seven distinguishing lines, so any edit to those four upstream bodies
-moves one of them and the copy cannot silently drift.
+whose subject is the *order of two statements* rather than the result of either — the sabotage,
+allocating the value array before choosing the index width, is the tidier reading a port written
+from the function's description rather than from its source would produce. Confirmed red, and red
+only there (18 passing, 1 failing, that spec, with the port raising a different error class than
+upstream); reverted, confirmed green again (19 passing). The spec that checks the inline reference
+against the vendored upstream source is a second guard of a different kind: it pins seven
+distinguishing lines, so any edit to those four upstream bodies moves one of them and the copy
+cannot silently drift. Full record: evidence file.
 
 ### Bench
 

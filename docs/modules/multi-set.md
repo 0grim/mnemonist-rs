@@ -69,16 +69,10 @@ original suite.
 
 ## What we test in addition
 
-**Rust native tests** — `crates/mnemonist-core/src/structures/multi_set.rs` (16), covering every
-upstream block plus:
-
-| Test | Closes gap |
-|---|---|
-| `deleting_an_existing_item_behaves_normally` | the upstream `delete` block, as a baseline |
-| `b_161_deleting_an_absent_item_corrupts_size_and_dimension_but_reports_true` | B-161 |
-| `b_162_edit_into_an_existing_key_does_not_adjust_dimension` | B-162 |
-| `set_replaces_a_missing_item_but_adds_to_an_existing_one` | B-160 |
-| `a_set_is_its_own_subset_and_superset_by_identity` | the `A === B` shortcut |
+`crates/mnemonist-core/src/structures/multi_set.rs` — 16 tests, covering every upstream block as a
+baseline plus B-161 (deleting an absent item corrupting `size`/`dimension` while reporting `true`),
+B-162 (`edit` into an existing key not adjusting `dimension`), B-160 (`set` on an existing item
+adding rather than replacing), and the `A === B` identity shortcut for `isSubset`/`isSuperset`.
 
 `fold_falsy`'s `NaN`-folds-to-`1` behaviour and the fractional-count permissiveness are exercised
 indirectly by every `add`/`remove`/`set` test's own `f64` counts (all are already whole numbers by
@@ -96,7 +90,7 @@ source, not a runtime ambiguity), none reachable through gate 4 alone.
 
 ### B-160 — `#.set` on an existing item **adds**, it does not replace
 
-`status: verified by reading` · `multi-set.js`'s `set`
+`multi-set.js`'s `set`:
 
 ```js
 MultiSet.prototype.set = function(item, count) {
@@ -123,7 +117,7 @@ fidelity rule. Pinned by `set_replaces_a_missing_item_but_adds_to_an_existing_on
 
 ### B-161 — `#.delete` on an absent item corrupts `size` to `NaN`, decrements `dimension`, and reports `true`
 
-`status: verified by reading` · `multi-set.js`'s `delete`
+`multi-set.js`'s `delete`:
 
 ```js
 MultiSet.prototype.delete = function(item) {
@@ -151,7 +145,7 @@ silently *fix* this defect instead of reproducing it. Pinned by
 
 ### B-162 — `#.edit` never adjusts `dimension`, even when it removes a real key
 
-`status: verified by reading` · `multi-set.js`'s `edit`
+`multi-set.js`'s `edit`:
 
 ```js
 MultiSet.prototype.edit = function(a, b) {
@@ -184,58 +178,38 @@ gate 4 cannot see the drift. Reproduced bug-for-bug: `MultiSet::edit` does not t
 
 ### Fuzz
 
+Two campaigns, two seeds, **1.69M operations, zero divergences**:
+
 ```
 module=multi-set  seed=42       cases=10229 ops=1016185 wall=90.0s divergences=0
 module=multi-set  seed=20260801 cases=6787  ops=674368  wall=60.0s divergences=0
 ```
 
-Two campaigns, two seeds, **1.69M operations, zero divergences**. Reproduce with e.g.
-`target/release/difffuzz --module multi-set --seed 42 --cases 10229`.
+Reproduce with e.g. `target/release/difffuzz --module multi-set --seed 42 --cases 10229`.
 
-* **Op alphabet:** `add` (weight 5), `remove` (3), `set`/`edit` (2 each), `delete`/`has`/
-  `multiplicity`/`frequency` (2/2/2/1), `clear` (1), `top` (1, bounded `n` in `1..=5` so it never hits
-  its own arity guard — see the spec's module docs for why that guard is out of scope for a
-  core-level campaign).
-* **Item pool:** three items (`"a"`, `"b"`, `"c"`).
-* **Count pool:** `1`, `2`, `4`, `0`, `-1`, `-3` — positive (so multiplicities build up), zero (a
-  documented no-op), and negative (the sign-flip delegation between `add` and `remove`). Fractional
-  and `NaN` counts are deliberately not in this grammar; see D-165 and the spec's own module docs.
-* **Observable state:** `size`, `dimension`, `items` (`[item, count]` pairs, in insertion order).
+The op alphabet covers `add`/`remove`/`set`/`edit`/`delete`/`has`/`multiplicity`/`frequency`/`clear`
+plus a bounded `top(n)` (`n` in `1..=5`, so it never hits its own arity guard — out of scope for a
+core-level campaign). The item pool is three items; the count pool mixes positive (so multiplicities
+build up), zero (a documented no-op) and negative (the sign-flip delegation between `add` and
+`remove`) values — fractional and `NaN` counts are deliberately not in this grammar, see D-165.
+Observable state is `size`, `dimension`, `items` (`[item, count]` pairs, in insertion order). Full
+grammar: evidence file.
 
-**Two harness bugs found and fixed while getting this campaign clean** (recorded here rather than as
-B-numbers — neither is a port or upstream defect, both are in the fuzz spec's own comparison logic):
-the spec's `apply()` for `add`/`remove` originally always echoed back `{"$self": true}`/`{undefined}`
-regardless of the sign-flip delegation D-164 describes, and `edit`'s `apply()` always echoed
-`{"$self": true}` regardless of whether `a` was present. Both were caught by the very first case the
-campaign generated once the harness ran at all — see `crates/difffuzz/src/modules/multi_set.rs`'s
-own `apply` implementation and doc comments.
+Two harness bugs in the fuzz spec's own comparison logic (not port or upstream defects) were found
+and fixed while getting this campaign clean; full account: log.
 
-**Direct evidence the grammar reaches the states this campaign is for** —
-`grammar_self_check` (400 generated programs, up to 300 ops each, no oracle):
+**Direct evidence the grammar reaches the states this campaign is for** — `grammar_self_check` (400
+generated programs, up to 300 ops each, no oracle): 36,424 steps with a multiplicity above one,
+3,795 items drained to zero and removed, across those 400 programs. Both floors are asserted in the
+test itself.
 
-```
-multi-set grammar: 36,424 steps with a multiplicity above one, 3,795 items drained to zero and removed
-```
-
-Both floors are asserted in the test itself.
-
-### Falsification of the port (gate 6)
-
-**The assertion the sabotage had to break was named first:** `test/multi-set.js:307` —
-`assert.deepStrictEqual(top5, [['i', 7], [' ', 7], ['r', 4], ['e', 4], ['s', 4]]);` — `top`'s
-descending-by-count ordering, against the file's own letter-frequency example.
-
-**The sabotage:** `MultiSet::top` had its comparator swapped from `DefaultReverseComparator` to
-`DefaultComparator` — the ascending, "keep-the-smallest" direction `fixed_reverse_heap`'s own tests
-document, rather than the descending one `top`'s contract needs.
-
-**Confirmed red:** the named assertion failed, reporting the five *least* frequent characters in
-ascending order (`[['h',1], ['v',1], ['y',1], ['l',1], ['T',1]]`) instead of the five most frequent
-in descending order.
-
-**Reverted; confirmed green again**: the full 26-block, 83-assertion suite passes.
-
-**Nothing was found to be blind.** The sabotage broke exactly the mechanism it targeted.
+**Falsification of the port (gate 6):** the assertion named first was `test/multi-set.js:307` —
+`assert.deepStrictEqual(top5, [['i', 7], [' ', 7], ['r', 4], ['e', 4], ['s', 4]]);`, `top`'s
+descending-by-count ordering against the file's own letter-frequency example. The sabotage,
+`MultiSet::top`'s comparator swapped to the ascending, "keep-the-smallest" direction, is confirmed
+red — the named assertion reports the five *least* frequent characters in ascending order instead of
+the five most frequent in descending order; reverted, the full 26-block, 83-assertion suite passes
+again. Nothing was found to be blind — the sabotage broke exactly the mechanism it targeted.
 
 ### Bench
 
@@ -245,33 +219,18 @@ Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 10,0
 
 **`mixed-1e6`** — 1e6 mixed `add`/`multiplicity`/`remove` (50/25/25) over a 20,000-item domain
 (`add`/`remove` deliberately used rather than `delete`/`set`, which carry reproduced-bug-for-bug
-corruption — B-160/B-161 — on paths this workload would otherwise hit constantly). **~12.5 net
-multiplicity per item on average by the run's end**, xorshift32 seed 42:
+corruption — B-160/B-161 — on paths this workload would otherwise hit constantly), ~12.5 net
+multiplicity per item on average by the run's end: the port is 1.36× faster at p50 (16.2 vs 22.3
+ns/op), 1.2× faster at p99, about 1.13× slower at min. Full table and the p50 fix history: evidence
+file and log.
 
-| metric | port | upstream | |
-|---|---|---|---|
-| p50 ns/op | **19.0** | 22.3 | 1.2× faster |
-
-**Re-measured 2026-08-03, and it was not a win at first.** A whole-suite pass on an idle machine put
-this module at **1.29× slower** — the earlier 1.2× faster had been measured in a different session,
-where the JavaScript baseline sits up to 20% away from where it sits here. Being in the loss column
-is what got the module read line by line.
-
-`add` did `items.get(&item)` and then, unconditionally, `items.set(item, ...)` — two hash lookups of
-the same key on every call, on the operation that is half this workload's mix. Upstream has no
-choice: a JS `Map` cannot look up and hand back a handle to update in place. `OrderedMap::get_mut`
-can, and `set` on an existing key is already an in-place `mem::replace` into the same slot, so
-bumping the multiplicity through the `&mut f64` preserves insertion order identically. `remove`'s
-"still positive afterwards" path is the same shape; its "drops to zero" path is unchanged, since
-deleting is not something `get_mut` can do.
-
-Measured over four runs: the port's own p50 is 16.13–16.37 ns against 24.80 ns before, a 0.7% spread
-on the port side. **1.36× faster than upstream**, back out of the loss column.
-| p99 ns/op | **37.4** | 44.7 | 1.2× faster |
-| min ns/op | 17.9 | **15.9** | 1.13× slower |
-| RSS delta MB | **8.1** | 30.0 | |
-| structure-only RSS delta MB | **0.1** | 5.7 | |
-| startup ms | **0.6** | 16.5 | 27× (reported separately; not throughput) |
+`add` reaches `OrderedMap::get_mut` instead of doing a lookup followed by an unconditional insert —
+two hash lookups of the same key on every call, on the operation that is half this workload's mix.
+Upstream has no choice: a JS `Map` cannot look up and hand back a handle to update in place.
+`OrderedMap::get_mut` can, and `set` on an existing key is already an in-place `mem::replace` into
+the same slot, so bumping the multiplicity through the `&mut f64` preserves insertion order
+identically. `remove`'s "still positive afterwards" path is the same shape; its "drops to zero" path
+is unchanged, since deleting is not something `get_mut` can do.
 
 **One regression, on `min_ns_per_op` only** — p50 and p99 both win clearly, and a single-metric
 1.13× gap on the *minimum* (the single fastest batch out of 10,000) is the shape a noise floor takes

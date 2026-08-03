@@ -95,15 +95,13 @@ Characterising the shape of that coverage:
 
 ## What we test in addition
 
-**`crates/mnemonist-core/src/structures/inverted_index.rs` — 19 tests:**
-
-| Test | Closes gap |
-|---|---|
-| `adding_documents_updates_size_and_dimension`, `querying_returns_the_and_intersection_of_matching_documents`, `from_iter_builds_the_same_index_as_repeated_add`, `documents_iterates_in_insertion_order`, `tokens_iterates_in_first_seen_order` | the eight blocks, as a baseline (tokenizer replaced by plain whitespace-split — see the fuzz spec's own docs on why) |
-| `b_240_for_each_never_visits_a_single_document`, `b_240_holds_on_an_empty_index_too` | 3 — B-240, pinned directly |
-| `a_clear_between_two_steps_of_an_open_documents_cursor_does_not_panic_and_finishes_the_old_array`, `a_clear_between_two_steps_of_an_open_for_each_walk_does_not_panic`, `a_clear_between_two_steps_of_an_open_tokens_cursor_finishes_the_old_mapping` | 1 — the port defect the fuzzer found, both cursors |
-| `documents_cursor_is_not_restartable_and_does_not_grow_after_it_reports_done`, `a_document_added_after_a_cursor_opens_is_not_visible_because_the_length_is_frozen` | 4 |
-| `a_query_before_any_document_is_added_returns_nothing`, `an_empty_query_returns_nothing`, `a_repeated_token_within_one_document_is_recorded_once`, `clear_resets_everything`, `get_only_matches_documents_containing_every_query_token` | general correctness |
+`crates/mnemonist-core/src/structures/inverted_index.rs` — 19 tests, closing every gap above except
+5–9: a baseline reproduction of all eight blocks (tokenizer replaced by plain whitespace-split — see
+the fuzz spec's own docs on why), B-240 pinned directly on an index of any size and on an empty
+index, `clear` between two steps of an open cursor for all three walks not panicking and finishing
+the pre-clear data, a document added mid-walk staying invisible because the length is frozen, and
+general correctness (empty query, repeated token dedup, `clear` resetting everything). Full
+test-to-gap mapping: evidence file.
 
 **The differential fuzzer's `grammar_self_check`** measures, rather than asserts from op weights,
 how often generated documents actually collide on tokens: over 400 generated programs (up to 300
@@ -122,7 +120,7 @@ bridged).
 ## Bugs this found
 
 **B-240 — `forEach` never calls its callback, regardless of how many documents are stored.**
-`status: verified against Node 24.18.1`.
+Verified against Node 24.18.1.
 
 ```js
 InvertedIndex.prototype.forEach = function(callback, scope) {
@@ -158,7 +156,7 @@ rendered as if it were. Confirmed by the differential fuzzer's own `$forEach` op
 rather than the original suite's one hand-picked call.
 
 **A real port defect, found by this unit's own first fuzz campaign, fixed before any campaign was
-logged in `fuzz/log.txt`.** An earlier cut of `documents()`'s cursor re-read `self.items` (a plain
+logged.** An earlier cut of `documents()`'s cursor re-read `self.items` (a plain
 `Vec`) against a length frozen at the cursor's own open time. Upstream's `clear()`,
 
 ```js
@@ -183,16 +181,15 @@ it read past the end of the now-empty `Vec` and **panicked**:
 index out of bounds: the len is 0 but the index is 0
 ```
 
-Found by `crates/difffuzz/src/modules/inverted_index.rs`'s very first campaign, inside its first
-few hundred generated cases. Fixed by making both `items` and `mapping` `Rc<RefCell<_>>` — the
-exact shape `crate::structures::queue::Queue`'s own `Items<T>` already uses for the identical
-reason — with `DocumentsCursor`/`TokensCursor` each capturing an `Rc` clone at open time, so a
-later `clear()` rebinding the field never touches what an already-open cursor holds. `tokens()`'s
-half of this (the `mapping` side) was found by re-deriving the same reasoning under Node rather
-than by the fuzzer catching it directly — its own campaign never happened to generate the precise
-`tokens()`-then-`clear()`-then-`step()` interleaving in the time available, which is itself a
-finding worth stating rather than glossing: a clean campaign is evidence of absence only up to the
-grammar's actual coverage of the state space in the time it ran, not a proof of absence.
+Found inside the first few hundred cases of this unit's own first fuzz campaign. Fixed by making
+both `items` and `mapping` `Rc<RefCell<_>>` — the exact shape `crate::structures::queue::Queue`'s
+own `Items<T>` already uses for the identical reason — with `DocumentsCursor`/`TokensCursor` each
+capturing an `Rc` clone at open time, so a later `clear()` rebinding the field never touches what an
+already-open cursor holds. `tokens()`'s half of this (the `mapping` side) was found by re-deriving
+the same reasoning under Node rather than by the fuzzer catching it directly — its own campaign
+never happened to generate the precise `tokens()`-then-`clear()`-then-`step()` interleaving in the
+time available, which is itself worth stating: a clean campaign is evidence of absence only up to
+the grammar's actual coverage of the state space in the time it ran, not a proof of absence.
 
 ## Deliberate divergences
 
@@ -209,78 +206,49 @@ grammar's actual coverage of the state space in the time it ran, not a proof of 
 
 ### Fuzz
 
+Two campaigns, two seeds, **1.94M operations, zero divergences** — against a build that already
+carries the `clear()`/cursor-capture fix from "Bugs this found":
+
 ```
 module=inverted-index  seed=42       cases=9600 ops=968510 wall=60.0s divergences=0
 module=inverted-index  seed=20260801 cases=9632 ops=967012 wall=60.0s divergences=0
 ```
 
-Two campaigns, two seeds, **1.94M operations, zero divergences** — against a build that already
-carries the `clear()`/cursor-capture fix from "Bugs this found." Both this fix and B-240 predate
-these logged campaigns; B-240 is reproduced by construction (see above) rather than found by
-fuzzing, and the `clear()` defect was found by an earlier, unlogged run before the fix landed.
-Reproduce with `target/release/difffuzz --module inverted-index --seed 42 --cases 9600`.
+Reproduce with `target/release/difffuzz --module inverted-index --seed 42 --cases 9600`. Both this
+fix and B-240 predate these logged campaigns: B-240 is reproduced by construction (see above) rather
+than found by fuzzing, and the `clear()` defect was found by an earlier, unlogged run before the fix
+landed.
 
-* **Grammar: identity tokenizer, documents ARE token arrays.** Every `InvertedIndex` in this
-  grammar is constructed with `descriptor` omitted, so both sides fall back to upstream's own
-  `identity`. Documents (and queries) are generated directly as **arrays of tokens drawn from a
-  five-word pool** (`a`..`e`) rather than natural-language strings run through a real tokenizer:
-  `identity(doc) === doc` and `Array.isArray(doc)` holds by construction, so the constructor's and
-  `add`'s own guards are satisfied for free, and a 1–4-token document over a five-word pool
-  collides with earlier documents constantly (measured: 99.6%, see "What we test in addition") —
-  reaching real natural-language overlap would mean porting or mirroring a real tokenizer
-  (stemming, stopwords, `lodash/words`) into the fuzz harness for no gain the module itself needs.
-* **Op alphabet:** `add` (5, 1–4 tokens), `get` (4, 0–3 tokens — upstream's own `if
-  (!tokens.length) return [];` branch is reachable), `clear` (1), `$iter` over
-  `documents`/`tokens` (2), `$next` (4), `$spread` (1), `$forEach` (1 — always the "plain walk"
-  shape, since the mutation table `for_each_strategy` takes is empty; see below).
-* **Two cursor shapes, both fuzzed, tagged by `FuzzCursor`:** `documents()` (a frozen length over
-  a captured array) and `tokens()` (a real `Map` cursor over a captured map) are genuinely
-  different walks, matching the core module's own two-cursor design.
-* **`$forEach` is included specifically as an invariant, not a mutation vector.** Because
-  `InvertedIndex::for_each` always drives a cursor frozen at length zero, `seen` is `[]` on every
-  single generated case regardless of `size` — this op's whole purpose is to be *positive,
-  repeated* evidence that the port's brokenness matches upstream's across thousands of index
-  states, not merely the original suite's one hand-picked call.
-* **Observable state, compared after every op:** `size`, `dimension`, `items` (the full document
-  list, in order) and `mapping` (the full token → posting-list index, as an order-sensitive
-  `$map` — entry order is part of what `tokens()` promises, same reasoning as `default-map`'s
-  `items`).
+**Grammar: identity tokenizer, documents ARE token arrays.** Every `InvertedIndex` in this grammar
+is constructed with `descriptor` omitted, so both sides fall back to upstream's own `identity`.
+Documents (and queries) are generated directly as **arrays of tokens drawn from a five-word pool**
+rather than natural-language strings run through a real tokenizer, so a 1–4-token document over a
+five-word pool collides with earlier documents constantly (measured: 99.6%, see "What we test in
+addition") — reaching real natural-language overlap would mean porting or mirroring a real tokenizer
+into the fuzz harness for no gain the module itself needs. The op alphabet covers `add`/`get`/`clear`
+plus the cursor ops over both cursor shapes (`documents()`, a frozen length over a captured array,
+and `tokens()`, a real `Map` cursor over a captured map) and `$forEach` — included specifically as
+an *invariant*, not a mutation vector: because `InvertedIndex::for_each` always drives a cursor
+frozen at length zero, `seen` is `[]` on every single generated case regardless of `size`, so this
+op's whole purpose is to be positive, repeated evidence that the port's brokenness matches
+upstream's across thousands of index states, not merely the original suite's one hand-picked call.
+Observable state is `size`, `dimension`, `items` (the full document list, in order) and `mapping`
+(the full token → posting-list index, order-sensitive, since entry order is part of what `tokens()`
+promises). Full grammar: evidence file.
 
-### Falsification (gate 6)
-
-**The assertion named first:** `b_240_for_each_never_visits_a_single_document`'s
-`assert_eq!(cursor.step(), None, "the loop bound is zero, unconditionally")`.
-
-**The sabotage:** `InvertedIndex::for_each` changed from `DocumentsCursor::open_at_zero(...)` to
-`DocumentsCursor::open(...)` — i.e., made it actually walk the documents. The *correct*, useful
-behaviour, and therefore a bug per this port's bug-for-bug fidelity rule.
-
-**Confirmed red, in two of the three places this could be caught:**
-
-* The named Rust assertion, plus one more it took down with it
-  (`a_clear_between_two_steps_of_an_open_for_each_walk_does_not_panic`, which also assumed a
-  zero-length walk): `2 failed, 15 passed`.
-* **The differential fuzzer caught it immediately**: 148 cases, 58 operations, 0.2 seconds,
-  minimised to two lines:
-
-  ```js
-  var s = new InvertedIndex();
-  s.add(["a"]);
-  s.forEach(function (a, b) {});
-  // port saw one callback invocation ([["a"]]); upstream saw none ([])
-  ```
-
-**Confirmed green, correctly, for a stated reason.** The original mocha suite stayed green (`8
-passing`) — expected, and the point of gap 3: it never counts `forEach` invocations, so it cannot
-distinguish "ran once" from "ran zero times" either way.
-
-**Reverted; confirmed green again** at both instruments: the two Rust assertions pass (`17
-passing`), and a 500-case replay of the same seed comes back `0 divergences`.
-
-**Nothing was found to be blind here that was not already known and stated**: the original suite's
-blindness to this exact class of bug (gap 3) is precisely why B-240 needed the differential
-fuzzer's `$forEach` op to be pinned as *continuous* evidence in the first place, rather than a
-single hand-picked assertion.
+**Falsification (gate 6):** the assertion named first was
+`b_240_for_each_never_visits_a_single_document`'s
+`assert_eq!(cursor.step(), None, "the loop bound is zero, unconditionally")`. The sabotage —
+`InvertedIndex::for_each` changed from `DocumentsCursor::open_at_zero(...)` to
+`DocumentsCursor::open(...)`, i.e. made it actually walk the documents, the *correct*, useful
+behaviour and therefore a bug per this port's bug-for-bug fidelity rule — is confirmed red in two of
+the three places this could be caught: the named Rust assertion plus one more it took down with it
+(2 failed, 15 passed), and the differential fuzzer, which caught it immediately (148 cases, 58
+operations, 0.2 seconds, minimised to two lines). The original mocha suite stayed green (8 passing),
+correctly: it never counts `forEach` invocations, so it cannot distinguish "ran once" from "ran zero
+times" either way — precisely why B-240 needed the fuzzer's `$forEach` op as continuous evidence
+rather than a single hand-picked assertion. Reverted; confirmed green again (17 passing, 0
+divergences on a 500-case replay). Full record: evidence file.
 
 ### Bench
 
@@ -291,25 +259,17 @@ Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 2,00
 **`mixed-2e5`** — 200,000 (deliberately smaller than this group's usual 1e6 — see
 `bench/runner/src/inverted_index.rs`'s own module docs for the sizing check) mixed
 `add`(2-token doc)/`get`(1-token query)/`get`(2-token AND query) (50/25/25) over a 1,000-word
-vocabulary, identity tokenizer on both sides. **~200 documents per posting list on average by the
-run's end** — the load-bearing multi-container parameter here, exercising both a plain posting-list
-read and a real two-list AND intersection — xorshift32 seed 42:
+vocabulary, identity tokenizer on both sides, with ~200 documents per posting list on average by the
+run's end (the load-bearing multi-container parameter, exercising both a plain posting-list read and
+a real two-list AND intersection): the port is 1.7× faster at p50 (249.5 vs 424.4 ns/op), 2.0×
+faster at p99 (539.3 vs 1104.4). No regressions. Full table: evidence file.
 
-| metric | port | upstream | |
-|---|---|---|---|
-| p50 ns/op | **249.5** | 424.4 | 1.7× faster |
-| p99 ns/op | **539.3** | 1104.4 | 2.0× faster |
-| RSS delta MB | **2.1** | 118.2 | |
-| structure-only RSS delta MB | **0.1** | 0.2 | |
-| startup ms | **0.6** | 16.9 | 28× (reported separately; not throughput) |
-
-**No regressions**, and the largest RSS-delta ratio in this group (upstream's ~118 MB against the
-port's ~2 MB) — most of that gap is `add`'s per-document allocation cost: every `add` upstream makes
-allocates a fresh `Set()` for its dedup pass and grows a plain-object-backed `Map`, while the port's
-`add` allocates a `HashSet` scoped to one call and writes into an already-hashed `OrderedMap`. One
-thing still open, unconfirmed either way: `get`'s repeated `intersection_unique_two` fold is
-left-to-right over `query_tokens`, matching upstream's own `helpers.intersectionUniqueArrays(results,
-c)` loop rather than the k-way form `mnemonist-core::utils::merge` also provides — this workload's
-queries are at most two tokens, so the two folds are identical at this length, and whether a k-way
-scan would matter at longer queries remains a question for a future measurement, not settled by this
-one.
+This has the largest RSS-delta ratio in this group (upstream's ~118 MB against the port's ~2 MB) —
+most of that gap is `add`'s per-document allocation cost: every `add` upstream makes allocates a
+fresh `Set()` for its dedup pass and grows a plain-object-backed `Map`, while the port's `add`
+allocates a `HashSet` scoped to one call and writes into an already-hashed `OrderedMap`. One thing
+still open, unconfirmed either way: `get`'s repeated `intersection_unique_two` fold is left-to-right
+over `query_tokens`, matching upstream's own `helpers.intersectionUniqueArrays(results, c)` loop
+rather than the k-way form `mnemonist-core::utils::merge` also provides — this workload's queries
+are at most two tokens, so the two folds are identical at this length, and whether a k-way scan
+would matter at longer queries remains a question for a future measurement, not settled by this one.

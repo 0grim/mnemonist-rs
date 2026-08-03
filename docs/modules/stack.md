@@ -94,29 +94,15 @@ Everything below is reachable through the public API and never exercised by the 
 
 ## What we test in addition
 
-`crates/mnemonist-core/src/structures/stack.rs` — 14 tests:
+`crates/mnemonist-core/src/structures/stack.rs` — 14 tests, closing every gap above except 3, 12
+and 13: a 1:1 reproduction of all eleven upstream blocks as a baseline, `push`'s return value,
+`pop`'s effect on `size` on an empty stack, both levels of cursor non-restartability, a push and a
+pop during iteration (one invisible, one opening a gap), `clear`'s array rebind leaving an open
+cursor untouched, and `forEach` reading the live array where the cursor reads its capture. Full
+test-to-gap mapping: evidence file.
 
-| Test | Closes gap |
-|---|---|
-| `reproduces_the_upstream_suite` | 1:1 port of all eleven upstream blocks, as a baseline |
-| `push_returns_the_new_size` | 1 |
-| `popping_an_empty_stack_does_not_move_the_size` | 2 |
-| `size_and_the_backing_length_track_each_other` | the two quantities upstream keeps separate |
-| `cursors_do_not_restart_but_the_stack_can_be_walked_again` | 8, 9 — both levels of D-07 in one test |
-| `a_push_during_iteration_is_not_visible_to_the_cursor` | 6 |
-| `a_pop_during_iteration_opens_a_gap_at_the_top_of_the_walk` | 5 — the `undefined` window |
-| `clear_rebinds_the_array_and_leaves_an_open_cursor_untouched` | 4 — the one a `Vec<T>` cannot express |
-| `a_cursor_detached_by_clear_never_sees_the_new_array` | 4, extended past the rebinding |
-| `for_each_reads_the_live_array_where_the_cursor_reads_the_capture` | 7 — the third behaviour |
-| `peek_is_a_pure_read` | — |
-| `an_empty_stack_iterates_zero_times` | — |
-| `from_iter_accepts_any_iterator` | D-03: core takes any `IntoIterator` |
-| `duplicates_are_kept` | — |
-
-`crates/mnemonist-core/src/cursor/mod.rs` — 3 new tests for `Sequence::limit`
-(`a_live_limit_sees_growth_that_a_frozen_one_does_not`,
-`a_live_limit_resumes_after_reporting_done`,
-`a_live_limit_that_shrinks_ends_the_walk_without_a_gap`), bringing that file to 16.
+`crates/mnemonist-core/src/cursor/mod.rs` — 3 new tests for `Sequence::limit`, bringing that file
+to 16.
 
 `tests/boundary/stack-queue.js` — **37 specs**, each asserted **both** differentially against the
 vendored upstream source in `bench/upstream/` **and** explicitly. The differential half catches
@@ -162,7 +148,7 @@ Three traps, all reproduced and all pinned:
 ## Bugs this found
 
 **B-30 — `forEach` on a truthy primitive dies in the `in` operator, not in its own guard.**
-`status: verified against Node 24.18.1`. A number, boolean, symbol or bigint survives
+Verified against Node 24.18.1. A number, boolean, symbol or bigint survives
 `if (!iterable) throw`, is not an indexed sequence and has no `.forEach`, and then meets
 `Symbol.iterator in iterable`. `in` requires an object:
 
@@ -173,12 +159,10 @@ forEach(5, cb)   // TypeError: Cannot use 'in' operator to search for 'Symbol(Sy
 Confirmed for `5`, `true`, `10n` (which stringifies as `10`) and `Symbol(x)`. The library's own
 "not iterable" guard never fires, and the caller gets a message that reads like a bug in
 obliterator's internals. Reproduced verbatim. Low severity, but it is a real gap in a guard that
-exists — two lines would close it. Cross-ref B-30, above, and two further blind spots in the same
-guard.
+exists — two lines would close it.
 
-**Three defects in this port, all found by differentially probing the *bridge*, and two of them in
-code that was already green.** None is an upstream bug; they are recorded because the way they were
-found is the point.
+**Three defects in this port, all found by differentially probing the bridge, two of them in code
+that was already green.** None is an upstream bug.
 
 1. **`&self` on a `Freeze` type is `noalias readonly`, and LLVM used it.** napi hands the same
    object to JS as `&self` and `&mut self`, and JS re-enters from a callback:
@@ -204,17 +188,10 @@ found is the point.
    Cargo features are set (moving `napi9` → `napi10` changes nothing — measured). `JsSlot` is
    therefore an enum: references for object/function/symbol, by value for primitives.
 
-**A claim this module's own falsification withdrew.** An earlier comment said routing `Stack.of`
-through `Stack.from(arguments)` makes the original suite exercise branch 1's `[object Arguments]`
-clause. Deleting the clause leaves all 22 assertions green: a modern `arguments` object carries
-`Symbol.iterator` and falls through to branches 3/4 with the same numeric second argument. The
-clause is observable only for something claiming the tag *without* being iterable. Corrected in
-both places rather than quietly dropped.
-
 **What the fuzzer found: nothing new.** Two campaigns, 4.40 M operations, zero divergences — the
 expected outcome, since a faithful port reproduces upstream's bugs and differential fuzzing
-structurally cannot find them. What it is for is the other direction, and it was proven in
-that direction below.
+structurally cannot find them. What it is for is the other direction, and it is sharper than the
+original suite by a wide margin — see "Fuzz + bench".
 
 ## Deliberate divergences
 
@@ -237,103 +214,57 @@ that direction below.
 
 ### Fuzz
 
+Two campaigns, two seeds, **4.40 M operations, zero divergences**:
+
 ```
 module=stack seed=42       cases=28240 ops=2823415 wall=120.0s divergences=0
 module=stack seed=20260801 cases=15752 ops=1579917 wall=60.0s  divergences=0
 ```
 
-Two campaigns, two seeds, **4.40 M operations, zero divergences**.
-
 Reproduce with `target/release/difffuzz --module stack --seed 42 --cases 28240`.
 
-* **Op alphabet:** `push(v)` (weight 6) · `pop()` (3) · `peek()` (2) · `clear()` (2) ·
-  `$iter("values")` (2) · `$next()` (4) · `$spread()` (1).
-* **Observable state, compared after every op:** `size`, **`items`** and `toArray()`. `items` is a
-  public property upstream, and observing it directly is what makes the array-rebinding checkable
-  without waiting for a cursor to notice it. Comparing `size` *and* `items` separately is how a port
-  that silently unified the two would be caught.
-* **Values:** `0..48`, small enough that duplicates are frequent — a stack is not a set.
-* **Program length:** 1..200 ops.
-* **Deliberately excluded: nothing.** Every method `stack.js` exposes is in the alphabet or the
-  observation set, except `inspect`, which is not ported.
-
-The grammar's point is the **pair**: `clear()` rebinds the array and `pop()` shortens it, and a
-cursor open across either must react differently. That is why `clear` carries real weight rather
-than being a token op.
+The op alphabet covers `push`/`pop`/`peek`/`clear` plus the cursor ops. Observable state is `size`,
+**`items`** and `toArray()` — `items` is a public property upstream, and observing it directly is
+what makes the array-rebinding checkable without waiting for a cursor to notice it; comparing `size`
+*and* `items` separately is how a port that silently unified the two would be caught. The grammar's
+point is the **pair**: `clear()` rebinds the array and `pop()` shortens it, and a cursor open across
+either must react differently — that is why `clear` carries real weight rather than being a token
+op. Deliberately excluded: nothing, every method `stack.js` exposes is in the alphabet or the
+observation set except `inspect`. Full grammar: evidence file.
 
 **The fuzzer was falsified before it was trusted.** Sabotage: `clear()` emptying the backing array
 in place instead of rebinding it — which is the only thing a `Vec<T>` can do, and which makes
-`clear()` indistinguishable from popping everything. Caught in **101 cases (0.1 s)**, shrunk from
-200 ops to four:
+`clear()` indistinguishable from popping everything. Caught in 101 cases (0.1 s), shrunk from 200
+ops to four. Reverted; the seed is committed with a provenance header in
+`crates/difffuzz/proptest-regressions/stack.txt`, where proptest replays it before any novel case on
+every subsequent run. Full repro: evidence file.
 
-```js
-var s = new Stack();
-s.push(0);
-var it = s.values();
-s.clear();
-it.next();      // port {value: undefined}, upstream {value: 0}
-```
+**Falsification of the port (gate 6):** the assertion named first was
+`should be possible to create a values iterator` — `assert.strictEqual(iterator.next().value, 3)`
+at `test/stack.js:102` — chosen because it is the first assertion in the file that reaches the
+reversed cursor, which is the arithmetic most likely to be mis-ported. The sabotage,
+`Sequence::slot` for `Stack` walking **forward** instead of newest-first, is confirmed red in the
+named place (8 passing, 3 failing — the values iterator, the entries iterator and the `for…of`
+block; `toArray`, which does its own reversal, stays green, so the sabotage isolated the cursor
+rather than the module); reverted, confirmed green again (11 passing). A second, separate
+falsification of the dispatch — an off-by-one in branch 1 dropping the last element of every
+indexed sequence — breaks `should be possible to create a stack from an arbitrary iterable`
+(13 passing, 9 failing across both stack and queue); reverted, green again. A third sabotage was
+tried and stayed green: deleting branch 1's `[object Arguments]` clause left all 22 assertions
+passing, which is what showed the clause was dead code (see "Deliberate divergences" and the log for
+the withdrawn claim this disproved). Full record: evidence file.
 
-Reverted; the seed is committed with a provenance header in
-`crates/difffuzz/proptest-regressions/stack.txt`, where proptest replays it before any novel case
-on every subsequent run.
-
-### Falsification of the port (gate 6)
-
-Gate 6 asks that sabotaging the core turns the **original mocha suite** red, proving it exercises
-Rust rather than a JS fallback.
-
-**The assertion the sabotage had to break was named first:**
-`should be possible to create a values iterator` —
-`assert.strictEqual(iterator.next().value, 3)`, at `test/stack.js:102`. Chosen because it is the
-first assertion in the file that reaches the reversed cursor, which is the arithmetic most likely
-to be mis-ported.
-
-**The sabotage:** `Sequence::slot` for `Stack` walking **forward** (`items[ordinal]`) instead of
-newest-first (`items[l - ordinal - 1]`).
-
-**Confirmed red**, and red in the named place: `8 passing, 3 failing`, the failures being the
-values iterator, the entries iterator and the `for…of` block. Note what stayed green — `toArray`,
-which does its own reversal — so the sabotage isolated the cursor rather than the module.
-Reverted; **confirmed green again**: `11 passing`.
-
-**A second, separate falsification, of the dispatch.** Sabotage: an off-by-one in branch 1
-(`i + 1 < l`, dropping the last element of every indexed sequence). Named assertion:
-`should be possible to create a stack from an arbitrary iterable`,
-`assert.deepStrictEqual(stack.toArray(), [3, 2, 1])` at `test/stack.js:88`. **Confirmed red**,
-`13 passing, 9 failing` across both stack and queue. Reverted, green again.
-
-**A third attempt that stayed green, and what it proved.** Deleting branch 1's `[object Arguments]`
-clause left all 22 assertions passing — see "Bugs this found". A falsification that cannot fail is
-just a second green light; this one was informative precisely because it failed to fail, and the
-claim it disproved was withdrawn from two source comments.
-
-### `$forEach` — the op that was missing (added 2026-08-01, B-31)
-
-`stack`'s grammar had no `forEach` op at all. That omission is what let B-31 — a `forEach`
-callback mutating the collection it is walking — through 4.40 M clean operations: an op alphabet
-that omits a method omits every bug reachable only through it.
-
-`$forEach(method, rule, limit)` now walks the instance with a callback that calls back into it.
-The compared result is the sequence of callback argument pairs, so the walk's **shape** is checked
-and not only the state it leaves behind. This module's mutations:
-
-* `pop()`, `push(a0)` and `clear()`, all uncapped.
-
-Safe uncapped because `l = this.items.length` is captured before the first step. The interesting
-program is a callback that pops: `l - i - 1` is then computed from the **old** length against the
-**new** array, which opens an `undefined` hole mid-walk — the behaviour `tests/boundary/stack-queue.js`
-pins by hand and this op now generates by the thousand.
-
-**What it does not reach, stated so the campaign is not over-read.** `difffuzz` compares
-`mnemonist-core` against upstream JS; the napi bridge, where B-31's hoisted read actually lived, is
-not in that loop. No op alphabet can catch that class of bug here. The specs that do are
-`tests/boundary/reentrancy.js`, which drive the real addon with real JS callbacks — red on the
-pre-fix bridges, green after.
-
-One deliberate narrowing, mirrored on both sides: a selected callback argument that is `undefined`
-skips the mutation. Feeding it back in reaches upstream's `NaN`-indexed swap, which `usize` cannot
-express and the core does not model. Fully disclosed in `fuzz/log.txt`.
+`$forEach(method, rule, limit)` walks the instance with a callback that calls back into it. This
+module's mutations are `pop()`, `push(a0)` and `clear()`, all uncapped — safe uncapped because
+`l = this.items.length` is captured before the first step. The interesting program is a callback
+that pops: `l - i - 1` is then computed from the **old** length against the **new** array, which
+opens an `undefined` hole mid-walk — the behaviour `tests/boundary/stack-queue.js` pins by hand and
+this op now generates by the thousand. What it does not reach: the napi bridge, where a re-entrant
+callback would actually run, is outside the loop `difffuzz` compares; `tests/boundary/reentrancy.js`
+covers that instead. One deliberate narrowing, mirrored on both sides: a selected callback argument
+that is `undefined` skips the mutation, because feeding it back in reaches upstream's
+`NaN`-indexed swap, which `usize` cannot express and the core does not model. Disclosed in
+`fuzz/log.txt`.
 
 ### Bench
 
@@ -341,28 +272,20 @@ express and the core does not model. Fully disclosed in `fuzz/log.txt`.
 Host: AMD Ryzen 5 7600X, 12 threads, WSL2, Node 24.18.1, rustc 1.97.1, quiet serial pass.
 Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 10,000 samples/side.
 
-**`mixed-1e6`** — 1e6 mixed `push`/`peek`/`pop` (50/25/25), value magnitude 1e6, xorshift32 seed 42.
+**`mixed-1e6`** — 1e6 mixed `push`/`peek`/`pop` (50/25/25), value magnitude 1e6: the port is 1.6×
+faster at p50 (4.6 vs 7.3 ns/op), 4.5× faster at p99 (6.8 vs 30.3), 1.2× faster at min. No
+regressions on any metric. Full table: evidence file.
+
 `peek` stands in for `vector`'s `get`, since a stack exposes no random access — otherwise the same
 shape `vector`'s own bench uses, chosen for the same reason: the throughput floor other members of
-this group can be read against.
-
-| metric | port | upstream | |
-|---|---|---|---|
-| p50 ns/op | **4.6** | 7.3 | 1.6× faster |
-| p99 ns/op | **6.8** | 30.3 | 4.5× faster |
-| min ns/op | **4.2** | 5.2 | 1.2× faster |
-| RSS delta MB | **7.9** | 44.9 | |
-| structure-only RSS delta MB | **1.3** | 9.9 | |
-| startup ms | **0.6** | 15.7 | 26× (reported separately; not throughput) |
-
-**No regressions on any metric.** `Stack`'s backing is `Rc<RefCell<Vec<f64>>>` (D-06/D-07's
-array-rebinding requirement — see the module docs), so every `push`/`pop` pays a refcount bump and a
-borrow-flag check, the same mechanism `heap.md`'s bench found a regression from. It does not show up
-here: unlike `heap`, there is no `Comparator` trait call riding alongside it, and V8's own `Array`
-push/pop is not free either — it must handle the JS `Array`'s own bookkeeping (length, potential
-hidden-class transitions) on every call. The `RefCell` check is real but small enough, relative to
-what V8 pays for the same operation, that it does not flip the result. Unconfirmed which side of that
-comparison dominates by how much: not isolated by profiling here, only that the direction is
-consistent with "a `RefCell` alone is a small cost" — see the dedicated `--refcell-probe` measurement
-in `docs/modules/sparse-set.md`, which measured that mechanism in isolation and found it
+this group can be read against. `Stack`'s backing is `Rc<RefCell<Vec<f64>>>` (the array-rebinding
+requirement above), so every `push`/`pop` pays a refcount bump and a borrow-flag check, the same
+mechanism `heap.md`'s bench found a regression from. It does not show up here: unlike `heap`, there
+is no `Comparator` trait call riding alongside it, and V8's own `Array` push/pop is not free either —
+it must handle the JS `Array`'s own bookkeeping (length, potential hidden-class transitions) on
+every call. The `RefCell` check is real but small enough, relative to what V8 pays for the same
+operation, that it does not flip the result. Which side of that comparison dominates by how much is
+unconfirmed — not isolated by profiling here, only that the direction is consistent with "a
+`RefCell` alone is a small cost" — see the dedicated `--refcell-probe` measurement in
+`docs/modules/sparse-set.md`, which measured that mechanism in isolation and found it
 indistinguishable from run-to-run noise at this workload's size.

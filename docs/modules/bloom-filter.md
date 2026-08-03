@@ -12,8 +12,6 @@ Port: `crates/mnemonist-core/src/structures/bloom_filter.rs` +
 `crates/mnemonist-core/src/utils/murmurhash3.rs` · bridge `crates/mnemonist-napi/src/bloom_filter.rs`
 · shim `tests/bridge/bloom-filter.js`
 
-Gates 1–10 green. `tests/scope.txt` lists this unit; see "Fuzz + bench" below for gate 10's figures.
-
 ---
 
 ## What upstream tests
@@ -61,25 +59,20 @@ coverage is whatever the byte arrays above happen to pin.
 
 ## What we test in addition
 
-15 native tests in `bloom_filter.rs`, 7 in `murmurhash3.rs`.
+15 native tests in `bloom_filter.rs`, 7 in `murmurhash3.rs`, closing every gap above: `murmurhash3`
+checked against 23 (seed, data) pairs including the exact negative seeds `hashArray` derives, a
+fresh capacity-10 filter per item (including U+0000, non-ASCII and an astral character) so a hash
+defect can't hide behind cumulative state, the empty sequence treated as an ordinary item, `clear`
+resetting bits while keeping the sizing, the error-rate option/default read, an error rate above 1
+producing a `RangeError` only sometimes (B-99), a zero-hash-function filter saying yes to everything
+(B-97), 15 (capacity, errorRate) pairs checked against Node, an infinite capacity producing an empty
+filter, 200 items with zero false negatives, and a false-positive rate measured at 500 items in and
+2,000 queries out, asserted under 5% against a nominal 0.5%. Full test-to-gap mapping: evidence
+file.
 
-| gap | test |
-|---|---|
-| — (upstream's own, transcribed) | `matches_the_upstream_suites_own_settings`, `..._own_bit_arrays`, `..._own_fifty_item_case`, `..._own_membership_case`, `..._own_validation` |
-| 1 | `murmurhash3_matches_node_24_18_1` — 23 (seed, data) pairs against real Node, including the exact negative seeds `hashArray` derives; `every_tail_length_is_reached`; `sum32_is_not_an_adder`; `sum32_with_the_swapped_constant_is_the_addition_murmur_wants` |
-| 2 | `per_item_bits_match_node_24_18_1` — a **fresh** capacity-10 filter per item, including `U+0000`, `日本` and `😀` (two code units); `elements_above_a_byte_overlap_and_collide` |
-| 3 | `b98_the_empty_sequence_is_an_ordinary_item` (core side) + the bridge's `to_units` |
-| 4 | `clear_resets_the_bits_and_keeps_the_sizing` |
-| 6 | `the_error_rate_check_reads_the_option_and_the_default_reads_the_value` |
-| 7 | `b99_an_error_rate_above_one_is_a_range_error_only_sometimes` |
-| 8 | `b97_a_filter_with_no_hash_functions_says_yes_to_everything` |
-| 9, 10 | `settings_match_node_24_18_1` — 15 (capacity, errorRate) pairs; `an_infinite_capacity_produces_an_empty_filter` |
-| 11 | `never_reports_a_false_negative` — 200 items, all found |
-| 12 | `the_false_positive_rate_is_roughly_what_was_asked_for` — 500 in, 2,000 out, asserted under 5% against a nominal 0.5% |
-
-`per_item_bits_match_node_24_18_1` is the one that matters most. Upstream only ever checks
-*cumulative* state on a capacity-3 filter, so a hash defect that happened to preserve those four
-bytes would go unnoticed; a fresh filter per item makes each digest independently observable.
+The one that matters most is the fresh-filter-per-item test: upstream only ever checks *cumulative*
+state on a capacity-3 filter, so a hash defect that happened to preserve those four bytes would go
+unnoticed; a fresh filter per item makes each digest independently observable.
 
 ## Bugs this found
 
@@ -214,44 +207,39 @@ filter is local to `from` and is not yet a JavaScript object. Same pattern as `S
 
 ## Fuzz + bench
 
-**Gate 9 — two campaigns, 1,385,597 operations, zero divergences.**
+### Fuzz
 
-| module key | seed | cases | ops | wall |
-|---|---|---|---|---|
-| `bloom-filter` | 42 | 6,788 | 675,049 | 60.0s |
-| `bloom-filter` | 20260801 | 7,087 | 710,548 | 60.0s |
+**Two campaigns, 1,385,597 operations, zero divergences.** Spec:
+`crates/difffuzz/src/modules/bloom_filter.rs`. Full campaign table: evidence file.
 
-Spec: `crates/difffuzz/src/modules/bloom_filter.rs`. The op alphabet is `add`, `test`, `clear` and
-`toJSON` — every method upstream defines apart from the static `from` and the unported `inspect`.
-`data`, `capacity`, `errorRate` and `hashFunctions` are observations, so they are compared after
-every step. `clear` is an op rather than an observation because it *mutates*: it re-derives
-`hashFunctions` and reallocates `data`, so putting it in the observation set would wipe the filter
-before every comparison.
+The op alphabet is `add`, `test`, `clear` and `toJSON` — every method upstream defines apart from
+the static `from` and the unported `inspect`. `data`, `capacity`, `errorRate` and `hashFunctions`
+are observations, compared after every step. `clear` is an op rather than an observation because it
+*mutates*: it re-derives `hashFunctions` and reallocates `data`, so putting it in the observation
+set would wipe the filter before every comparison.
 
 `add` and `test` take numbers and booleans as well as strings, deliberately — B-98 is reachable only
 if the grammar can express a non-string item. `null` and `undefined` are excluded because upstream
 throws a `TypeError` there and the oracle compares thrown messages verbatim, which would turn an
 engine-wording difference into a false divergence.
 
-`errorRate` is held strictly below 1, stated here as an explicit exclusion: at or above it
-the sizing goes negative and a large enough capacity throws from the *constructor*, which reaches
-the oracle's `init` and is apparatus failure by protocol. That is B-99, and it is pinned by a native
-test instead. The zero-hash-function region (B-97) is **not** excluded and is reached routinely.
+`errorRate` is held strictly below 1, an explicit exclusion: at or above it the sizing goes negative
+and a large enough capacity throws from the *constructor*, which reaches the oracle's `init` and is
+apparatus failure by protocol. That is B-99, and it is pinned by a native test instead. The
+zero-hash-function region (B-97) is **not** excluded and is reached routinely.
 
-**A harness finding, recorded rather than quietly fixed.** The spec's very first run reported
-`capacity: port 6.0, upstream 6` before a single operation ran. JavaScript has one number type;
-`serde_json::Value` has two, and `json!(6.0_f64) != json!(6)`. An encoding mismatch is a *false*
-divergence, and one that fired on a rare value instead of on every value would have looked exactly
-like a port defect. Fixed by `js_number()`, which renders a whole `f64` the way `JSON.stringify`
-does, and noted in the regression corpus header so the next module spec does not rediscover it.
+A harness-side JSON number-encoding mismatch was found and fixed during this campaign's first run;
+full account: log.
 
-**Gate 6 — falsification, two runs plus one control, each named before it was performed.**
-
-| what | sabotage | must break | result |
-|---|---|---|---|
-| the original test suite (gate 4) | `hash = sum32(hash, N)` → `hash = hash + N` in `murmurhash3` | `assert.deepStrictEqual(Array.from(filter.data), [128, 0, 86, 65])` in `'should be possible to add items to the filter.'` | **red**: 4 passing, 2 failing, that assertion among them. Reverted: 6 passing. |
-| the fuzz spec | an early `if hash_functions == 0 { return false }` in `test`, i.e. "fixing" B-97 | a return-value divergence on a filter whose `hashFunctions` truncated to zero | **red**, minimised to two lines: `new BloomFilter({capacity: 21, errorRate: 0.98}).test(...)`, divergence on op #0. Reverted: clean. |
-| **control**, to check the B-93 cancellation rather than assert it | `hash = sum32(hash, N)` → `hash = hash + 0xe6546b64`, the **unswapped** constant | **nothing** — if the cancellation is real, all six stay green | **green**, 6 passing. The cancellation is real. |
+**Falsification (gate 6), two runs plus one control, each named before it was performed.** The
+original test suite (gate 4): replacing `sum32`'s call with unswapped addition must break
+`'should be possible to add items to the filter.'` — confirmed red (4 passing, 2 failing, that
+assertion among them); reverted, 6 passing. The fuzz spec: an early `if hash_functions == 0 {
+return false }` in `test` (i.e. "fixing" B-97) must break a return-value divergence on a filter
+whose `hashFunctions` truncated to zero — confirmed red, minimised to two lines; reverted, clean.
+Control, to check the B-93 cancellation rather than assert it: swapping in the *unswapped* constant
+should change nothing if the cancellation is real — confirmed green, 6 passing, so the cancellation
+is real. Full record: evidence file.
 
 The first sabotage is worth one more sentence. `'should be possible to test items'` stayed **green**
 under it — because it only checks self-consistency (`add x`, then `test x` is true and `test y` is
@@ -268,18 +256,9 @@ Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 2,00
 200,000 at upstream's default 0.5% error rate. The filter is **prefilled to a stated 50% fill
 ratio** before timing starts — an empty or near-empty filter answers every `test` the same way
 all-zero bits would, trivially fast and proving nothing about the hashing/bit-setting this module
-exists to measure. `test` queries split across two disjoint pools, both measured directly (size
-200,000, seed 42) before committing to the mix: the **hit** pool (`0..size`, the domain `add` keeps
-drawing from) answers `true` **61.1%** of the time, and the **miss** pool (`size..2*size`, never
-added) has a **0.028%** false-positive rate — both a genuine mix of true/false answers, not a
-degenerate all-one-answer workload:
-
-| metric | port | upstream | |
-|---|---|---|---|
-| p50 ns/op | **97.36** | 163.93 | 1.7× faster |
-| p99 ns/op | **162.72** | 235.92 | 1.4× faster |
-| RSS delta MB | **0.1** | 14.4 | |
-| structure-only RSS delta MB | **0.1** | 6.6 | |
-| startup ms | **0.6** | 15.3 | 26× (reported separately; not throughput) |
-
-**No regressions.** Checksum `30440`, identical on both sides.
+exists to measure. `test` queries split across two disjoint pools, both measured directly before
+committing to the mix: the **hit** pool answers `true` **61.1%** of the time, and the **miss** pool
+has a **0.028%** false-positive rate — both a genuine mix of true/false answers, not a degenerate
+all-one-answer workload: the port is 1.7× faster at p50 (97.36 vs 163.93 ns/op), 1.4× faster at p99
+(162.72 vs 235.92). No regressions. Checksum `30440`, identical on both sides. Full table: evidence
+file.

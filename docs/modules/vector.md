@@ -95,33 +95,20 @@ Eighteen `it` blocks, and the shape of the coverage is narrower than the count s
 ## What we test in addition
 
 `crates/mnemonist-core/src/structures/vector.rs` — 18 unit tests beyond
-`reproduces_the_upstream_suite`, the 1:1 port of all 18 upstream blocks:
+`reproduces_the_upstream_suite` (the 1:1 port of all 18 upstream blocks), closing every gap above
+except the `PointerVector.from` half of gap 12: `index == length` admitted on both `get` and `set`
+(B-101), a popped slot's stale data surviving a growth (B-102), every non-finite and non-numeric
+policy result refused (and which of upstream's two throws each lands in), a shrinking
+`PointerVector` keeping its width, a zero-capacity one starting at the narrowest width, truncating
+and exact stores at each backing's own width, cursor non-restartability, a pop during iteration
+staying bounded by the frozen length, an empty vector's iteration, and the out-of-bounds message
+naming the actual backing class. Full test-to-gap mapping: evidence file.
 
-| Test | Closes gap |
-|---|---|
-| `get_and_set_admit_index_equal_to_length` | 1 — B-101 |
-| `a_full_vector_drops_the_admitted_write` | 1 — the companion case where `index == length == capacity`, so there is no capacity-region slot to admit into |
-| `stale_data_from_a_pop_survives_a_growth_and_stays_reachable` | 2 — B-102 |
-| `a_policy_returning_infinity_is_refused_before_any_allocation` | 5 |
-| `a_policy_returning_nan_is_refused` | 5 |
-| `a_policy_returning_a_negative_number_is_invalid_before_being_non_finite` | 5 — and which of the two upstream throws each non-finite value lands in |
-| `a_policy_returning_not_a_number_is_invalid` | 6 |
-| `shrinking_a_pointer_vector_keeps_its_current_width` | 7 |
-| `a_zero_capacity_pointer_vector_starts_at_the_narrowest_width` | 8 |
-| `a_pointer_vector_too_large_to_index_is_refused` | — a guard with no upstream-reachable input, kept because `Vector::pointer` needs an `Err` path to return |
-| `float64_values_are_stored_exactly` | 3, 4 |
-| `fixed_values_truncate_at_their_own_width` | 3 |
-| `cursors_do_not_restart_but_the_vector_can_be_walked_again` | 9 |
-| `a_pop_during_iteration_stays_bounded_by_the_frozen_length` | 10 |
-| `an_empty_vector_pops_and_iterates_to_nothing` | 11 |
-| `fills_to_capacity_without_running_off_the_end` | — a port-side invariant: growth never over-allocates |
-| `the_out_of_bounds_message_names_the_actual_backing_class` | 12 |
-
-**Differential fuzzing (see Fuzz below)** covers the same ground the native tests do, from the
-opposite direction: instead of a handful of hand-picked boundary cases, every generated program
-routinely lands on `index == length`, pushes values past truncation width, and pops immediately
-before a grow — at ~1.45M operations, zero divergences, which is the strongest evidence B-101 and
-B-102 are reproduced exactly rather than approximately.
+**Differential fuzzing** covers the same ground the native tests do, from the opposite direction:
+instead of a handful of hand-picked boundary cases, every generated program routinely lands on
+`index == length`, pushes values past truncation width, and pops immediately before a grow — at
+~1.45M operations, zero divergences, which is the strongest evidence B-101 and B-102 are reproduced
+exactly rather than approximately.
 
 **Still untested, stated rather than glossed:** `Vector.PointerVector.from` (gap 12's first half;
 no native test constructs a `PointerVector` from an iterable, though the bridge supports it).
@@ -129,7 +116,7 @@ no native test constructs a `PointerVector` from an iterable, though the bridge 
 ## Bugs this found
 
 **B-101 — `get`/`set` admit `index === length`, one past the last pushed element.**
-`status: VERIFIED against Node 24.18.1`. Both guards are `<`, not `<=`:
+Verified against Node 24.18.1. Both guards are `<`, not `<=`:
 
 ```js
 Vector.prototype.set = function(index, value) {
@@ -149,7 +136,7 @@ v.get(0) === 42
 `length`/`capacity` — it shows up only in `array` itself, or in a subsequent `get(length)`.
 
 **B-102 — a popped slot's stale data survives a growth, and B-101 keeps it reachable.**
-`status: VERIFIED against Node 24.18.1`. `pop()` reads and decrements; it never clears:
+Verified against Node 24.18.1. `pop()` reads and decrements; it never clears:
 
 ```js
 Vector.prototype.pop = function() {
@@ -179,6 +166,12 @@ the whole-capacity copy, the grow would carry forward a zero instead of the stal
 called four times across the whole suite and never followed by a growth call; this compounding is
 entirely unexercised upstream.
 
+**A harness bug the fuzz campaign's own design surfaced, fixed before trusting any result from it.**
+`serde_json`'s default float parser was not always correctly rounded for the full-precision
+`Float64Array` values this grammar generates — a manufactured divergence, not a real one, from the
+oracle's own JSON round trip rather than from the port. Fixed by enabling `serde_json`'s
+`float_roundtrip` feature workspace-wide. Full account: log.
+
 ## Deliberate divergences
 
 | # | Divergence | Why |
@@ -196,66 +189,30 @@ entirely unexercised upstream.
 
 ### Fuzz
 
+Two campaigns, two seeds, **1,454,078 operations, zero divergences**:
+
 ```
 module=vector seed=42       cases=7337 ops=735742 wall=60.0s divergences=0
 module=vector seed=20260801 cases=7209 ops=718336 wall=60.0s divergences=0
 ```
 
-Two campaigns, two seeds, **1,454,078 operations, zero divergences**. Reproduce with
-`target/release/difffuzz --module vector --seed 42 --cases 7337`.
+Reproduce with `target/release/difffuzz --module vector --seed 42 --cases 7337`.
 
-* **Constructor:** one of `Uint8Array`/`Uint16Array`/`Uint32Array`/`Float64Array`, with
-  `initialCapacity`/`initialLength` each in `0..48` — independently, so `initialLength >
-  initialCapacity` (upstream's `capacity = Math.max(initialLength, initialCapacity)`) is routine.
-* **Op alphabet:** `push(v)` (weight 5) · `pop()` (3) · `set(i, v)` (3) · `get(i)` (3) ·
-  `grow(c)`/`grow()` (1 each) · `resize(l)` (2) · `reallocate(c)` (1).
-* **Indices:** `0..64`, well past any generated length or capacity, so both the `index == length`
-  admission and the ordinary out-of-bounds throw are common outcomes, not edge cases.
-* **Values:** `0.0..70000.0` — past `255` so a `Uint8Array`/`Uint16Array` truncating store is
-  exercised, and full-precision `f64`s so `Float64Array` stores are compared exactly.
-* **Observable state, compared after every op:** `length`, `capacity`, and **`array`** — the whole
-  backing store, capacity region included, encoded exactly as the oracle encodes a JS typed array.
-  `array` is the point: without it, B-101 and B-102 are only checkable indirectly through `get`.
+The constructor draws one of the four backings with `initialCapacity`/`initialLength` set
+independently (so `initialLength > initialCapacity` is routine). The op alphabet covers
+`push`/`pop`/`set`/`get`/`grow`/`resize`/`reallocate`; indices run `0..64`, well past any generated
+length or capacity, so both the `index == length` admission and the ordinary out-of-bounds throw
+are common outcomes rather than edge cases; values run `0.0..70000.0`, past `255` so a truncating
+store is exercised and full-precision so `Float64Array` stores are compared exactly. Observable
+state is `length`, `capacity`, and **`array`** — the whole backing store, capacity region included —
+which is the point: without it, B-101 and B-102 are only checkable indirectly through `get`. Full
+grammar: evidence file.
 
-**A harness bug this campaign's own design surfaced, fixed before trusting any result from it.**
-The oracle's response line is a full-precision JSON number for every non-truncating
-`Float64Array` value this grammar generates. `serde_json`'s default float parser is not always
-correctly rounded for such values — a scratch test parsing the literal `"38403.356486892444"`
-recovered a value one ULP away from what Rust's own `f64::from_str` gives for the same text. The
-wire log showed the port and the oracle's raw response text agreeing exactly; only the *parsed*
-`Value` used for the comparison disagreed. Enabling `serde_json`'s `float_roundtrip` feature
-(workspace `Cargo.toml`) fixed it — the same class of finding: a harness defect that
-manufactures divergences rather than catching real ones. `vector` is the first module whose
-grammar generates `f64` values wide enough to land in the affected range.
-
-### Falsification of the port (gate 6)
-
-**Named first:** `vector_matches_upstream` (`crates/difffuzz/tests/differential.rs`) should go red,
-because the fuzz grammar's `set`/`get` indices routinely land on `index == length`, and the
-sabotage removes exactly the admission that lets that case succeed.
-
-**The sabotage:** `Vector::set`'s bound check tightened from `if self.length < index` to
-`if self.length <= index` — "fixing" the off-by-one that B-101 documents, the single most obvious
-thing a future cleanup would do to this file.
-
-**Confirmed red:** `cargo test -p difffuzz --test differential vector_matches_upstream` failed
-immediately, on the campaign's very first shrunk case:
-
-```
-divergence in return value after op #1: set(22, 11908.642978421198)
-  $throw:
-    port:     "Vector(Float64Array).set: index out of bounds."
-    upstream: <absent>
-  $self:
-    port:     <absent>
-    upstream: true
-minimal repro:
-var s = new Vector(Float64Array, {"initialCapacity":12,"initialLength":17});
-s.resize(22);
-s.set(22, 11908.642978421198);
-```
-
-Reverted; **confirmed green again**: `vector_matches_upstream ... ok`.
+**Falsification of the port (gate 6):** the sabotage, `Vector::set`'s bound check tightened from
+`self.length < index` to `self.length <= index` ("fixing" the off-by-one B-101 documents, the
+single most obvious thing a future cleanup would do to this file), is confirmed red immediately —
+`vector_matches_upstream` fails on the campaign's very first shrunk case, a divergence in the
+`set` call's return value. Reverted; confirmed green again. Full record: evidence file.
 
 ### Bench
 
@@ -264,31 +221,21 @@ Host: AMD Ryzen 5 7600X, 12 threads, WSL2, Node 24.18.1, rustc 1.97.1, quiet ser
 Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 10,000 samples/side.
 
 **`mixed-1e6`** — 1e6 mixed `push`/`get`/`pop` (50/25/25) growing from `(capacity 0, length 0)`,
-xorshift32 seed 42. `get` always lands on a uniformly random *existing* index (`workload.a[i] %
-current length`), so the upstream `index == length` boundary — an unguarded, presumably-a-bug read
-one past the end, which belongs to the differential fuzzer and not this benchmark — is never
-exercised here.
+`get` always landing on a uniformly random *existing* index (so the `index == length` boundary,
+which belongs to the differential fuzzer, is never exercised here): the port is 1.3× faster at p50
+(7.35 vs 9.56 ns/op), 2.2× faster at p99 (27.9 vs 60.5). Full table: evidence file.
 
-| metric | port | upstream | |
-|---|---|---|---|
-| p50 ns/op | **7.35** | 9.56 | 1.3× faster |
-| p99 ns/op | **27.9** | 60.5 | 2.2× faster |
-| RSS delta MB | **11.8** | 37.4 | |
-| structure-only RSS delta MB | **1.3** | 9.7 | |
-| startup ms | **0.6** | 16.9 | 28× (reported separately; not throughput) |
-
-**A clean win, and the smallest per-op margin of the five modules added in this pass** — expected,
+**A clean win, and the smallest per-op margin of the modules in this comparison set** — expected,
 since `vector` was picked specifically as the throughput floor: a growable array with the least
 per-op work of anything benchmarked here, so there is the least room for either side's overhead to
-show. The p99 gap (2.2×) is wider than the p50 gap (1.3×), consistent with the growth-policy reallocs
-this workload includes landing inside V8's GC accounting on some batches and not on the port's,
-which never triggers a collector.
+show. The p99 gap (2.2×) is wider than the p50 gap (1.3×), consistent with the growth-policy
+reallocs this workload includes landing inside V8's GC accounting on some batches and not on the
+port's, which never triggers a collector.
 
 **Falsification of the harness itself, run against this module.** A ~5,000-iteration `black_box`
-spin was inserted into every `push` call's timed path (50% of ops), rebuilt, and re-measured:
-`p50_ns_per_op` moved from 6.9 to 486.8 (55×), `p99_ns_per_op` from 22.7 to 719.8 (12×), and
-`regressions` went from empty to three entries — while the untouched Node side stayed at its normal
-~8.8 ns/op. Reverted and re-measured: the checksum (`249930270812`) was identical before sabotage,
-during, and after revert, and the figures returned to the table above within run-to-run noise. The
-harness can detect a regression it did not have before, which is the property gate 6 asks a
-falsification to demonstrate.
+spin inserted into every `push` call's timed path moved p50 from 6.9 to 486.8 ns/op (55×) and p99
+from 22.7 to 719.8 (12×), with `regressions` going from empty to three entries, while the untouched
+Node side stayed at its normal ~8.8 ns/op; reverted, the figures returned to the table above within
+run-to-run noise, and the checksum stayed identical throughout. The harness can detect a regression
+it did not have before, which is the property gate 6 asks a falsification to demonstrate. Full
+figures: evidence file.

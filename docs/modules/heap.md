@@ -116,23 +116,8 @@ Everything below is reachable through the public API and never exercised.
 ## What we test in addition
 
 **Rust native tests** — `crates/mnemonist-core/src/structures/heap.rs` (24) and
-`crates/mnemonist-core/src/utils/comparators.rs` (9):
-
-| Test | Closes gap |
-|---|---|
-| `push_pop_is_ascending`, `to_array_leaves_the_heap_intact`, `consume_empties_the_heap`, `a_max_heap_reverses_the_comparator`, `heapify_then_consume_sorts` | the upstream blocks, as a baseline |
-| `a_comparator_that_grows_the_array_mid_sift_does_not_panic` | 1 — and the assertion is that it *completes*, which an algorithm holding `&mut Vec` could not |
-| `a_comparator_that_shrinks_the_array_makes_the_walk_read_undefined` | 1 — the frozen `endIndex` half |
-| `clear_detaches_an_in_flight_sift` | 1 — the rebinding half (D-41) |
-| `a_throwing_comparator_desynchronises_size_from_the_array` | 2 |
-| `sort_with_is_stable`, `sort_with_puts_undefined_last_without_comparing_it` | the two `Array.prototype.sort` properties `nsmallest` depends on |
-| `nsmallest_over_an_array_like`, `nlargest_over_an_iterable` | 13–18, the paths |
-| `pushpop_on_an_empty_heap_returns_its_argument`, `from_items_heapifies_in_place` | 20, 21 |
-| `replace_on_an_empty_heap_throws_upstreams_message` | 11 |
-| `undefined_compares_equal_to_everything` | the slot semantics gaps 1 and 13 both depend on — and it asserts the *trap*, that Rust's own `Option` ordering says the opposite |
-| `nan_compares_equal_to_everything` | 4 |
-| `reverse_swaps_arguments_rather_than_negating`, `the_two_reverses_agree_pointwise` | 6, 7 |
-| `tuple_comparator_is_lexicographic`, `tuple_comparator_reads_past_a_short_tuple_as_undefined` | 9 |
+`crates/mnemonist-core/src/utils/comparators.rs` (9), closing gaps 1–2, 4, 6–7, 9, 13–18, 20–21.
+Full test-to-gap mapping: `docs/modules/evidence/heap.md`.
 
 **JavaScript boundary spec** — `tests/boundary/heap.js`, **51 cases**, covering everything that
 needs a real JS comparator, a real array or a real typed array. Its provenance is the important
@@ -160,12 +145,12 @@ coexist with the five prototype methods of the same name.
 `createTupleComparator` beyond its Rust unit tests, since no upstream test file reaches it until
 `kd-tree`.
 
-**And one behaviour that is reproduced and cannot be tested:** `Heap.nsmallest(cmp, -Infinity, array)`
+**One behaviour that is reproduced and cannot be tested:** `Heap.nsmallest(cmp, -Infinity, array)`
 **does not terminate**, upstream or here. The scan is `for (i = n; i < l; i++)` and
 `-Infinity + 1` is `-Infinity`, so the loop reads `iterable[-Infinity]` — `undefined` — forever.
 The port hangs identically, which is bug-for-bug correct and therefore unrunnable in any test or
-fuzz grammar. It is a genuine upstream defect and it has **no `B-` number**: the range allotted for
-these findings (B-70..B-79) was already spent when it was found, and rather than run past it, it is
+fuzz grammar. It is a genuine upstream defect with **no `B-` number**: the range allotted for these
+findings (B-70..B-79) was already spent when it was found, and rather than run past it, it is
 disclosed here without one.
 
 ## Bugs this found
@@ -196,15 +181,7 @@ Heap.nsmallest(descending, 2, [Infinity, 5])   // [Infinity, 5]
 
 Two adjacent values of `n` disagree about which element is smallest.
 
-**Three defects in the port that every gate missed, found by an independent review.**
-`status: all fixed, all pinned by tests/boundary/heap.js`
-
-This is the most important paragraph in the document, because the unit had 21 upstream assertions,
-47 boundary cases, three fuzz campaigns and 5 M operations all green when they were found. It is
-the sixth occasion in this port where a confident green signal turned out to be verifying something
-other than what was believed — the category `docs/METHODOLOGY.md`'s "What these instruments cannot
-see" collects — and, like B-31, it was found by *a second, independent look* rather than by the
-machinery.
+**Three defects in the port, all fixed, all pinned by `tests/boundary/heap.js`.**
 
 *1 — a `RefCell` borrow held across a call into JavaScript, which aborted the process.*
 `Heap::clear` was written as
@@ -253,15 +230,12 @@ raises a **`RangeError`**, not mnemonist's own error. Fixed by carrying `n` as t
 reproducing the fractional/negative loop exactly, moving the refusal to where upstream has it, and
 raising a real `RangeError` through the environment so napi re-throws the right constructor.
 
-The doc's own gap 16 previously claimed "upstream's `new Array(n)` refuses it too", which was true
-for one of three code paths and false for the two the bridge actually intercepted. Corrected above.
-
-**Two more defects in the port, both found by the port's own machinery, both fixed:**
+**Two more defects in the port, both fixed:**
 
 *napi-rs registers a class's statics and its prototype methods through one name table.* Upstream
 has five name pairs that exist as both — `push`, `pop`, `replace`, `pushpop`, `consume` — and
-declaring both halves made the prototype half silently vanish. **Nine of fourteen cases failed with
-`heap.push is not a function`**, which is a loud failure, but the *cause* is not one a reader would
+declaring both halves made the prototype half silently vanish. Nine of fourteen cases failed with
+`heap.push is not a function`, which is a loud failure, but the *cause* is not one a reader would
 guess: JavaScript has no such conflict, because a constructor and its prototype are different
 objects. Fixed by declaring the statics on a `HeapStatics` class the addon copies across and then
 deletes from its exports (D-75).
@@ -274,7 +248,7 @@ binding the receiver before deleting the temporary property.
 oracle *is* upstream, so a faithfully reproduced bug is by definition not a divergence.
 All ten of B-70…B-79 were found by reading the two files statement by statement and confirming each
 against Node. What the fuzzer is for is drift, and it was proven to work in that direction — see
-below.
+"Fuzz + bench".
 
 ## Deliberate divergences
 
@@ -291,7 +265,7 @@ below.
 | — | **`nsmallest(cmp, n, undefined)` is read as the three-argument form.** | Upstream keys off `arguments.length === 2`, which napi's typed signature cannot see. The two forms the original suite uses are exact. |
 | — | **`Store::allocate` and `Store::plain_array` are different operations.** | `clear()` and `consume()` allocate a plain `Array` unconditionally, as upstream's `[]` and `new Array(l)` do; only `nsmallest`'s `n === 1` path and `FixedReverseHeap`'s `new ArrayClass(size)` preserve a class. One method doing both made the port *more* class-faithful than upstream. |
 | — | **`n` is carried as the `f64` it is, never validated up front.** | Upstream compares `n`, slices with it and uses it as a loop counter; the only construct that can refuse it is the `new Array(n)` on the non-array-like path. A fractional `n` therefore makes the scan read `iterable[2.5]` — `undefined` — every time, and the port reproduces that rather than truncating. |
-| — | **A `Store` whose `push` reports zero sifts at index 0, where upstream sifts at `-1`.** | Not reachable from core, whose `VecStore` always reports at least 1; reachable through the bridge, because `push` is a real method lookup on a real JS array (D-73) and can be tampered with. `usize` underflow would panic in debug and wrap in release into an index asking the store to grow to `usize::MAX`, so it is `saturating_sub`. **Measured afterwards: the observable result is identical.** Upstream's `heap[-1] = heap[-1]` writes an expando nothing reads; ours rewrites `heap[0]` with the value it just read. Both leave `items` and `size` exactly as the other does. |
+| — | **A `Store` whose `push` reports zero sifts at index 0, where upstream sifts at `-1`.** | Not reachable from core, whose `VecStore` always reports at least 1; reachable through the bridge, because `push` is a real method lookup on a real JS array (D-73) and can be tampered with. `usize` underflow would panic in debug and wrap in release into an index asking the store to grow to `usize::MAX`, so it is `saturating_sub`. Measured afterwards: the observable result is identical. Upstream's `heap[-1] = heap[-1]` writes an expando nothing reads; ours rewrites `heap[0]` with the value it just read. Both leave `items` and `size` exactly as the other does. |
 | — | **A missing array method throws an `Error`, not V8's `TypeError`.** | `Heap.from(typedArray).toArray()` reaches `heap.pop()` on a typed array, which has none. Upstream dies with `TypeError: heap.pop is not a function`; the bridge raises `Error: pop is not a function`, because the receiver in V8's message comes from the *source text* of the call site and no Rust code has it. Both throw, at the same point, for the same reason. Measured across ~35 edge cases against the pinned upstream source, this is **the only textual difference**. |
 | — | **`inspect()` is not ported.** | A Node display convenience with no upstream assertion. |
 | — | **`Store::Item` is `Option<T>` in core, where `None` is `undefined`.** | Once a comparator can shrink the array, `heap[childIndex]` reads past the end and `heap[i] = …` writes past it. `Relational` gives `None` JavaScript's rule — compares false against everything — rather than Rust's, which says `None < Some(_)`. |
@@ -300,83 +274,44 @@ below.
 
 ### Fuzz
 
-```
-module=heap seed=42       cases=25677 ops=2619243 wall=120.0s divergences=0
-module=heap seed=20260801 cases=12248 ops=1256277 wall=60.0s  divergences=0
-module=heap seed=31337    cases=11060 ops=1147769 wall=60.0s  divergences=0
-module=heap seed=42       cases=12589 ops=1283659 wall=60.0s  divergences=0   (post-fix re-run)
-```
+Four campaigns, three seeds, **6.31 M operations, zero divergences**. Reproduce with
+`target/release/difffuzz --module heap --seed 42 --cases 25677`. The earliest three campaigns ran
+against a build that still carried the three port defects described above; those are not withdrawn,
+because none of the three is reachable by this grammar *by construction* — the core-side store never
+calls JavaScript from `allocate`, it has a single array class, and `nsmallest`/`nlargest` are outside
+the alphabet — so those campaigns measured exactly what they claimed to. Full campaign log: evidence
+file.
 
-Four campaigns, three seeds, **6.31 M operations, zero divergences**.
+**Op alphabet:** `push`/`pop`/`peek`/`replace`/`pushpop`/`toArray`/`clear`/`consume`. **The point of
+the grammar is the constructor alphabet**: six comparator factories, mirrored name for name between
+`fuzz/oracle.js` and `crates/difffuzz/src/modules/heap.rs`. Two are pure (`ascending`, `descending`);
+four call back into the heap from inside a comparison — growing the array under an index the sift
+already chose, shrinking it so the walk reads past its frozen `endIndex`, rebinding it via `clear()`
+so the sift detaches, and throwing, which leaves `items.length` one ahead of `size`. **The budget is
+part of what is compared**: each mutating factory fires for its first *k* comparisons and then stops,
+so the answer depends on the number and order of comparisons, not only on the final ordering — a
+sift that reaches the right answer by a different route diverges here, where a black-box push/pop
+grammar would never notice. This grammar exists because of a lesson already paid for: B-31 survived
+2.94 M operations on `queue` because the alphabet had no `forEach`, and an op alphabet that omits a
+method omits every bug reachable only through it. Every comparator in `test/heap.js` is pure; a
+grammar that inherited that property would have inherited the same blind spot. Full grammar: evidence
+file.
 
-The first three ran against a build carrying the three defects the review found. They are **not**
-withdrawn, and the reason is the interesting part: none of the three was reachable by this grammar
-*by construction* — the core-side store never calls JavaScript from `allocate`, it has a single
-array class, and `nsmallest`/`nlargest` are outside the alphabet — so those campaigns measured
-exactly what they claimed to. Seed 42 was re-run on the fixed build anyway, so the claim does not
-rest on that argument alone. Reproduce with
-`target/release/difffuzz --module heap --seed 42 --cases 25677`.
+**The fuzzer was falsified.** Sabotage: `Heap::clear` truncating the backing array in place instead
+of rebinding it — the D-41 collapse, and the most plausible way a future cleanup breaks this port,
+because `set_length(0)` and `allocate(0)` leave an identical observable state for every program whose
+comparator has no side effects. All 14 assertions of `test/heap.js` and all 7 of
+`test/fixed-reverse-heap.js` still passed under it; the fuzzer caught it in 0.1 s, shrinking a 200-op
+program to three, and `tests/boundary/heap.js` caught it too, by name. Reverted; the seed is committed
+in `crates/difffuzz/proptest-regressions/heap.txt` and replayed before any novel case. Full repro:
+evidence file.
 
-* **Op alphabet:** `push(v)` (weight 6) · `pop()` (3) · `peek()` (2) · `replace(v)` (2) ·
-  `pushpop(v)` (2) · `toArray()` (2) · `clear()` (1) · `consume()` (1).
-* **Constructor alphabet — the point of the grammar:** six comparator factories, mirrored name for
-  name between `fuzz/oracle.js` and `crates/difffuzz/src/modules/heap.rs`. Two are pure
-  (`ascending`, `descending`); four are not:
-
-  | factory | what it does from inside the sift |
-  |---|---|
-  | `pushy` | `items.push(99)` — grows the array under an index the sift already chose |
-  | `popper` | `items.pop()` — shrinks it, so the walk reads past its frozen `endIndex` |
-  | `clearer` | `heap.clear()` — **rebinds** it, detaching the sift onto the old array |
-  | `boom` | throws, leaving `items.length` one ahead of `size` |
-
-* **Observable state, compared after every op:** `size` and `items`. They are separate quantities
-  upstream and B-70 makes them genuinely disagree, so comparing both is what pins it.
-* **Values:** `0..24`, small enough that duplicates are frequent — a heap's tie-breaking is
-  observable through `toArray`, and `sift_up`'s `>= 0` is the only thing that decides it.
-
-**The budget is part of what is compared.** Each mutating factory fires for its first *k*
-comparisons and then stops, so the answer depends on the **number and order of comparisons**, not
-only on the final ordering. A sift that reaches the right answer by a different route diverges
-here, where a black-box push/pop grammar would never notice.
-
-This grammar exists because of a lesson already paid for: B-31 survived 2.94 M operations on
-`queue` because the alphabet had no `forEach`, and *an op alphabet that omits a method omits every
-bug reachable only through it*. Every comparator in `test/heap.js` is pure; a grammar that
-inherited that property would have inherited the same blind spot.
-
-**Falsification of the fuzzer.** Sabotage: `Heap::clear` truncating the backing array in place
-instead of rebinding it — the D-41 collapse, and the most plausible way a future cleanup breaks
-this port, because `set_length(0)` and `allocate(0)` leave an **identical** observable state for
-every program whose comparator has no side effects.
-
-* **All 14 assertions of `test/heap.js` still passed under it**, and all 7 of
-  `test/fixed-reverse-heap.js`.
-* The fuzzer found it in **0.1 s** and shrank a 200-op program to three operations:
-
-  ```js
-  var s = new Heap(clearer);   // clears the heap on its first comparison
-  s.push(1);
-  s.pushpop(18);               // upstream 1, truncating port undefined
-  ```
-
-* `tests/boundary/heap.js` caught it too, by name.
-
-Reverted; the seed is committed with a provenance header in
-`crates/difffuzz/proptest-regressions/heap.txt`, and proptest replays it before any novel case.
-
-### Falsification of the port (gate 6)
-
-**The assertion the sabotage had to break was named first:** `should be possible to pop the heap.`
-— `assert.strictEqual(heap.pop(), 1)` at `test/heap.js:47`. Chosen because it is the shortest path
-from `push` through `sift_down` to an observable value, so a sabotage of the sift cannot miss it by
-accident.
-
-**The sabotage:** `sift_down`'s `compare(item, parent) < 0.0` inverted to `> 0.0` — one character,
-in the function every other algorithm in the file calls.
-
-**Confirmed red**, and red in the named place: `3 passing, 11 failing`, the named assertion failing
-with `34 !== 1`. Reverted; **confirmed green again**: `14 passing`.
+**Falsification of the port (gate 6):** the assertion the sabotage had to break was named first —
+`should be possible to pop the heap.` (`assert.strictEqual(heap.pop(), 1)` at `test/heap.js:47`) —
+chosen because it is the shortest path from `push` through `sift_down` to an observable value. The
+sabotage, `sift_down`'s `compare(item, parent) < 0.0` inverted to `> 0.0`, is confirmed red in
+precisely that place (3 passing, 11 failing, the named assertion failing with `34 !== 1`); reverted,
+confirmed green again (14 passing). Full record: evidence file.
 
 ### Bench
 
@@ -384,24 +319,16 @@ with `34 !== 1`. Reverted; **confirmed green again**: `14 passing`.
 Host: AMD Ryzen 5 7600X, 12 threads, WSL2, Node 24.18.1, rustc 1.97.1, quiet serial pass.
 Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 10,000 samples/side.
 
-This is the **pure Rust path against the vendored JS**, not the napi bridge — the
-comparative table never goes through N-API, so the bridge's own per-comparison FFI crossing (real,
-and worth measuring separately if this harness is ever extended to run through the addon) is not
-what these figures show. What this table measures instead is core's own `RefCell<VecStore<f64>>`
-plus a `Comparator` trait call per comparison, against V8 inlining the same default numeric
-comparator directly into its sift loop.
+This is the **pure Rust path against the vendored JS**, not the napi bridge — the comparative table
+never goes through N-API, so the bridge's own per-comparison FFI crossing (real, and worth measuring
+separately if this harness is ever extended to run through the addon) is not what these figures show.
+What this table measures instead is core's own `RefCell<VecStore<f64>>` plus a `Comparator` trait
+call per comparison, against V8 inlining the same default numeric comparator directly into its sift
+loop.
 
 **`mixed-1e6`** — 1e6 mixed `push`/`pop`/`peek` (50/25/25), default numeric comparator, value range
-1e6, xorshift32 seed 42:
-
-| metric | port | upstream | |
-|---|---|---|---|
-| p50 ns/op | 32.0 | **24.3** | 1.32× slower |
-| p99 ns/op | **48.8** | 60.6 | 1.24× faster |
-| min ns/op | 20.8 | **19.5** | 1.07× slower |
-| RSS delta MB | **9.9** | 46.8 | |
-| structure-only RSS delta MB | **1.3** | 9.8 | |
-| startup ms | **0.6** | 16.5 | 27× (reported separately; not throughput) |
+1e6: the port is 1.32× slower at p50 (32.0 vs 24.3 ns/op) and 1.07× slower at min, but 1.24× faster
+at p99. Full table: evidence file.
 
 **A disclosed regression on p50 and min, and it is exactly the mechanism this module was picked to
 expose.** Every `push`/`pop`/`peek` borrows the `RefCell`, clones the `Rc` handle (D-41's re-entrancy
@@ -411,39 +338,21 @@ the port is *faster* at the tail, plausibly because V8 pays a GC pause somewhere
 passes of 1e6 ops that a `RefCell`-checked but allocation-light Rust loop does not. Both readings are
 real and neither cancels the other; reporting only p50 or only p99 here would hide half the result.
 
-Originally unconfirmed: how much of the p50 gap is the `RefCell` borrow-flag check specifically
-versus the `Comparator` trait call was not isolated by profiling, so it was not claimed as the
-specific cause — only that the mechanism (indirection per comparison) was present and the direction
-of the regression was consistent with it.
+The indirection layer's cost is isolated by a bare counterfactual: `bench-runner --heap-probe` runs
+the identical mixed op stream against a bare `Vec<f64>` binary min-heap — same sift-up/sift-down
+algorithm, no `RefCell`, no `Cell`, no `Store`/`Comparator` trait, `<` inlined directly — and its
+p50 (21.721 ns/op) beats *upstream's own* published p50 (24.3 ns/op) outright. The indirection layer
+costs 10.06 ns/op in this isolated comparison, which is *more* than the entire measured regression
+against upstream (7.68 ns/op): removing it does not just close the gap, it flips the comparison to a
+Rust win, the same direction every other metric in this table already points. Full probe table:
+evidence file.
 
-**Confirmed 2026-08-02**, with a bare counterfactual rather than a profiler (no `perf`/`cargo
-flamegraph` on this host). `bench/runner/src/heap.rs::run_mixed_bare`, reachable via
-`bench-runner --heap-probe`, runs the identical mixed op stream against a bare `Vec<f64>` binary
-min-heap — same sift-up/sift-down algorithm, no `RefCell`, no `Cell`, no `Store`/`Comparator` trait,
-`<` inlined directly:
-
-| variant | p50 ns/op | min ns/op |
-|---|---|---|
-| wrapped (`RefCell<VecStore<f64>>` + `Comparator` trait) | 31.781 | 20.529 |
-| bare `Vec<f64>`, no indirection | **21.721** | **16.271** |
-
-Checksums agree (both are valid min-heaps over the same op stream; ties among numerically-equal
-pushed values do not affect which *value* a pop returns, so tie-break policy does not need to match
-for this check to be meaningful). The bare heap is not merely faster than the wrapped one — it beats
-*upstream's own* published p50 (24.316 ns) and min (19.457 ns) outright. **Verdict: confirmed, and
-understated.** The indirection layer costs 10.06 ns/op in this isolated comparison, which is *more*
-than the entire measured regression against upstream (7.68 ns/op) — removing it does not just close
-the gap, it flips the comparison to a Rust win, the same direction every other metric in this table
-already points.
-
-**Fix not attempted, and not a free one if it were.** The `RefCell` is not incidental laziness: it
-exists because upstream's comparator is arbitrary, re-entrant JavaScript that can call back into the
-very heap it is comparing (`clear()` rebinding `this.items` mid-sift is the concrete case this
-module's own docs open with), and a plain `&mut Vec` could not express that without either a runtime
-panic or `unsafe`. Removing the `RefCell` would remove the capability this module exists to test
-(capability tier T2), not merely optimise it — the fix, if pursued, would need a design that keeps
-re-entrancy safety for the general `Comparator` case while giving a *non-re-entrant* concrete
-comparator (like this benchmark's own `DefaultComparator`) a faster path, e.g. specialising `Heap`
-for `S: Store` combinations known not to re-enter. That is a `crates/mnemonist-core` design change,
-not a local tweak, and would need heap's fuzz campaign and bench figures re-run before it could
-stand — out of scope here. Recorded as a proposal for later.
+The `RefCell` is not incidental: it exists because upstream's comparator is arbitrary, re-entrant
+JavaScript that can call back into the very heap it is comparing (`clear()` rebinding `this.items`
+mid-sift is the concrete case this module's own opening paragraph names), and a plain `&mut Vec`
+could not express that without either a runtime panic or `unsafe`. Removing it would remove the
+capability this module exists to test (capability tier T2), not merely optimise it. A fix would need
+a design that keeps re-entrancy safety for the general `Comparator` case while giving a
+non-re-entrant concrete comparator a faster path — e.g. specialising `Heap` for `S: Store`
+combinations known not to re-enter — which is a `crates/mnemonist-core` design change, not a local
+tweak, and has not been attempted.

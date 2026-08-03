@@ -89,31 +89,13 @@ last word (B-23). 20. Mutation during iteration, and re-draining a cursor. 21. `
 
 ## What we test in addition
 
-`crates/mnemonist-core/src/structures/bit_vector.rs` — 19 tests:
-
-| Test | Closes gap |
-|---|---|
-| `reproduces_the_upstream_suite` | 1:1 port of all twenty-one upstream blocks, as a baseline |
-| `pop_leaves_size_and_the_bits_behind` | 1, 2, 3, 4 — B-21, the whole sequence with the assertion upstream skipped |
-| `pushing_true_onto_an_already_set_slot_counts_it_twice` | 3 |
-| `set_at_length_writes_a_bit_that_length_does_not_cover` | 5, 6 |
-| `get_is_undefined_only_strictly_past_the_length` | 6 |
-| `a_zero_length_vector_with_capacity_still_iterates_a_whole_word` | 7 — B-22 |
-| `a_length_that_exactly_fills_its_words_walks_all_of_them` | 7 — the same misfire where it is also correct |
-| `reallocate_clamps_length_even_when_the_capacity_does_not_change` | 10 |
-| `reallocate_to_zero_drops_the_array_and_the_length` | 8 |
-| `a_shrinking_reallocate_discards_the_words_above_the_cut` | 9 |
-| `a_zero_override_falls_back_to_the_current_capacity` | 15 |
-| `a_policy_can_fail_three_ways` | 12, 13 — and our own refusal |
-| `a_non_integer_policy_result_is_rounded_up_to_a_word` | 14 |
-| `grow_loops_the_policy_until_it_covers_the_target` | 11 — seven applications |
-| `to_json_takes_one_word_past_the_length_clamped_by_the_array` | — five lengths, including the clamped case |
-| `reallocate_detaches_an_open_cursor` | 20 |
-| `growth_during_iteration_is_invisible_to_an_open_cursor` | 20 |
-| `cursors_do_not_restart_but_the_vector_can_be_walked_again` | 20 |
-| `an_initial_length_of_thirty_derives_a_capacity_of_thirty_two` | — the `initialLength \|\| initialCapacity` quirk |
-| `inherits_the_reset_and_select_defects_verbatim` | 16, 17 — re-verified against `BitVector`, not inferred |
-| `indices_past_the_backing_array_are_inert` | 19 |
+`crates/mnemonist-core/src/structures/bit_vector.rs` — 19 tests, closing every gap above except 21
+and 22: a 1:1 reproduction of all twenty-one upstream blocks as a baseline, the full pop/size
+sequence upstream skipped the assertion on, both bounds-guard gaps, capacity-with-zero-length
+iteration, both directions of `reallocate` at their edge cases, all three policy failure shapes,
+the policy loop across seven applications, cursor detachment on `reallocate` and invisibility of
+growth during iteration, and both inherited `bit-set` defects re-verified directly against
+`BitVector` rather than inferred. Full test-to-gap mapping: evidence file.
 
 Plus the 13 tests on the shared `bits.rs`, listed in `docs/modules/bit-set.md`.
 
@@ -124,7 +106,7 @@ table).
 ## Bugs this found
 
 **B-21 — `pop` maintains neither `size` nor the bit, and `push(0)` clears nothing.**
-`status: VERIFIED against Node 24.18.1`. Three defects in six lines:
+Verified against Node 24.18.1. Three defects in six lines:
 
 ```js
 BitVector.prototype.push = function (value) {
@@ -156,7 +138,7 @@ v.push(1);              // size 3, with two bits actually set
 true either way. One index to the left and it would have failed.
 
 **B-22 — `length % 32 || 32` treats a length of 0 as a full final word.**
-`status: VERIFIED against Node 24.18.1`. The `|| 32` exists for a length that fills its last word
+Verified against Node 24.18.1. The `|| 32` exists for a length that fills its last word
 exactly, and `0 % 32` is also falsy. `BitSet` cannot reach it — its array is empty when its length
 is — but `BitVector` can, because capacity outlives length: `new BitVector(); v.grow();` then
 `forEach` calls back 32 times on a vector of length 0.
@@ -172,30 +154,23 @@ and B-18 (`select` losing 32 positions per skipped word). Both re-measured again
 Node. See `docs/modules/bit-set.md` for the analysis and `docs/modules/utils-bitwise.md` for B-19
 and B-20, also in this unit's require-closure.
 
+**The bridge held a bare core value behind `&self`**, which LLVM was entitled to compile as a
+`noalias readonly` pointer and hoist reads across a re-entrant JS callback (B-31). It now holds
+`RefCell<Core>`, which is not `Freeze`, and every `&mut self` method borrows via `borrow_mut()`
+taken per step and released before the callback runs. Full history in the log.
 
-### B-31 — `&self` on a `Freeze` type was `noalias readonly` (fixed 2026-08-01)
-
-This bridge held a bare core value, so `&self` compiled to a `noalias readonly` pointer and LLVM was
-entitled to hoist reads across the JS callback — which it did. It now holds `RefCell<Core>`, which
-is not `Freeze`, and every `&mut self` method became `&self` + `borrow_mut()`. The borrow is taken
-per step and released before the callback runs, so a re-entrant callback never meets an outstanding
-borrow. See B-31, above, and `crates/mnemonist-napi/src/cursor.rs`'s `CellCursor`.
-
-**And the one place the fix could not be applied cleanly — worth reading before copying this
-pattern.** The rule the `RefCell` imposes is that no borrow may be alive across a call that can run
-JavaScript. Everywhere else in the bridge that is achievable: `forEach` re-borrows per step,
-`DefaultMap::get` runs its factory between the read and the write. Here it is not, because the
-**growth policy is JavaScript that `mnemonist-core` calls from inside `grow`** — so `push`, `set`,
-`grow`, `resize`, `reallocate` and `apply_policy` hold the vector while a JS function runs.
-
-The failure mode is not graceful. A `RefCell` panic inside a `#[napi]` method **aborts the
-process**: napi 3.12 does not `catch_unwind` a sync call, and a panic unwinding out of an
-`extern "C"` frame is an abort. Measured on a policy that did nothing but read `vector.length`.
-Every borrow in this bridge is therefore fallible and raises a named error instead — see
-`REENTRANT_POLICY`, decision B31-b, and the two `BitVector` policy specs in
-`tests/boundary/reentrancy.js`. Upstream would serve such a call from a half-grown vector; this port
-refuses it. That is a stated narrowing, and it replaces an abort, which replaced undefined
-behaviour.
+**One place the fix cannot be applied cleanly.** The rule the `RefCell` imposes is that no borrow
+may be alive across a call that can run JavaScript. Everywhere else in the bridge that is
+achievable: `forEach` re-borrows per step, `DefaultMap::get` runs its factory between the read and
+the write. Here it is not, because **the growth policy is JavaScript that `mnemonist-core` calls
+from inside `grow`** — so `push`, `set`, `grow`, `resize`, `reallocate` and `apply_policy` hold the
+vector while a JS function runs. A `RefCell` panic inside a `#[napi]` method aborts the process:
+napi 3.12 does not `catch_unwind` a sync call, and a panic unwinding out of an `extern "C"` frame is
+an abort. Every borrow in this bridge is therefore fallible and raises a named error instead of
+risking that abort — see `REENTRANT_POLICY`, decision B31-b, and the two `BitVector` policy specs
+in `tests/boundary/reentrancy.js`. Upstream would serve a re-entrant call from a half-grown vector;
+this port refuses it instead. That is a stated narrowing, and it replaces an abort, which replaced
+undefined behaviour.
 
 ## Deliberate divergences
 
@@ -215,110 +190,56 @@ the signed `size`, the `i64` indices, `array` exposed as a copy, the strict `val
 
 ### Fuzz
 
+Two campaigns, two seeds, **3.23 M operations, zero divergences**:
+
 ```
 module=bit-vector seed=42       cases=21852 ops=2250634 wall=120.0s divergences=0
 module=bit-vector seed=20260801 cases=9617  ops=981385  wall=60.0s  divergences=0
 ```
 
-Two campaigns, two seeds, **3.23 M operations, zero divergences**. Reproduce with
-`target/release/difffuzz --module bit-vector --seed 42 --cases 21852`.
+Reproduce with `target/release/difffuzz --module bit-vector --seed 42 --cases 21852`.
 
-Both campaigns were accidentally launched twice, concurrently. The duplicates are commented out in
-`fuzz/log.txt` rather than deleted, and rather than summed: a pair shares a seed and therefore
-largely the same programs. The withdrawn numbers are kept visible because the pairs are an
-accidental measurement of the contention effect that has gate 10 deferred here -- same seed, same
-wall budget, same machine, overlapping in time gave 21,852 vs 20,657 cases and 9,617 vs 10,603.
-A wall-clock-bounded campaign is not reproducible in case count; only `--cases` is.
+The op alphabet covers `set`/`reset`/`flip`/`get`/`test`/`rank`/`select`/`clear` plus `push(1)`,
+`push(0)`, `pop()` (kept as separate ops, since only the former touches `size` and only the latter
+leaves a stale bit, and B-21 needs both interleaved), `resize`/`reallocate`/`grow` and the cursor
+ops. Observable state is `size`, `length`, `capacity`, **`array`** and `toJSON()`. `set` is the only
+op in this grammar that throws, and its message is compared in full through the `{"$throw": …}`
+encoding added for `hashed-array-tree`. **Deliberately excluded: custom growth policies** — upstream's
+policy is a JS function and a generated program is JSON, so the default (strictly increasing) policy
+is the only one fuzzed, and both throws in `applyPolicy` are structurally unreachable from this
+grammar; they are covered by native tests instead. Full grammar: evidence file.
 
-* **Op alphabet:** `set(i)` (3) · `set(i, 0)` (2) · `reset(i)` (3) · `flip(i)` (2) · `get(i)` (2) ·
-  `test(i)` (1) · `rank(i)` (2) · `select(r)` (2) · **`push(1)` (3) · `push(0)` (3) · `pop()` (3)** ·
-  `resize(l)` (2) · `reallocate(c)` (2) · `grow(c)` (1) · `grow()` (1) · `$iter("values")` (1) ·
-  `$iter("entries")` (1) · `$next()` (3) · `$spread()` (1).
-* **Observable state, compared after every op:** `size`, `length`, `capacity`, **`array`** and
-  `toJSON()`.
-* **Initial lengths:** `0..=200`. **Indices:** `0..length + 64`. **Extents:** `0..512`.
-* **Program length:** 1..200 ops.
-* `push(1)` and `push(0)` are separate ops on purpose: only the former touches `size` and only the
-  latter leaves a stale bit, and B-21 needs both interleaved with `pop`.
-* `set` is the only op in this grammar that throws, and its message is compared in full through the
-  `{"$throw": …}` encoding added for `hashed-array-tree`.
-
-**Deliberately excluded: custom growth policies.** Upstream's policy is a JS function and a
-generated program is JSON. The default policy is therefore the only one fuzzed — and since the
-default is strictly increasing, **both throws in `applyPolicy` are unreachable from this grammar**.
-They are covered by native tests in `mnemonist-core` instead (`a_policy_can_fail_three_ways`,
-`a_non_integer_policy_result_is_rounded_up_to_a_word`). Stated explicitly because a silently
-narrowed grammar reads as "we covered everything" when it did not.
-
-**The fuzzer was falsified before it was trusted**. Sabotage: `pop` made to clear the bit it
+**The fuzzer was falsified before it was trusted.** Sabotage: `pop` made to clear the bit it
 returns and to decrement `size` — which is what `pop` is supposed to do, and the single most
-plausible repair anyone would make to this module. Caught in **1,075 cases (1.0 s)** and shrunk from
-200 ops to **two**:
+plausible repair anyone would make to this module. Caught in 1,075 cases (1.0 s), shrunk from 200
+ops to two — and upstream's own `pop` test performs that exact pair, then asserts only the returned
+value and `length`. Reverted; the seed is committed with provenance in
+`crates/difffuzz/proptest-regressions/bit-vector.txt`. Full repro: evidence file.
 
-```js
-var s = new BitVector(0);
-s.push(1);
-s.pop();
-// port     array [0], size 0, toJSON [0]
-// upstream array [1], size 1, toJSON [1]
-```
+**Falsification of the port (gate 6):** the assertion named first was
+`should throw if the policy returns an irrelevant size.` — chosen because the policy machinery is
+the best-covered part of the upstream file, so a sabotage there has a real assertion to break. The
+sabotage, `applyPolicy`'s `newCapacity <= this.capacity` weakened to `<` (accepting a policy that
+returns exactly the current capacity), is confirmed red at exactly the named line (20 passing, 1
+failing, "Missing expected exception"); reverted, confirmed green again (21 passing). Neither half
+of B-21 could have served as this sabotage: "fixing" `push(0)` to clear its slot leaves the suite
+green, because every slot the push test writes over is already zero, and "fixing" `pop` to decrement
+`size` leaves it green too, because no assertion in the file reads `size` after a `pop`. Across this
+group of four modules, five plausible-looking sabotages were rejected on that ground before a usable
+one was found. Full record: evidence file.
 
-Two operations, three of the five observed fields disagreeing — and upstream's own `pop` test
-performs that exact pair, then asserts only the returned value and `length`. Reverted; the seed is
-committed with provenance in `crates/difffuzz/proptest-regressions/bit-vector.txt`.
-
-### Falsification of the port (gate 6)
-
-**Named first:** `should throw if the policy returns an irrelevant size.` →
-`assert.throws(function () { vector.push(1); }, /policy/)` at `test/bit-vector.js:291`. Chosen
-because the policy machinery is the best-covered part of the upstream file, so a sabotage there has
-a real assertion to break.
-
-**The sabotage:** `applyPolicy`'s `newCapacity <= this.capacity` weakened to `<`, i.e. accepting a
-policy that returns exactly the current capacity. A boundary flip, not a deletion.
-
-**Confirmed red**, at exactly the named line: `20 passing, 1 failing`, "Missing expected exception"
-at `test/bit-vector.js:291`. Reverted; **confirmed green again**: 21 passing.
-
-**Recorded because it is the gate's own lesson, and this module has two examples of it.** Neither of
-B-21's halves could have served as the sabotage:
-
-* "Fixing" `push(0)` to clear its slot leaves the suite **green**, because every slot the push test
-  writes over is already zero.
-* "Fixing" `pop` to decrement `size` leaves it **green** too, because no assertion in the file reads
-  `size` after a `pop`.
-
-Both would have been sabotages incapable of failing — which is exactly the failure mode gate 6
-exists to catch. Across this group of four modules, **five** plausible-looking sabotages were
-rejected on that ground before a usable one was found.
-
-### `$forEach` — the op that was missing (added 2026-08-01, B-31)
-
-`bit-vector`'s grammar had no `forEach` op at all. That omission is what let B-31 — a `forEach`
-callback mutating the collection it is walking — through 3.23 M clean operations: an op alphabet
-that omits a method omits every bug reachable only through it.
-
-`$forEach(method, rule, limit)` now walks the instance with a callback that calls back into it.
-The compared result is the sequence of callback argument pairs, so the walk's **shape** is checked
-and not only the state it leaves behind. This module's mutations:
-
-* `set(a1)`, `reset(a1)`, `flip(a1)`, `pop()` uncapped; `push()` capped at four.
-
-`push`'s cap **is** tuning and is stated as such: the outer bound is captured, so an uncapped push
-still terminates, but a push per bit over a 400-bit vector is hundreds of reallocations per case and
-the throughput buys more programs than the depth does. `set` and `push` can throw from the growth
-policy; the throw is reported alongside the steps already taken rather than instead of them, so the
-two sides never agree on less than they know.
-
-**What it does not reach, stated so the campaign is not over-read.** `difffuzz` compares
-`mnemonist-core` against upstream JS; the napi bridge, where B-31's hoisted read actually lived, is
-not in that loop. No op alphabet can catch that class of bug here. The specs that do are
-`tests/boundary/reentrancy.js`, which drive the real addon with real JS callbacks — red on the
-pre-fix bridges, green after.
-
-One deliberate narrowing, mirrored on both sides: a selected callback argument that is `undefined`
-skips the mutation. Feeding it back in reaches upstream's `NaN`-indexed swap, which `usize` cannot
-express and the core does not model. Fully disclosed in `fuzz/log.txt`.
+`$forEach(method, rule, limit)` walks the instance with a callback that calls back into it. This
+module's mutations are `set(a1)`, `reset(a1)`, `flip(a1)`, `pop()` (uncapped) and `push()` (capped
+at four). `push`'s cap **is** tuning, stated as such: the outer bound is captured so an uncapped
+push still terminates, but a push per bit over a 400-bit vector is hundreds of reallocations per
+case and the throughput buys more programs than the depth does. `set` and `push` can throw from the
+growth policy; the throw is reported alongside the steps already taken rather than instead of them,
+so the two sides never agree on less than they know. What it does not reach: the napi bridge, where
+a re-entrant callback would actually run, is outside the loop `difffuzz` compares;
+`tests/boundary/reentrancy.js` covers that instead. One deliberate narrowing, mirrored on both sides:
+a selected callback argument that is `undefined` skips the mutation, because feeding it back in
+reaches upstream's `NaN`-indexed swap, which `usize` cannot express and the core does not model.
+Disclosed in `fuzz/log.txt`.
 
 ### Bench
 
@@ -328,39 +249,28 @@ Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 10,0
 
 **`mixed-1e6`** — 1e6 mixed `push`/`get`/`pop` (50/25/25), `vector`/`hashed-array-tree`'s shape
 (this module grows under `push`, unlike `bit-set`'s fixed domain, so there is no capacity parameter
-to set), xorshift32 seed 42. `rank`/`select` excluded for the reason recorded in `bit-set`'s own
-bench doc: neither has an index behind it, so a single call is O(i / 32) words, and a
-uniform-weighted mix would put a domain-scaling cost next to three genuinely O(1) ops.
+to set): the port is about 1.30× faster at p50 (6.42 vs 8.3 ns/op), 1.1× faster at p99, roughly tied
+at min. No regressions. Full table: evidence file. `rank`/`select` are excluded for the reason
+recorded in `bit-set`'s own bench doc: neither has an index behind it, so a single call is O(i / 32)
+words, and a uniform-weighted mix would put a domain-scaling cost next to three genuinely O(1) ops.
 
-| metric | port | upstream | |
-|---|---|---|---|
-| p50 ns/op | 8.1 | **8.3** | tie |
-
-**1.30× faster.** No change was made to this module: it shares `split` with `bit-set`, whose
-`ToInt32` fast path is described in that unit's document, and moved with it — from a tie at 8.20 ns
-to 6.42 ns.
-
-That also answers a question this document had recorded as open. The shared store is an
+This module shares `split` with `bit-set`, whose `ToInt32` fast path is described in that unit's
+document, and moved with it from a tie (8.20 ns) to 6.42 ns — see the log for that fix's history.
+That also answers a question this document had previously left open: the shared store is an
 `Rc<RefCell<Vec<u32>>>`, and every `set`/`reset`/`flip` takes a borrow upstream does not pay for; on
 operations that are otherwise a load, an OR and a store, that was not obviously negligible. The
 borrow is still there and the module is now faster than upstream, so whatever the borrow costs, it
 was not what stood between this port and a win — the index conversion was. The `RefCell` bought
 exact reproduction of `clear`/`reallocate` detaching an open cursor, and it is still paying for
 itself.
-| p99 ns/op | **12.9** | 14.5 | 1.1× faster |
-| min ns/op | **7.5** | 7.8 | tie |
-| RSS delta MB | **6.1** | 17.8 | |
-| structure-only RSS delta MB | **1.3** | 9.8 | |
-| startup ms | **0.6** | 16.4 | 27× (reported separately; not throughput) |
 
 **No regressions, but the narrowest margin of the eleven mixed workloads in this group** — p50 and
 min are effectively ties (within 3%, well inside the noise band methodology.md documents: up to
-~32% p99 swings between clean runs on this host). A probe at 4e6 domain (single measured pass, not
-committed as a second workload row) confirmed the same picture rather than revealing a boundary:
-port still ahead on p50/p99/min at that scale, by a similar small margin, with the *sign* of the
-gap flipping between individual passes at both sizes — this is noise, not a trend. `push`/`pop`/
-`get` here are all single-word bit operations once the vector is allocated, the same shape
-`bit-set`'s zero-overhead bit ops have, which is plausibly why this is the one growable module in
-the batch that comes closest to parity rather than winning decisively like `vector`/
-`hashed-array-tree` do. Unconfirmed: not isolated by profiling, offered as the mechanism most
-consistent with the numbers.
+~32% p99 swings between clean runs on this host). A probe at 4e6 domain confirmed the same picture
+rather than revealing a boundary: port still ahead on p50/p99/min at that scale, by a similar small
+margin, with the *sign* of the gap flipping between individual passes at both sizes — this is noise,
+not a trend. `push`/`pop`/`get` here are all single-word bit operations once the vector is
+allocated, the same shape `bit-set`'s zero-overhead bit ops have, which is plausibly why this is the
+one growable module in the batch that comes closest to parity rather than winning decisively like
+`vector`/`hashed-array-tree` do. This attribution is unconfirmed: not isolated by profiling, offered
+as the mechanism most consistent with the numbers.

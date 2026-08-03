@@ -104,25 +104,14 @@ and never exercised by the original suite.
 
 ## What we test in addition
 
-Mapped 1:1 to the gaps above.
-
-| Gap | Where | What |
-|---|---|---|
-| 1 | `set.rs::intersection_order_follows_the_smallest_set`, `tests/boundary/set.js` "follow the SMALLEST argument" | Differentially, against vendored upstream |
-| 2 | same two | The tie case, `[3, 2, 1]` |
-| 3 | `set.rs::symmetric_difference_is_a_then_b`, boundary "A's half before B's" | Both argument orders |
-| 4 | `set.rs::re_adding_does_not_move_but_delete_then_add_does`, boundary "not move a member that is re-added" | Both halves |
-| 5 | boundary "should be a real Set" | `instanceof Set` and `constructor === Set`, for all four set-returning functions |
-| 6 | boundary "fresh set even when difference short-circuits" | `notStrictEqual(result, A)` |
-| 7 | boundary "the mutating four", "reach a live iterator through add/delete" | Object identity, and the replay-vs-rebuild distinction below |
-| 8 | `set.rs::the_two_variadic_functions_need_two_arguments`, boundary "arity", and the fuzz grammar | Both messages, at one argument and at zero |
-| 9 | boundary "accept more than four sets" | Eight-way intersection and union |
-| 10 | `set.rs::the_mutating_functions_applied_to_their_own_argument`, boundary "defined when applied to their own argument" | All four, differentially |
-| 11 | boundary "NaN as one member", "-0 and 0 as one member" | Including that a `Set` stores `-0` as `+0` |
-| 12 | boundary "distinguish 1 from \"1\"", and the fuzz member pool | |
-| 13 | `set.rs::subset_and_superset_match_the_original_suite` | Empty in both positions, and `∅ ⊆ ∅` |
-| 14 | `set.rs::the_ratios_answer_zero_rather_than_nan_when_nothing_is_shared`, boundary "0 rather than NaN" | |
-| 15 | `set.rs::intersection_size_matches_the_original_suite`, boundary "argument order for intersectionSize" | Both orders, for four metrics |
+Every gap above is closed by a mix of Rust unit tests in `crates/mnemonist-core/src/structures/set.rs`
+and `tests/boundary/set.js` (differential against vendored upstream): iteration order following the
+smallest argument and its tie-break, both argument orders of `symmetricDifference`, both halves of
+the re-add/delete-then-add rule, identity checks (`instanceof Set`, `notStrictEqual` on `difference`'s
+copy), the mutating four applied to their own argument, arity throws at one and at zero arguments,
+eight-way intersection/union, `NaN`/`-0` as members, `1` vs `'1'` distinguished, empty-set subset/
+superset/ratio cases, and both `intersectionSize` argument orders. Full test-to-gap mapping:
+evidence file.
 
 Plus the differential fuzzer: 37,853 programs and 1,531,479 operations across two 60-second
 campaigns, zero divergences.
@@ -207,28 +196,23 @@ construction — or a count of `A`'s members that are in `A`, which is `A.size`.
 the same answer. `tests/boundary/set.js` passes one object twice to all six affected functions and
 compares against upstream.
 
-### Not a divergence — a withdrawn claim about `disjunct`
+### `disjunct`'s write order
 
-An earlier draft of this port's documentation said `disjunct` adds `B \ A` **before** deleting
-`A ∩ B` "so `{1,2}` disjunct `{2,3}` is `[1, 3]` and not `[3, 1]`". **That is false**, and it was
-caught by sabotaging exactly that and watching nothing go red.
-
-Reordering only the *writes* — deleting first, while still testing `!A.has(member)` against the
-original `A` — leaves both the result and its order unchanged, because a member of `B \ A` is
-appended at the end either way and a shared member is gone either way. `test/set.js` stayed at 16
-passing and `tests/boundary/set.js` stayed fully green.
-
-What *is* load-bearing is that the `!A.has` test runs **before** any deletion. Delete first and
-every member of `A ∩ B` passes the test, is re-added, and the answer becomes `A ∪ B`. That sabotage
-turns `test/set.js`'s `#.disjunct` block red, and it is now pinned separately by
-`set.rs::disjunct_decides_what_to_add_before_it_deletes_anything` and by the corrected boundary
-spec. The trace is still emitted add-then-delete, because that is the sequence of calls upstream
-makes — faithfulness with no test able to see it, labelled as such rather than justified with a
-benefit it does not have.
+`disjunct` evaluates `!A.has(member)` against the original `A` **before** any deletion, then emits
+its trace add-then-delete, in upstream's own call order — faithful reproduction of the sequence
+upstream makes, even though nothing in either test file distinguishes it from a delete-then-add
+trace producing the identical result and order (see the log for how that was established). What
+*is* load-bearing is that the membership test runs before any deletion: deleting first would make
+every member of `A ∩ B` pass the `!A.has` test, get re-added, and turn the answer into `A ∪ B`. That
+is pinned by `set.rs::disjunct_decides_what_to_add_before_it_deletes_anything` and by
+`tests/boundary/set.js`, and it is the one part of `disjunct`'s ordering this port's own gate-4
+falsification confirms is load-bearing (see "Fuzz + bench").
 
 ## Fuzz + bench
 
-**Fuzz.** `difffuzz --module set`. Two campaigns, both clean:
+### Fuzz
+
+Two campaigns, both clean, **1,531,479 operations, zero divergences**:
 
 | seed | cases | ops | wall | divergences |
 |---|---|---|---|---|
@@ -247,35 +231,21 @@ none. Here that matters more than it did for `sort`: `add`, `subtract`, `interse
 all return `undefined` and do their whole job to their first argument, so **without the argument
 echo, four of the fourteen functions would be compared against nothing at all**.
 
-**Falsification (gate 6).** Three sabotages. Two went red; the third stayed green and that is
-recorded above as a withdrawn claim, not buried.
+**Falsification (gate 6).** Two sabotages, both chosen so `test/set.js` stays green under them —
+they measure what the campaign adds over the original suite rather than what it duplicates —
+confirmed 16 passing under each, and green again after revert: `intersection` iterating the first
+set instead of the smallest (order-only, invisible to any comparison that treats a set as unordered,
+found in 109 cases/0.1s, shrunk to one op) and `add` inserting `B`'s members in reverse order (also
+order-only, found in 82 cases/0.1s). Both seeds are committed in
+`crates/difffuzz/proptest-regressions/set.txt` with a provenance block saying they came from
+sabotages and not from real port defects. Full record: evidence file.
 
-Both red ones were chosen so `test/set.js` **stays green** under them — they measure what the
-campaign adds over the original suite rather than what it duplicates. Confirmed 16 passing under
-each, and green again after revert:
-
-1. **`intersection` iterating the first set instead of the smallest.** Must break
-   `intersection_order_follows_the_smallest_set` and the boundary spec's "follow the SMALLEST
-   argument". Order-only — the members are identical — so it is invisible to any comparison that
-   treats a set as unordered. Found in 109 cases (0.1s), shrunk to one op:
-   `m.intersection(new Set([4, 0, "a", 5, "1", 1]), new Set([5, 4]))`, port `{4,5}` against
-   upstream `{5,4}`.
-2. **`add` inserting `B`'s members in reverse order.** Must break the boundary spec's
-   "not move a member that is re-added". Also order-only, and on a function that returns
-   `undefined`, so the entire divergence lives in the echoed first argument. Found in 82 cases
-   (0.1s), shrunk to `m.add(new Set([]), new Set([0, 1]))`.
-
-Both seeds are committed in `crates/difffuzz/proptest-regressions/set.txt` with a provenance block
-saying they came from sabotages and not from real port defects.
-
-The gate-4 falsification is separate, and it is what proves the original test file exercises Rust
-rather than a JS fallback: making `disjunct` delete before deciding what to add must break
-`test/set.js`'s **"#.disjunct → should properly disjunct the second set to the first."** —
-`assert.deepStrictEqual(Array.from(A), [1, 3])`. Confirmed: 16 passing → **15 passing, 1 failing**,
-that block and only that block, with
-`AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal`. Back to 16 after
-revert. The other fifteen blocks staying green is the useful part — the sabotage is local to one
-function and the suite localised it.
+**Falsification of the port (gate 6, on the original suite), separate, is what proves the original
+test file exercises Rust rather than a JS fallback:** making `disjunct` delete before deciding what
+to add breaks `test/set.js`'s "#.disjunct → should properly disjunct the second set to the first."
+(16 passing → 15 passing, 1 failing, that block and only that block). Reverted, back to 16 passing.
+The other fifteen blocks staying green is the useful part — the sabotage is local to one function
+and the suite localised it. Full record: evidence file.
 
 ### Bench
 
@@ -293,19 +263,11 @@ its cost does not scale the same way with both inputs).
 **`union-2e4x50`** — `union(A, B)` of two 20,000-element sets drawn from the SAME `0..20,000`
 domain (guaranteeing real overlap and internal duplicates by the birthday bound, so the dedup path
 `OrderedSet::add` takes is genuinely exercised rather than benchmarking two sets that never
-overlap), 50 passes, xorshift32 seed 42:
+overlap): the port is 1.9× faster at p50 (13.2 vs 25.0 ns/op) and 5.1× faster at p99 (17.6 vs 89.2).
+No regressions, and the widest p99 margin in this group. Full table: evidence file.
 
-| metric | port | upstream | |
-|---|---|---|---|
-| p50 ns/op | **13.2** | 25.0 | 1.9× faster |
-| p99 ns/op | **17.6** | 89.2 | 5.1× faster |
-| RSS delta MB | **7.8** | 120.9 | |
-| structure-only RSS delta MB | **0.1** | 5.7 | |
-| startup ms | **0.6** | 16.6 | 28× (reported separately; not throughput) |
-
-**No regressions**, and the widest p99 margin in this group — a fresh native JS `Set` per pass
-(`new Set()` called eagerly for both `A` and `B`, then again inside `union` itself for the result)
-is a plausible, but unconfirmed, source of upstream's heavier tail: each `union` call upstream makes
-constructs one `Set` and does one `.add` per member visited, all through general-purpose `Set`
-machinery, while the port's `OrderedSet` is backed by the same `OrderedMap` every T3 module in this
-project already shares.
+A fresh native JS `Set` per pass (`new Set()` called eagerly for both `A` and `B`, then again inside
+`union` itself for the result) is a plausible, but unconfirmed, source of upstream's heavier tail:
+each `union` call upstream makes constructs one `Set` and does one `.add` per member visited, all
+through general-purpose `Set` machinery, while the port's `OrderedSet` is backed by the same
+`OrderedMap` every T3 module in this project already shares.

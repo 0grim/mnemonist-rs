@@ -94,16 +94,12 @@ Seven `it` blocks, all with total, side-effect-free comparators:
 
 ## What we test in addition
 
-**Rust native tests** — `crates/mnemonist-core/src/structures/fixed_reverse_heap.rs`, 8:
-
-| Test | Closes gap |
-|---|---|
-| `keeps_only_the_smallest_items`, `to_array_leaves_the_heap_intact`, `a_reverse_comparator_keeps_the_largest_items` | the upstream blocks, as a baseline |
-| `consume_below_capacity_returns_only_the_live_prefix` | 15 |
-| `peek_after_clear_answers_a_discarded_item` | 5, 7 — asserts the stale value *is* returned, so a future "tidy-up" of `clear` fails here |
-| `consume_after_clear_ignores_the_stale_contents` | 5 — the other half, and why the bug is latent |
-| `a_capacity_of_zero_silently_accepts_nothing` | 1 |
-| `a_comparator_may_re_enter_and_push` | 8 — and the assertion is that the array grows past `capacity` while `size` does not |
+`crates/mnemonist-core/src/structures/fixed_reverse_heap.rs` — 8 tests, closing gaps 1, 5, 7, 8 and
+15 in addition to reproducing the upstream blocks as a baseline: a below-capacity `consume` returns
+only the live prefix, `peek` after `clear` returns the stale value (pinned so a future "tidy-up" of
+`clear` fails here), `consume` after `clear` ignores the stale contents, a zero capacity silently
+accepting nothing, and a re-entrant comparator that pushes, asserting the array grows past
+`capacity` while `size` does not. Full test-to-gap mapping: evidence file.
 
 **JavaScript boundary spec** — `tests/boundary/heap.js`, seven `FixedReverseHeap` assertions,
 closing gaps 1, 2, 3, 5, 7, 8 and 11. Every expectation in it was run against the pinned upstream
@@ -181,6 +177,8 @@ algorithms. Specific to this one:
 
 ### Fuzz
 
+Four campaigns, three seeds, **6.30 M operations, zero divergences**:
+
 ```
 module=fixed-reverse-heap seed=42       cases=25906 ops=2551774 wall=120.0s divergences=0
 module=fixed-reverse-heap seed=20260801 cases=11913 ops=1158167 wall=60.0s divergences=0
@@ -188,24 +186,21 @@ module=fixed-reverse-heap seed=31337    cases=13442 ops=1320693 wall=60.0s diver
 module=fixed-reverse-heap seed=42       cases=12879 ops=1273022 wall=60.0s divergences=0  (post-fix)
 ```
 
-Four campaigns, three seeds, **6.30 M operations, zero divergences**. The first three ran against
-the pre-review build; see `docs/modules/heap.md` for why they stand and were re-run anyway. Reproduce with
-`target/release/difffuzz --module fixed-reverse-heap --seed 42 --cases 25906`.
+The first three ran against the pre-review build; see `docs/modules/heap.md` for why they stand and
+were re-run anyway. Reproduce with `target/release/difffuzz --module fixed-reverse-heap --seed 42
+--cases 25906`.
 
-* **Op alphabet:** `push(v)` (weight 7) · `peek()` (2) · `clear()` (2) · `toArray()` (2) ·
-  `consume()` (1).
-* **Constructor alphabet:** `ArrayClass` (see the exclusion below), one of five comparator
-  factories, and a **generated capacity in `0..5`, zero included** — because a capacity of `0` is
-  accepted upstream (B-73) and a grammar that only generated sensible capacities would never have
-  visited that branch.
-* **The comparator factories are `heap`'s**, minus `clearer`: this structure's `clear` sets `size`
-  and does not rebind `items`, so it is not the rebinding case `heap` uses that factory for.
-  `clear` is an ordinary op in the alphabet instead, which reaches B-74 directly.
-* **Both constructor arities are generated** — 30% of programs omit the comparator, which is
-  upstream's `arguments.length === 2` form.
-* **Observable state, compared after every op:** `size`, `capacity` and `items`. `items` is
-  `capacity` slots long from construction and keeps its contents through a `clear()`, which is what
-  makes B-74 visible in the state rather than only through a `peek`.
+The op alphabet covers `push`/`peek`/`clear`/`toArray`/`consume`. The constructor alphabet draws
+`ArrayClass` (see the exclusion below), one of five comparator factories (reusing `heap`'s set minus
+`clearer`, since this structure's `clear` sets `size` without rebinding `items` — the rebinding case
+`clearer` exists for does not apply here; `clear` is an ordinary op in the alphabet instead, which
+reaches B-74 directly), and a generated capacity in `0..5` with zero included, because a capacity of
+`0` is accepted upstream (B-73) and a grammar that only generated sensible capacities would never
+have visited that branch. Both constructor arities are generated — 30% of programs omit the
+comparator, upstream's `arguments.length === 2` form. Observable state is `size`, `capacity` and
+`items`; `items` is `capacity` slots long from construction and keeps its contents through a
+`clear()`, which is what makes B-74 visible in the state rather than only through a `peek`. Full
+grammar: evidence file.
 
 **Deliberately excluded: typed-array `ArrayClass`es** (gap 11). Upstream's `ArrayClass` may be any
 typed array, and the element narrowing that comes with one is a JavaScript store semantic that
@@ -216,38 +211,21 @@ defect. It is covered instead by `test/fixed-reverse-heap.js`, which uses `Uint8
 its seven blocks, and by `tests/boundary/heap.js`, which asserts `push(300) → 44` through the real
 bridge. **This is a real gap in the fuzz coverage and is stated as one.**
 
-**Falsification of the fuzzer.** Sabotage: `FixedReverseHeap::clear` blanking the backing array as
-well as resetting `size` — that is, *fixing* B-74. Chosen because it is the most plausible
-"obvious improvement" anyone would make to this file, and because it makes the port strictly more
-correct than upstream and therefore wrong.
+**The fuzzer was falsified.** Sabotage: `FixedReverseHeap::clear` blanking the backing array as
+well as resetting `size` — that is, *fixing* B-74, the most plausible "obvious improvement" anyone
+would make to this file, and one that makes the port strictly more correct than upstream and
+therefore wrong. All 7 assertions of `test/fixed-reverse-heap.js` still passed under it; the fuzzer
+caught it in 84 operations, shrinking it to a `clear()` on a capacity-1 heap, and
+`tests/boundary/heap.js` caught it too, by name. Reverted; the seed is committed with a provenance
+header in `crates/difffuzz/proptest-regressions/fixed-reverse-heap.txt`. Full repro: evidence file.
 
-* **All 7 assertions of `test/fixed-reverse-heap.js` still passed under it.**
-* The fuzzer found it in **84 operations** and shrank it to a `clear()` on a capacity-1 heap:
-
-  ```js
-  var s = new FixedReverseHeap(Array, ascending, 1);
-  s.toArray(); s.toArray();
-  s.clear();          // port items [], upstream items [undefined]
-  ```
-
-* `tests/boundary/heap.js` caught it too, by name.
-
-Reverted; the seed is committed with a provenance header in
-`crates/difffuzz/proptest-regressions/fixed-reverse-heap.txt`.
-
-### Falsification of the port (gate 6)
-
-**The assertion the sabotage had to break was named first:** `should be possible to consume the
-heap.` — `assert.deepStrictEqual(heap.consume(), [1, 4, 8])` at
-`test/fixed-reverse-heap.js:31`. Chosen because `consume` is the only algorithm this module owns
-outright: `push` delegates to `Heap.siftDown`/`Heap.replace`, so a sabotage there would have proved
-`heap`'s code was running rather than this module's.
-
-**The sabotage:** `consume`'s backwards fill, `array.set(i, last_item)` → `array.set(l - 1 - i, …)`.
-One index, in the loop that is the entire reason this structure stores its elements reversed.
-
-**Confirmed red**, and red in the named place: `2 passing, 5 failing`, the named assertion failing
-with `[8, 4, 1]` against `[1, 4, 8]`. Reverted; **confirmed green again**: `7 passing`.
+**Falsification of the port (gate 6):** the assertion named first was `should be possible to
+consume the heap.` — `assert.deepStrictEqual(heap.consume(), [1, 4, 8])` at
+`test/fixed-reverse-heap.js:31` — chosen because `consume` is the only algorithm this module owns
+outright, since `push` delegates to `Heap.siftDown`/`Heap.replace`. The sabotage, `consume`'s
+backwards fill written with one index flipped, is confirmed red in the named place (2 passing, 5
+failing, `[8, 4, 1]` against `[1, 4, 8]`); reverted, confirmed green again (7 passing). Full record:
+evidence file.
 
 ### Bench
 
@@ -261,16 +239,9 @@ that is a tiny fraction of the value domain fills once and then rarely displaces
 domain keeps a fresh uniform draw's odds of beating the worst near 50% throughout the run. Measured
 directly with a standalone probe (comparing `peek()` before/after every push once the heap was
 already full): **30,074 displacements over 49,843 full-heap pushes — a 60.3% rate** — confirming
-the sift-down `replace` path is the common case here, not a rare one. xorshift32 seed 42:
-
-| metric | port | upstream | |
-|---|---|---|---|
-| p50 ns/op | **14.50** | 15.07 | 1.04× faster |
-| p99 ns/op | 115.94 | **96.99** | upstream 1.20× faster |
-| min ns/op | 13.075 | **13.055** | essentially tied (<0.2%) |
-| RSS delta MB | **14.0** | 35.7 | |
-| structure-only RSS delta MB | **1.3** | 9.8 | |
-| startup ms | **0.6** | 15.4 | 26× (reported separately; not throughput) |
+the sift-down `replace` path is the common case here, not a rare one: the port is 1.04× faster at
+p50 (14.50 vs 15.07 ns/op), essentially tied at min, and about 1.20× slower at p99 (115.94 vs
+96.99). Full table: evidence file.
 
 **A real, reproducible p99 loss: ~1.2× across two independent runs**, re-run specifically because a
 loss this small invites checking it is not a one-off — it held both times, with `min_ns_per_op`
@@ -281,7 +252,7 @@ displacement rate; no profiling was done to isolate why the port's tail is worse
 p99 rather than uniformly, so no mechanism is asserted. p50 and every RSS/startup figure favour the
 port. Checksum `234148030045`, identical on both sides.
 
-A note for whoever runs it: the natural workload is "keep the *k* smallest of *n*", which is what
-the structure exists for, and it should be run at a *k* small relative to *n* (the eviction path)
-**and** at a *k* comparable to *n* (the fill path), because they are different code. A run at
-`k === n` measures `Heap.siftDown` and nothing this module owns.
+The natural workload for this structure is "keep the *k* smallest of *n*", and a representative
+benchmark needs to be run both at a *k* small relative to *n* (the eviction path) **and** at a *k*
+comparable to *n* (the fill path), since they are different code — a run at `k === n` measures
+`Heap::siftDown` and nothing this module owns.

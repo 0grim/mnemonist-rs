@@ -49,14 +49,10 @@ since every test key is plain ASCII. See "Deliberate divergences".
 
 ## What we test in addition
 
-**Rust native tests** (`crates/mnemonist-core/src/structures/critbit_tree_map.rs`, 9):
-
-| Test | Closes gap |
-|---|---|
-| `reproduces_the_upstream_set_suite`, `reproduces_the_upstream_delete_suite`, `keys_that_differ_only_in_length_do_not_break`, `for_each_visits_in_sorted_key_order`, `clear_resets_size_and_removes_everything` | the upstream blocks, as a baseline |
-| `keys_differing_only_in_the_last_byte_route_correctly`, `a_deep_prefix_chain_is_fully_reachable` | the gate 6 falsification target: deep critical-bit positions and multi-level bubble-up |
-| `a_shared_prefix_followed_by_a_nul_byte_still_routes_correctly` | the `0xff`-mask degenerate case above |
-| `setting_again_after_deleting_back_to_empty_does_not_point_root_at_a_stale_slot` | a port bug this unit's own differential fuzzer found (see "Bugs this found") |
+`crates/mnemonist-core/src/structures/critbit_tree_map.rs` — 9 tests: a baseline reproduction of the
+upstream blocks, the gate-6 falsification target (deep critical-bit positions and multi-level
+bubble-up, via keys differing only in the last byte and a deep prefix chain fully reachable), the
+`0xff`-mask degenerate case above, and a port bug this unit's own differential fuzzer found (below).
 
 **Differential fuzzer** — see "Fuzz + bench". Reaches deep critical-bit positions and heavy
 prefix-sharing on every campaign, measured directly rather than assumed.
@@ -97,21 +93,21 @@ collected version.
 
 ### Fuzz
 
+Two campaigns, two seeds:
+
 ```
 module=critbit-tree-map   seed=42       cases=10987  ops=1096914  wall=60.0s  divergences=0
 module=critbit-tree-map   seed=20260801 cases=10634  ops=1054262  wall=60.0s  divergences=0
 ```
 
-**Grammar:** `crates/difffuzz/src/modules/critbit_tree_map.rs`. `PREFIX_POOL` is
-`["a", "ab", "abc", "abcd", "abcda", "abcdb", "b", "ba"]` — eight entries, of which **5/8 are
-themselves a strict prefix of another entry**, measured (not eyeballed) by
-`pool_self_check_most_entries_are_a_prefix_of_another_entry`, the same threshold `trie`'s own pool
-was measured against. `"abcda"`/`"abcdb"` differ **only in their last byte** (byte index 4), forcing
-a critical bit at the deepest position this pool's shared prefix allows — measured by
-`pool_self_check_contains_a_pair_differing_only_in_the_last_byte` — and a 2,000-sample draw from the
-real `set` op strategy shows generated keys revisiting the pool's prefix relationships in practice
-(`pool_self_check_generated_programs_revisit_prefix_relationships`; typically ~65% of generated `set`
-keys are a strict prefix of another generated `set` key across both regimes sampled).
+`PREFIX_POOL` is `["a", "ab", "abc", "abcd", "abcda", "abcdb", "b", "ba"]` — eight entries, of which
+**5/8 are themselves a strict prefix of another entry**, measured (not eyeballed) by a self-check,
+the same threshold `trie`'s own pool was measured against. `"abcda"`/`"abcdb"` differ **only in
+their last byte** (byte index 4), forcing a critical bit at the deepest position this pool's shared
+prefix allows — also measured directly — and a 2,000-sample draw from the real `set` op strategy
+shows generated keys revisiting the pool's prefix relationships in practice (typically ~65% of
+generated `set` keys are a strict prefix of another generated `set` key across both regimes
+sampled).
 
 Ops: `set`, `get`, `has`, `delete`, `clear`. No cursor lifecycle ops — `critbit-tree-map.js` has no
 iterator surface at all (no `values`/`keys`/`entries`, no `Symbol.iterator`), unlike `trie-map`.
@@ -121,7 +117,7 @@ shape (`{critbit, left, right}` for an internal node, `{key, value}` for a leaf,
 see `RootNode`'s doc comment for why `critbit` is reassembled into upstream's own packed
 `(byteIndex << 8) | mask` integer rather than this port's internal `(byte_index, mask)` tuple: it is
 what turns a critical-bit computation bug into a `root` mismatch rather than only a rendering one,
-and it is exactly what caught gate 6's sabotage below.
+and it is exactly what caught gate 6's sabotage below. Full grammar: evidence file.
 
 **What this grammar deliberately does not cover:** `forEach` (no op drives it; its ordering is
 covered instead by the native test and by gate 4), and non-Latin-1 keys (D-245, above).
@@ -139,12 +135,12 @@ port of `utils/bitwise.js#msb8` that isolates a byte's single highest set bit. P
 **Confirmed red**, three independent instruments:
 * `cargo test`: 6 of 9 native tests failed, including both named targets and
   `reproduces_the_upstream_set_suite`.
-* The differential fuzzer (`--seed 99 --duration 5`): diverged on the **second operation** of a
-  2-op program (`set("abcda", ...)`, `set("a", ...)`), reporting
-  `root.critbit: port 448 vs upstream 447` — the packed mask off by exactly the dropped bit,
-  confirming the `root` observation's `critbit` field is precisely what this falsification exercises.
-* (Gate 4 was not separately re-run under this sabotage; the native suite already reproduces the
-  same assertions the original suite's `it` blocks check, and both failed identically.)
+* The differential fuzzer: diverged on the **second operation** of a 2-op program
+  (`set("abcda", ...)`, `set("a", ...)`), reporting `root.critbit: port 448 vs upstream 447` — the
+  packed mask off by exactly the dropped bit, confirming the `root` observation's `critbit` field is
+  precisely what this falsification exercises.
+* Gate 4 was not separately re-run under this sabotage; the native suite already reproduces the same
+  assertions the original suite's `it` blocks check, and both failed identically.
 
 **Reverted; confirmed green** on both instruments: `cargo test` 19/19, and the same seed/duration
 differential run reported `divergences=0` again.
@@ -159,15 +155,14 @@ reading about.
 Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 10,000 samples/side.
 
 **`mixed-2e5`** — 1e6 mixed `set`/`get`/`delete` (50/25/25), `size` 200,000 (`trie-map`'s own order
-of magnitude). Keys are zero-padded to six decimal digits (`format!("{value:06}")` /
-`String(value).padStart(6, '0')`), not bare `toString()`: a crit-bit tree branches on the position
-of the FIRST bit two keys disagree on, and variable-length keys would make most pairs diverge at
-byte 0 (the tail-vs-implicit-0 branch), exercising the shortest path through the tree rather than a
-representative one. Zero-padding forces genuine byte-by-byte comparison — every key under 100,000
-shares its leading `0`, so the actual divergence sits in the low-order digits, deep into the key —
-see `bench/runner/src/critbit_tree_map.rs`'s own module docs. `delete`'s checksum contribution is
-upstream's own plain boolean, matching `trie-map`'s reasoning for the same divergence from core's
-richer `Option<V>`. xorshift32 seed 42:
+of magnitude). Keys are zero-padded to six decimal digits, not bare `toString()`: a crit-bit tree
+branches on the position of the FIRST bit two keys disagree on, and variable-length keys would make
+most pairs diverge at byte 0 (the tail-vs-implicit-0 branch), exercising the shortest path through
+the tree rather than a representative one. Zero-padding forces genuine byte-by-byte comparison —
+every key under 100,000 shares its leading `0`, so the actual divergence sits in the low-order
+digits, deep into the key. `delete`'s checksum contribution is upstream's own plain boolean,
+matching `trie-map`'s reasoning for the same divergence from core's richer `Option<V>`. xorshift32
+seed 42:
 
 | metric | port | upstream | |
 |---|---|---|---|

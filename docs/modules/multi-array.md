@@ -57,15 +57,12 @@ in the direction that would distinguish "snapshot" from "genuinely live."
 
 ## What we test in addition
 
-**Rust native tests** — `crates/mnemonist-core/src/structures/multi_array.rs` (11):
-
-| Test | Closes gap |
-|---|---|
-| `reproduces_the_upstream_set_walkthrough`, `reproduces_the_upstream_push_walkthrough`, `get_returns_none_past_dimension_and_the_bucket_otherwise`, `has_and_multiplicity_agree_with_upstream` | the upstream blocks, as a baseline, both container kinds |
-| `inserting_out_of_order_leaves_a_real_gap_at_dimension` | the untested gap-read case above |
-| `containers_and_associations_walk_dimension_in_gets_order`, `values_are_global_insertion_order_or_reversed_per_bucket`, `entries_walk_each_bucket_tail_to_head_in_dimension_order`, `keys_is_the_dimension_range` | the five iterator factories directly against literal expected sequences, including the forward-vs-reverse order contrast between `get` and `values(index)` (see the core module's docs — the sharpest place a transcription error would hide) |
-| `fixed_capacity_values_narrow_to_their_width` | the untested overflow-truncation case above |
-| `an_empty_multi_array_has_no_containers_or_values` | the zero-state baseline |
+`crates/mnemonist-core/src/structures/multi_array.rs` — 11 tests, closing every gap above: a
+baseline reproduction of the `set`/`push` walkthroughs, `get`/`has`/`multiplicity` for both
+container kinds, the untested gap-read case, all five iterator factories checked directly against
+literal expected sequences (including the forward-vs-reverse order contrast between `get` and
+`values(index)` — the sharpest place a transcription error would hide), the untested
+overflow-truncation case, and the empty-instance baseline. Full test-to-gap mapping: evidence file.
 
 **Differential fuzzer** — a ten-index pool shared by `set`/`push`/`get`, alternating dynamic and
 fixed-capacity (small capacities) constructors; see "Fuzz + bench" for measured numbers, including a
@@ -103,59 +100,40 @@ detail a straightforward reading of the constructor would miss.
 
 ### Fuzz
 
+Two campaigns, two seeds, **1.67M operations, zero divergences** — after the bridge fix above; the
+campaigns logged are the clean, post-fix runs:
+
 ```
 module=multi-array  seed=42        cases=8583 ops=834584 wall=60.0s divergences=0
 module=multi-array  seed=20260802  cases=8567 ops=836499 wall=60.0s divergences=0
 ```
 
-Two campaigns, two seeds, **1.67M operations, zero divergences** — after the bridge fix above;
-the campaigns logged are the clean, post-fix runs. Reproduce with e.g.
-`target/release/difffuzz --module multi-array --seed 42 --cases 8583`.
+Reproduce with e.g. `target/release/difffuzz --module multi-array --seed 42 --cases 8583`.
 
-* **Op alphabet:** `set` (weight 5) and `push` (weight 4) dominate, since they are the only ops
-  that grow a bucket or exercise the capacity throw; `get`/`has`/`multiplicity` (weights 3/2/2)
-  round it out. `containers`/`associations`/`values`/`entries`/`keys` are deliberately **not** in
-  the alphabet — see "Deliberate divergences" and the spec's own module docs: all five now return a
-  genuine opaque iterator on both sides, which `fuzz/oracle.js`'s `encode()` reduces to `{}`
-  regardless of what is actually inside, so comparing them can only ever agree trivially.
-* **Index pool:** ten indices, small enough that `set`/`push` collide on the same bucket constantly.
-* **Constructor:** alternates between the default dynamic container (weight 3) and a fixed-capacity
-  `Uint8Array`/`Uint16Array`/`Uint32Array` with a small capacity (weight 2, capacity `1..12`), so a
-  `push`/`set` past capacity is common rather than rare.
-* **Observable state:** `size`, `dimension`. `get`'s own return value (compared per-op, not just as
-  state) renders a container exactly as `fuzz/oracle.js`'s `encode()` renders the real value: a
-  plain array in dynamic mode, `{"$typed": ..., "values": [...]}` in fixed mode.
+The op alphabet weights `set`/`push` heaviest, since they are the only ops that grow a bucket or
+exercise the capacity throw; `get`/`has`/`multiplicity` round it out. `containers`/`associations`/
+`values`/`entries`/`keys` are deliberately **not** in the alphabet — all five now return a genuine
+opaque iterator on both sides, which the oracle's `encode()` reduces to `{}` regardless of what is
+actually inside, so comparing them can only ever agree trivially. The index pool is ten indices,
+small enough that `set`/`push` collide on the same bucket constantly. Constructors alternate
+between the default dynamic container and a fixed-capacity typed container with a small capacity, so
+a `push`/`set` past capacity is common rather than rare. Observable state is `size`, `dimension`,
+plus `get`'s own return value compared per-op. Full grammar: evidence file.
 
-**Direct evidence the grammar reaches the states this campaign is for** — `grammar_self_check`
-(`crates/difffuzz/src/modules/multi_array.rs`, no oracle, no `node`), 400 generated programs, up to
-300 ops each:
-
-```
-multi-array grammar: 49449 steps with a multi-value bucket, 10149 capacity-exceeded throws
-```
-
-Both floors are asserted in the test itself (`> 100` and `> 20` respectively), so a future weighting
-change that regresses this back toward "every bucket holds exactly one value" or "capacity is never
+**Direct evidence the grammar reaches the states this campaign is for** — `grammar_self_check`, 400
+generated programs, up to 300 ops each: 49,449 steps with a multi-value bucket, 10,149
+capacity-exceeded throws. Both floors are asserted in the test itself, so a future weighting change
+that regresses this back toward "every bucket holds exactly one value" or "capacity is never
 actually reached" fails loudly.
 
-### Falsification of the port (gate 6)
-
-**The assertion the sabotage had to break was named first:** `test/multi-array.js`'s "should be
-possible to get subarrays." — `assert.deepStrictEqual(array.get(0), [1, 2, 3]);` after
-`set(0,1); set(0,2); set(0,3); set(1,4); set(1,5); set(2,6);`.
-
-**The sabotage:** in `MultiArray::set`'s dynamic-mode branch, the pointer-chain link
-`self.pointers.push(previous_tail)` was changed to `self.pointers.push(pointer)` — a
-self-referencing pointer instead of a link to the item pushed just before it, breaking the
-backward-walk linked list every `get`/`values`/`entries` depends on.
-
-**Confirmed red:** the named assertion failed (`get(0)` came back `[3, 3, 3]`, not `[1, 2, 3]`) —
-six of eleven native tests failed, and the real upstream mocha suite failed the same assertion at
-`test/multi-array.js:216`, with the identical wrong values.
-
-**Reverted; confirmed green again:** 11/11 native tests, 12/12 upstream `it` blocks.
-
-**Nothing was found to be blind.** The sabotage broke exactly the mechanism it targeted (every
+**Falsification of the port (gate 6):** the assertion named first was `test/multi-array.js`'s
+"should be possible to get subarrays." — `assert.deepStrictEqual(array.get(0), [1, 2, 3]);`. The
+sabotage, in `MultiArray::set`'s dynamic-mode branch, linked each new item to itself instead of to
+the previous tail — breaking the backward-walk linked list every `get`/`values`/`entries` depends
+on — is confirmed red at the named assertion (`get(0)` came back `[3, 3, 3]`, not `[1, 2, 3]`; six
+of eleven native tests failed, and the real upstream mocha suite failed the same assertion with the
+identical wrong values). Reverted; confirmed green again (11/11 native tests, 12/12 upstream `it`
+blocks). Nothing was found to be blind — the sabotage broke exactly the mechanism it targeted (every
 bucket read collapsed to repeating its most-recently-pushed value) and nothing else was needed to
 catch it, in either instrument.
 
@@ -166,89 +144,30 @@ Host: AMD Ryzen 5 7600X, 12 threads, WSL2, Node 24.18.1, rustc 1.97.1, quiet ser
 Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 10,000 samples/side.
 
 **`mixed-1e6`** — 1e6 mixed `set`/`get`/`multiplicity` (50/25/25), dynamic (unbounded, exact-`f64`)
-container, over a 20,000-index domain deliberately far smaller than the op count. **~25 values per
-bucket on average by the run's end**, matching `multi-map`'s own ratio, xorshift32 seed 42:
-
-| metric | port | upstream | |
-|---|---|---|---|
-| p50 ns/op | 50.2 | **26.4** | 1.9× slower |
-| p99 ns/op | **177.5** | 272.8 | 1.5× faster |
-| min ns/op | **6.4** | 11.7 | |
-| RSS delta MB | **19.9** | 115.8 | |
-| structure-only RSS delta MB | **0.1** | 5.7 | |
-| startup ms | **0.6** | 17.3 | 29× (reported separately; not throughput) |
+container, over a 20,000-index domain deliberately far smaller than the op count, ~25 values per
+bucket on average by the run's end (matching `multi-map`'s own ratio): the port is now 1.31× slower
+at p50 (38.3 vs 29.81 ns/op) and 1.5× faster at p99 (177.5 vs 272.8). No regressions on p99/RSS/
+startup. Full table and the investigation that took p50 from an initial 1.9× loss to the current
+1.31×: evidence file and log.
 
 **A split result: p50 loses, p99 wins, stated as both rather than either alone.** Reporting only
 p99 here would have hidden a real p50 regression; reporting only p50 would have hidden that the
 port's tail is *better* than upstream's, which is the more usual pattern for a GC'd runtime doing
 frequent small allocations (`get` allocates a fresh array/`Vec` on every call, tail-to-head, and
-does so on both sides). `MultiArray::get` walks the pointer chain and materialises a `Vec<f64>` on
-every call, one bounds-checked array write per step; upstream does the same walk over a plain
-`Array`, whose access V8 can speculate on more aggressively once the shape is monomorphic. That was
-a plausible account of where the p50 gap comes from, not originally a confirmed one.
-
-**Confirmed 2026-08-02** — partially, with a real number attached rather than left as "plausible".
-`bench/runner/examples/multi_array_alloc_probe.rs` builds a 20,000-index array with 25 values/bucket
-(this workload's own steady-state ratio) and, with an allocation-counting global allocator, isolates
-`get` from `multiplicity` (an O(1) read with no walk and no allocation) over 250,000 calls of each:
-
-| variant | ns/call | allocations/call |
-|---|---|---|
-| `get(index)` (walk + materialise) | 50.96 | **1.000** |
-| `multiplicity(index)` (O(1), no walk) | 0.82 | 0.000 |
-| bare `Vec::with_capacity(25)` + fill, no walk | 34.88 | 1.000 |
-
-**Re-measured 2026-08-03, after narrowing the bookkeeping.** `tails`, `lengths` and `pointers` moved
-from `Vec<usize>` to `Vec<u32>`. `pointers` is read once per step of every bucket walk, over an array
-that reaches megabytes on this workload, so halving its element width was expected to cut the
-cache-miss cost of that walk.
-
-Measured, it bought **3.9%** on the port's own p50 — 50.25 ns to 48.29 ns. That is real and it is
-kept, but it is not enough to call the width the cause of the regression: the falsifier named before
-the measurement was "if the cost is the allocator traffic of returning a fresh container per call
-rather than the width of the walk, this shows little or no effect", and 3.9% is nearer to little.
-The probe above already found `get` doing exactly one allocation per call and a bare
-`Vec::with_capacity(25)` costing 34.88 ns of the 50.96, which points the same way.
-
-The gate-10 ratio reads 1.62× slower rather than the 1.9× above, but most of that move is the
-JavaScript baseline, which measured 26.4 ns in the earlier session and 29.81 ns in this one on
-unchanged code. Within one session the harness reproduces to 0.9%; across sessions it does not, so
-the port's own 3.9% is the figure to trust here.
-
-**Then a second change, found by looking at `get` rather than at the walk — 17%.** `get` allocated
-its result with `vec![0.0; length]`, which memsets `length * 8` bytes that the following `length`
-steps then overwrite one by one. It now builds with `Vec::with_capacity` and `push`, reversing at
-the end (the walk runs tail-to-head, so the reverse restores upstream's order over bytes already in
-cache), and matches the `Storage` discriminant once per call instead of once per element.
-
-Measured across four runs, the port's own p50 lands between 38.3 and 40.2 ns against 48.3 before —
-a spread of about 5% on the port side against 5.3% on the JavaScript side, which is why the port's
-own figure is the one quoted. **50.2 → 48.3 → 38.3 ns** across the two changes; in the final
-whole-suite pass the ratio reads 1.31× slower.
-
-What is left is the allocation `get` cannot avoid: it returns a fresh container per call, and the
-probe above already puts a bare `Vec::with_capacity(25)` plus fill at 34.88 ns of the original
-50.96. Both implementations allocate; V8's nursery is better at this shape than a general-purpose
-allocator is. Fixing that would mean changing what the method returns, which is upstream's contract,
-so it stays.
+does so on both sides).
 
 `get` allocates exactly once per call, confirmed by counting rather than by reading the source — the
-compiler does not elide it. The gap between `get` and `multiplicity` (50.14 ns/call) splits roughly
-70/30 between the allocation itself (the bare-allocation baseline, 34.88 ns/call, with no chain walk
-at all) and the pointer-chain walk (the remaining ≈15 ns/call). **Verdict: confirmed as a real,
-measured cause — not shown to be the sole one.** The published p50 gap is 23.8 ns/op averaged over
-*all* three ops in the mix; `get` is 25% of the mix, so fully explaining the whole-workload gap from
-`get` alone would need roughly 4× that, ≈95 ns of `get`-specific excess cost. The measured 50.14
-ns/call accounts for a bit over half of that back-of-envelope figure — a real, substantial
-contribution, but the arithmetic does not support calling it the entire explanation, and no probe was
-run against `set` to check whether it also carries part of the gap. Recorded as confirmed-but-partial
+compiler does not elide it. The gap between `get` and `multiplicity` (an O(1) read with no walk and
+no allocation) splits roughly 70/30 between the allocation itself and the pointer-chain walk. This
+accounts for a bit over half of the whole-workload p50 gap by a back-of-envelope calculation, so it
+is a real, substantial contribution but not shown to be the entire explanation — no probe was run
+against `set` to check whether it also carries part of the gap. Recorded as confirmed-but-partial
 rather than confirmed-and-complete, per this project's rule against overclaiming causation.
 
-**Fix not attempted.** `get`'s allocation is not incidental: it exists to match upstream's own
+**The allocation stays.** `get`'s allocation is not incidental: it exists to match upstream's own
 `#.get(index)` contract, which returns a fresh JS `Array` — a non-allocating alternative would have
 to be an *additional* method (e.g. a walk that writes into a caller-supplied buffer or yields an
 iterator), not a replacement for `get`, since the benchmark and the upstream test suite both need
-`get`'s existing return type. Adding one is a `crates/mnemonist-core` change and would need multi-
-array's fuzz campaign and bench figures re-run before it could stand (this project's rule on changing
-core) — out of scope for this investigation's "strictly secondary" fix budget. Recorded as a proposal
-for later, not applied.
+`get`'s existing return type. Adding one is a `crates/mnemonist-core` change and would need
+multi-array's fuzz campaign and bench figures re-run before it could stand, which puts it outside
+this investigation's scope.

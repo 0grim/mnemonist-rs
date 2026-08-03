@@ -95,25 +95,13 @@ Characterising the shape of that coverage:
 
 ## What we test in addition
 
-`crates/mnemonist-core/src/structures/queue.rs` — 15 tests:
-
-| Test | Closes gap |
-|---|---|
-| `reproduces_the_upstream_suite` | 1:1 port of all eleven upstream blocks, as a baseline |
-| `enqueue_returns_the_new_size` | 10 |
-| `the_compaction_fires_when_the_dead_prefix_reaches_half_the_array` | 1 — pinned index by index, `offset` and `items.length` after every dequeue |
-| `a_one_element_queue_compacts_immediately` | 1 — the degenerate end (`1 * 2 >= 1`) |
-| `interleaved_enqueue_and_dequeue_stay_in_order` | 1 — FIFO across compactions, which is the way the offset arithmetic actually breaks |
-| `dequeueing_an_empty_queue_moves_nothing` | — |
-| `cursors_do_not_restart_but_the_queue_can_be_walked_again` | D-06/D-07 |
-| `an_enqueue_during_iteration_is_visible_to_the_cursor` | 5 — the live end |
-| `a_finished_cursor_resumes_when_the_queue_grows` | 6 — nothing latches |
-| `a_compaction_detaches_an_open_cursor_onto_the_old_array` | 2, 3 |
-| `a_cursor_freezes_the_offset_it_was_opened_with` | 2, 3 |
-| `clear_leaves_an_open_cursor_walking_the_old_array` | 4 |
-| `for_each_reads_the_live_array_where_the_cursor_reads_the_capture` | 7 |
-| `an_empty_queue_iterates_zero_times` | — |
-| `from_iter_accepts_any_iterator` | D-03 |
+`crates/mnemonist-core/src/structures/queue.rs` — 15 tests, closing every gap above except 8, 9, 11,
+12 and 13: a 1:1 reproduction of all eleven upstream blocks as a baseline, `enqueue`'s return value,
+the compaction schedule pinned index by index (including the one-element degenerate case and FIFO
+order preserved across compactions), both cursor liveness rules unique to this module (an enqueue
+during iteration visible, a finished cursor resuming when the queue grows), a compaction and a
+`clear` both detaching an open cursor onto the old array, and `forEach` reading the live array where
+the cursor reads its capture. Full test-to-gap mapping: evidence file.
 
 `crates/mnemonist-core/src/cursor/mod.rs` — the three `Sequence::limit` tests added for this
 module, against a synthetic source rather than a `Queue`, so the semantics are pinned once for
@@ -150,8 +138,8 @@ thing a port normalises by accident, which is why `Sequence::limit` exists (D-42
 The three **port** defects found while bridging this module — the `noalias` hoist, napi's latching
 `#.return`, and `napi_create_reference` rejecting primitives — are documented in
 `docs/modules/stack.md`, "Bugs this found". The first of them was *measured on this module's
-`forEach`*, and it is also present in the already-scoped `sparse-set` bridge, which this pass does
-not fix.
+`forEach`*, and it is also present in the already-scoped `sparse-set` bridge, which is not fixed
+there.
 
 **What the fuzzer found: nothing new.** Two campaigns, 4.13 M operations, zero divergences — the
 expected outcome for a faithful port.
@@ -177,92 +165,56 @@ expected outcome for a faithful port.
 
 ### Fuzz
 
+Two campaigns, two seeds, **4.13 M operations, zero divergences**:
+
 ```
 module=queue seed=42       cases=25731 ops=2559824 wall=120.0s divergences=0
 module=queue seed=20260801 cases=15805 ops=1573126 wall=60.0s  divergences=0
 ```
 
-Two campaigns, two seeds, **4.13 M operations, zero divergences**.
-
 Reproduce with `target/release/difffuzz --module queue --seed 42 --cases 25731`.
 
-* **Op alphabet:** `enqueue(v)` (weight 6) · `dequeue()` (4) · `peek()` (2) · `clear()` (1) ·
-  `$iter("values")` (2) · `$next()` (4) · `$spread()` (1).
-* **Observable state, compared after every op:** `size`, **`offset`**, **`items`** and `toArray()`.
-  The middle two are the point: `toArray()` alone cannot tell a compacted queue from an
-  uncompacted one holding the same elements, so a port could get the entire schedule wrong for a
-  whole program with nothing noticing.
-* **Values:** `0..48`.
-* **Program length:** 1..200 ops.
-* **Deliberately excluded: nothing.**
-
-`dequeue` is weighted heavily because the compaction only fires on a dequeue and the schedule needs
-several in a row to be interesting; `$next` outweighs `$iter` four to one so that cursors are
-stepped repeatedly, with enqueues and compactions landing between the steps. The
-step-after-exhaustion case is reached constantly, which matters here in a way it does not for
-`stack`: for a queue it is a *behaviour*, not a corner.
+The op alphabet covers `enqueue`/`dequeue`/`peek`/`clear` plus the cursor ops, with `dequeue`
+weighted heavily because the compaction only fires on a dequeue and the schedule needs several in a
+row to be interesting, and `$next` outweighing `$iter` four to one so that cursors are stepped
+repeatedly, with enqueues and compactions landing between the steps — the step-after-exhaustion case
+is reached constantly, which matters here in a way it does not for `stack`: for a queue it is a
+*behaviour*, not a corner. Observable state is `size`, **`offset`**, **`items`** and `toArray()` —
+the middle two are the point, since `toArray()` alone cannot tell a compacted queue from an
+uncompacted one holding the same elements, so a port could get the entire schedule wrong for a whole
+program with nothing noticing. Deliberately excluded: nothing. Full grammar: evidence file.
 
 **The fuzzer was falsified before it was trusted.** Sabotage: `Sequence::limit` returning the
 frozen length — that is, giving the queue the stack's cursor, which is exactly what a port that
-generalised one cursor shape across modules would produce. Caught in **99 cases (0.1 s)**, shrunk
-from 200 ops to **three**, which is the smallest program that can express it:
+generalised one cursor shape across modules would produce. Caught in 99 cases (0.1 s), shrunk from
+200 ops to three — the smallest program that can express it, and one that also demonstrates the
+cursor resuming after running off the end of an empty queue, since obliterator's `Iterator` has no
+done flag. Reverted; the seed is committed with a provenance header in
+`crates/difffuzz/proptest-regressions/queue.txt`. Full repro: evidence file.
 
-```js
-var s = new Queue();
-var it = s.values();     // opened on an empty queue
-s.enqueue(0);
-it.next();               // port {done: true}, upstream {value: 0}
-```
+**Falsification of the port (gate 6):** the assertion named first was
+`should be possible to dequeue` — `assert.strictEqual(queue.dequeue(), 2)` at `test/queue.js:52` —
+chosen because it is the only assertion in the file whose value depends on the offset having
+advanced; everything else in the suite is satisfied by a queue that ignores `offset` entirely. The
+sabotage, `Queue::dequeue` reading `items[0]` instead of `items[offset]`, is confirmed red in
+exactly the named place (10 passing, 1 failing, actual 1 vs expected 2); reverted, confirmed green
+again (11 passing). Worth recording what this sabotage does *not* break, because it bounds what
+gate 6 proves here: the compaction schedule itself is invisible to the original suite — a sabotage
+of the compaction condition instead (`offset >= items.length` in place of `++offset * 2 >=
+items.length`) leaves all 11 blocks green, which is not a weakness in the choice of sabotage but a
+measurement of how thin the upstream coverage is, and it is why `offset` and `items` are both in
+the fuzzer's observation set.
 
-Note what that repro also demonstrates: the cursor had already run off the end of an empty queue,
-and obliterator's `Iterator` has no done flag, so it resumes. Reverted; the seed is committed with
-a provenance header in `crates/difffuzz/proptest-regressions/queue.txt`.
-
-### Falsification of the port (gate 6)
-
-**The assertion the sabotage had to break was named first:**
-`should be possible to dequeue` — `assert.strictEqual(queue.dequeue(), 2)`, at `test/queue.js:52`.
-Chosen because it is the only assertion in the file whose value depends on the offset having
-advanced; everything else in the suite is satisfied by a queue that ignores `offset` entirely.
-
-**The sabotage:** `Queue::dequeue` reading `items[0]` instead of `items[offset]` — forgetting the
-offset, which is the most plausible single mistake in this file.
-
-**Confirmed red**, and red in exactly the named place: `10 passing, 1 failing`, with
-`actual 1, expected 2` at `test/queue.js:52`. Reverted; **confirmed green again**: `11 passing`.
-
-Worth recording what this sabotage does *not* break, because it bounds what gate 6 proves here:
-the compaction schedule itself is invisible to the original suite. A sabotage of
-`++offset * 2 >= items.length` — say, `offset >= items.length` — leaves all 11 blocks green. That
-is not a weakness in the choice of sabotage; it is the measurement of how thin the upstream
-coverage is, and it is why `offset` and `items` are both in the fuzzer's observation set.
-
-### `$forEach` — the op that was missing (added 2026-08-01, B-31)
-
-`queue`'s grammar had no `forEach` op at all. That omission is what let B-31 — a `forEach`
-callback mutating the collection it is walking — through 4.13 M clean operations: an op alphabet
-that omits a method omits every bug reachable only through it.
-
-`$forEach(method, rule, limit)` now walks the instance with a callback that calls back into it.
-The compared result is the sequence of callback argument pairs, so the walk's **shape** is checked
-and not only the state it leaves behind. This module's mutations:
-
-* `dequeue()`, `enqueue(a0)` and `clear()`, all uncapped.
-
-The `dequeue` row is the one that matters: enough dequeues **compact**, and the compaction rebinds
-`this.items` to a shorter array while `i` and `l` still refer to the old one, so the remaining reads
-run off the end and yield `undefined`. That is the exact program in `CellCursor`'s doc comment,
-which was written from a hand-built repro; it is now generated.
-
-**What it does not reach, stated so the campaign is not over-read.** `difffuzz` compares
-`mnemonist-core` against upstream JS; the napi bridge, where B-31's hoisted read actually lived, is
-not in that loop. No op alphabet can catch that class of bug here. The specs that do are
-`tests/boundary/reentrancy.js`, which drive the real addon with real JS callbacks — red on the
-pre-fix bridges, green after.
-
-One deliberate narrowing, mirrored on both sides: a selected callback argument that is `undefined`
-skips the mutation. Feeding it back in reaches upstream's `NaN`-indexed swap, which `usize` cannot
-express and the core does not model. Fully disclosed in `fuzz/log.txt`.
+`$forEach(method, rule, limit)` walks the instance with a callback that calls back into it. This
+module's mutations are `dequeue()`, `enqueue(a0)` and `clear()`, all uncapped. The `dequeue` row is
+the one that matters: enough dequeues **compact**, and the compaction rebinds `this.items` to a
+shorter array while `i` and `l` still refer to the old one, so the remaining reads run off the end
+and yield `undefined` — the exact program `CellCursor`'s doc comment describes from a hand-built
+repro, now generated by the thousand. What it does not reach: the napi bridge, where a re-entrant
+callback would actually run, is outside the loop `difffuzz` compares; `tests/boundary/reentrancy.js`
+covers that instead. One deliberate narrowing, mirrored on both sides: a selected callback argument
+that is `undefined` skips the mutation, because feeding it back in reaches upstream's `NaN`-indexed
+swap, which `usize` cannot express and the core does not model. Disclosed in `fuzz/log.txt`.
 
 ### Bench
 
@@ -270,24 +222,17 @@ express and the core does not model. Fully disclosed in `fuzz/log.txt`.
 Host: AMD Ryzen 5 7600X, 12 threads, WSL2, Node 24.18.1, rustc 1.97.1, quiet serial pass.
 Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 10,000 samples/side.
 
-**`mixed-1e6`** — 1e6 mixed `enqueue`/`peek`/`dequeue` (50/25/25), value magnitude 1e6, xorshift32
-seed 42 — `stack`'s exact shape with FIFO names, which its own bench doc explains.
+**`mixed-1e6`** — 1e6 mixed `enqueue`/`peek`/`dequeue` (50/25/25), value magnitude 1e6 — `stack`'s
+exact shape with FIFO names, which its own bench doc explains: the port is 1.8× faster at p50 (4.7
+vs 8.5 ns/op), 12.4× faster at p99 (7.6 vs 94.2), 1.5× faster at min. No regressions. Full table:
+evidence file.
 
-| metric | port | upstream | |
-|---|---|---|---|
-| p50 ns/op | **4.7** | 8.5 | 1.8× faster |
-| p99 ns/op | **7.6** | 94.2 | 12.4× faster |
-| min ns/op | **4.3** | 6.4 | 1.5× faster |
-| RSS delta MB | **10.1** | 62.7 | |
-| structure-only RSS delta MB | **1.3** | 9.7 | |
-| startup ms | **0.6** | 16.1 | 27× (reported separately; not throughput) |
-
-**No regressions.** The p99 gap here (12.4×) is the widest of any module in this group, and it is
-plausibly the *compaction* upstream's queue performs — `this.items = this.items.slice(this.offset)`
-rebuilds the whole array once the dead prefix reaches half its length, which is a real allocation
-and copy on the JS side landing inside whichever 1000-op batch it falls in. The port's own
-compaction (`Queue::dequeue`, same policy) does the same rebuild, so this is not "the port skips the
-work" — both sides pay it — but a `Vec<f64>` rebuild inside one process is considerably cheaper than
-whatever V8 does to reshape a JS `Array` and keep its elements packed. **Unconfirmed**: not isolated
-by profiling; stated as the mechanism most consistent with the shape of the gap (a fixed-K batch
-occasionally landing on a compaction), not as a proven cause.
+The p99 gap here (12.4×) is the widest of any module in this group, and it is plausibly the
+*compaction* upstream's queue performs — `this.items = this.items.slice(this.offset)` rebuilds the
+whole array once the dead prefix reaches half its length, which is a real allocation and copy on the
+JS side landing inside whichever 1000-op batch it falls in. The port's own compaction
+(`Queue::dequeue`, same policy) does the same rebuild, so this is not "the port skips the work" —
+both sides pay it — but a `Vec<f64>` rebuild inside one process is considerably cheaper than
+whatever V8 does to reshape a JS `Array` and keep its elements packed. This is unconfirmed: not
+isolated by profiling; stated as the mechanism most consistent with the shape of the gap (a
+fixed-K batch occasionally landing on a compaction), not as a proven cause.

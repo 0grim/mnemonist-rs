@@ -56,14 +56,12 @@ see "Bugs this found" for the direction this was initially wrong in.
 
 ## What we test in addition
 
-**Rust native tests** — `crates/mnemonist-core/src/structures/symspell.rs` (8):
-
-| Test | Closes gap |
-|---|---|
-| `constructor_rejects_invalid_options`, `reproduces_the_upstream_basic_search`, `a_wider_max_distance_finds_more_suggestions`, `verbosity_changes_how_many_suggestions_come_back`, `clear_resets_the_index` | the upstream blocks, as a baseline, transcribed with the exact same `DATA` and expected ordered suggestion lists |
-| `a_word_can_be_both_a_real_entry_and_another_words_delete_form` | the untested dual-role dictionary key above |
-| `a_compact_dictionary_entry_still_contributes_its_suggestion` | the real defect this port shipped and the differential fuzzer caught — see "Bugs this found" |
-| `damerau_levenshtein_matches_known_distances` | the internal distance function directly, independent of the indexing machinery around it |
+`crates/mnemonist-core/src/structures/symspell.rs` — 8 tests: a baseline reproduction of the
+upstream blocks transcribed with the exact same `DATA` and expected ordered suggestion lists, the
+untested dual-role dictionary key case, the real defect this port shipped and the differential
+fuzzer caught (a compact dictionary entry still contributing its suggestion — see "Bugs this
+found"), and the internal Damerau-Levenshtein distance function checked directly against known
+distances, independent of the indexing machinery around it.
 
 **Differential fuzzer** — a controlled-edit-distance word pool (every word within
 Damerau-Levenshtein distance 1-2 of at least one other, plus one deliberately distant word), varying
@@ -80,19 +78,19 @@ coverage), and astral-character input (see "Deliberate divergences").
 No upstream defect found in this unit.
 
 **One real defect in this port's own `lookup`**, found by the differential fuzzer's very first short
-smoke run (`--duration 10`, before any full campaign was logged) and fixed before this unit was
-committed as complete: `add("jello")` then `search("hello")` at `{maxDistance: 1, verbosity: 0}`
-returned `[]` from the port against `[{"term":"jello","distance":1,"count":1}]` from real upstream
-(verified directly against `symspell.js` on Node 24.18.1, not merely inferred from the fuzz
-comparison). Cause: this port's dictionary entry, mirroring upstream's own two-shaped representation
-(a bare word index versus a promoted `{suggestions, count}` object), skipped a "compact" entry's
+smoke run (before any full campaign was logged) and fixed before this unit was committed as
+complete: `add("jello")` then `search("hello")` at `{maxDistance: 1, verbosity: 0}` returned `[]`
+from the port against `[{"term":"jello","distance":1,"count":1}]` from real upstream (verified
+directly against `symspell.js` on Node 24.18.1, not merely inferred from the fuzz comparison).
+Cause: this port's dictionary entry, mirroring upstream's own two-shaped representation (a bare
+word index versus a promoted `{suggestions, count}` object), skipped a "compact" entry's
 suggestions entirely rather than reproducing upstream's *local, non-persisted* promotion of it
 during a read (`item = createDictionaryItem(item)` in `lookup`, which upstream never writes back to
 the dictionary). Because most dictionary entries in `test/symspell.js`'s own ten-word `DATA` set get
 cross-promoted to full objects by the data's own overlapping delete-forms, the original suite never
-reached an unpromoted entry at query time — the gap in "What upstream does NOT test," directly. Fixed
-by `Entry::suggestions()`, which reproduces the same local promotion for both entry shapes. See
-`symspell.rs`'s `a_compact_dictionary_entry_still_contributes_its_suggestion`.
+reached an unpromoted entry at query time — the gap in "What upstream does NOT test," directly.
+Fixed by `Entry::suggestions()`, which reproduces the same local promotion for both entry shapes.
+See `symspell.rs`'s `a_compact_dictionary_entry_still_contributes_its_suggestion`.
 
 A second, smaller defect caught during a `cargo clippy` pass rather than by fuzzing: an earlier draft
 rejected a `NaN` `maxDistance` at construction, the opposite of upstream's own (surprising) behaviour
@@ -108,39 +106,30 @@ rejected a `NaN` `maxDistance` at construction, the opposite of upstream's own (
 
 ### Fuzz
 
+Two campaigns, two seeds, **1.56M operations, zero divergences** — the campaigns logged are the
+clean, post-fix runs; see "Bugs this found" for what the very first short smoke run (before these)
+caught:
+
 ```
 module=symspell  seed=42        cases=7942 ops=791368 wall=60.0s divergences=0
 module=symspell  seed=20260802  cases=7693 ops=771891 wall=60.0s divergences=0
 ```
 
-Two campaigns, two seeds, **1.56M operations, zero divergences** — the campaigns logged are the
-clean, post-fix runs; see "Bugs this found" for what the very first short smoke run (before these)
-caught. Reproduce with e.g. `target/release/difffuzz --module symspell --seed 42 --cases 7942`.
+Reproduce with e.g. `target/release/difffuzz --module symspell --seed 42 --cases 7942`.
 
-* **Op alphabet:** `add` (weight 5) and `search` (weight 5) equally weighted, since both sides of
-  the symmetric-delete scheme need exercising; `clear` (weight 1).
-* **Word pool:** fourteen words, chosen (not randomly generated) so every one sits at
-  Damerau-Levenshtein distance 1-2 of at least one other (`"hello"/"mello"/"jello"/"hell"/"hallo"`,
-  `"world"/"word"/"ward"`, `"john"/"joan"`, …), plus one deliberately distant word (`"zzz"`) so an
-  empty-result search is reachable too — the controlled-distance construction this fuzz grammar
-  requires, not random strings that would all be far apart.
-* **Constructor:** `maxDistance` uniform over `1..=4` (the same range `test/symspell.js` itself
-  uses, `2` default and `4` explicit) and `verbosity` uniform over `0..=2`.
-* **Observable state:** `size`, `maxDistance`, `verbosity`. `search`'s own return value (the ordered
-  suggestion list) is compared per-op, not just folded into state.
+The op alphabet weights `add` and `search` equally, since both sides of the symmetric-delete scheme
+need exercising; `clear` is much lighter. The word pool is fourteen words, chosen so every one sits
+at Damerau-Levenshtein distance 1-2 of at least one other, plus one deliberately distant word so an
+empty-result search is reachable too. The constructor draws `maxDistance` uniform over `1..=4` (the
+same range `test/symspell.js` itself uses) and `verbosity` uniform over `0..=2`. Observable state is
+`size`, `maxDistance`, `verbosity`; `search`'s own return value (the ordered suggestion list) is
+compared per-op, not just folded into state. Full grammar: evidence file.
 
-**Direct evidence the grammar reaches the states this campaign is for** — `grammar_self_check`
-(`crates/difffuzz/src/modules/symspell.rs`, no oracle, no `node`), 400 generated programs, up to 200
-ops each:
-
-```
-symspell grammar: 7290/18531 searches non-empty, 1438 at exactly the configured maxDistance
-```
-
-39% of searches return at least one suggestion, and 1,438 pull in a suggestion at exactly the
-threshold boundary — both floors (`> 100` non-empty, `> 30` boundary hits) are asserted in the test
-itself, so a future pool change that regresses this back toward "every query is too far from every
-word" fails loudly.
+**Direct evidence the grammar reaches the states this campaign is for** — `grammar_self_check`, 400
+generated programs, up to 200 ops each: 7,290 of 18,531 searches non-empty (39%), 1,438 pulling in a
+suggestion at exactly the threshold boundary. Both floors (`> 100` non-empty, `> 30` boundary hits)
+are asserted in the test itself, so a future pool change that regresses this back toward "every
+query is too far from every word" fails loudly.
 
 ### Falsification of the port (gate 6)
 
@@ -171,15 +160,10 @@ Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 2,00
 own defaults), dictionary prefilled to a stated 50% fill ratio before timing. A random vocabulary
 defeats this structure entirely: `search` only finds anything by matching deletes of the query
 against deletes of added words, and if nothing is within `maxDistance`, every search returns empty.
-Two vocabulary designs were tried and rejected before this one — both documented in
-`bench/runner/src/symspell.rs`'s own module docs: a 4-letter suffix over a 10-symbol alphabet was
-too *dense* (~413 suggestions per call out of a 4,000-word dictionary, a 200,000-op pass took over
-a minute), and switching to a 6-letter suffix over the full 26-letter alphabet did **not** fix it
-(~542 suggestions per call) — the actual cause was encoding the domain value directly in any fixed
-base, which makes consecutive values one-character-apart neighbours by construction, regardless of
-alphabet size. The fix was a multiplicative scramble (`Math.imul`-matched) before encoding, which
-spreads the domain across the suffix space so only the deliberate one-character query perturbation
-makes a query findable. Measured after the fix: **98.4% of `search` calls return at least one
+The vocabulary generator applies a multiplicative scramble (`Math.imul`-matched) before encoding the
+domain value in a fixed base, which spreads the domain across the suffix space so only the
+deliberate one-character query perturbation makes a query findable — see the log for the two
+designs tried and rejected before this one. Measured: **98.4% of `search` calls return at least one
 suggestion**, averaging 1.40 suggestions per call — genuine, non-degenerate hits. xorshift32 seed 42:
 
 | metric | port | upstream | |

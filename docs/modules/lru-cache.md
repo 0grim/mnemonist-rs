@@ -70,12 +70,11 @@ found were hiding**
    }
    ```
    A walk built on the wrong timing captures the *old* `forward[pointer]` before the callback's
-   promotion relinks it. Found by this unit's own differential fuzzer on its first, un-logged
-   campaign — see "Bugs this found".
+   promotion relinks it. Found by this unit's differential fuzzer — see "Bugs this found".
 2. **A callback that `delete`s a key the walk has not yet visited**, on the `-with-delete` pair. The
    frozen bound (`l = this.size`, captured at entry) does not shrink when the callback deletes
    something, so the walk can revisit a pointer whose slot was just unlinked. See "Bugs this
-   found" — this one was caught by reading, before the fuzz grammar for this unit existed at all.
+   found".
 3. **A callback that deletes a key and a *later* `set` reuses that same freed pointer before the
    walk reaches it.** The walk then reads the NEW occupant, not the old one — upstream's own array-
    of-pointers algorithm has no way to tell "stale" from "reused" apart at that level, so this is
@@ -124,25 +123,18 @@ found were hiding**
 
 ## What we test in addition
 
-**Rust native tests** — `crates/mnemonist-core/src/structures/lru_cache.rs` (13):
+**Rust native tests** — `crates/mnemonist-core/src/structures/lru_cache.rs` (13), closing every gap
+above except 5, 8 and 9: a 1:1 reproduction of the upstream walkthrough and every other block as a
+baseline, the numeric half of the invalid-capacity guard, the hole-reuse path the "healthy workout"
+blocks exercise only indirectly, the eviction re-derivation gap (7), and both port defects described
+below (2 and its `remove` counterpart, plus the freed-pointer-reused interaction of gap 3). Full
+test-to-gap mapping: evidence file.
 
-| Test | Closes gap |
-|---|---|
-| `reproduces_the_upstream_walkthrough`, `setpop_reports_none_overwritten_and_evicted`, `capacity_of_one_evicts_on_every_new_key`, `delete_and_remove_maintain_lru_order`, `peek_does_not_disturb_order`, `clear_resets_bookkeeping_but_a_stale_slot_is_never_reachable`, `keys_and_values_project_the_same_walk_differently` | the upstream blocks, as a baseline |
-| `zero_capacity_is_refused` | the numeric half of the invalid-capacity guard |
-| `a_deleted_slot_is_reused_by_the_next_insert` | the hole-reuse path the two "healthy workout" blocks exercise indirectly |
-| `eviction_re_derives_the_index_key_from_the_stored_key_and_can_leave_it_stale` | gap 7 |
-| `a_delete_of_the_walks_next_unvisited_pointer_yields_stale_data_not_a_panic` | gap 2 — the port defect this pins |
-| `a_remove_of_the_walks_next_unvisited_pointer_yields_stale_data_not_a_panic` | the `remove` half of the same defect |
-| `a_freed_pointer_reused_before_a_stale_walk_reaches_it_surfaces_the_new_occupant` | gap 3 |
-
-**Differential fuzzer** — see "Fuzz + bench" for the campaigns. Its own grammar is worth describing
-here because the module docs it lives next to (`crates/difffuzz/src/modules/lru_cache.rs`) explain
-the *mechanism*; this is what it actually closes: gap 1 (found on contact — see "Bugs this found"),
+**Differential fuzzer** — see "Fuzz + bench" for the campaigns. It closes gap 1 (found on contact),
 gap 4/B-140 (found on contact too), gap 6 (the object-backed vs. `Map`-backed key pool deliberately
-includes `Int(0)`/`Str("0")`, which collide for one family and not the other), and a
+includes `Int(0)`/`Str("0")`, which collide for one family and not the other), and carries a
 **self-check on the grammar itself** (`grammar_self_check`, two tests, no oracle involved) that
-samples 400 generated programs and asserts a floor on how often `set`/`setpop` evict and `delete`
+samples generated programs and asserts a floor on how often `set`/`setpop` evict and `delete`
 succeeds — see "Fuzz + bench" for the measured numbers.
 
 **Still untested, stated rather than glossed:** gap 5 (`ToPropertyKey` on an object key — the bridge
@@ -154,15 +146,13 @@ narrower base than modules with a boundary spec (e.g. `heap`) have.
 
 ## Bugs this found
 
-One upstream defect, confirmed against Node 24.18.1, plus one already-known upstream inconsistency
-this unit's own bridge code had documented but never written up, plus two real port defects — found
-before and during fuzzing, not by it in the second case — both fixed.
+One upstream defect, verified against Node 24.18.1, plus one already-known upstream inconsistency
+this unit's own bridge code documents, plus two real port defects, both fixed.
 
 ### B-140 — `setpop` silently drops the eviction report when the evicted key is falsy
 
-`status: verified against Node 24.18.1` · `lru-cache.js`, `lru-map.js` (and both `-with-delete`
-siblings, via prototype copy) · found by the differential fuzzer's first campaign against this
-grammar
+Verified against Node 24.18.1 · `lru-cache.js`, `lru-map.js` (and both `-with-delete`
+siblings, via prototype copy) · found by the differential fuzzer.
 
 `setpop`'s own eviction branch is:
 
@@ -194,11 +184,11 @@ arm on. **A port that reported every eviction, as the pre-fix bridge did, is mor
 upstream and is therefore a defect** per this port's bug-for-bug fidelity rule. `test/lru-cache.js`'s
 three `setpop` blocks all evict or overwrite a non-empty string key, so gate 4 never touched this
 path; the fuzz grammar's key pool includes four JS-falsy raw keys (`Int(0)`, `Bool(false)`, `Null`,
-`Undefined`) out of ten; it found the divergence on the third generated case.
+`Undefined`) out of ten.
 
 ### B-142 — `lru-map.js`'s own `.from` names the wrong module in its error
 
-`status: verified against Node 24.18.1` · `lru-map.js`
+Verified against Node 24.18.1 · `lru-map.js`
 
 ```js
 throw new Error('mnemonist/lru-cache.from: could not guess iterable length. ...');
@@ -210,11 +200,10 @@ and `lru-map-with-delete.js` both get their own module name right. So the bug is
 one file, not systemic to the family. Reproduced verbatim in
 `crates/mnemonist-napi/src/lru_map.rs`'s `CANNOT_GUESS` constant, which is commented at the point of
 use to say so. Not independently fuzzable (it fires from `Cache.from`'s argument-arity resolution,
-before a cache exists at all, so it is an `init`-time error in the oracle protocol — see
-`fuzz/oracle.js` — rather than an op comparison); found by reading, the same way B-70..B-79 were
-for `heap`.
+before a cache exists at all, so it is an `init`-time error in the oracle protocol rather than an op
+comparison); found by reading, the same way B-70..B-79 were for `heap`.
 
-### Two defects in the port, both fixed, one found by design review and one by the fuzzer's first campaign
+### Two defects in the port, both fixed
 
 Neither is upstream's fault; both are recorded here rather than only in a commit message, following
 the precedent `docs/modules/heap.md` set for defects a gate never caught.
@@ -225,11 +214,8 @@ list. Upstream's `delete`/`remove` never touch `this.K`/`this.V` at all — only
 splice and the hole record. So a `keys()`/`values()`/`entries()`/`forEach` walk whose frozen `size`
 bound had not yet reached a pointer, when a callback (or an interleaved op, for the lazy iterators)
 deleted exactly that pointer, hit the walk's own `.expect("a pointer reachable from head within
-size steps is always live")` — which the nulling had just made false — and **panicked**. Found by
-reading, before any fuzz campaign for this unit had run at all: the shape (a hole-bearing
-`-with-delete` variant, a walk left open across a mutation) was exactly the interesting territory
-named for this unit, so it was checked directly with a scratch Rust probe.
-Confirmed to panic; fixed by not nulling either slot in `unlink`, and by changing `remove` to
+size steps is always live")` — which the nulling had just made false — and **panicked**.
+Fixed by not nulling either slot in `unlink`, and by changing `remove` to
 `.clone()` the value instead of `.take()`-ing it (which independently zeroed it) — see
 `LruCache::unlink`'s and `LruCache::remove`'s doc comments for the reasoning in full. Pinned by three
 Rust unit tests, including one confirming that a pointer freed and then *reused* before a stale walk
@@ -244,16 +230,12 @@ ever returning control to whatever called `.next()`, which is exactly `Sequence:
 advance timing. `forEach` is different: upstream's callback runs **while control is still inside its
 own loop body**, one statement *before* `pointer = forward[pointer]`. Reusing the eager-advance
 walk for `forEach` reproduced the *iterators'* timing for a method whose real timing is the
-opposite. Found by the differential fuzzer's very first campaign against this grammar (0 logged
-campaigns in `fuzz/log.txt` before the fix; the eight campaigns recorded in "Fuzz + bench" all
-post-date it): a `$forEach("set", "arg1,arg0", ...)` program — the very shape named as interesting
-territory ("interleaved with mutation") — disagreed on the third callback invocation, port seeing
-`[undefined, 1]` where upstream re-saw `["w", true]`. Fixed by `ForEachWalk`
-(`mnemonist_core::structures::lru_cache`), which splits "read the current position" from "advance,
-reading `forward` live" into two calls the caller controls, so the caller's own mutation always runs
-between them — exactly upstream's loop shape. `test/lru-cache.js`'s own `forEach` block never
-mutates from inside the callback, so gate 4 could not have found this; the minimised repro is
-checked in at `crates/difffuzz/proptest-regressions/lru-cache.txt` with a provenance header.
+opposite. Fixed by `ForEachWalk` (`mnemonist_core::structures::lru_cache`), which splits "read the
+current position" from "advance, reading `forward` live" into two calls the caller controls, so the
+caller's own mutation always runs between them — exactly upstream's loop shape. `test/lru-cache.js`'s
+own `forEach` block never mutates from inside the callback, so gate 4 could not have found this; the
+minimised repro is checked in at `crates/difffuzz/proptest-regressions/lru-cache.txt` with a
+provenance header. Full history of how this was found: log.
 
 ## Deliberate divergences
 
@@ -270,103 +252,47 @@ checked in at `crates/difffuzz/proptest-regressions/lru-cache.txt` with a proven
 
 ### Fuzz
 
-```
-module=lru-cache               seed=42       cases=4665 ops=711010  wall=60.0s divergences=0
-module=lru-cache               seed=20260801 cases=4869 ops=731558  wall=60.0s divergences=0
-module=lru-cache-with-delete   seed=42       cases=5027 ops=755972  wall=60.0s divergences=0
-module=lru-cache-with-delete   seed=20260801 cases=5076 ops=759840  wall=60.0s divergences=0
-module=lru-map                 seed=42       cases=5534 ops=837947  wall=60.0s divergences=0
-module=lru-map                 seed=20260801 cases=5649 ops=844111  wall=60.0s divergences=0
-module=lru-map-with-delete     seed=42       cases=5559 ops=834690  wall=60.0s divergences=0
-module=lru-map-with-delete     seed=20260801 cases=5988 ops=896591  wall=60.0s divergences=0
-```
+Eight campaigns (two seeds × four variants), **6.37M operations, zero divergences** — against a
+build that already carries both fixes from "Bugs this found". Reproduce with e.g.
+`target/release/difffuzz --module lru-cache-with-delete --seed 42 --cases 5027`. Full campaign log:
+evidence file.
 
-Eight campaigns, two seeds, **6.37M operations, zero divergences** — against a build that already
-carries both fixes from "Bugs this found". Both defects were found by this same grammar before any
-of these eight campaigns were run at all (an un-logged, un-timed first pass during development), so
-these eight measure the grammar *after* the interesting bugs, not instead of them. Reproduce with
-e.g. `target/release/difffuzz --module lru-cache-with-delete --seed 42 --cases 5027`.
+The op alphabet weights `get` heaviest (the mutating read, and an LRU's whole point is that a read
+changes recency), with `peek`/`has` as the non-mutating controls, `set`/`setpop` for eviction, the
+lazy-iterator lifecycle ops, and `$forEach`. The `-with-delete` variants add `delete`/`remove`,
+weighted above `clear` specifically because interleaving them with eviction is where B-140's sibling
+defect and the two port defects above were found. Constructor capacities (`1..=6`) are deliberately
+small relative to the op-count ceiling, so a generated program cycles the ring many times over at
+every capacity in range — a campaign whose capacity is large relative to its op count proves only
+that a map stores things. The key pool mixes ten keys across `Str`/`Int`/`Bool`/`Null`/`Undefined`,
+including the one collision unique to this family (`Int(0)` and `Str("0")` are the same key for the
+object-backed pair and two different keys for the `Map`-backed pair) and four JS-falsy values, which
+is what made B-140 reachable. Observable state is `capacity`/`size`/`head`/`tail` always, plus the
+object-backed pair's full `items` (see D-93 for why the `Map`-backed pair's own `items` is left out).
+Full grammar: evidence file.
 
-* **Op alphabet:** `get` (weight 8, the heaviest of any op — it is the mutating read, and an LRU's
-  whole point is that a read changes recency), `peek`/`has` (2 each, the non-mutating controls),
-  `set` (6), `setpop` (3), `clear` (1), `$iter`/`$next`/`$spread` (2/4/2, the lazy-iterator lifecycle
-  ops), `$forEach` (2, `for_each_strategy` over a small mutation table). The `-with-delete` variants
-  add `delete` (4) and `remove` (3), both weighted above `clear` specifically because interleaving
-  them with eviction is where B-140's sibling defect and the two port defects above were found.
-* **Constructor alphabet:** capacity `1..=6` and nothing else — deliberately small relative to the
-  op-count ceiling (`program_len` widened to `1..300`), so a generated program cycles the ring many
-  times over at every capacity in range. The warning here is explicit: a campaign whose
-  capacity is large relative to its op count proves only that a map stores things.
-* **Key pool:** ten keys mixing `Str`, `Int`, `Bool`, `Null` and `Undefined` (mirroring `JsKey`'s
-  primitive shapes), including the one collision unique to this family — `Int(0)` and `Str("0")` are
-  the same key for the object-backed pair (`ToPropertyKey` coerces both to `"0"`) and two different
-  keys for the `Map`-backed pair (SameValueZero never conflates them) — and four JS-falsy values
-  (`Int(0)`, `Bool(false)`, `Null`, `Undefined`), which is what made B-140 reachable on the third
-  generated case.
-* **Observable state, compared after every op:** `capacity`/`size`/`head`/`tail` always; the
-  object-backed pair's full `items` (every live key's pointer, an order-independent JSON object —
-  see D-93 for why the `Map`-backed pair's own `items` is left out).
+**How often eviction actually fired** was measured directly, not inferred from the weights, by
+`grammar_self_check`: over 400 generated programs, roughly 9.6% of all ops evict on the plain
+grammar and 5.0% evict (with 2.1% successful deletes) on the `-with-delete` grammar. Both are
+healthy — since only `set`/`setpop` can ever evict at all, that rate means somewhere near half of
+every `set`/`setpop` call actually displaces something, not a grammar that mostly proves a map
+stores things. The `-with-delete` variant's lower eviction rate is expected: every successful
+`delete` shrinks the live set and hands a hole back to `insert_new`, which the next `set` reuses
+*before* growth resumes, so some inserts that would have evicted under the plain grammar instead
+fill a hole. Both self-check tests assert a floor on these figures so a future change to the weights
+that regresses back toward "write-only" fails loudly rather than silently. Full figures: evidence
+file.
 
-**How often eviction actually fired** — measured directly, not inferred from the weights, by
-`grammar_self_check` (`crates/difffuzz/src/modules/lru_cache.rs`, no oracle, no `node`): over 400
-generated programs (up to 300 ops each),
-
-```
-lru-cache grammar (no delete): 60,220 ops, 5,760 evictions (9.6% of ops)
-lru-cache-with-delete grammar: 63,235 ops, 3,176 evictions (5.0%), 1,329 successful deletes (2.1%)
-```
-
-Both are healthy: only `set`/`setpop` can ever evict at all (roughly a quarter of the alphabet's
-weight), so 5–10% of *all* ops evicting means somewhere near half of every `set`/`setpop` call
-actually displaces something — this is not a grammar that mostly proves a map stores things. The
-`-with-delete` variant's lower eviction rate is expected: every successful `delete` shrinks the live
-set and hands a hole back to `insert_new`, which the next `set` reuses *before* growth resumes, so
-some inserts that would have evicted under the plain grammar instead fill a hole. Both self-check
-tests assert a floor on these figures (20:1 and 40:1/100:1 respectively) so a future change to the
-weights that regresses back toward "write-only" fails loudly rather than silently.
-
-### Falsification of the port (gate 6)
-
-**The assertion the sabotage had to break was named first:** the last `assert_eq!` in
-`structures::lru_cache::tests::reproduces_the_upstream_walkthrough` —
-`entries(&cache) == vec![("four", 4), ("two", 5), ("three", 3)]`, which depends on `cache.get("four")`
-having promoted `"four"` to the front a few lines earlier — and the equivalent upstream assertion,
-`test/lru-cache.js`'s own `Array.from(cache.entries())` check right after `cache.get('four')`.
-
-**The sabotage:** for an LRU the sharp target is recency, not storage, so `LruCache::get` had its
-`self.splay_on_top(pointer);` call commented out — the read still returns the right value, it just
-stops moving anything.
-
-**Confirmed red, in all three places a promotion-on-read failure could be caught:**
-
-* The named Rust assertion: `left: [("two", 5), ("four", 4), ("three", 3)]` vs.
-  `right: [("four", 4), ("two", 5), ("three", 3)]` — `"four"` never moved.
-* The original suite: `72 passing, 16 failing` (down from 88 passing) — every block that reads an
-  entry and then asserts on order went red.
-* **The differential fuzzer noticed too**, and fast: `target/release/difffuzz --module lru-cache
-  --seed 42 --cases 200` found a divergence in **74 operations, 0.4 seconds**, minimised to nine
-  operations:
-
-  ```
-  divergence in observable state after op #24: get(1)
-    head:
-      port:     1
-      upstream: 0
-    tail:
-      port:     0
-      upstream: 1
-  ```
-
-  `head`/`tail` disagreeing immediately after a `get` is exactly what a broken promotion looks like
-  from the outside — the sharpest possible confirmation that the grammar's heavy `get` weighting
-  (see "Fuzz + bench") is pulling its weight.
-
-**Reverted; confirmed green again** at all three: the named assertion passes, `88 passing` on the
-original suite, and a 200-case replay of the same seed comes back `0 divergences`.
-
-**Nothing was found to be blind here.** Every instrument this unit has — the Rust unit test, the
-original suite, and the differential fuzzer — caught the sabotage independently, which is the
-outcome gate 6 exists to distinguish from "a green light that was never capable of going red."
+**Falsification of the port (gate 6):** the assertion named first was the last `assert_eq!` in
+`reproduces_the_upstream_walkthrough` (which depends on `cache.get("four")` having promoted `"four"`
+to the front a few lines earlier) and the equivalent upstream assertion in `test/lru-cache.js`. The
+sabotage — commenting out `LruCache::get`'s `self.splay_on_top(pointer);` call, so a read still
+returns the right value but stops moving anything — is confirmed red in all three instruments this
+unit has: the named Rust assertion, the original suite (72 passing, 16 failing, down from 88), and
+the differential fuzzer, which found a divergence in 74 operations (0.4 s) and minimised it to nine.
+Reverted; confirmed green again at all three (88 passing on the original suite, 0 divergences on a
+replay). Every instrument caught the sabotage independently — the outcome gate 6 exists to
+distinguish from a green light that was never capable of going red. Full record: evidence file.
 
 ### Bench
 
@@ -375,28 +301,20 @@ Host: AMD Ryzen 5 7600X, 12 threads, WSL2, Node 24.18.1, rustc 1.97.1, quiet ser
 Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 10,000 samples/side.
 
 **`mixed-1e6`** — 1e6 mixed `set`/`get`/`has` (50/25/25) over a 1e6-key domain, capacity 20% of the
-domain (`bench/runner/src/lru_cache.rs::capacity_for`), xorshift32 seed 42:
-
-| metric | port | upstream | |
-|---|---|---|---|
-| p50 ns/op | **32.4** | 58.1 | 1.8× faster |
-| p99 ns/op | **112.9** | 287.7 | 2.5× faster |
-| RSS delta MB | **27.8** | 111.8 | |
-| structure-only RSS delta MB | **1.2** | 9.8 | |
-| startup ms | **0.6** | 17.1 | 28× (reported separately; not throughput) |
+domain: the port is 1.8× faster at p50 (32.4 vs 58.1 ns/op) and 2.5× faster at p99 (112.9 vs 287.7).
+No regressions. Full table: evidence file.
 
 **This is the module the brief predicted the port would lose on — "V8's own `Map` is heavily
-optimised" — and on these numbers it does not.** Stated rather than left to stand unexamined: the
-reason is very likely that upstream `lru-cache.js` does not use a `Map` at all. Its index is
-`this.items = {}`, a plain object, and `this.items[key]` on a numeric key runs `ToPropertyKey`
-(numeric-to-string coercion) on every access — `lru-map.js` is the sibling that uses a real `Map`,
-and it is a different file with a different bridge module, not benchmarked here. So this result
-should be read as "a `HashMap<u32, usize>` beating a plain-object property index doing string
-coercion on every op", which is a real and legitimate difference, not as "beating V8's `Map`" in
-general — the latter claim remains unconfirmed and this benchmark cannot support it. `lru-map`
-would be the workload that actually tests it, and is a natural module 8 if this harness is extended
-further.
+optimised" — and on these numbers it does not.** The reason is very likely that upstream
+`lru-cache.js` does not use a `Map` at all. Its index is `this.items = {}`, a plain object, and
+`this.items[key]` on a numeric key runs `ToPropertyKey` (numeric-to-string coercion) on every
+access — `lru-map.js` is the sibling that uses a real `Map`, and it is a different file with a
+different bridge module, not benchmarked here. So this result should be read as "a
+`HashMap<u32, usize>` beating a plain-object property index doing string coercion on every op",
+which is a real and legitimate difference, not as "beating V8's `Map`" in general — the latter claim
+remains unconfirmed and this benchmark cannot support it. `lru-map` would be the workload that
+actually tests it.
 
-Caveat carried from the module docs above: access here is uniform xorshift, under which an LRU's
-hit rate converges to roughly `capacity / domain` regardless of eviction quality. Read this table as
+Caveat carried from the module docs above: access here is uniform xorshift, under which an LRU's hit
+rate converges to roughly `capacity / domain` regardless of eviction quality. Read this table as
 cost-per-operation under continuous churn, not as a hit-rate claim.

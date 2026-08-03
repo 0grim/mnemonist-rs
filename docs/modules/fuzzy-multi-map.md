@@ -58,12 +58,11 @@ literally the same reference) is the *only* shape `Set`-kind object dedup can ta
 
 ## What we test in addition
 
-**Rust native tests** — `crates/mnemonist-core/src/structures/fuzzy_multi_map.rs` (5) — the wrapping
-itself, since there is no new algorithm to pin beyond what `multi_map`'s own tests already cover:
-`reproduces_the_upstream_walkthrough`, `clear_resets_size_and_dimension`,
-`get_returns_every_item_hashed_to_the_same_key`, `has_matches_the_hashed_key`,
-`set_kind_deduplicates_by_the_supplied_equality` (over a plain `PartialEq` item, standing in for
-`multi_map`'s own `Set`-kind coverage one layer down).
+`crates/mnemonist-core/src/structures/fuzzy_multi_map.rs` — 5 tests — the wrapping itself, since
+there is no new algorithm to pin beyond what `multi_map`'s own tests already cover: a reproduction
+of the upstream walkthrough, `clear` resetting `size`/`dimension`, `get` returning every item hashed
+to the same key, `has` matching the hashed key, and `Set`-kind dedup by the supplied equality over a
+plain `PartialEq` item, standing in for `multi_map`'s own `Set`-kind coverage one layer down.
 
 **Differential fuzzer** — `fuzzyLower` (a real factory shared with `fuzzy-map`'s own campaign)
 collapsing `'Hello'`/`'HELLO'`/`'World'` onto two hashed keys, so the campaign hits "one key, several
@@ -131,36 +130,27 @@ depends on.
 
 ### Fuzz
 
+Two campaigns, two seeds, **1.59M operations, zero divergences**:
+
 ```
 module=fuzzy-multi-map  seed=42       cases=9562 ops=964655 wall=90.0s divergences=0
 module=fuzzy-multi-map  seed=20260801 cases=6276 ops=629178 wall=60.0s divergences=0
 ```
 
-Two campaigns, two seeds, **1.59M operations, zero divergences**. Reproduce with e.g.
-`target/release/difffuzz --module fuzzy-multi-map --seed 42 --cases 9562`.
+Reproduce with e.g. `target/release/difffuzz --module fuzzy-multi-map --seed 42 --cases 9562`.
 
-* **Op alphabet:** `add` (weight 5), `set` (2), `has`/`get` (2 each), `clear` (1).
-* **Source pool:** `"Hello"`, `"HELLO"`, `"World"` — `fuzzyLower` (the real factory, shared with
-  `fuzzy-map`'s own campaign via `fuzz/oracle.js`'s `FACTORIES` table, so both sides run the
-  identical function rather than two hand-written mirrors that could quietly disagree) collapses the
-  first two onto one hashed key.
-* **Constructor**: `new FuzzyMultiMap(fuzzyLower)` — one hash function shared by both directions,
-  `List`-kind container (see D-167 for why `Set`-kind is out of scope for this campaign).
-* **Observable state**: `size`, `dimension`, and `items` rendered as the **nested** object upstream's
-  own `this.items` actually is — a `MultiMap` *instance*, not a raw `Map`, so `fuzz/oracle.js`'s
-  generic `encode()` renders it as `{items: {$map: [...]}, size, dimension}` rather than a bare
-  `{$map: ...}`. The very first draft of this spec flattened it, which is indistinguishable from the
-  real shape only by accident and diverged on case 0 of every run before the fix — see
-  `crates/difffuzz/src/modules/fuzzy_multi_map.rs`'s own `observe` doc comment.
+The op alphabet covers `add`/`set`/`has`/`get`/`clear`. The source pool is `"Hello"`, `"HELLO"`,
+`"World"` — `fuzzyLower` (the real factory, shared with `fuzzy-map`'s own campaign via
+`fuzz/oracle.js`'s `FACTORIES` table, so both sides run the identical function rather than two
+hand-written mirrors that could quietly disagree) collapses the first two onto one hashed key. The
+constructor is `new FuzzyMultiMap(fuzzyLower)` — one hash function shared by both directions,
+`List`-kind container (see D-167 for why `Set`-kind is out of scope for this campaign). Observable
+state is `size`, `dimension`, and `items` rendered as the **nested** object upstream's own
+`this.items` actually is — a `MultiMap` *instance*, not a raw `Map`. Full grammar: evidence file.
 
 **Direct evidence the grammar reaches the states this campaign is for** — `grammar_self_check` (400
-generated programs, up to 300 ops each, no oracle):
-
-```
-fuzzy-multi-map grammar: 41,673 steps with a multi-value bucket, 4,193 clears of a nonempty map
-```
-
-Both floors are asserted in the test itself.
+generated programs, up to 300 ops each, no oracle): 41,673 steps with a multi-value bucket, 4,193
+clears of a nonempty map. Both floors are asserted in the test itself.
 
 ### Falsification of the port (gate 6)
 
@@ -196,17 +186,10 @@ Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 10,0
 `Array` container), same `hash(x) = x >> 4` as `fuzzy-map` on both sides, over a 200,000 raw-key
 domain (chosen so the ~12,500-key post-hash domain reaches a representative values-per-key figure —
 **~40 values per key on average by the run's end**, this group's other load-bearing multi-container
-parameter), xorshift32 seed 42:
+parameter): the port is 1.6× faster at p50 (17.3 vs 27.4 ns/op), 1.7× faster at p99 (34.2 vs 58.5).
+No regressions. Full table: evidence file.
 
-| metric | port | upstream | |
-|---|---|---|---|
-| p50 ns/op | **17.3** | 27.4 | 1.6× faster |
-| p99 ns/op | **34.2** | 58.5 | 1.7× faster |
-| RSS delta MB | **10.8** | 65.3 | |
-| structure-only RSS delta MB | **0.1** | 6.5 | |
-| startup ms | **0.6** | 16.6 | 28× (reported separately; not throughput) |
-
-**No regressions.** This module has no `delete`/`remove` at all (upstream or here), so — unlike
-`multi-map` — nothing here pays a linear-scan cost; every op is O(1) amortised on both sides, and the
-hash's own collapse is what produces the ~40-values-per-key figure without needing a separately
-hand-picked small domain the way `multi-map`/`multi-set`/`multi-array` do.
+This module has no `delete`/`remove` at all (upstream or here), so — unlike `multi-map` — nothing
+here pays a linear-scan cost; every op is O(1) amortised on both sides, and the hash's own collapse
+is what produces the ~40-values-per-key figure without needing a separately hand-picked small domain
+the way `multi-map`/`multi-set`/`multi-array` do.

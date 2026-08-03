@@ -58,18 +58,13 @@ the file, and would still be wrong.
 ## What we test in addition
 
 `crates/mnemonist-core/src/structures/fuzzy_map.rs` — 8 tests (core takes the *already-hashed* key,
-since hashing is a JS callback and lives in the bridge — see the module docs for the split):
-
-| Test | Closes gap |
-|---|---|
-| `reproduces_the_upstream_suite` | 1:1 port of the assertions that do not need real hash-function plumbing |
-| `has_and_get_disagree_on_a_stored_undefined` | 1 |
-| `overwriting_a_stored_undefined_reports_no_displaced_value` | 1 — the `Option<V>::flatten` interaction |
-| `set_overwrites_in_place_and_reports_the_displaced_value` | 2 — same resolved key, insertion order unchanged |
-| `values_mut_reaches_every_stored_slot_including_the_undefined_ones` | 1 — the bridge's `clear` needs this to release every napi reference |
-| `a_cursor_sees_entries_set_after_it_was_opened` | 4 — live-cursor semantics, inherited from `OrderedMap` |
-| `there_is_no_delete_only_clear` | — `fuzzy-map.js` defines no `delete` at all; stated as a real absence, not an oversight |
-| `an_empty_map_reports_nothing` | 4 |
+since hashing is a JS callback and lives in the bridge — see the module docs for the split): a
+baseline reproduction of the assertions that do not need real hash-function plumbing, `has`/`get`
+disagreeing on a stored `undefined`, overwriting a stored `undefined` reporting no displaced value,
+`set` overwriting in place and reporting the displaced value at the same resolved key without
+moving insertion order, every stored slot reachable for bridge release, a cursor seeing entries set
+after it was opened, that there is no `delete` at all (stated as a real absence, not an oversight),
+and an empty map reporting nothing.
 
 Gaps 3, 5 and 6 are stated rather than closed — 3 and 5 are bridge-level (the hash-function split is
 JavaScript, not core), covered instead by the differential campaign below and by
@@ -82,15 +77,11 @@ unit in this wave.
 off-by-one, and no branch the port's own harness bug (below) turned out to be hiding.
 
 **A harness bug, not an upstream one — recorded here for the paper trail.** The difffuzz spec's
-`Hash::named` matched the literal names `"identity"`/`"lower"`, but `fuzz/oracle.js`'s `FACTORIES`
-table and this spec's own constructor strategy both use the prefixed `fuzzyIdentity`/`fuzzyLower`
-(chosen precisely so this module's factory names cannot collide with `default-map`'s, which the
-oracle also serves). Every generated program panicked at construction, before a single comparison
-ran — which is why this spec had never actually executed: it was not yet wired into
-`tests/differential.rs`, and the one earlier manual campaign attempt persisted a regression seed
-that, on inspection, was the harness panic rather than a finding. That spurious seed was deleted
-rather than kept. Fixed by matching the prefixed names; see
-`crates/difffuzz/src/modules/fuzzy_map.rs`'s history.
+name-matching for its hash factories did not match the actual prefixed factory names
+(`fuzzyIdentity`/`fuzzyLower`, chosen precisely so this module's factory names cannot collide with
+`default-map`'s, which the oracle also serves), so every generated program panicked at
+construction, before a single comparison ran. This spec had in fact never actually executed before
+being fixed. Full account: log.
 
 ## Deliberate divergences
 
@@ -108,31 +99,28 @@ rather than kept. Fixed by matching the prefixed names; see
 
 ### Fuzz
 
+**1.21M operations, zero divergences:**
+
 ```
 module=fuzzy-map seed=42  cases=12019  ops=1210496  wall=90.0s  divergences=0
 ```
 
-**1.21M operations, zero divergences.** Reproduce with `target/release/difffuzz --module fuzzy-map
---seed 42 --cases 12019`.
+Reproduce with `target/release/difffuzz --module fuzzy-map --seed 42 --cases 12019`.
 
-* **Op alphabet:** `add(item)` (weight 4) · `set(key, item)` (4) · `get(key)` (3) · `has(key)` (2) ·
-  `clear()` (1).
-* **Items are drawn from a small, mixed-case string pool** (`Hello`/`hello`/`World`/`WORLD`/`Foo`/
-  `bar`), so `identity` and a case-insensitive hash disagree on collisions constantly — `"Hello"`
-  and `"hello"` are one key under one hash function and two under the other.
-* **Constructed with either `fuzzyIdentity` or `fuzzyLower`**, the two named factories
-  `fuzz/oracle.js` gained for this module (prefixed so they cannot collide with `default-map`'s
-  table entries). `add` and `set` hash *different* arguments — the item itself versus the caller's
-  key — which is exactly the distinction the bridge's `HashFn` split has to get right; this grammar
-  puts both call shapes in the alphabet so both are checked.
-* **Observable state:** `size` and `items` — `{$map: [[key, value_or_undefined], ...]}`.
-* **Deliberately excluded:** the array-descriptor form and object items (see Deliberate
-  divergences); both are covered elsewhere and disclosed rather than silently narrowed.
+The op alphabet covers `add`/`set`/`get`/`has`/`clear`. Items are drawn from a small, mixed-case
+string pool, so `identity` and a case-insensitive hash disagree on collisions constantly —
+`"Hello"` and `"hello"` are one key under one hash function and two under the other. Constructed
+with either `fuzzyIdentity` or `fuzzyLower`, the two named factories the oracle gained for this
+module (prefixed so they cannot collide with `default-map`'s table entries). `add` and `set` hash
+*different* arguments — the item itself versus the caller's key — which is exactly the distinction
+the bridge's `HashFn` split has to get right; this grammar puts both call shapes in the alphabet so
+both are checked. Observable state is `size` and `items`. Deliberately excluded: the
+array-descriptor form and object items (see Deliberate divergences); both are covered elsewhere and
+disclosed rather than silently narrowed.
 
-**The harness bug above was found by running this campaign, before it was fixed.** Every case
-panicked mid-construction — a hard failure, not a soft "zero ops" report, because the panic happens
-inside `apply()`, past `report.ops > 0`'s guard. Confirmed to compile, run, and produce zero
-divergences only after `Hash::named` was corrected to the prefixed names.
+The harness bug above was found by running this campaign, before it was fixed — every case panicked
+mid-construction, a hard failure rather than a soft "zero ops" report. Confirmed to compile, run,
+and produce zero divergences only after the fix; full history: log.
 
 ### Falsification of the port (gate 6)
 
@@ -153,9 +141,8 @@ Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 10,0
 
 **`mixed-1e6`** — 1e6 mixed `set`/`get`/`has` (50/25/25) over the full 1e6-key domain, keys hashed
 by `hash(x) = x >> 4` on **both** sides (an arithmetic right shift needs no floating-point rounding
-to keep in sync between a Rust closure and a JS function — see `bench/runner/src/fuzzy_map.rs`'s
-own module docs on why the hash has to do identical work on both sides), collapsing 16 raw keys onto
-one stored slot, xorshift32 seed 42:
+to keep in sync between a Rust closure and a JS function), collapsing 16 raw keys onto one stored
+slot: the port is 1.8× faster at p50 (14.7 vs 26.0 ns/op), 1.3× faster at p99 (40.1 vs 50.9).
 
 | metric | port | upstream | |
 |---|---|---|---|

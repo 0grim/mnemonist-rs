@@ -103,22 +103,11 @@ and never exercised by the original suite.
 
 ## What we test in addition
 
-Mapped 1:1 to the gaps above.
-
-| Gap | Where | What |
-|---|---|---|
-| 1, 2, 3 | `sort/{insertion,quick}.rs` `degenerate_windows_do_nothing`, `check_window` tests | Empty window, empty slice, inverted window |
-| 2 | `tests/boundary/sort.js` "every window of a fixed array" | **All 78 windows**, differentially against vendored upstream, for all four functions |
-| 4 | `insertion.rs::nan_pins_the_elements_to_its_right`, `sort/mod.rs::nan_compares_false_in_every_direction` | `NaN` pins rather than sinks |
-| 5 | `tests/boundary/sort.js` "refuse a non-numeric element" | The stated divergence, asserted as a refusal so silently accepting would be noticed |
-| 6 | `tests/boundary/sort.js` "leave elements outside the window untouched" | A string and an object either side of the window, differentially |
-| 7 | `insertion.rs::indices_past_the_end_of_the_array_never_move`, `quick.rs::indices_past_the_end_of_the_array_do_not_panic`, and the fuzz grammar | Index values drawn from a range **wider than the value array** |
-| 8 | fuzz grammar | Index array length independent of the value array's |
-| 9 | `tests/boundary/sort.js` "return the very array it was given" | `strictEqual(returned, argument)` for all four, plus mutation read back through the *caller's* handle |
-| 10 | `quick.rs::every_pointer_width_sorts_the_same_way`, `tests/boundary/sort.js` "Uint16Array of indices" | 300 members, forcing the 16-bit width |
-| 11 | `typed_arrays.rs::indices_truncates_its_length_but_not_its_width`, `indices_refuses_the_lengths_upstream_refuses`, `tests/boundary/sort.js` | Every boundary length, both signs, both integralities, `NaN`, `Infinity`, `> 2³²` |
-| 12 | `quick.rs::already_sorted_input_does_not_overflow_the_stack` | 4,096 elements sorted, reversed and all-equal |
-| 13 | `insertion.rs::is_stable_where_quick_sort_is_not`, `quick.rs::disagrees_with_insertion_sort_on_equal_keys` | The two permutations asserted against each other, and both checked non-decreasing |
+Every gap above is closed by a mix of Rust unit tests, `tests/boundary/sort.js` (differential
+against vendored upstream, covering all 78 windows of the fixed array, non-numeric refusal,
+untouched regions outside the window, identity of the returned array, and every boundary length for
+`indices`), and the fuzz grammar (independent index-array lengths, indices wider than the value
+array). Full test-to-gap mapping: evidence file.
 
 Plus the differential fuzzer: 9,974 programs and 400,469 operations across two 60-second campaigns,
 zero divergences.
@@ -246,12 +235,10 @@ falsification pins it.
 
 ## Fuzz + bench
 
-**Fuzz.** `difffuzz --module sort`. Two campaigns, both clean:
+### Fuzz
 
-| seed | cases | ops | wall | divergences |
-|---|---|---|---|---|
-| 42 | 4,898 | 196,041 | 60.0s | 0 |
-| 20260801 | 5,076 | 204,428 | 60.0s | 0 |
+Two campaigns, both clean, **400,469 operations, zero divergences**. Full campaign table: evidence
+file.
 
 Ops: `inplaceInsertionSort`, `inplaceQuickSort`, `inplaceInsertionSortIndices`,
 `inplaceQuickSortIndices`, `indices`. Arrays of 0–24 elements drawn from a pool of 11 values
@@ -269,35 +256,27 @@ here ships a whole array in each direction and can allocate a 65,537-element typ
 sides, where `union(x, y)` ships two integers — **not** a regression, and the op counts are not
 comparable across modules.
 
-**Falsification (gate 6).** Two sabotages, each naming the assertion it had to break, each confirmed
-red and then green after revert:
+**Falsification (gate 6, on the fuzzer).** Two sabotages, each naming the assertion it had to break,
+each confirmed red and then green after revert: `indices` choosing its width from the truncated
+length rather than the raw one is caught in 62 cases (0.3s), shrunk to a single operation; and
+rewriting `a > b` as `!(a <= b)` in `inplace_insertion_sort` — identical for every totally ordered
+type, the exact opposite whenever either side is `NaN` — is caught in 300 cases (0.4s), shrunk to a
+two-element array containing `NaN`. Both seeds are committed in
+`crates/difffuzz/proptest-regressions/sort.txt` with a provenance block saying they came from
+sabotages and not from real port defects. Full record: evidence file.
 
-1. **`indices` choosing its width from the truncated length.** Must break
-   `indices_truncates_its_length_but_not_its_width` and the boundary spec's
-   "truncate a fractional length while sizing the width from the raw one". Both went red; the
-   fuzzer found it in 62 cases (0.3s) and shrank it to a **single operation**, `m.indices(256.5)`.
-2. **`a > b` rewritten as `!(a <= b)`** in `inplace_insertion_sort` — identical for every totally
-   ordered type, the exact opposite whenever either side is `NaN`. Must break
-   `nan_pins_the_elements_to_its_right`. It went red; the fuzzer found it in 300 cases (0.4s) and
-   shrank it to `m.inplaceInsertionSort([NaN, 0], 0, 2)`.
+**Falsification of the port (gate 6, on the original suite), separate and cruder, is what proves
+the original test file exercises Rust rather than a JS fallback:** deleting the
+`array.swap(j - 1, j)` line from `mnemonist_core::sort::insertion::inplace_insertion_sort` breaks
+`test/sort.js`'s "insertion → should properly sort inplace." (13 passing → 9 passing, 4 failing,
+the named assertion among them); reverted, back to 13 passing. All six `quick` blocks and both
+`insertion` **indices** blocks stayed green throughout, because they are a different code path —
+a falsification that had targeted a shared helper would have gone red everywhere and told us less.
+Full record: evidence file.
 
-Both seeds are committed in `crates/difffuzz/proptest-regressions/sort.txt` with a provenance block
-saying they came from sabotages and not from real port defects.
+### Bench
 
-The gate-4 falsification is separate and cruder, and it is what proves the original test file
-exercises Rust rather than a JS fallback: deleting the `array.swap(j - 1, j)` line from
-`mnemonist_core::sort::insertion::inplace_insertion_sort` must break `test/sort.js`'s
-**"insertion → should properly sort inplace."** — `assert.deepStrictEqual(data, [-3, 1, 1, 2, 3, 5,
-6, 7, 8, 9, 18])`. Confirmed: 13 passing → **9 passing, 4 failing**, the named assertion among
-them, with `AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal`. Back to 13
-passing after revert.
-
-Note which blocks *stayed* green, because it is the useful part: all six `quick` blocks and both
-`insertion` **indices** blocks passed with the sabotage in place. They are a different code path,
-and a falsification that had targeted a shared helper would have gone red everywhere and told us
-less.
-
-**Bench.** `bench/results.json` → `modules["sort"]`. Methodology: `bench/methodology.md`.
+`bench/results.json` → `modules["sort"]`. Methodology: `bench/methodology.md`.
 Host: AMD Ryzen 5 7600X, 12 threads, WSL2, Node 24.18.1, rustc 1.97.1, quiet serial pass.
 Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, 500 samples/side.
 
@@ -319,15 +298,9 @@ same multiset; weighting by final index makes it sensitive to quicksort's own (n
 tie-breaking, so checksum agreement is evidence both sides ran the identical statement-by-statement
 algorithm B-81's docs describe, not merely that both produced *a* sorted array.
 
-| metric | port | upstream | |
-|---|---|---|---|
-| p50 ns/element | **31.9** | 78.4 | 2.5× faster |
-| p99 ns/element | **41.8** | 99.7 | 2.4× faster |
-| min ns/element | **30.6** | 75.8 | 2.5× faster |
-| RSS delta MB | **1.4** | 41.0 | |
-| startup ms | **0.6** | 16.2 | 27× (reported separately; not throughput) |
-
-No regressions. `structure_rss_delta_mb` (port 0.1 MB, upstream 5.8 MB) is a different kind of
-number here from the other ten modules': there is no persistent structure left after the call
-returns, so it measures the transient footprint of allocating and sorting one 20,000-element array
-— read it as "memory to hold and sort `size` elements", not "size of the sort structure".
+The port is 2.5× faster at p50 (31.9 vs 78.4 ns/element), 2.4× faster at p99, 2.5× faster at min. No
+regressions. Full table: evidence file. `structure_rss_delta_mb` (port 0.1 MB, upstream 5.8 MB) is a
+different kind of number here from the other ten modules': there is no persistent structure left
+after the call returns, so it measures the transient footprint of allocating and sorting one
+20,000-element array — read it as "memory to hold and sort `size` elements", not "size of the sort
+structure".

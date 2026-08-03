@@ -53,15 +53,11 @@ own gaps; see that file's docs.
 
 ## What we test in addition
 
-**Rust native tests** (`crates/mnemonist-core/src/structures/fixed_critbit_tree_map.rs`, 10):
-
-| Test | Closes gap |
-|---|---|
-| `reproduces_the_upstream_set_suite`, `keys_that_differ_only_in_length_do_not_break`, `for_each_visits_in_sorted_key_order_when_exactly_at_capacity`, `rejects_a_zero_capacity` | the upstream blocks, as a baseline |
-| `keys_differing_only_in_the_last_byte_route_correctly_within_capacity` | the gate 6 falsification target, within capacity |
-| `exceeding_capacity_silently_corrupts_then_crashes_exactly_as_upstream_does`, `a_capacity_of_one_corrupts_on_the_second_key` | B-261, measured at two different capacities |
-| `root_is_a_number_fresh_but_null_right_after_a_clear` | B-260 |
-| `clear_empties_the_tree_but_does_not_shrink_the_backing_arrays`, `a_set_right_after_a_clear_reuses_index_zero_instead_of_panicking` | a port bug this unit's own differential fuzzer found (see "Bugs this found") |
+`crates/mnemonist-core/src/structures/fixed_critbit_tree_map.rs` — 10 tests, closing every gap
+above: a baseline reproduction of the four upstream blocks, the gate-6 falsification target within
+capacity, B-261 measured at two different capacities (including a capacity of one corrupting on its
+second key), B-260's `root` value fresh versus after a clear, and the port bug found by this unit's
+own fuzzer (below).
 
 **Differential fuzzer** — see "Fuzz + bench". Capacity is drawn deliberately small (`2..=5`) against
 an 8-key pool specifically so it is exceeded, and B-261's crash reached, in most generated programs
@@ -133,7 +129,7 @@ module=fixed-critbit-tree-map   seed=42       cases=9987   ops=1020404  wall=60.
 module=fixed-critbit-tree-map   seed=20260801 cases=10061  ops=1025762  wall=60.0s  divergences=0
 ```
 
-**Grammar:** `crates/difffuzz/src/modules/fixed_critbit_tree_map.rs`, sharing
+`crates/difffuzz/src/modules/fixed_critbit_tree_map.rs`, sharing
 `crate::modules::critbit_tree_map::PREFIX_POOL` directly. `capacity` is drawn from `2..=5` against
 the same 8-key pool specifically so B-261's overflow is reached in most generated programs, not
 merely capable of it — see "Bugs this found" for the measured evidence. Ops: `set`, `get`, `has`,
@@ -198,7 +194,7 @@ So: **the falsification stayed green, and correctly so, for a specific and now-u
 this variant's only observable structural check (`root`) is topologically blind to a self-consistent
 left-right mirror, and the one channel that is not blind to it (`forEach`'s visitation order) is
 covered by gate 7, not gate 9, for this module. Both instruments are telling the truth about what
-they each cover; neither is broken. Filed as the sharpest illustration this pair of units produced of
+they each cover; neither is broken. This is the sharpest illustration this pair of units produced of
 "passing your own verification is not the same as being correct" — here, *two* green instruments
 (fuzzer clean, and it would remain clean forever against this exact class of bug) sit next to one
 red one (the native `forEach`-order test) checking the same underlying defect from different angles.
@@ -212,32 +208,18 @@ red one (the native `forEach`-order test) checking the same underlying defect fr
 Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 10,000 samples/side.
 
 **`mixed-2e5`** — 1e6 mixed `set`/`get`/`has` (50/25/25) — `fuzzy-map`'s shape, not `sparse-map`'s:
-upstream has no `delete` at all (see this module's own docs above). `size` 200,000 is **both** the
-capacity and the full key domain, which is load-bearing rather than a style choice: upstream's
-`set` has no capacity guard whatsoever, and a distinct key past capacity silently corrupts the tree
-— the next operation to walk through that corrupted node THROWS. Capping the domain at capacity
-means the tree fills to capacity (every key is drawn from `0..size`, so at most `size` distinct keys
-are ever possible) but can never overflow it — "capacity actually filled" without ever reaching the
-crash this module's own docs describe. Same zero-padded, deep-critical-bit key shape as
-`critbit-tree-map`, reused verbatim. xorshift32 seed 42:
+upstream has no `delete` at all. `size` 200,000 is **both** the capacity and the full key domain,
+which is load-bearing rather than a style choice: upstream's `set` has no capacity guard whatsoever,
+and a distinct key past capacity silently corrupts the tree — the next operation to walk through
+that corrupted node THROWS. Capping the domain at capacity means the tree fills to capacity (every
+key is drawn from `0..size`, so at most `size` distinct keys are ever possible) but can never
+overflow it — "capacity actually filled" without ever reaching the crash this module's own docs
+describe. Same zero-padded, deep-critical-bit key shape as `critbit-tree-map`, reused verbatim.
+xorshift32 seed 42:
 
 | metric | port | upstream | |
 |---|---|---|---|
-| p50 ns/op | 325.78 | **306.50** | upstream 1.06× faster |
-
-**Fixed 2026-08-03 — two allocations per `set`.** `set` declared `let mut ancestors: Vec<usize> =
-Vec::new()` and `let mut path: Vec<bool> = Vec::new()` fresh on every call and dropped both at the
-end. Any walk that descends through even one internal node pushes into them, so once the tree is
-non-trivial that is two heap allocations on essentially every insert — and `set` is half this
-workload's operation mix.
-
-Both are now struct fields, cleared on entry rather than reallocated. Neither is observable outside
-a single `set` call: cleared on entry, filled to that call's own traversal depth, read only within
-the same call. The struct derives `Debug` and `Clone` but not `PartialEq`, and nothing formats it,
-so carrying a stale scratch buffer into a clone changes nothing.
-
-Six runs alternating the old and new code put the port's p50 at **393–424 ns before and 280–307 ns
-after**, about 28%. This module now reads **1.18× faster** than upstream where it read 1.11× slower.
+| p50 ns/op | 325.78 | **306.50** | upstream ~1.06–1.08× faster |
 | p99 ns/op | **527.09** | 822.52 | 1.6× faster |
 | RSS delta MB | **27.0** | 192.5 | |
 | structure-only RSS delta MB | 0.1 | **1.0** | |
@@ -245,13 +227,14 @@ after**, about 28%. This module now reads **1.18× faster** than upstream where 
 
 **One real, reproducible loss: p50, ~1.06–1.08× across two independent runs.** Re-run twice rather
 than published from a single pass — a clean-looking result invites the question of what was left
-out just as much as a *loss* that might be noise, and
-this one held in both passes rather than appearing once. **Cause: unconfirmed.** A plausible but
-unverified explanation is `BoundedSlots`' `Option`-returning bounds check on every internal-node
-read (`lefts`/`rights`), which upstream's raw typed-array indexing does not pay for — but this has
-not been checked against a metric that would falsify it (e.g. isolating that one accessor), so it
-is labelled unconfirmed rather than asserted, per this port's rule against overclaiming performance
-causation. p99 and every RSS/startup figure still favour the port; the structure-only RSS row is
-the one place upstream's fixed typed arrays are smaller than the port's own pre-allocated arenas at
-this size. Checksum `15858409098`, identical on both sides — same ops, same answers, including
-reaching capacity without the corruption path ever firing.
+out just as much as a *loss* that might be noise, and this one held in both passes rather than
+appearing once. This is measured after fixing a larger, separately-diagnosed allocation cost in
+`set` (see the log for that history); what remains is this smaller residual. **Cause: unconfirmed.**
+A plausible but unverified explanation is `BoundedSlots`' `Option`-returning bounds check on every
+internal-node read (`lefts`/`rights`), which upstream's raw typed-array indexing does not pay for —
+but this has not been checked against a metric that would falsify it (e.g. isolating that one
+accessor), so it is labelled unconfirmed rather than asserted, per this port's rule against
+overclaiming performance causation. p99 and every RSS/startup figure favour the port; the
+structure-only RSS row is the one place upstream's fixed typed arrays are smaller than the port's
+own pre-allocated arenas at this size. Checksum `15858409098`, identical on both sides — same ops,
+same answers, including reaching capacity without the corruption path ever firing.

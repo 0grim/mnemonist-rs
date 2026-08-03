@@ -9,8 +9,6 @@ So the unit is one file, and it is the smallest closure in the queue.
 Port: `crates/mnemonist-core/src/structures/suffix_array.rs` ·
 bridge `crates/mnemonist-napi/src/suffix_array.rs` · shim `tests/bridge/suffix-array.js`
 
-All ten gates green (`tests/scope.txt`).
-
 ---
 
 ## What upstream tests
@@ -54,27 +52,19 @@ against an independently computed suffix array.
 10. **Tokens whose string order differs from any natural order** — the token cases use words whose
     lexicographic order is the intended one, so the fact that the alphabet is built from
     `Object.keys(...).sort()` (i.e. *string* order, so `"10" < "2"`) is never visible.
-11. **Anything about the separator.** `''` is spliced between members and occupies a real
+11. **Anything about the separator.** `''` is spliced between members and occupies a real
     position; nothing checks that, and nothing checks what happens when a member contains one.
 
 ## What we test in addition
 
-18 native tests in `crates/mnemonist-core/src/structures/suffix_array.rs`.
-
-| gap | test |
-|---|---|
-| — (upstream's own five, transcribed) | `matches_the_upstream_suites_own_arrays`, `..._own_arbitrary_sequence`, `..._own_generalized_arrays`, `..._own_lcs` |
-| 1, 2, 3 | `b90_symbols_sharing_a_low_byte_are_mis_sorted`, `b91_lengths_congruent_to_one_mod_three_are_mis_sorted` — both assert upstream's **wrong** answer *and* assert it differs from a naive reference, so a later "tidy-up" fails loudly |
-| 1, 3 | `ascii_inputs_off_the_bad_residue_are_exactly_right` — every binary string of length 1..=14 whose length is not `1 (mod 3)`, checked against a naive `O(n² log n)` suffix sort. 23,404 inputs. |
-| 3 | `the_bad_residue_is_correct_until_the_recursion_fires` |
-| 4 | `empty_sequences`, `the_shortest_sequences` |
-| 5 | `to_string_joins_the_array_with_commas` |
-| 7 | `a_generalized_array_of_one`, `a_generalized_array_of_three` |
-| 8 | `disjoint_members_have_no_common_substring` |
-| 9 | `a_generalized_array_of_one` (asserts `firstLength`), `the_separator_occupies_a_position` (asserts `text`) |
-| 10 | `the_token_alphabet_is_ordered_as_strings` |
-| 11 | `the_separator_occupies_a_position` |
-| the port's own edges | `a_generalized_array_of_none_is_refused`, `a_mixed_generalized_array_is_refused` |
+18 native tests in `crates/mnemonist-core/src/structures/suffix_array.rs`, transcribing upstream's
+own five as a baseline and closing every gap above: both defects below pinned against upstream's
+own wrong answer *and* against a naive reference so a later "tidy-up" would fail loudly, 23,404
+inputs of length 1..=14 (off the bad residue) checked against a naive O(n² log n) suffix sort, the
+empty and shortest sequences, `toString`, generalized arrays of one and of three members, disjoint
+members sharing no common substring, `firstLength`/`text`, the string-ordered token alphabet, the
+separator occupying a real position, and the port's own refusals for an empty or mixed member list.
+Full test-to-gap mapping: evidence file.
 
 The naive reference is the load-bearing piece. It is what turns "matches the frozen constant" into
 "matches an independently computed answer", and it is what found both defects below.
@@ -101,16 +91,9 @@ JavaScript that read is `undefined`, `Math.max(undefined, j)` is `NaN`, every sh
 every `&&` clause is therefore falsy, and `bits` falls through to `8`. The sort then compares only
 the **low byte** of each 16-bit symbol.
 
-Mechanism confirmed by instrumenting upstream's own `sort`, not inferred. For the 15-character input
-below, three passes run:
-
-| offset | read past the end? | `j` | `bits` |
-|---|---|---|---|
-| 2 | yes (index 16, length 15) | `NaN` | 8 |
-| 1 | yes | `NaN` | 8 |
-| 0 | no | 513 | 16 |
-
-So two of the three passes are 8-bit while the largest symbol needs 10.
+Mechanism confirmed by instrumenting upstream's own `sort`, not inferred. For a 15-character input,
+three passes run, and two of them are 8-bit while the largest symbol needs 10 — see the evidence
+file for the exact table.
 
 Any alphabet where two symbols share a low byte is then mis-sorted — including every character at or
 above U+0100 whose low byte collides with the `0` padding:
@@ -160,7 +143,7 @@ test suite is one repeated trigram away from having caught this.
 
 `test/suffix-array.js` ends with a skipped test for issue #196 and the comment
 `// TODO: fix sentinel to be lower than anything else in the token case`. That is a *third*,
-separately-known problem — the token alphabet numbers symbols from 1 while the separator `''`
+separately-known problem — the token alphabet numbers symbols from 1 while the separator `''`
 is itself a token and gets an ordinary alphabet number rather than a guaranteed-smallest one. It is
 disabled, so it is not asserted here either way; the port reproduces whatever upstream does, and the
 skipped test stays skipped (`tests/run.sh` reports "1 pending").
@@ -196,11 +179,11 @@ CommonJS *namespacing*, not behaviour: the addon exports both classes at top lev
 `Stack.of`, which *is* behaviour and therefore lives in the addon (`crates/mnemonist-napi/src/statics.rs`)
 precisely so a shim is not load-bearing.
 
-The alternative was to do the alias inside the addon's single `#[napi(module_exports)]` hook in
-`crates/mnemonist-napi/src/cursor.rs`. That file is being edited concurrently by several agents, and
-a merge conflict boundary landing inside a function tail has already broken this tree three times.
-Recording the trade here rather than burying it: this is a merge-safety decision, and if the hook
-ever becomes safe to extend, moving the alias into it would be strictly better.
+The alternative — aliasing inside the addon's single `#[napi(module_exports)]` hook in
+`crates/mnemonist-napi/src/cursor.rs` — was set aside as a merge-safety decision: that file is edited
+concurrently by several agents, and a merge conflict boundary landing inside a function tail has
+already broken this tree three times. If the hook ever becomes safe to extend, moving the alias into
+it would be strictly better.
 
 **D-52 — `inspect` is not ported.** A Node display convenience (`util.inspect.custom`) with no
 upstream assertion and no Rust equivalent.
@@ -215,19 +198,14 @@ fails.
 
 ## Fuzz + bench
 
-**Gate 9 — four campaigns, 1,735,060 operations, zero divergences.**
+### Fuzz
 
-| module key | seed | cases | ops | wall |
-|---|---|---|---|---|
-| `suffix-array` | 42 | 274,418 | 548,743 | 60.0s |
-| `suffix-array` | 20260801 | 257,468 | 515,381 | 60.0s |
-| `generalized-suffix-array` | 42 | 169,107 | 343,616 | 60.0s |
-| `generalized-suffix-array` | 20260801 | 161,214 | 327,320 | 60.0s |
-
-Spec: `crates/difffuzz/src/modules/suffix_array.rs`. This is the first module in the fuzzer with no
-mutating method, so the constructor strategy carries the entropy and programs are 1..4 ops long.
-The op alphabet is **complete** for both classes — `toString`, `toJSON` and, for the generalized
-variant, `longestCommonSubsequence` — so no method is omitted from the grammar.
+**Four campaigns, 1,735,060 operations, zero divergences.** Spec:
+`crates/difffuzz/src/modules/suffix_array.rs`. This is the first module in the fuzzer with no
+mutating method, so the constructor strategy carries the entropy and programs are 1..4 ops long. The
+op alphabet is **complete** for both classes — `toString`, `toJSON` and, for the generalized
+variant, `longestCommonSubsequence` — so no method is omitted from the grammar. Full campaign table:
+evidence file.
 
 The input alphabet is picked for collisions rather than realism: `U+0000` equals `convert`'s padding
 value, `U+0001` equals the generalized separator, and `U+0100` / `U+0141` / `U+0201` have low bytes
@@ -240,19 +218,23 @@ constructor, which the oracle protocol classifies as apparatus failure, and the 
 see D-50) and **mixed** member kinds (D-49). Both are documented divergences, so fuzzing them would
 only re-report a known decision.
 
-**Gate 6 — falsification, three separate runs, each with its target named before it was performed.**
+**Falsification, three separate runs, each with its target named before it was performed.** Removing
+the `.rev()` from the radix gather in `sort()` (making the LSD sort unstable) must break the original
+suite's `'SuffixArray should produce the correct array.'` — confirmed red (0 passing, 5 failing),
+reverted (5 passing, 1 pending). "Fixing" B-90's `bits` fall-through must break a state divergence in
+`array`/`toJSON`/`toString` against the `suffix-array` fuzz spec — confirmed red after 400 cases,
+minimised to a 42-character input mixing U+0141 with U+0100; reverted, clean. Weakening LCS's second
+guard (`>` to `>=`) must break a divergence in `longestCommonSubsequence`'s return value against the
+`generalized-suffix-array` fuzz spec — confirmed red, minimised to a two-member list whose first
+member is empty (so `firstLength` is 0 and position 0 *is* the boundary the asymmetric guards let
+through); reverted, clean. Both minimised seeds are committed under
+`crates/difffuzz/proptest-regressions/` with PROVENANCE blocks, because an unlabelled seed reads as
+"a real port defect was found here", which is the opposite of what happened. Full record: evidence
+file.
 
-| what | sabotage | must break | result |
-|---|---|---|---|
-| the original test suite (gate 4) | remove the `.rev()` from the radix gather in `sort()`, making the LSD sort unstable | `assert.deepStrictEqual(sa.array, [5, 3, 1, 0, 4, 2])` in `'SuffixArray should produce the correct array.'` | **red**: 0 passing, 5 failing. Reverted: 5 passing, 1 pending. |
-| the `suffix-array` fuzz spec | `sort()`'s `bits` fall-through `8 → 16`, i.e. "fixing" B-90 | a state divergence in `array` / `toJSON` / `toString` | **red** after 400 cases, minimised to a 42-character input mixing U+0141 with U+0100. Reverted: clean. |
-| the `generalized-suffix-array` fuzz spec | LCS's second guard `>` → `>=` | a divergence in `longestCommonSubsequence`'s return value | **red**, minimised all the way to a two-member list whose first member is empty — so `firstLength` is 0 and position 0 *is* the boundary the asymmetric guards let through. Reverted: clean. |
+### Bench
 
-Both minimised seeds are committed under `crates/difffuzz/proptest-regressions/` with PROVENANCE
-blocks, because an unlabelled `cc` line reads as "a real port defect was found here", which is the
-opposite of what happened.
-
-**Gate 10.** `bench/results.json` → `modules["suffix-array"]`. Methodology: `bench/methodology.md`.
+`bench/results.json` → `modules["suffix-array"]`. Methodology: `bench/methodology.md`.
 Host: AMD Ryzen 5 7600X, 12 threads, WSL2, Node 24.18.1, rustc 1.97.1, quiet serial pass.
 Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, 500 samples/side.
 
@@ -271,17 +253,12 @@ plain sum cannot tell a correct construction from a B-90/B-91-shaped wrong one a
 agreement here is evidence the port reproduces both defects bug-for-bug, at the same recursion
 depths, not merely that both sides produced *a* permutation of the same numbers.
 
-| metric | port | upstream | |
-|---|---|---|---|
-| p50 ns/char | **69.1** | 514.1 | 7.4× faster |
-| p99 ns/char | **91.4** | 632.7 | 6.9× faster |
-| min ns/char | **66.7** | 469.4 | 7.0× faster |
-| RSS delta MB | **1.2** | 200.1 | |
-| startup ms | **0.6** | 15.9 | 26× (reported separately; not throughput) |
+The port is 7.4× faster at p50 (69.1 vs 514.1 ns/char), 6.9× faster at p99, 7.0× faster at min. No
+regressions — the widest margin in this whole batch, on both throughput and RSS. Full table:
+evidence file.
 
-No regressions — the widest margin in this whole batch, on both throughput and RSS. Plausible
-mechanism, unconfirmed: DC3's recursion allocates several intermediate arrays per level (the
-reduced string, the rank arrays, the merge buffers), and upstream's `Sparse`-shaped reads (this
+Plausible mechanism, unconfirmed: DC3's recursion allocates several intermediate arrays per level
+(the reduced string, the rank arrays, the merge buffers), and upstream's `Sparse`-shaped reads (this
 module's own docs: `undefined` past a hole or the array's end, load-bearing for B-90/B-91) mean
 several of those upstream arrays are plain `Array`s rather than typed arrays, carrying V8's general
 object-array overhead through every recursive level. The port's own `Sparse` type

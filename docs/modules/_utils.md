@@ -16,19 +16,13 @@ This unit is named specifically as one whose require-closure spans several stand
 `test/_utils.js`'s require-closure is
 `typed-arrays` + `binary-search` + `hash-tables` + `iterables` + `merge`, and — despite the
 underscore — this is a real upstream test file, not a helper, so all five must exist before one
-assertion in it can run. Four of the five were already ported as standing infrastructure by earlier
-work (each carries its own "this is not a unit yet" note in its module docs, pointing at this file);
-this pass ported the fifth, `merge.js`, and is what turns that infrastructure into gate 4 evidence
-for the first time.
+assertion in it can run.
 
-This was **not** quite "the cheapest large unit remaining" as expected going in. Four of the five
-files are pure numeric functions with no surprises. `merge.js`'s k-way algorithms drive a
-`FibonacciHeap` (an unported, separate T2-tier unit) internally, and two of `binary-search.js`'s
-seven functions take a JavaScript comparator — a small, one-shot instance of the re-entrant-callback
-work the unit was expected to have none of. Both turned out tractable (a linear-scan substitute for
-the heap; a "sticky error" wrapper for the comparator, reusing `crate::vector`'s existing shape for
-a fallible callback inside an infallible core signature) without requiring a new unit, but neither
-was free, and the heap substitution left a real, stated gap — see "Deliberate divergences".
+`merge.js`'s k-way algorithms drive a `FibonacciHeap` internally, and two of `binary-search.js`'s
+seven functions take a JavaScript comparator — a small, one-shot instance of re-entrant-callback
+work. Both are tractable without a new unit: `k_way_scan` drives a real `FibonacciHeap`, and a
+"sticky error" wrapper (reusing `crate::vector`'s existing shape for a fallible callback inside an
+infallible core signature) handles the comparator.
 
 ---
 
@@ -60,7 +54,7 @@ member at all. Nothing here supplies a malformed, unsorted, or partially-empty i
 
 ## What upstream does NOT test
 
-**`merge.js`, the newly-ported file, has the sharpest gaps:**
+**`merge.js` has the sharpest gaps:**
 
 1. **B-180.** A k-way `merge`/`unionUnique` call where some but not all arrays are empty and
    three-or-more remain live throws a `TypeError` upstream never catches or documents — see "Bugs
@@ -72,14 +66,13 @@ member at all. Nothing here supplies a malformed, unsorted, or partially-empty i
    is exactly where this port and upstream first disagreed — twice (see "Bugs this found").
 3. **Three-or-more-array ties.** No k-array test case has any array head tie with another, so the
    `FibonacciHeap`'s tie-break behaviour is completely untested upstream, not merely lightly tested.
-   **Update: this port now reproduces it rather than disagreeing with it** — D-105 is closed (see
-   "Deliberate divergences" and `docs/modules/fibonacci-heap.md`); `k_way_scan` drives a real
-   `FibonacciHeap`, the same one upstream's own `kWayMergeArrays`/`kWayUnionUniqueArrays` build.
+   This port reproduces it, rather than approximating it, by driving a real `FibonacciHeap` in
+   `k_way_scan` — see `docs/modules/fibonacci-heap.md` and the log for how that came to be.
 4. **`NaN` anywhere in `merge`/`unionUnique`/`intersectionUnique`.** Every value in every test case
-   is a plain finite integer. The differential fuzz grammar now covers `NaN` in three-or-more-array
-   groups for `merge`/`unionUnique` (widened alongside D-105's closure); `intersectionUnique`'s own
-   k-way `NaN` handling is a *separate*, still-open, pre-existing gap — D-105 never touched it, since
-   `kWayIntersectionUniqueArrays` has no heap at all. See "Deliberate divergences".
+   is a plain finite integer. The differential fuzz grammar covers `NaN` in three-or-more-array
+   groups for `merge`/`unionUnique`; `intersectionUnique`'s own k-way `NaN` handling is a *separate*,
+   still-open, pre-existing gap, since `kWayIntersectionUniqueArrays` has no heap at all. See
+   "Deliberate divergences".
 
 **Elsewhere:**
 
@@ -100,14 +93,10 @@ member at all. Nothing here supplies a malformed, unsorted, or partially-empty i
 * **This unit's own two real bugs**, both found by differential fuzzing inside the first fuzz
   campaign ever run against this grammar — see "Bugs this found" below.
 * **`crates/mnemonist-core/src/utils/merge.rs`'s native tests** — the upstream suite's own cases,
-  transcribed, plus: `NaN` in a union's dedup check (`nan_is_never_deduplicated_by_the_union_dedup_check`),
-  ties across k-way arrays that do *not* change the merged multiset
-  (`ties_across_arrays_do_not_affect_the_merged_multiset`), B-180 isolated at its sharpest
-  (`merge_k_reproduces_b_180_when_filtering_drops_the_length`,
-  `union_unique_k_reproduces_b_180_when_filtering_drops_the_length`), the boundary where filtering
-  down to two-or-fewer arrays takes the early-return path *before* the stale-length bug could ever
-  fire (`filtering_down_to_two_or_fewer_never_reaches_the_bug`), and `intersection_unique_k`'s
-  structural immunity to B-180 (`intersection_unique_k_is_immune_to_b_180`).
+  transcribed, plus: `NaN` in a union's dedup check, ties across k-way arrays that do *not* change
+  the merged multiset, B-180 isolated at its sharpest, the boundary where filtering down to
+  two-or-fewer arrays takes the early-return path *before* the stale-length bug could ever fire, and
+  `intersection_unique_k`'s structural immunity to B-180. Full test list: evidence file.
 * **`crates/mnemonist-core/src/utils/typed_arrays.rs`'s new tests** for `getNumberType`/
   `getMinimalRepresentation`/`concat` — every priority-table boundary (including the sharp,
   counter-intuitive one where `Uint32Array` tops out at `i32::MAX`, not `u32::MAX`, because
@@ -121,7 +110,7 @@ member at all. Nothing here supplies a malformed, unsorted, or partially-empty i
 ## Bugs this found
 
 **B-180 — the k-way `merge`/`unionUnique` throw a `TypeError` whenever filtering an empty array out
-leaves three-or-more arrays live.** `status: VERIFIED against Node 24.18.1`. `kWayMergeArrays` and
+leaves three-or-more arrays live.** Verified against Node 24.18.1. `kWayMergeArrays` and
 `kWayUnionUniqueArrays` both capture `l = arrays.length` *before* filtering empty inputs out into
 `filtered`, then reassign `arrays = filtered` and seed a `FibonacciHeap` with `l` indices — more
 than `filtered.length` whenever anything was filtered out. The first `heap.pop()` that touches one
@@ -147,9 +136,9 @@ overclaim causation" cuts the other way too):
    prefix loop pushes unconditionally (only its overlap and filling loops dedup). Found by
    differential fuzzing inside the first 300 generated cases; fixed.
 2. The k-way linear scan's tie-break disagreed with `FibonacciHeap`'s own, observably, on both
-   `merge`'s element order and `unionUnique`'s deduplication. **Fixed — D-105 is now closed**: see
-   "Deliberate divergences" and `docs/modules/fibonacci-heap.md`. The exact case that found this
-   (`merge([3], [2, -5], [2])`) is pinned as a Rust test,
+   `merge`'s element order and `unionUnique`'s deduplication. Fixed by driving a real
+   `FibonacciHeap` instead of a linear-scan substitute — see "Deliberate divergences" and the log for
+   the history. The exact case that found this (`merge([3], [2, -5], [2])`) is pinned as a Rust test,
    `merge_k_matches_upstreams_real_heap_on_the_case_that_found_d_105`
    (`crates/mnemonist-core/src/utils/merge.rs`), against the real heap's actual output.
 
@@ -158,8 +147,7 @@ overclaim causation" cuts the other way too):
 | # | Divergence | Why |
 |---|---|---|
 | D-104 | **B-180 is reproduced as `Err(KWayError::StaleLengthMismatch)`, not a panic.** | `mnemonist-core` has no exceptions and forbids `unsafe`, so the actual out-of-bounds mechanism cannot be reproduced; the outcome (the k-way call fails, with upstream's message available at the boundary) is. Same convention as D-44 (`hash_tables::TABLE_IS_FULL`). |
-| D-105 | **CLOSED.** Was: the k-way merge/union's tie-break was a linear scan's, not a real `FibonacciHeap`'s. | `fibonacci-heap` is now a ported unit. `k_way_scan` drives a real `FibonacciHeap<usize, KWayKeyComparator, Thrown>` — upstream's own inline comparator closure, translated directly, over array indices with `pointers` read fresh per comparison. The fuzz grammar (`crates/difffuzz/src/modules/_utils.rs`) is widened back to a tie-producing, `NaN`-including pool for `merge`/`unionUnique`. |
-| D-106 | **`intersectionUnique`'s k-way `NaN` handling is a separate, still-open gap.** | `kWayIntersectionUniqueArrays`/`intersection_unique_k` never used a heap — D-105 never applied to it. Upstream seeds its running bounds from JS's `-Infinity`/`Infinity` sentinels; this port seeds from `Option<T>`, so the *first* array scanned always sets the accumulator, `NaN` included, where upstream's sentinel can survive past a `NaN`-headed array. Reachable only once `NaN` participates in a three-or-more-array group; the fuzz grammar's `k_way_arrays_op` takes an `allow_nan` flag that stays `false` for `intersectionUnique` specifically so D-105's widening does not silently paper over this different gap. See `crates/mnemonist-core/src/utils/merge.rs`'s `intersection_unique_k` module docs for the mechanism. |
+| D-106 | **`intersectionUnique`'s k-way `NaN` handling is a separate, still-open gap.** | `kWayIntersectionUniqueArrays`/`intersection_unique_k` never used a heap. Upstream seeds its running bounds from JS's `-Infinity`/`Infinity` sentinels; this port seeds from `Option<T>`, so the *first* array scanned always sets the accumulator, `NaN` included, where upstream's sentinel can survive past a `NaN`-headed array. Reachable only once `NaN` participates in a three-or-more-array group; the fuzz grammar's `k_way_arrays_op` takes an `allow_nan` flag that stays `false` for `intersectionUnique` specifically so the `merge`/`unionUnique` tie-break fix does not silently paper over this different gap. See `crates/mnemonist-core/src/utils/merge.rs`'s `intersection_unique_k` module docs for the mechanism. |
 | — | **`concat` supports `Uint8Array` only.** | `test/_utils.js`'s own case never constructs anything else; upstream is generic over any typed-array class via `arguments[0].constructor`. Same "helpers land as callers reach them" policy as `indices`. |
 | — | **`getMinimalRepresentation`'s optional `getter` argument is not ported.** | Never supplied by any test in scope; same policy. |
 | — | **A custom `linearProbing` hash function is supported at the bridge (a real JS callback), but never fuzzed.** | `test/_utils.js` only ever passes `jenkinsInt32`; fuzzing an arbitrary hash would need the same re-entrant-callback machinery as the comparator exclusion below, for a capability nothing in scope exercises. |
@@ -169,74 +157,45 @@ overclaim causation" cuts the other way too):
 ### Fuzz
 
 Two 60-second campaigns logged (`fuzz/log.txt`, `module=_utils`), seeds `42` and `20260801`:
-**508,729 + 503,372 = 1,012,101 operations, zero divergences** on the final grammar. The path there
-was not clean on the first attempt, which is the point of fuzzing this unit at all — three real
-findings surfaced inside the first few hundred cases of the very first run, all reported above
-rather than smoothed over:
-
-1. B-180 was already known from reading; the campaign's grammar deliberately manufactures it (a
-   0-length array alongside two-or-more non-empty ones in a three-to-five-array group) rather than
-   relying on luck.
-2. The `union_unique_two` prefix-loop defect (a real port bug) surfaced inside the first ~300 cases
-   and was fixed before any campaign was logged.
-3. The `FibonacciHeap`-tie-break gap (D-105) surfaced immediately after, on a three-array case with
-   a tied value. Rather than fix the unfixable-without-a-new-unit, the k-way (three-or-more array)
-   generator was changed to draw **globally distinct** values across the whole group — which does
-   not hide the gap, it removes the *only* condition (a tie) under which it is reachable. B-180
-   stays fully reachable, since it depends only on array counts, never on value content. The
-   two-array generator keeps duplicates and `NaN` freely, because `merge_two`/`union_unique_two`
-   have no tie-break step to disagree about (verified: `merge([-5, NaN], [-1, 3])` matches upstream
-   with `NaN` present).
+**508,729 + 503,372 = 1,012,101 operations, zero divergences** on the final grammar. The grammar
+manufactures B-180 deliberately (a 0-length array alongside two-or-more non-empty ones in a
+three-to-five-array group) rather than relying on luck; the k-way generator draws globally distinct
+values across a group so array-head ties (the FibonacciHeap tie-break question) do not confound the
+value comparison, while the two-array generator keeps duplicates and `NaN` freely since
+`merge_two`/`union_unique_two` have no tie-break step to disagree about. Full grammar history,
+including two real defects this campaign's first run surfaced within a few hundred cases: log.
 
 **Deliberately excluded from the grammar**, each for a stated, structural reason rather than
-convenience:
-
-* **`getPointerArray`/`getMinimalRepresentation`.** Both return a real JS *constructor*, which
-  `fuzz/oracle.js`'s `encode` has no case for — it falls through unmodified and `JSON.stringify`
-  drops the property outright. Nothing to compare through this protocol; covered by native Rust
-  tests pinned against Node and by the real bridge integration run instead.
-* **The three `WithComparator` binary-search variants.** The comparator is a JavaScript function
-  called from inside the search loop; comparing against it here would mean rendering an equivalent
-  comparator as JS source per generated case — real re-entrant-callback machinery this unit was
-  scoped to avoid at the fuzz-grammar level (it is still exercised, once, at the bridge — see
-  below). Covered instead by `crate::utils::binary_search`'s pre-existing exhaustive native tests.
-* **`iterables`.** No core-side pure function exists to fuzz (`docs/modules/utils-iterables.md`).
-* **All of `hash-tables.js`.** Its two exports (`hashes`, `linearProbing`) are both plain objects —
-  upstream never exports a bare top-level function at all — and the oracle's free-function protocol
-  dispatches with a single property lookup, `instance[name](...)`. There is no
-  `instance.linearProbingSet`, only `instance.linearProbing.set`; extending the oracle to walk a
-  dotted path would be a structural change to a shared file (`fuzz/oracle.js`) that this project's
-  convention reserves for additive edits only. Covered instead by `crate::utils::hash_tables`'s own extensive native
-  tests and the real bridge run.
+convenience: `getPointerArray`/`getMinimalRepresentation` (both return a real JS *constructor*,
+which the oracle's `encode` has no case for); the three `WithComparator` binary-search variants (the
+comparator is a JavaScript function called from inside the search loop — real re-entrant-callback
+machinery this unit was scoped to avoid at the fuzz-grammar level; covered instead by
+`crate::utils::binary_search`'s pre-existing exhaustive native tests); `iterables` (no core-side pure
+function exists to fuzz); and all of `hash-tables.js` (its two exports are both plain objects, and
+the oracle's free-function protocol has no dotted-path dispatch — covered instead by
+`crate::utils::hash_tables`'s own extensive native tests and the real bridge run). Full detail:
+evidence file.
 
 ### Falsification (gate 6)
 
 Two attempts named a real assertion and stayed **green** — reported rather than discarded, because
-each is itself a finding about this unit's structure:
-
-1. Relaxed `k_way_scan`'s tie-break (`<` to `<=`, favouring the latest array on a tie). Target:
-   `'should properly merge k arrays.'`. The test's own tie resolves to identical values regardless
-   of which array supplies them — unobservable there, consistent with D-105's analysis.
-2. Reversed `merge_two`'s swap condition (`a[0] > b[0]` to `a[0] < b[0]`). Target:
-   `'should properly merge two arrays.'`, the `[4, 5, 6]`/`[1, 2, 3]` case. The swap is a
-   fast-path optimisation, not a correctness requirement of the (side-symmetric) two-pointer walk —
-   unobservable.
-
-Third attempt, **confirmed red**: reversed the overlap loop's comparison (`a_head <= b_head` to
-`a_head >= b_head`). Target: `'should properly merge two arrays.'`, case
-`[[1, 2, 2, 3], [2, 3, 3, 4], [1, 2, 2, 2, 3, 3, 3, 4]]`. Result: **25 passing / 1 failing**, exactly
-that assertion, actual `[1, 2, 2, 3, 2, 3, 3, 4]` (unsorted) against expected
-`[1, 2, 2, 2, 3, 3, 3, 4]`. Reverted; **confirmed green again**, 26/26.
-
-The two green attempts are not filler: they establish, empirically rather than by assertion alone,
-that the two-array functions are tie-order- and swap-side-invariant — which is exactly the property
-that stops holding once a third array can interleave (D-105).
+each is itself a finding about this unit's structure: relaxing `k_way_scan`'s tie-break is
+unobservable against `'should properly merge k arrays.'` because that test's own tie resolves to
+identical values regardless of which array supplies them, consistent with the tie-break analysis
+above; and reversing `merge_two`'s swap condition is unobservable against
+`'should properly merge two arrays.'` because the swap is a fast-path optimisation, not a
+correctness requirement of the (side-symmetric) two-pointer walk. A third attempt — reversing the
+overlap loop's comparison — is confirmed red (25 passing / 1 failing, exactly the targeted
+assertion, an unsorted actual value against the expected one); reverted, confirmed green again
+(26/26). The two green attempts are not filler: they establish, empirically rather than by assertion
+alone, that the two-array functions are tie-order- and swap-side-invariant — which is exactly the
+property that stops holding once a third array can interleave. Full record: evidence file.
 
 ### Bench
 
 **Excluded, deliberately, and not merely deferred** — considered directly during the final gate-10
-batch (the last fourteen units) and not benchmarked, for a reason specific to what `_utils` actually
-is rather than for lack of an idle machine.
+batch and not benchmarked, for a reason specific to what `_utils` actually is rather than for lack
+of an idle machine.
 
 Every other module in this project's gate-10 harness (`bench/runner/src/harness.rs`'s
 `ModuleEntry`) benchmarks **one structure**: either a mixed op-stream against one persistent

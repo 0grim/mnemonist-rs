@@ -85,45 +85,14 @@ Twelve `it` blocks, and the shape of the coverage matters more than the list:
 ## What we test in addition
 
 `crates/mnemonist-core/src/structures/bits.rs` — 13 tests, against the shared store, so the
-semantics are pinned once for both modules:
+semantics are pinned once for both modules, closing gaps 1, 2, 5–9 and 11–13. Full test-to-gap
+mapping: evidence file.
 
-| Test | Closes gap |
-|---|---|
-| `a_no_op_reset_decrements_size_when_the_top_bit_of_the_word_is_set` | 1 — B-17, including `size == -2` |
-| `a_no_op_reset_is_harmless_while_the_top_bit_is_clear` | 1 — the control that explains why upstream never noticed |
-| `rank_returns_zero_whenever_the_size_counter_is_zero` | 2 — the propagation into `rank` |
-| `select_loses_thirty_two_positions_per_skipped_word` | 5 — B-18 |
-| `select_answers_minus_one_a_position_or_undefined` | 6, 7, 8 — all three return shapes |
-| `out_of_range_indices_are_inert_rather_than_corrupting` | 9 |
-| `a_bit_past_length_but_inside_the_word_is_counted_yet_invisible` | 9 — B-23 |
-| `a_cursor_keeps_the_array_it_was_opened_over` | 11, 12 |
-| `writes_ahead_of_the_cursor_are_visible_but_not_within_the_current_word` | 12 — the word-granularity half |
-| `a_walk_is_not_restartable` | 13 |
-| `entries_pair_each_bit_with_its_ordinal` | — |
-| `the_last_word_is_full_when_the_length_is_a_multiple_of_thirty_two` | — B-22, the `\|\| 32` misfire |
-| `cloning_copies_the_backing_store` | — a port-side invariant, not an upstream one |
-
-`crates/mnemonist-core/src/structures/bit_set.rs` — 15 tests:
-
-| Test | Closes gap |
-|---|---|
-| `reproduces_the_upstream_suite` | 1:1 port of all twelve upstream blocks, as a baseline |
-| `a_reset_that_clears_nothing_still_decrements_size` | 1 |
-| `a_corrupted_size_makes_rank_lie` | 2 — and that `select` bails on the same counter |
-| `the_same_reset_is_harmless_while_the_words_top_bit_is_clear` | 1 |
-| `select_loses_a_word_of_positions_for_every_empty_word_it_skips` | 5 |
-| `select_off_the_end_is_undefined_and_out_of_range_is_minus_one` | 6, 7, 8 |
-| `indices_past_the_backing_array_are_inert` | 9, 10 |
-| `a_bit_between_length_and_the_end_of_its_word_is_counted_but_unreachable` | 9 |
-| `clear_detaches_an_open_cursor_from_the_words_it_zeroes` | 11, 12 |
-| `clear_resets_size_and_the_set_is_reusable` | 3, 11 |
-| `repeated_sets_and_resets_are_idempotent_in_size` | 4 |
-| `a_zero_length_set_holds_and_yields_nothing` | 14 |
-| `iteration_yields_exactly_length_bits` | 14 — nine lengths across both word boundaries |
-| `cursors_do_not_restart_but_the_set_can_be_walked_again` | 13 — both levels of D-07 |
-| `writes_during_iteration_are_visible_only_beyond_the_current_word` | 12 |
-| `rank_saturates_past_the_end_rather_than_reading_off_it` | 9 |
-| `allocates_one_word_per_thirty_two_bits_rounded_up` | — |
+`crates/mnemonist-core/src/structures/bit_set.rs` — 15 tests, closing every remaining gap except 15
+and 16: a 1:1 reproduction of all twelve upstream blocks as a baseline, the same reset defect
+attributed to the port, `select`'s three return shapes, out-of-range and negative indices inert,
+`clear` detaching an open cursor and resetting size, idempotent repeated sets, and iteration across
+both word boundaries. Full test-to-gap mapping: evidence file.
 
 **Still untested, stated rather than glossed:** gap 16 (`inspect`, not ported), gap 15 in its
 `arguments.length` form (see the divergence table), and a JS caller writing *through* `set.array`,
@@ -132,7 +101,7 @@ which the bridge cannot support (also in the table).
 ## Bugs this found
 
 **B-17 — `reset` omits the `>>> 0` that `set` and `flip` apply, so `size` drifts and can go
-negative.** `status: VERIFIED against Node 24.18.1`. `size` is never a popcount; it is maintained by
+negative.** Verified against Node 24.18.1. `size` is never a popcount; it is maintained by
 comparing the word before and after each write, which is only valid if both readings are unsigned.
 `set` and `flip` say so:
 
@@ -160,7 +129,7 @@ three lines from two correct call sites, whose consequence propagates into both 
 upstream reaches.
 
 **B-18 — `select` does not advance its position across the words it skips.**
-`status: VERIFIED against Node 24.18.1`.
+Verified against Node 24.18.1.
 
 ```js
 if (byte === 0) continue;              // <-- p is NOT advanced by 32 here
@@ -173,12 +142,12 @@ skipped) and `select(2) === 38` (wrong by exactly one word). Invisible upstream 
 `select` tests use a length of 11.
 
 **B-23 — an index past `length` but inside the last allocated word is accepted, and then invisible.**
-`status: VERIFIED against Node 24.18.1`. `new BitSet(10)` allocates one 32-bit word, and `set(20)`
+Verified against Node 24.18.1. `new BitSet(10)` allocates one 32-bit word, and `set(20)`
 lands in it: `size === 1`, `array === [1048576]`, while `rank(10) === 0`, `select(1) === undefined`
 and iteration yields ten zeros. `size` disagrees with every other view of the same set.
 
-**Asked and answered: the `SparseSet` out-of-range family does NOT recur here.** Both modules are
-typed-array-backed and the question is the obvious one. Measured on Node:
+**The `SparseSet` out-of-range family does NOT recur here.** Both modules are typed-array-backed and
+the question is the obvious one. Measured on Node:
 
 | call, index past the array | upstream | why |
 |---|---|---|
@@ -193,14 +162,12 @@ B-23 is the narrow survivor of the family, and it is a *reachability* gap rather
 
 See also `docs/modules/utils-bitwise.md` for B-19 and B-20, found in this unit's require-closure.
 
-
-### B-31 — `&self` on a `Freeze` type was `noalias readonly` (fixed 2026-08-01)
-
-This bridge held a bare core value, so `&self` compiled to a `noalias readonly` pointer and LLVM was
-entitled to hoist reads across the JS callback — which it did. It now holds `RefCell<Core>`, which
-is not `Freeze`, and every `&mut self` method became `&self` + `borrow_mut()`. The borrow is taken
-per step and released before the callback runs, so a re-entrant callback never meets an outstanding
-borrow. See B-31, above, and `crates/mnemonist-napi/src/cursor.rs`'s `CellCursor`.
+**The bridge held a bare core value behind `&self`**, which LLVM was entitled to compile as a
+`noalias readonly` pointer and hoist reads across a re-entrant JS callback (B-31). It now holds
+`RefCell<Core>`, which is not `Freeze`, and every `&mut self` method borrows via `borrow_mut()`
+taken per step and released before the callback runs, so a re-entrant callback never meets an
+outstanding borrow. See `crates/mnemonist-napi/src/cursor.rs`'s `CellCursor`. Full history in the
+log.
 
 ## Deliberate divergences
 
@@ -221,96 +188,54 @@ borrow. See B-31, above, and `crates/mnemonist-napi/src/cursor.rs`'s `CellCursor
 
 ### Fuzz
 
+Two campaigns, two seeds, **3.92 M operations, zero divergences**:
+
 ```
 module=bit-set seed=42       cases=26373 ops=2625894 wall=120.0s divergences=0
 module=bit-set seed=20260801 cases=12871 ops=1293656 wall=60.0s divergences=0
 ```
 
-Two campaigns, two seeds, **3.92 M operations, zero divergences**. Reproduce with
-`target/release/difffuzz --module bit-set --seed 42 --cases 26373`.
+Reproduce with `target/release/difffuzz --module bit-set --seed 42 --cases 26373`.
 
-* **Op alphabet:** `set(i)` (weight 4) · `set(i, 0)` (2) · **`reset(i)` (3)** · `flip(i)` (2) ·
-  `get(i)` (2) · `test(i)` (1) · `rank(i)` (2) · `select(r)` (2) · `clear()` (1) ·
-  `$iter("values")` (1) · `$iter("entries")` (1) · `$next()` (3) · `$spread()` (1).
-* **Observable state, compared after every op:** `size`, `length`, **`array`** and `toJSON()`.
-  `array` is the point — `size` alone would agree in plenty of programs where the words had already
-  diverged.
-* **Lengths:** `0..=400`, thirteen words. Zero is included because `new BitSet(0)` allocates nothing
-  and is the degenerate end of every guard; 400 is sparse enough that empty words between set bits
-  are routine, which is what B-18 needs.
-* **Indices:** `0..length + 64`, so a steady fraction land in B-23's band and beyond it.
-* **Program length:** 1..200 ops.
-* **Deliberately excluded: nothing.** Out-of-range indices, negative-adjacent behaviour and cursor
-  interleaving are all generated. `reset` is weighted **up** rather than down, because B-17 only
-  misfires on a bit that is already clear, and a low weight would make that rare rather than routine.
+The op alphabet covers `set`/`reset`/`flip`/`get`/`test`/`rank`/`select`/`clear` plus the cursor ops,
+with `reset` weighted **up** rather than down, because B-17 only misfires on a bit that is already
+clear, and a low weight would make that rare rather than routine. Observable state is `size`,
+`length`, **`array`** and `toJSON()` — `array` is the point, since `size` alone would agree in
+plenty of programs where the words had already diverged. `$iter` alternates between `values` and
+`entries`, which share an implementation in this port and are separate closures upstream, so
+fuzzing only one would leave the other unchecked. `clear()` is in the alphabet *because* it
+interacts with an open cursor. Deliberately excluded: nothing — out-of-range indices,
+negative-adjacent behaviour and cursor interleaving are all generated. Full grammar: evidence file.
 
-`$iter` alternates between `values` and `entries`: they share an implementation in this port and are
-separate closures upstream, so fuzzing only one would leave the other unchecked. `clear()` is in the
-alphabet *because* it interacts with an open cursor.
-
-**The fuzzer was falsified before it was trusted**. Sabotage: `reset` given the `>>> 0`
+**The fuzzer was falsified before it was trusted.** Sabotage: `reset` given the `>>> 0`
 upstream forgot — B-17 *fixed*, which is the single most plausible thing a future cleanup does to
-this file. Caught in **1,325 cases (2.0 s)** and shrunk from 200 ops to **two**:
+this file. Caught in 1,325 cases (2.0 s), shrunk from 200 ops to two, and the two-op repro shows that
+**B-23 and B-17 compound**: the accepted-but-invisible `set(31)` past `length` is what puts bit 31
+into the word, which is the precondition for `reset`'s signed comparison to misfire — neither defect
+alone reaches the state, and no upstream test passes an index past `length` at all. Reverted; the
+seed is committed with provenance in `crates/difffuzz/proptest-regressions/bit-set.txt`. Full repro:
+evidence file.
 
-```js
-var s = new BitSet(1);
-s.set(31);      // inside word 0, past length 1 -- accepted (B-23)
-s.reset(0);     // clears nothing; upstream decrements anyway
-// port size 1, upstream size 0
-```
+**Falsification of the port (gate 6):** the assertion named first was
+`length divisible by 32 iteration, issue #117.` — chosen because it is the only assertion in the
+file that depends on the last-word width calculation, and because upstream issue #117 exists
+precisely because that calculation was once wrong. The sabotage, `length % 32 || 32` reduced to
+`length % 32`, is confirmed red at exactly that line (11 passing, 1 failing, `32 !== 64`); reverted,
+confirmed green again (12 passing). Neither of this module's headline defects (B-17, B-18) could
+have served as this sabotage — "fixing" either leaves the original suite green, since every `reset`
+in the file clears a bit that is actually set and `select`'s own test never skips a word — which is
+exactly the failure mode gate 6 exists to catch, and here there were two of them waiting.
 
-Worth noting what that two-op program shows: **B-23 and B-17 compound.** The `set(31)` is only
-possible because an index past `length` but inside the last word is accepted, and it is what puts
-bit 31 into the word, which is the precondition for `reset`'s signed comparison to misfire. Neither
-defect alone reaches the state, and no upstream test passes an index past `length` at all. Reverted;
-the seed is committed with provenance in `crates/difffuzz/proptest-regressions/bit-set.txt`.
-
-### Falsification of the port (gate 6)
-
-**Named first:** `length divisible by 32 iteration, issue #117.` →
-`assert.strictEqual(counter, set.length)` at `test/bit-set.js:178`. Chosen because it is the only
-assertion in the file that depends on the last-word width calculation, and because upstream issue
-#117 exists precisely because that calculation was once wrong.
-
-**The sabotage:** `length % 32 || 32` reduced to `length % 32` — "fixing" a guard that genuinely
-looks like a bug, and which B-22 shows *is* one at length 0.
-
-**Confirmed red**, at exactly the named line: `11 passing, 1 failing`, `32 !== 64` at
-`test/bit-set.js:178`. Reverted; **confirmed green again**: 12 passing.
-
-**Recorded because it is the gate's own lesson: neither of this module's headline defects could have
-served as the sabotage.** "Fixing" `reset`'s missing `>>> 0` leaves the suite green, because every
-`reset` in the file clears a bit that is actually set. "Fixing" `select` leaves it green too, because
-its `select` test uses a length of 11 and never skips a word. Both would have been sabotages
-incapable of failing — the exact failure mode gate 6 exists to catch, and here there were two of
-them waiting.
-
-### `$forEach` — the op that was missing (added 2026-08-01, B-31)
-
-`bit-set`'s grammar had no `forEach` op at all. That omission is what let B-31 — a `forEach`
-callback mutating the collection it is walking — through 3.92 M clean operations: an op alphabet
-that omits a method omits every bug reachable only through it.
-
-`$forEach(method, rule, limit)` now walks the instance with a callback that calls back into it.
-The compared result is the sequence of callback argument pairs, so the walk's **shape** is checked
-and not only the state it leaves behind. This module's mutations:
-
-* `set(a1)`, `reset(a1)`, `flip(a1)` and `clear()`, all uncapped.
-
-Uncapped is safe because a `BitSet` cannot grow and the outer bound is `this.array.length`, read
-once. What the op checks is the **word snapshot**: upstream lifts `byte = this.array[i]` out of the
-inner loop, so a callback that writes to the word currently being walked is invisible for the rest
-of that word and visible in the next one.
-
-**What it does not reach, stated so the campaign is not over-read.** `difffuzz` compares
-`mnemonist-core` against upstream JS; the napi bridge, where B-31's hoisted read actually lived, is
-not in that loop. No op alphabet can catch that class of bug here. The specs that do are
-`tests/boundary/reentrancy.js`, which drive the real addon with real JS callbacks — red on the
-pre-fix bridges, green after.
-
-One deliberate narrowing, mirrored on both sides: a selected callback argument that is `undefined`
-skips the mutation. Feeding it back in reaches upstream's `NaN`-indexed swap, which `usize` cannot
-express and the core does not model. Fully disclosed in `fuzz/log.txt`.
+`$forEach(method, rule, limit)` walks the instance with a callback that calls back into it. This
+module's mutations are `set(a1)`, `reset(a1)`, `flip(a1)` and `clear()`, all uncapped — safe uncapped
+because a `BitSet` cannot grow and the outer bound is `this.array.length`, read once. What the op
+checks is the word snapshot: upstream lifts `byte = this.array[i]` out of the inner loop, so a
+callback that writes to the word currently being walked is invisible for the rest of that word and
+visible in the next one. What it does not reach: the napi bridge, where a re-entrant callback would
+actually run, is outside the loop `difffuzz` compares; `tests/boundary/reentrancy.js` covers that
+instead. One deliberate narrowing, mirrored on both sides: a selected callback argument that is
+`undefined` skips the mutation, because feeding it back in reaches upstream's `NaN`-indexed swap,
+which `usize` cannot express and the core does not model. Disclosed in `fuzz/log.txt`.
 
 ### Bench
 
@@ -322,74 +247,37 @@ Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 10,0
 seed 42. `rank` is deliberately excluded: it has no rank/select index behind it on either side, so
 a single call is O(i / 32) words, and a 25%-weighted mix at this domain made the harness spend ten
 minutes on six of ten reps before it was killed — see `bench/runner/src/bit_set.rs` for the full
-account.
+account. Full table: evidence file.
 
-| metric | port | upstream | |
-|---|---|---|---|
-| p50 ns/op | 8.87 | **7.94** | 1.12× slower |
+**The index-conversion path on the hot methods (`set`/`reset`/`flip`/`get`) was found and fixed, and
+it was the whole of an earlier disclosed regression.** `split` in
+`crates/mnemonist-core/src/structures/bits.rs` ran JavaScript's full `ToInt32` (`trunc`, then
+`rem_euclid(2^32)`, then a sign fixup) on every call — needed only for indices outside `i32`'s range,
+which upstream's out-of-range reads reach and which are reproduced bug-for-bug, but the identity for
+any index already inside that range. `split` now tries `i32::try_from` first and falls back to the
+float path only when the index really does not fit; the equivalence was checked over 2.6 million
+values including every boundary (`i32::MIN`, `i32::MAX`, ±2^31, ±2^32). The port's p50 moved from
+roughly 8.7 ns/op to roughly 5.9 ns/op against upstream's steady ~7.9 ns/op — **this module now reads
+about 1.31× faster than upstream** where it previously read about 1.10–1.12× slower. `bit-vector`
+shares `split` and moved with it, from a tie to about 1.30× faster. Full before/after figures and
+the fix history: log.
 
-**Fixed 2026-08-03 — the index conversion was the whole margin.** `split` in
-`crates/mnemonist-core/src/structures/bits.rs`, reached by every one of `set`, `reset`, `flip` and
-`get`, converted its `i64` index to `f64` and ran JavaScript's full `ToInt32`: `trunc`, then
-`rem_euclid(2^32)`, then a sign fixup. That path exists for indices outside `i32`'s range — which is
-exactly what upstream's out-of-range reads reach, and those are reproduced bug-for-bug here — but
-`ToInt32` is the *identity* for any value already inside that range: `trunc` is a no-op on an
-integral value, and `rem_euclid` of a value already in `[-2^31, 2^31)` returns it unchanged once the
-sign fixup is applied.
-
-`split` now tries `i32::try_from` first and falls back to the float path only when the index really
-does not fit. The equivalence was checked over 2.6 million values including every boundary
-(`i32::MIN`, `i32::MAX`, ±2^31, ±2^32) rather than argued from the definition alone.
-
-Six runs alternating the old and new code: the port's p50 is **8.66–8.70 ns before and 5.86–5.93 ns
-after**, with upstream steady at 7.85–7.91 ns throughout, so the port-side change is unambiguous —
-about 32%. This module now reads **1.31× faster** than upstream where it read 1.10× slower.
-`bit-vector` shares `split` and moved with it, from a tie to 1.30× faster.
-| p99 ns/op | 16.30 | **14.87** | 1.10× slower |
-| RSS delta MB | **6.1** | 17.6 | |
-| structure-only RSS delta MB | **1.3** | 9.8 | |
-| startup ms | **0.6** | 17.9 | 30× (reported separately; not throughput) |
-
-**This is the module the port was predicted to win largest on, and on raw ns/op it
-does not — a real, disclosed regression, not a rounding artefact.** Both p50 and p99 are ~10–12%
-slower than V8's own typed-array path over three independent metrics (p50, p99, min), which rules
-out a single unlucky batch. The original explanation was unconfirmed: `BitSet::set`/`reset`/`get`/
-`test` each go through `Words::set_bit`/`get_bit` (`crates/mnemonist-core/src/structures/bits.rs`),
-an extra call frame LLVM may not always inline as aggressively as V8 inlines a monomorphic
-`Uint32Array` element access at this op's simplicity.
-
-**Confirmed 2026-08-02, and refined** — `bench/runner/src/bit_set.rs`, reachable via
-`bench-runner --bit-set-probe`, runs three variants of the identical op stream: the real `BitSet`
-(`Rc<RefCell<Vec<u32>>>` behind `Words`, `i64` indices through a real `ToInt32`), a bare
-`Vec<u32>` with plain `usize` indices and no `RefCell` at all, and a third variant *between* the two
-— the same bare `Vec<u32>`, still no `RefCell`, but indices still pushed through the exact
-`f64`-based `to_int32`/`rem_euclid` conversion `Words::split` uses:
-
-| variant | p50 ns/op |
-|---|---|
-| wrapped `BitSet` (`RefCell` + `Words` + `to_int32`) | 8.456 |
-| bare `Vec<u32>` + `to_int32`, no `RefCell` | 4.489 |
-| bare `Vec<u32>`, plain `usize`, no `RefCell`, no `to_int32` | **3.026** |
-
-**Verdict: confirmed, but the named mechanism was incomplete.** The isolated gap (5.43 ns/op)
-splits roughly 73%/27% between the `RefCell`/`Words` wrapper layer (3.97 ns/op) and the `to_int32`
-conversion alone (1.46 ns/op) — the wrapper is the larger piece, consistent with what was named, but
-`to_int32`'s call to `f64::rem_euclid` (a real floating-point division, not a missed-inlining
-artefact) is a second, previously undocumented contributor nearly a third the size of the first, and
-the doc's "extra call frame LLVM may not inline" framing does not cover it — that framing describes
-a compiler decision; `rem_euclid` is real arithmetic work that would cost the same fully inlined.
-Both bare variants beat upstream's own published p50 (7.935 ns) outright, same pattern as `heap`'s
-own confirmation above: the overhead here is larger than the entire measured regression.
+**The wrapper layer's remaining cost was isolated by a bare counterfactual**
+(`bench-runner --bit-set-probe`), comparing the real `BitSet` against a bare `Vec<u32>` with plain
+`usize` indices and no `RefCell`, and a third variant in between that keeps the `f64`-based
+`to_int32` conversion but drops the `RefCell`. The isolated gap between the wrapped and fully bare
+variant splits roughly 73%/27% between the `RefCell`/`Words` wrapper layer and the `to_int32`
+conversion alone — `to_int32`'s `f64::rem_euclid` is real floating-point division, not merely a
+missed-inlining artefact, and is a meaningfully sized contributor on its own. Both bare variants beat
+upstream's own published p50 outright. Full probe table: evidence file.
 
 What is confirmed independently of any of this is the memory and startup side: the port uses roughly
 a third of the RSS and starts thirty times faster, exactly where a `Vec<u32>` versus a full V8
 process should differ.
 
-**Fix not attempted.** Both layers are load-bearing, not incidental: the `Rc<RefCell<Vec<u32>>>` is
-`Words`'s own re-entrancy story (shared with `BitVector`, whose `length` is mutable and whose cursor
-must keep reading a `clear()`'d array — see `bits.rs`'s own module docs), and the `f64`-based
-`to_int32` is what makes a negative index drop cleanly rather than wrap through `usize` the way a
-naive Rust port would (`bits.rs`'s own docs on `set(-1)`). A `usize` fast path guarded by "index is
-non-negative and small" is conceivable, but it is a `crates/mnemonist-core` behaviour-preserving
-optimisation, not a local tweak, and would need bit-set's fuzz campaign and bench figures re-run
-before it could stand — out of scope here. Recorded as a proposal for later.
+A `usize` fast path guarded by "index is non-negative and small" — removing the remaining `RefCell`
+and `to_int32` overhead entirely — has not been attempted: both layers are load-bearing rather than
+incidental (the `Rc<RefCell<Vec<u32>>>` is `Words`'s own re-entrancy story, shared with `BitVector`;
+the `f64`-based `to_int32` is what makes a negative index drop cleanly rather than wrap through
+`usize`), and such a change would be a `crates/mnemonist-core` behaviour-preserving optimisation
+needing bit-set's fuzz campaign and bench figures re-run before it could stand.

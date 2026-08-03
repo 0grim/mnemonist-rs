@@ -55,14 +55,12 @@ itself prove the arithmetic generalises. That generalisation is what the differe
 
 ## What we test in addition
 
-**Rust native tests** — `crates/mnemonist-core/src/structures/passjoin_index.rs` (12):
-
-| Test | Closes gap |
-|---|---|
-| `comparator_sorts_by_decreasing_length_then_lexicographically`, `segments_matches_upstreams_pinned_examples`, `segment_pos_matches_upstreams_pinned_examples`, `multi_match_aware_interval_matches_upstreams_pinned_examples`, `multi_match_aware_substrings_matches_upstreams_pinned_groups` | the upstream blocks, transcribed against the exact same pinned literal examples |
-| `constructor_rejects_invalid_k`, `reproduces_the_upstream_add_and_search_walkthrough`, `reproduces_the_upstream_sanity_walkthrough`, `for_each_and_values_walk_in_insertion_order`, `clear_resets_the_index` | the remaining upstream blocks, as a baseline |
-| `search_results_are_in_upstreams_own_insertion_order` | `search`'s result *order*, not just its membership — see "Bugs this found" for why this is load-bearing beyond what `assert.deepStrictEqual` on two `Set`s can ever catch |
-| `try_search_propagates_a_failing_distance_function` | the untested throwing-`levenshtein` path above |
+`crates/mnemonist-core/src/structures/passjoin_index.rs` — 12 tests: a transcription of the
+upstream blocks against the exact same pinned literal examples, a baseline reproduction of the
+remaining upstream blocks (constructor validation, add/search and sanity walkthroughs, `forEach`/
+`values` order, `clear`), `search`'s result *order* pinned directly (not just its membership — see
+"Bugs this found" for why this is load-bearing beyond what `assert.deepStrictEqual` on two `Set`s
+can ever catch), and the untested throwing-`levenshtein` path.
 
 **Differential fuzzer** — a controlled-edit-distance word pool, `k` varied across `1..=3` (the same
 range `test/passjoin-index.js` itself uses), the real `leven` npm package as the oracle-side distance
@@ -112,60 +110,40 @@ upstream bug:
 
 ### Fuzz
 
+Two campaigns, two seeds, **1.77M operations, zero divergences**:
+
 ```
 module=passjoin-index  seed=42        cases=8870 ops=888923 wall=60.0s divergences=0
 module=passjoin-index  seed=20260802  cases=8857 ops=880275 wall=60.0s divergences=0
 ```
 
-Two campaigns, two seeds, **1.77M operations, zero divergences**. Reproduce with e.g.
-`target/release/difffuzz --module passjoin-index --seed 42 --cases 8870`.
+Reproduce with e.g. `target/release/difffuzz --module passjoin-index --seed 42 --cases 8870`.
 
-* **Op alphabet:** `add` (weight 5) and `search` (weight 5) equally weighted; `clear` (weight 1).
-* **Word pool:** fifteen words at controlled edit distances (`"benjamin"/"benjomon"/"benja"/"benjo"`,
-  `"paule"/"paul"/"pa"/"pat"`, `"ab"/"a"/"b"/""`, `"failed"/"flailed"/"railed"`) — the
-  controlled-distance construction this fuzz grammar requires, not random strings that would all
-  be far apart and return empty candidate sets trivially.
-* **Constructor:** `k` uniform over `1..=3`, the exact range `test/passjoin-index.js` itself uses
-  (`k1`/`k2`/`k3`); `levenshtein` is `fuzz/oracle.js`'s `pjLeven` factory, the real `leven` package —
-  not a simplified stand-in, since `test/passjoin-index.js` itself uses exactly this function.
-* **Observable state:** `size`, `k`. `search`'s own return value (rendered `{"$set": [...]}`, in
-  upstream's genuine insertion order — see "Bugs this found") is compared per-op.
+The op alphabet weights `add` and `search` equally, with `clear` much lighter. The word pool is
+fifteen words at controlled edit distances — the controlled-distance construction this fuzz grammar
+requires, not random strings that would all be far apart and return empty candidate sets trivially.
+`k` is drawn uniformly over `1..=3`, the exact range `test/passjoin-index.js` itself uses;
+`levenshtein` is `fuzz/oracle.js`'s `pjLeven` factory, the real `leven` package. Observable state is
+`size`, `k`; `search`'s own return value (rendered `{"$set": [...]}`, in upstream's genuine
+insertion order — see "Bugs this found") is compared per-op. Full grammar: evidence file.
 
-**Direct evidence the grammar reaches the states this campaign is for** — `grammar_self_check`
-(`crates/difffuzz/src/modules/passjoin_index.rs`, no oracle, no `node`), 400 generated programs, up
-to 200 ops each:
+**Direct evidence the grammar reaches the states this campaign is for** — `grammar_self_check`, 400
+generated programs, up to 200 ops each: 9,778 of 19,208 searches non-empty (51%), 5,161 pulled in a
+candidate at exactly distance `k`. Both floors (`> 100` non-empty, `> 30` boundary hits) are
+asserted in the test itself.
 
-```
-passjoin-index grammar: 9778/19208 searches non-empty, 5161 pulled in a candidate at exactly distance k
-```
-
-51% of searches return at least one candidate, and 5,161 pull in a candidate at exactly the `k`
-threshold — both floors (`> 100` non-empty, `> 30` boundary hits) are asserted in the test itself.
-
-### Falsification of the port (gate 6)
-
-**The assertion the sabotage had to break was named first:**
-`crates/mnemonist-core/src/structures/passjoin_index.rs`'s
-`multi_match_aware_interval_matches_upstreams_pinned_examples` test, specifically the pinned example
-`multi_match_aware_interval(3, delta=1, i=1, s=10, pi=2, li=2) == (1, 3)` — transcribed directly from
-`test/passjoin-index.js`'s own "should be possible to compute the multi-match aware interval." block.
-
-**The sabotage:** `multi_match_aware_interval`'s `let o = k - i;` was changed to
-`let o = k - i - 1;` — an off-by-one in the candidate-generation window's width, the exact class of
-defect named for this unit as producing "a subtly smaller candidate set that still contains most
-correct answers."
-
-**Confirmed red:** the named assertion failed (`(2, 3)` instead of `(1, 3)`), six of twelve native
-tests failed downstream (including `add`/`search` walkthroughs losing real matches — `{"paul"}`
-instead of `{"paul", "paule"}`), and the real upstream mocha suite failed the identical assertion at
-`test/passjoin-index.js:136` plus the same shrunk-candidate-set failures in `add`/`search`.
-
-**Reverted; confirmed green again:** 12/12 native tests (13 after this round's additions),
-13/13 upstream `it` blocks.
-
-**Nothing was found to be blind.** The sabotage produced exactly the failure mode named above as
-hardest to notice — a smaller, still-plausible candidate set — and both instruments caught it
-immediately rather than needing a wider probe.
+**Falsification of the port (gate 6):** the assertion named first was
+`multi_match_aware_interval_matches_upstreams_pinned_examples`'s pinned example — transcribed
+directly from `test/passjoin-index.js`'s own "should be possible to compute the multi-match aware
+interval." block. The sabotage — an off-by-one in the candidate-generation window's width, the
+exact class of defect named for this unit as producing "a subtly smaller candidate set that still
+contains most correct answers" — is confirmed red: the named assertion failed, six of twelve native
+tests failed downstream (including `add`/`search` walkthroughs losing real matches), and the real
+upstream mocha suite failed the identical assertion plus the same shrunk-candidate-set failures in
+`add`/`search`. Reverted; confirmed green again (12/12 native tests, 13/13 upstream `it` blocks).
+Nothing was found to be blind — the sabotage produced exactly the failure mode named above as
+hardest to notice, and both instruments caught it immediately rather than needing a wider probe.
+Full record: evidence file.
 
 ### Bench
 
@@ -177,17 +155,13 @@ ratio. Vocabulary reuses `symspell.rs`'s own scrambled-word generator and reason
 naively-clustered vocabulary defeats `search` entirely, either finding nothing or matching most of
 the dictionary — see that file's own module docs for the two designs it measured and rejected.
 
-**`size`/`ops` are 2,000/5,000, much smaller than `symspell`'s — for a different reason than any
-tree module's domain reduction.** `add` never deduplicates (upstream's own behaviour, reproduced
-exactly): every re-add of an already-present word appends another entry to every matching segment's
-candidate list. This module's `kind % 4` stream draws `add` targets *with replacement* from a domain
-smaller than the op count, so the same word gets re-added repeatedly over a long run, and each
-re-add makes future `search` calls touching that segment slower. Measured directly: at `size` 2,000,
-`ops` 20,000, a single pass took **7.5 seconds**, and the index — which should have stayed near
-2,000 entries — grew past 3,500 from duplicate re-adds alone. At `ops` 5,000 the same shape stays
-honest but fast: the index grows from a 1,000-entry prefill to 3,551 by the run's end, `search`
-still returns a match **74.9%** of the time (avg 0.88 matches/call in that standalone measurement),
-and a full pass completes in under a second. xorshift32 seed 42:
+`size`/`ops` here (2,000/5,000) are much smaller than `symspell`'s, for a different reason than any
+tree module's domain reduction: `add` never deduplicates (upstream's own behaviour, reproduced
+exactly), so a workload with `add` targets drawn with replacement from a domain smaller than the op
+count grows the index past its nominal size and slows every subsequent `search` that touches an
+affected segment. At this workload's size, the index grows from a 1,000-entry prefill to 3,551 by
+the run's end, and `search` still returns a match 74.9% of the time (avg 0.88 matches/call). See the
+log for the measurement that found the larger size unworkable. xorshift32 seed 42:
 
 | metric | port | upstream | |
 |---|---|---|---|

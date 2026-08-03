@@ -64,16 +64,14 @@ elsewhere in the file's own default-container tests, but never in combination wi
 
 ## What we test in addition
 
-**Rust native tests** — `crates/mnemonist-core/src/structures/multi_map.rs` (9):
-
-| Test | Closes gap |
-|---|---|
-| `reproduces_the_upstream_walkthrough`, `remove_matches_upstream_size_and_deletion_bookkeeping`, `delete_removes_the_whole_bucket`, `clear_resets_size_and_dimension` | the upstream blocks, as a baseline |
-| `set_kind_deduplicates_by_the_supplied_equality`, `list_kind_never_deduplicates` | the `Set`/`Array` write-path contrast directly, over a `V` with no `Hash`/`Eq` at all |
-| `remove_on_a_set_kind_bucket_drops_the_key_once_it_empties` | the drain-to-zero path, `Set`-kind |
-| `a_key_deleted_ahead_of_a_live_cursor_is_skipped` | the flattened cursor's outer liveness |
-| `set_with_hands_a_rejected_duplicate_back_instead_of_dropping_it` | the resource-leak contract `fuzzy_multi_map`'s bridge depends on (see "Bugs this found") |
-| `fallible_equality_short_circuits_on_the_first_error` | the fallible `set_with`/`remove_with` machinery, over a comparator that returns `Err` |
+`crates/mnemonist-core/src/structures/multi_map.rs` — 9 tests, closing every gap above except the
+non-`Array`/`Set` container gap and cursor-mid-walk mutation: a baseline reproduction of the upstream
+walkthrough, `remove`'s size/deletion bookkeeping, `delete` removing the whole bucket, `clear`
+resetting `size`/`dimension`, the `Set`/`Array` write-path contrast directly over a `V` with no
+`Hash`/`Eq` at all, the drain-to-zero path for a `Set`-kind bucket, the flattened cursor's outer
+liveness (a key deleted ahead of it is skipped), the resource-leak contract `fuzzy_multi_map`'s
+bridge depends on, and the fallible `set_with`/`remove_with` machinery short-circuiting on the first
+error.
 
 **Differential fuzzer** — a three-key pool shared by `set`/`remove`, weighted so buckets routinely
 hold several values and drain back to zero; see "Fuzz + bench" for the measured numbers, including a
@@ -103,37 +101,30 @@ unit's own tests, is recorded there rather than duplicated here — see `docs/mo
 
 ### Fuzz
 
+Two campaigns, two seeds, **1.46M operations, zero divergences**:
+
 ```
 module=multi-map  seed=42       cases=8404 ops=838808 wall=90.0s divergences=0
 module=multi-map  seed=20260801 cases=6221 ops=618991 wall=60.0s divergences=0
 ```
 
-Two campaigns, two seeds, **1.46M operations, zero divergences**. Reproduce with e.g.
-`target/release/difffuzz --module multi-map --seed 42 --cases 8404`.
+Reproduce with e.g. `target/release/difffuzz --module multi-map --seed 42 --cases 8404`.
 
-* **Op alphabet:** `set` (weight 5, the only op that grows a bucket), `remove` (3), `delete`/`has`/
-  `get`/`multiplicity` (2 each), `clear` (1). Cursor-lifecycle ops (`$iter`/`$next`/`$spread`) are
-  deliberately not in this alphabet — see the spec's own module docs for why, and what covers cursor
-  behaviour instead.
-* **Key pool:** three keys (`"a"`, `"b"`, `"c"`), small enough that `set`/`remove` collide
-  constantly rather than spreading across a wide, mostly-empty map.
-* **Value pool:** four values, two strings and two numbers, wide enough that a `Set`-kind bucket
-  sees genuine duplicates and genuine distinct members both.
-* **Constructor:** alternates between the default container and `{"$global": "Set"}`, so both
-  bucket kinds get their own campaign share.
-* **Observable state:** `size`, `dimension`, and `items` rendered exactly as `fuzz/oracle.js`'s
-  `encode()` renders the real per-key `Array`/`Set`.
+The op alphabet weights `set` heaviest (the only op that grows a bucket), with `remove`/`delete`/
+`has`/`get`/`multiplicity`/`clear` around it. Cursor-lifecycle ops are deliberately not in this
+alphabet — see the spec's own module docs for why, and what covers cursor behaviour instead. The
+key pool is three keys, small enough that `set`/`remove` collide constantly rather than spreading
+across a wide, mostly-empty map; the value pool is four values, two strings and two numbers, wide
+enough that a `Set`-kind bucket sees genuine duplicates and genuine distinct members both. The
+constructor alternates between the default container and a real `Set`, so both bucket kinds get
+their own campaign share. Observable state is `size`, `dimension`, and `items` rendered exactly as
+the oracle's `encode()` renders the real per-key `Array`/`Set`. Full grammar: evidence file.
 
-**Direct evidence the grammar reaches the states this campaign is for** — `grammar_self_check`
-(`crates/difffuzz/src/modules/multi_map.rs`, no oracle, no `node`), 400 generated programs, up to
-300 ops each:
-
-```
-multi-map grammar: 25,761 steps with a multi-value bucket, 4,157 keys drained to zero and removed
-```
-
-Both floors are asserted in the test itself (`> 100` for each), so a future weighting change that
-regresses this back toward "a map that only ever stores one value per key" fails loudly.
+**Direct evidence the grammar reaches the states this campaign is for** — `grammar_self_check`, 400
+generated programs, up to 300 ops each: 25,761 steps with a multi-value bucket, 4,157 keys drained
+to zero and removed. Both floors are asserted in the test itself (`> 100` for each), so a future
+weighting change that regresses this back toward "a map that only ever stores one value per key"
+fails loudly.
 
 ### Falsification of the port (gate 6)
 
@@ -143,8 +134,8 @@ possible to get the multiplicity of a key in the map", which only holds if two i
 `map.set('one', 'hello')` calls into a `Set`-kind bucket are actually deduplicated.
 
 **The sabotage:** `MultiMap::set_with`'s `Set`-kind branch had its "was this value already present"
-check discarded (`let _ = present;`) so every `set` unconditionally pushed and incremented `size`,
-regardless of the equality check just performed.
+check discarded so every `set` unconditionally pushed and incremented `size`, regardless of the
+equality check just performed.
 
 **Confirmed red:** the named assertion failed (`multiplicity('one')` came back `2`, not `1`), and
 four further assertions downstream of it in the same run also went red (the iterator/entries/values
@@ -166,18 +157,11 @@ default `Array` container), over a 20,000-key domain deliberately far smaller th
 the load-bearing multi-container parameter is how many VALUES sit under one key, and a workload
 where every key holds exactly one value would benchmark a map with extra indirection, not a
 multi-container. **~25 values per key on average by the run's end** (500,000 `set` calls over
-20,000 keys), xorshift32 seed 42:
+20,000 keys): the port is 1.4× faster at p50 (25.9 vs 36.4 ns/op), 1.9× faster at p99 (46.1 vs 89.8).
+No regressions. Full table: evidence file.
 
-| metric | port | upstream | |
-|---|---|---|---|
-| p50 ns/op | **25.9** | 36.4 | 1.4× faster |
-| p99 ns/op | **46.1** | 89.8 | 1.9× faster |
-| RSS delta MB | **11.6** | 79.3 | |
-| structure-only RSS delta MB | **0.1** | 5.8 | |
-| startup ms | **0.6** | 16.8 | 28× (reported separately; not throughput) |
-
-**No regressions.** `remove`'s linear scan (of whichever bucket its key hits) is genuinely exercised
-at the ~25-value-per-key depth this workload reaches, and upstream pays the identical `Array
-.indexOf` linear scan — unlike `bit-set.rs`'s `rank` trap, this is an op whose cost scales with a
-workload parameter *on both sides*, not a port-only pathology, and it was checked before committing
-to the 25%-weighted mix (see `bench/runner/src/multi_map.rs`'s own module docs for the arithmetic).
+`remove`'s linear scan (of whichever bucket its key hits) is genuinely exercised at the
+~25-value-per-key depth this workload reaches, and upstream pays the identical `Array.indexOf`
+linear scan — unlike `bit-set.rs`'s `rank` trap, this is an op whose cost scales with a workload
+parameter *on both sides*, not a port-only pathology, and it was checked before committing to the
+25%-weighted mix (see `bench/runner/src/multi_map.rs`'s own module docs for the arithmetic).
