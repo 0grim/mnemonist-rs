@@ -205,8 +205,15 @@ instead of silently healing.
 **How it runs.** Operation sequences are generated with `proptest`, replayed against both the Rust
 implementation and **real upstream JavaScript running in Node**, comparing observable state after
 every operation. Divergences are minimised by the shrinker and persisted as regression seeds.
-Currently **126 logged campaigns across 46 modules, 130.0 million operations, zero divergences**.
+Currently **127 logged campaigns across 45 modules, 131.2 million operations, zero divergences**.
 Every line in `fuzz/log.txt` carries its seed and replays exactly.
+
+Summing the per-unit figures `tests/verify.sh` prints gives 125.6 million rather than 131.2, and the
+difference is not a discrepancy. The gate attributes operations to the *unit* it is checking, while
+the log records them under the *module* actually fuzzed — so campaigns against `lru-map`,
+`lru-map-with-delete`, `lru-cache-with-delete` and `generalized-suffix-array` (5.6 million between
+them) are counted by the log but not by the unit whose closure contains them. Both numbers are
+derived from the same file; they answer different questions.
 
 Three design decisions determine whether such a harness means anything:
 

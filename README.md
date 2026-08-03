@@ -11,7 +11,7 @@ unmodified against the Rust build through an N-API bridge that forms no part of 
 ```
 43 of 44 upstream structures ported        42 of 42 upstream test files ported
 42 units through all ten gates (100%)      525 upstream specs passing, unmodified
-125.6M differential fuzz operations        zero divergences
+131.2M differential fuzz operations        zero divergences
 72 upstream defects examined               12 documented in full
 ```
 

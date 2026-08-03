@@ -114,8 +114,8 @@ if [ "$WARM" = 1 ]; then
   ./tests/run.sh test/queue.js >/dev/null 2>&1 && echo "    ok"
   if command -v docker >/dev/null 2>&1 && timeout 8 docker info >/dev/null 2>&1; then
     echo "==> docker images"
-    docker build -t port-mortem . >/dev/null && echo "    port-mortem ok"
-    docker build -t pm-core --target core . >/dev/null && echo "    pm-core ok"
+    docker build -t port-mortem . >/dev/null 2>&1 && echo "    port-mortem ok"
+    docker build -t pm-core --target core . >/dev/null 2>&1 && echo "    pm-core ok"
   else
     echo "==> docker unavailable, skipped"
   fi
@@ -387,6 +387,9 @@ screen "The original test suite, unmodified, against Rust"
 say "This is the equivalence proof. These test files are byte-identical to the ones published with the JavaScript library, as the hashes in step two established."
 say "They are pointed at the Rust build through the bridge, and run exactly as their authors wrote them."
 run "./tests/run.sh 2>&1 | tail -5"
+say "That total is two things, and only one of them is evidence of equivalence. The harness runs the upstream files and this port's own bridge specs in a single pass, so the split is worth showing rather than rounding up."
+run "(cd tests/.work && printf 'upstream test files     '; npx mocha --reporter dot test/*.js 2>&1 | grep -oE '[0-9]+ passing'; printf \"this port's own specs   \"; npx mocha --reporter dot boundary/*.js 2>&1 | grep -oE '[0-9]+ passing')"
+note "525 is the number that counts here. The other 208 test the bridge, which is this project's own code and cannot vouch for itself — they are evidence for a different gate."
 
 # ─────────────────────────────────────────────────────── 7. beyond the suite
 screen "Passing the suite is not the same as being equivalent"
@@ -432,7 +435,7 @@ if [ "$SKIP" != 1 ]; then
         | grep -oE 'ops=[0-9]+' | cut -d= -f2 | awk '{s+=$1} END {printf "%.1fM", s/1000000}')
   echo "  ${CYAN}${RULE}${RESET}"
   echo
-  echo "  ${BOLD}44 structures ported.${RESET}  ${UNITS} units through all ten gates."
+  echo "  ${BOLD}43 of 44 structures ported.${RESET}  ${UNITS} units through all ten gates."
   echo "  ${BOLD}${OPS} differential operations.${RESET}  Zero divergences."
   echo "  The original test suite passes unmodified."
   echo
