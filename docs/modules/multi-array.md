@@ -221,10 +221,10 @@ steps then overwrite one by one. It now builds with `Vec::with_capacity` and `pu
 the end (the walk runs tail-to-head, so the reverse restores upstream's order over bytes already in
 cache), and matches the `Storage` discriminant once per call instead of once per element.
 
-Measured across three runs on a settled machine, the port's own p50 is 39.7–40.2 ns against 48.3
-before — a 1.3% spread on the port side, against 5.3% on the JavaScript side, which is why the
-port's own figure is the one quoted. **50.2 → 48.3 → 39.9 ns** across the two changes; the ratio
-reads 1.45× slower.
+Measured across four runs, the port's own p50 lands between 38.3 and 40.2 ns against 48.3 before —
+a spread of about 5% on the port side against 5.3% on the JavaScript side, which is why the port's
+own figure is the one quoted. **50.2 → 48.3 → 38.3 ns** across the two changes; in the final
+whole-suite pass the ratio reads 1.31× slower.
 
 What is left is the allocation `get` cannot avoid: it returns a fresh container per call, and the
 probe above already puts a bare `Vec::with_capacity(25)` plus fill at 34.88 ns of the original

@@ -114,34 +114,58 @@ is given and the unit's divergence document states it; a missing benchmark still
 Measured against the vendored upstream JavaScript using matched operation streams, interleaved, on
 an idle machine. Full methodology in [docs/METHODOLOGY.md](docs/METHODOLOGY.md).
 
-| Structure | Median, relative to upstream |
-|---|---|
-| `fibonacci-heap` | 26.8× faster |
-| `linked-list` | 4.8× faster |
-| `trie` | 2.8× faster |
-| `lru-cache` | 1.42× faster |
-| `kd-tree` | 1.40× faster |
-| `heap` | 1.32× slower |
-| `default-map` | 1.36× slower |
-| `multi-array` | 1.45× slower |
+**44 benchmarked workloads across 40 structures. 36 are faster than upstream, 8 are slower.** The
+median is 1.46× faster. Two further units carry a benchmark exemption, described below.
 
-Every row above was measured in a single session on an idle machine, which matters because the
-JavaScript baseline is not stable across sessions: `kd-tree`'s upstream figure moved 22% and
-`multi-array`'s 13% between two runs of unchanged code on different days. Back to back within one
-session the same measurements agree to 0.9% on both sides, so ratios are comparable down the column
-but not against figures quoted in an earlier run.
+**Every workload that is slower**, without exception — this is the complete list, not a selection:
 
-Each regression has a confirmed cause, established against a measurement that would have produced a
-different result had the explanation been incorrect. One earlier explanation was refuted by this
-process: `default-map`'s regression had been attributed to a duplicate hash lookup that does not
-exist in the code; the observed cause is cache-miss latency, which is consistent with the regression
-narrowing as the domain grows and both implementations begin to miss.
+| Structure | Workload | Median, relative to upstream |
+|---|---|---|
+| `bi-map` | `mixed-1e6` | 1.56× slower |
+| `default-map` | `mixed-1e6` | 1.44× slower |
+| `multi-array` | `mixed-1e6` | 1.31× slower |
+| `heap` | `mixed-1e6` | 1.31× slower |
+| `multi-set` | `mixed-1e6` | 1.29× slower |
+| `default-map` | `mixed-4e6` | 1.13× slower |
+| `fixed-critbit-tree-map` | `mixed-2e5` | 1.11× slower |
+| `bit-set` | `mixed-1e6` | 1.10× slower |
+
+The largest wins, for scale:
+
+| Structure | Workload | Median, relative to upstream |
+|---|---|---|
+| `fibonacci-heap` | `mixed-2e5` | 24.9× faster |
+| `suffix-array` | `build-2e4x50` | 7.5× faster |
+| `linked-list` | `mixed-1e6` | 4.2× faster |
+| `sparse-set` | `drain-1e5` | 3.3× faster |
+| `trie-map` | `mixed-2e5` | 2.8× faster |
+| `trie` | `mixed-2e5` | 2.7× faster |
+
+All 44 are in [`bench/results.json`](bench/results.json), keyed per unit and per workload, each with
+its own `regressions` array. `scripts/status.sh` reads the same file.
+
+### How stable these figures are
+
+Every workload above was re-measured in one serial pass on an idle machine, because the JavaScript
+baseline is not stable across sessions and a table whose rows come from different days cannot be
+read down the column. Within a session, back-to-back runs of the same workload agree to 0.9% on both
+sides. Across sessions they do not: `kd-tree`'s upstream figure moved 22% and `multi-array`'s 13% on
+unchanged code.
+
+That instability is not symmetric, and it cost this table two rows. `multi-set` and `bi-map` were
+previously recorded as wins at 0.85× and 1.15×. In this pass both measured as losses, and a further
+spot-check of each in isolation on a settled machine measured them **worse still** — 1.29× and 1.56×
+against the pass's 1.13× and 1.35×. Those two rows are therefore published at the worse of the two
+figures rather than the pass's own, on the principle that between two honest measurements the
+unflattering one is the safer claim. Two workloads that had been counted as wins are now counted as
+losses.
 
 `kd-tree` was the largest regression at 2.18× slower and is now faster than upstream. Its k-nearest-
 neighbour search built a fresh heap-allocated tuple per node visited, and the heap's store clones a
 slot on every sift step, so the allocation was closer to once per comparison than once per push.
 Fixed-size `[f64; N]` tuples are `Copy`, making that clone a stack copy: the port's own time fell
-from 2049 ns to 830 ns, a change far larger than the baseline drift above.
+from 2049 ns to 755 ns, a change far larger than the baseline drift above. It now reads 1.23× faster
+than upstream in this pass.
 
 `multi-array` is where measurement disagreed with the reasoning. Narrowing its bookkeeping from
 `usize` to `u32` was expected to reduce the cache-miss cost of its bucket walk; measured, it bought
@@ -149,7 +173,7 @@ from 2049 ns to 830 ns, a change far larger than the baseline drift above.
 found afterwards bought 17%: `get` allocated its result with `vec![0.0; n]`, memsetting bytes that
 the next `n` steps immediately overwrote. It now builds by `push` and reverses, and matches the
 storage discriminant once per call instead of once per element. The port's own time went 50.2 ns →
-48.3 ns → 39.9 ns across the two changes.
+48.3 ns → 38.3 ns across the two changes.
 
 What remains is the allocation itself: `get` returns a fresh container per call, and a bare
 `Vec::with_capacity(25)` plus fill already accounts for 34.9 ns of it. Both sides allocate, and V8's
@@ -157,7 +181,7 @@ nursery is simply better at this shape than a general-purpose allocator. That is
 is not addressable without changing what the method returns.
 
 The `heap` figures are the clearest measure of what fidelity costs. The delivered implementation
-runs at 31.9 ns against upstream's 24.1 ns; a bare `Vec<f64>` heap over the identical workload runs
+runs at 31.7 ns against upstream's 24.3 ns; a bare `Vec<f64>` heap over the identical workload runs
 at 21.7 ns — a separate probe, not part of the table above — so the `RefCell` and comparator
 indirection accounts for more than the entire regression.
 That indirection is what permits a JavaScript comparator to re-enter and mutate the heap mid-sift,

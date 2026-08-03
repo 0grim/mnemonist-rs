@@ -268,12 +268,11 @@ performance table:
 
 | metric | port | upstream | |
 |---|---|---|---|
-| p50 ns/op | **830.23** | 1159.03 | port 1.40× faster |
-| p99 ns/op | **1423.68** | 2144.00 | port 1.51× faster |
-| min ns/op | **680.31** | 883.83 | port 1.30× faster |
+| p50 ns/op | **755.10** | 927.85 | port 1.23× faster |
 
 One caution against reading the swing as larger than it is. The upstream figure in the table above
-this one, 939.76 ns, and today's 1159.03 ns are the *same code on the same host*, 22% apart across
-sessions. Back to back within one session the harness reproduces to 0.9% on both sides, so the
-honest statement of the improvement is the port's own time — 2049 ns to 830 ns — rather than the
-ratio's move from 2.2× slower to 1.40× faster, which carries that drift.
+this one, 939.76 ns, and this pass's 927.85 ns are the *same code on the same host*; an intervening
+run of the same workload measured 1159.03 ns, 22% away from both. Back to back within one session
+the harness reproduces to 0.9% on each side, so the honest statement of the improvement is the
+port's own time — **2049 ns to 755 ns** — rather than the ratio's move from 2.2× slower to 1.23×
+faster, which carries that drift.
