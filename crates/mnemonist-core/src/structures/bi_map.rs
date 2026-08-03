@@ -264,32 +264,65 @@ impl<K: Hash + Eq + Clone> BiMap<K> {
 /// this with `(items, inverse, key, value)` is `BiMap::set`, and calling it
 /// with `(inverse, items, value, key)` is the inverse view's `set`, exactly as
 /// upstream binds one function to two receivers.
+///
+/// # One hash lookup per map, not two
+///
+/// A direct transcription of upstream's four branches reads `primary.get(&key)`
+/// and then, at the very end, unconditionally writes `primary.set(key, value)`
+/// — two separate hash lookups for the same key on every call (and the same
+/// shape for `secondary`/`value`). Upstream cannot avoid that: a JS `Map` has
+/// no "look up and get a handle to update in place" operation. `OrderedMap`
+/// does ([`OrderedMap::get_mut`]), so when `key` (respectively `value`) is
+/// already present, this updates the existing slot in place via
+/// [`std::mem::replace`] and skips the closing `set` for that side entirely —
+/// one lookup instead of two. When a side is genuinely new, there is nothing
+/// to merge (the first lookup is a miss) and this costs exactly what the
+/// direct transcription did.
+///
+/// This changes nothing observable: overwriting via `get_mut` keeps the
+/// existing key's slot position, exactly like [`OrderedMap::set`]'s own
+/// overwrite path, and produces the identical final key/value in both maps
+/// that the original four-branch reading did. The two "already unreachable"
+/// early returns (`(a)`/`(c)` in the module docs) are reached exactly as
+/// often either way, since neither branch's *condition* changed — only which
+/// call reads and writes the slot.
 fn link<K: Hash + Eq + Clone>(
     primary: &mut OrderedMap<K, K>,
     secondary: &mut OrderedMap<K, K>,
     key: K,
     value: K,
 ) {
-    if let Some(current_value) = primary.get(&key) {
-        if *current_value == value {
+    let mut primary_already_set = false;
+
+    if let Some(slot) = primary.get_mut(&key) {
+        if *slot == value {
             return;
         }
 
-        let current_value = current_value.clone();
+        let current_value = std::mem::replace(slot, value.clone());
         secondary.delete(&current_value);
+        primary_already_set = true;
     }
 
-    if let Some(current_key) = secondary.get(&value) {
-        if *current_key == key {
+    let mut secondary_already_set = false;
+
+    if let Some(slot) = secondary.get_mut(&value) {
+        if *slot == key {
             return;
         }
 
-        let current_key = current_key.clone();
+        let current_key = std::mem::replace(slot, key.clone());
         primary.delete(&current_key);
+        secondary_already_set = true;
     }
 
-    primary.set(key.clone(), value.clone());
-    secondary.set(value, key);
+    if !primary_already_set {
+        primary.set(key.clone(), value.clone());
+    }
+
+    if !secondary_already_set {
+        secondary.set(value, key);
+    }
 }
 
 /// The shared body of `BiMap.prototype.delete` / `InverseMap.prototype.delete`.

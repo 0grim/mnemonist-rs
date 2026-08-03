@@ -190,6 +190,14 @@ impl<K: Hash + Eq + Clone> MultiSet<K> {
     /// does **not** return "this" upstream (`remove` has no return value),
     /// an inconsistency `test/multi-set.js` never observes and this port
     /// does not model (`docs/modules/multi-set.md`, deliberate divergences).
+    ///
+    /// A direct transcription of upstream's `get(item)` then unconditional
+    /// `set(item, ...)` hashes `item` twice on every call — upstream has no
+    /// choice (a JS `Map` cannot look up and get a handle to update in
+    /// place), but [`OrderedMap::get_mut`] can: an existing entry is bumped
+    /// through the `&mut f64` directly, one lookup instead of two, with the
+    /// exact same resulting multiplicity and insertion position as an
+    /// overwriting `set` would have produced.
     pub fn add(&mut self, item: K, count: f64) {
         if count == 0.0 {
             return;
@@ -201,17 +209,23 @@ impl<K: Hash + Eq + Clone> MultiSet<K> {
         }
 
         let count = fold_falsy(count);
-        let current = self.items.get(&item).copied();
-
-        if current.is_none() {
-            self.dimension += 1;
-        }
-
         self.size += count;
-        self.items.set(item, current.unwrap_or(0.0) + count);
+
+        if let Some(existing) = self.items.get_mut(&item) {
+            *existing += count;
+        } else {
+            self.dimension += 1;
+            self.items.set(item, count);
+        }
     }
 
     /// `#.remove`. Mirrors [`MultiSet::add`]'s early branches, symmetrically.
+    ///
+    /// Same one-lookup-instead-of-two shape as [`MultiSet::add`] on the
+    /// "still positive afterwards" path, via [`OrderedMap::get_mut`]. The
+    /// "drops to zero" path still needs its own [`OrderedMap::delete`] call
+    /// regardless — deleting is not something `get_mut` can do — so that
+    /// branch costs exactly what the direct transcription did.
     pub fn remove(&mut self, item: K, count: f64) {
         if count == 0.0 {
             return;
@@ -224,10 +238,10 @@ impl<K: Hash + Eq + Clone> MultiSet<K> {
 
         let count = fold_falsy(count);
 
-        let Some(current) = self.items.get(&item).copied() else {
+        let Some(existing) = self.items.get_mut(&item) else {
             return;
         };
-
+        let current = *existing;
         let updated = (current - count).max(0.0);
 
         if updated == 0.0 {
@@ -235,7 +249,7 @@ impl<K: Hash + Eq + Clone> MultiSet<K> {
             self.size -= current;
             self.dimension -= 1;
         } else {
-            self.items.set(item, updated);
+            *existing = updated;
             self.size -= count;
         }
     }

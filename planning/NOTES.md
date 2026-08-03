@@ -2906,3 +2906,27 @@ not chased by starving the machine on freeze day.
    this session — would share, one removing it while the other writes. Now per-process. This
    cannot weaken the assertion: the path exists to hold *no* corpus, and a unique name can only
    make it emptier.
+
+### Second occurrence, 2026-08-03 — and the same self-inflicted blindness
+
+`cargo test` exited **101** once during verification of the bi-map/multi-set performance
+changes, and exited **0** on the immediate re-run, with 8 `test result: ok` lines and no
+failure anywhere in the output. `tests/verify.sh` was green immediately afterwards: 259
+checks.
+
+That is the second occurrence of the signature recorded above. It is **not** the fuzz-harness
+test — that suspect was cleared by 8 idle runs plus one under 12 busy cores, all green.
+
+**The diagnostic was discarded again, and by me, the same way.** The command was
+`cargo test >/dev/null 2>&1; echo "TEST=$?"`. The gate-7 hardening added earlier writes a
+full transcript to `tests/.verify-gate7.log` — but only when the failure happens *inside*
+`verify.sh`. An ad-hoc `cargo test` at a shell prompt has no such net, and discarding its
+output throws away the only copy.
+
+**Rule for this repository, stated because knowing it was not enough twice:** never redirect
+a verification command to `/dev/null`. Redirect to a file and grep the file. The status code
+alone is not a diagnosis, and a status code with no output is not evidence of anything except
+that something happened once.
+
+Still unexplained. Two occurrences, zero transcripts, both discarded by the same habit rather
+than by any property of the tests.
