@@ -219,22 +219,25 @@ xorshift32 seed 42:
 
 | metric | port | upstream | |
 |---|---|---|---|
-| p50 ns/op | 325.78 | **306.50** | upstream ~1.06–1.08× faster |
-| p99 ns/op | **527.09** | 822.52 | 1.6× faster |
-| RSS delta MB | **27.0** | 192.5 | |
-| structure-only RSS delta MB | 0.1 | **1.0** | |
-| startup ms | **0.6** | 15.4 | 26× (reported separately; not throughput) |
+| p50 ns/op | **322.66** | 380.33 | 1.18× faster |
+| p99 ns/op | **517.91** | 873.22 | 1.69× faster |
+| RSS delta MB | **25.1** | 194.6 | |
+| structure-only RSS delta MB | **0.1** | 7.3 | |
+| startup ms | **0.6** | 16.5 | 27× (reported separately; not throughput) |
 
-**One real, reproducible loss: p50, ~1.06–1.08× across two independent runs.** Re-run twice rather
-than published from a single pass — a clean-looking result invites the question of what was left
-out just as much as a *loss* that might be noise, and this one held in both passes rather than
-appearing once. This is measured after fixing a larger, separately-diagnosed allocation cost in
-`set` (see the log for that history); what remains is this smaller residual. **Cause: unconfirmed.**
-A plausible but unverified explanation is `BoundedSlots`' `Option`-returning bounds check on every
-internal-node read (`lefts`/`rights`), which upstream's raw typed-array indexing does not pay for —
-but this has not been checked against a metric that would falsify it (e.g. isolating that one
-accessor), so it is labelled unconfirmed rather than asserted, per this port's rule against
-overclaiming performance causation. p99 and every RSS/startup figure favour the port; the
-structure-only RSS row is the one place upstream's fixed typed arrays are smaller than the port's
-own pre-allocated arenas at this size. Checksum `15858409098`, identical on both sides — same ops,
-same answers, including reaching capacity without the corruption path ever firing.
+**Every metric favours the port, and `bench/results.json` carries an empty `regressions` array for
+this workload.** That is a change from an earlier pass, which recorded p50 as a real loss at
+~1.06–1.08× and offered `BoundedSlots`' `Option`-returning bounds check as an unconfirmed cause. The
+loss did not survive re-measurement, and the reason is instructive rather than flattering: the
+port's own p50 barely moved between the two passes (325.78 → 322.66, well inside noise) while
+**upstream's moved 24%**, from 306.50 to 380.33. Nothing about this port got faster; the JavaScript
+baseline is simply not stable across sessions, which is why every figure in the README comes from
+one serial pass on an idle machine and why a table assembled from different days cannot be read down
+the column.
+
+This is measured after fixing a separately-diagnosed allocation cost in `set` — two fresh `Vec`s per
+call, now reused struct fields cleared on entry, which took the port from roughly 405 ns to 292 ns
+on the host where that comparison was made. See the log for that history.
+
+Checksum `15858409098`, identical on both sides — same ops, same answers, including reaching
+capacity without the corruption path ever firing.

@@ -51,15 +51,21 @@ cost, and the affected sites are documented rather than left to be discovered:
 library. Every deliberate deviation is recorded on the affected item and in that structure's
 divergence document.
 
-Where fidelity and Rust idiom did not conflict, the implementation is conventional. `clippy
---all-targets -D warnings` is clean across every crate in the workspace, with 25 lint suppressions:
-24 concern signature shape or ergonomics (18 `type_complexity`, 5 `too_many_arguments`, 1
-`new_without_default`), and one is an `if_same_then_else` in `passjoin-index`, where two branches
-share a body but not their guards because only the second calls `levenshtein`. No suppression
-conceals a numeric or comparison lint.
+## The code
 
-**Size.** Rust only — the Markdown under `docs/` is documentation, not port code, and is not
-counted here. Re-derive any of it with `scripts/loc.sh`:
+Where fidelity and Rust idiom did not conflict, the implementation is conventional. `clippy
+--all-targets -D warnings` is clean across every crate, with 25 lint suppressions: 24 concern
+signature shape or ergonomics, and one is an `if_same_then_else` in `passjoin-index` where two
+branches share a body but not their guards. No suppression conceals a numeric or comparison lint.
+
+`mnemonist-core` denies `missing_docs` and `rustdoc::broken_intra_doc_links`, so every public item
+is documented and stays that way. `mnemonist-napi` enforces the same on the ten modules with a
+genuine Rust surface; its per-structure `#[napi]` methods are exempt, because their only consumer is
+JavaScript and their contract is upstream's API. `crates/mnemonist-napi/src/lib.rs` states that
+split rather than leaving it to be inferred.
+
+**Size.** Rust only — the Markdown under `docs/` is documentation, not port code. Re-derive with
+`scripts/loc.sh`:
 
 | crate | code | tests | rustdoc | comments + blank | total |
 |---|---:|---:|---:|---:|---:|
@@ -69,17 +75,10 @@ counted here. Re-derive any of it with `scripts/loc.sh`:
 | `bench-runner` — the matched benchmark harness | 2,878 | — | 1,915 | 984 | 5,777 |
 | **workspace** | **33,020** | **17,493** | **18,056** | **10,104** | **78,673** |
 
-Two figures are worth reading rather than skimming. `mnemonist-core` carries **more test code than
-implementation code** — 16,281 lines against 9,973 — which is the shape a compatibility port should
-have. And `mnemonist-napi` has almost no Rust tests by design: its tests are JavaScript, because
-what it has to be correct about is what JavaScript sees, so they live in `tests/bridge/` and
-`tests/boundary/` and run under Node.
-
-`mnemonist-core` denies `missing_docs`, so every public item in it is documented and the compiler
-keeps it that way. `mnemonist-napi` enforces the same lint on the ten modules with a genuine Rust
-surface; its per-structure `#[napi]` methods are deliberately exempt, because their only consumer is
-JavaScript and their contract is upstream's API. `crates/mnemonist-napi/src/lib.rs` states that
-split rather than leaving it to be inferred.
+`mnemonist-core` carries **more test code than implementation code** — 16,281 lines against 9,973 —
+which is the shape a compatibility port should have. `mnemonist-napi` has almost no Rust tests by
+design: what it must be correct about is what JavaScript sees, so its tests are JavaScript, under
+`tests/bridge/` and `tests/boundary/`.
 
 ## Documentation
 
@@ -106,12 +105,6 @@ Each defect carries a `BUG-<MODULE>-<n>` tag that resolves to the same tag in
 [docs/modules/](docs/modules/)`<module>.md`, where the full analysis lives — how the existing suite
 missed it, and which test or fuzz seed pins it. Deliberate divergences use `DIV-<MODULE>-<n>` the
 same way, and `PORTBUG-n` marks a bug in *this* port rather than upstream's.
-
-Two further candidates are listed as *not* bugs, having proved unreachable through any public
-sequence of calls, and one file was read end to end and found to have nothing to file. The document
-also records a negative result about its own ranking: a defect whose upstream test asserts the buggy
-output as correct would prove the bug survived review, and no case of that kind was found — in every
-defect claimed here, the existing suite never reaches the state where the bug lives.
 
 ## Verification
 
@@ -189,85 +182,42 @@ sides. Across sessions they do not: `kd-tree`'s upstream figure moved 22% and `m
 unchanged code.
 
 That instability is not symmetric, and it cost this table two rows. `multi-set` and `bi-map` were
-previously recorded as wins at 0.85× and 1.15×. In this pass both measured as losses, and a further
-spot-check of each in isolation on a settled machine measured them **worse still** — 1.29× and 1.56×
-against the pass's 1.13× and 1.35×. Both were therefore treated as losses at the worse of the two
-figures, on the principle that between two honest measurements the unflattering one is the safer
-claim.
+previously recorded as wins. In this pass both measured as losses, and a spot-check of each in
+isolation measured them worse still, so both are published as losses at the worse of the two
+figures — between two honest measurements the unflattering one is the safer claim.
 
-Being counted as losses is what got them looked at. `multi-set` and `bi-map` both read a key and
-then wrote it back unconditionally, hashing it twice on every call; upstream cannot avoid that,
-since a JavaScript `Map` has no look-up-and-update-in-place operation, but `OrderedMap::get_mut`
-can. On `multi-set`, where `add` is half the workload's operations and every operation is O(1) map
-bookkeeping, that halved the hashing and took the port from 24.80 ns to 16.1–16.4 ns across four
-runs — **1.36× faster than upstream**, out of the loss column entirely.
+`bi-map` is the least stable measurement here: its ratio spanned 1.14× to 1.59× across six runs,
+where every other module reproduces to about 1%. Its published figure should be read as "slower, by
+somewhere between a little and a half", not as 1.51.
 
-The two regressions nobody had ever looked at turned out to be the cheapest to fix, which is the
-pattern this project keeps rediscovering. `bit-set` converted its index to `f64` and ran JavaScript's
-full `ToInt32` — truncate, `rem_euclid(2^32)`, sign fixup — on every `set`, `get`, `reset` and
-`flip`, although `ToInt32` is the identity for any value already inside `i32`'s range. An
-`i32::try_from` fast path, falling back to the float path only for indices that genuinely need it,
-took the port from **8.68 ns to 5.91 ns**, and `bit-vector`, which shares the same code, came with
-it. `fixed-critbit-tree-map`'s `set` allocated two fresh `Vec`s per call as scratch for its walk;
-they are now reused struct fields, cleared on entry, taking the port from **405 ns to 292 ns**.
+Being counted as a loss is what got a module looked at, and five left the loss column that way —
+including `kd-tree`, previously the largest regression in this table at 2.18× slower and now 1.23×
+faster, once a per-node heap allocation in its nearest-neighbour search became a stack copy. Each
+diagnosis is in that module's own document under *Fuzz + bench*. Two of the five losses that remain
+say something the table cannot.
 
-Both figures come from six runs alternating the old and new code, and in both the upstream side held
-steady across all six — 7.85–7.91 ns for `bit-set` — so the port-side change is unambiguous.
-`bit-set`, `bit-vector` and `fixed-critbit-tree-map` are all now faster than upstream.
-
-`bi-map` got the same treatment and it made no measurable difference. Six interleaved runs of the
-old and new code under identical conditions put the port at 169.9 ns before and 164.6 ns after, a 3%
-gap inside a 10% run-to-run spread. The change is kept because one lookup is not worse than two and
-the code is no more complex, but no speedup is claimed for it. `bi-map` is also the least stable
-measurement in this table: its ratio spanned 1.14× to 1.59× across those six runs, where every other
-module reproduces to about 1%. Its published figure should be read as "slower, by somewhere between
-a little and a half", not as 1.51.
-
-`kd-tree` was the largest regression at 2.18× slower and is now faster than upstream. Its k-nearest-
-neighbour search built a fresh heap-allocated tuple per node visited, and the heap's store clones a
-slot on every sift step, so the allocation was closer to once per comparison than once per push.
-Fixed-size `[f64; N]` tuples are `Copy`, making that clone a stack copy: the port's own time fell
-from 2049 ns to 755 ns, a change far larger than the baseline drift above. It now reads 1.23× faster
-than upstream in this pass.
-
-`multi-array` is where measurement disagreed with the reasoning. Narrowing its bookkeeping from
-`usize` to `u32` was expected to reduce the cache-miss cost of its bucket walk; measured, it bought
-3.9% on the port's own time — kept, but too small to call the width the cause. Removing a zero-fill
-found afterwards bought 17%: `get` allocated its result with `vec![0.0; n]`, memsetting bytes that
-the next `n` steps immediately overwrote. It now builds by `push` and reverses, and matches the
-storage discriminant once per call instead of once per element. The port's own time went 50.2 ns →
-48.3 ns → 38.3 ns across the two changes.
-
-What remains is the allocation itself: `get` returns a fresh container per call, and a bare
-`Vec::with_capacity(25)` plus fill already accounts for 34.9 ns of it. Both sides allocate, and V8's
-nursery is simply better at this shape than a general-purpose allocator. That is the residue, and it
-is not addressable without changing what the method returns.
-
-`default-map` is the largest regression left, and it is the one whose cause this port does **not**
-claim to know. The obvious explanation — a duplicate hash lookup — was measured and refuted: a probe
-separating a peek from a hit put the two 0.7% apart, where a second lookup would have shown up
+**`default-map` is the largest regression left, and it is the one whose cause this port does not
+claim to know.** The obvious explanation — a duplicate hash lookup — was measured and refuted: a
+probe separating a peek from a hit put the two 0.7% apart, where a second lookup would have shown up
 plainly. What replaced it is an account, not a finding: at a million-key domain `OrderedMap`'s
 internal `HashMap` no longer fits in cache and a uniformly random key makes most lookups a real
 memory access. That is consistent with the regression *narrowing* from 1.44× to 1.13× as the domain
-grows, but it was never isolated against a metric that would have falsified it — the domain-size
-sweep with hardware cache-miss counters that would settle it is not available on this host. The
-module's own document says so in those words, and this summary does not upgrade it.
+grows, but it was never isolated against a metric that would have falsified it, and the hardware
+cache-miss counters that would settle it are not available on this host. The module's document says
+so in those words, and this summary does not upgrade it.
 
 The structural fix — storing values inline and tracking order separately — was costed rather than
-waved away: roughly 6.5 to 11.5 hours, because `OrderedMap` is used by eight units that are all
-complete through every gate, and each would need its falsification redone, its differential campaign
-re-run and its benchmark re-measured. It was declined on two grounds. The time is most of what
-remained before the freeze, with no slack. And the benchmark's operation mix is three-quarters
-writes, which have to touch a second structure under any design that keeps insertion order and the
-cursor semantics — so even a successful rewrite would only clearly help the remaining quarter, and
-should not be expected to close a 1.44× gap.
+waved away, at roughly 6.5 to 11.5 hours: `OrderedMap` backs eight units that are complete through
+every gate, and each would need its falsification redone, its campaign re-run and its benchmark
+re-measured. It was declined because the benchmark's operation mix is three-quarters writes, which
+must touch a second structure under any design preserving insertion order and cursor semantics — so
+even a successful rewrite should not be expected to close a 1.44× gap.
 
-The `heap` figures are the clearest measure of what fidelity costs. The delivered implementation
-runs at 31.7 ns against upstream's 24.3 ns; a bare `Vec<f64>` heap over the identical workload runs
-at 21.7 ns — a separate probe, not part of the table above — so the `RefCell` and comparator
-indirection accounts for more than the entire regression.
-That indirection is what permits a JavaScript comparator to re-enter and mutate the heap mid-sift,
-which upstream behaviour requires.
+**`heap` is the clearest measure of what fidelity costs.** The delivered implementation runs at
+31.7 ns against upstream's 24.3 ns; a bare `Vec<f64>` heap over the identical workload runs at
+21.7 ns — a separate probe, not part of the table above — so the `RefCell` and comparator
+indirection account for more than the entire regression. That indirection is what permits a
+JavaScript comparator to re-enter and mutate the heap mid-sift, which upstream behaviour requires.
 
 ## Layout
 
@@ -284,21 +234,14 @@ docs/modules/             one divergence document per unit
 
 ## License
 
-MIT, matching upstream — [LICENSE](LICENSE) for this port, and [NOTICE](NOTICE) for what it
-derives from and redistributes.
-
-Two upstream libraries are involved, both © Guillaume Plique (Yomguithereal) and both MIT:
+MIT — [LICENSE](LICENSE) for this port, [NOTICE](NOTICE) for what it derives from and
+redistributes. Two upstream libraries are involved, both © Guillaume Plique (Yomguithereal), both
+MIT:
 
 - **`mnemonist`** ([LICENSE-MNEMONIST](LICENSE-MNEMONIST)) — the library ported here. Its published
-  test suite is redistributed **unmodified** under `tests/original/`, byte-identical to the upstream
-  release and verified by `sha256sum -c tests/SHA256SUMS`. That suite is the equivalence evidence
-  this port rests on and is not this project's work. A vendored copy of the library sits under
-  `bench/upstream/` so both sides of a benchmark or a fuzz run execute the real thing.
+  test suite is redistributed **unmodified** under `tests/original/` and hash-verified; that suite
+  is the equivalence evidence this port rests on and is not this project's work. A vendored copy of
+  the library sits under `bench/upstream/` so both sides of a measurement run the real thing.
 - **`obliterator`** ([LICENSE-OBLITERATOR](LICENSE-OBLITERATOR)) — `mnemonist`'s iteration
-  primitives, which had to be ported too. `obliterator/iterator` became
-  `crates/mnemonist-core/src/cursor/` and `obliterator/foreach` became
-  `crates/mnemonist-napi/src/foreach.rs`, both against version 2.0.5. Its error strings are
-  reproduced exactly, because upstream's own tests assert on them.
-
-Upstream carries no per-file copyright or SPDX headers; each ported module names the upstream file
-it derives from in its own documentation instead.
+  primitives, ported too: `obliterator/iterator` became `crates/mnemonist-core/src/cursor/` and
+  `obliterator/foreach` became `crates/mnemonist-napi/src/foreach.rs`, both against 2.0.5.
