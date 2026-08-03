@@ -1,0 +1,40 @@
+mnemonist-rs
+Copyright (c) 2026 Grimilde Bigliotto
+
+This product is a Rust port of, and redistributes material from, two
+MIT-licensed JavaScript libraries by Guillaume Plique (Yomguithereal).
+
+--------------------------------------------------------------------------
+1. mnemonist — https://github.com/Yomguithereal/mnemonist
+   Copyright (c) 2016 Guillaume Plique (Yomguithereal)
+   Licence: MIT, reproduced verbatim in LICENSE-MNEMONIST
+
+   The data structures in `crates/mnemonist-core` are ports of this
+   library's implementations. Its published test suite is redistributed
+   **unmodified** under `tests/original/`, byte-for-byte identical to the
+   upstream release and verified by `sha256sum -c tests/SHA256SUMS`; it is
+   the equivalence evidence this port rests on, and is not the work of this
+   project. A vendored copy of the library itself is kept under
+   `bench/upstream/` so both sides of a benchmark or a differential fuzz run
+   execute the real upstream code rather than a description of it.
+
+--------------------------------------------------------------------------
+2. obliterator — https://github.com/Yomguithereal/obliterator
+   Copyright (c) 2017-2021 Guillaume Plique (Yomguithereal)
+   Licence: MIT, reproduced verbatim in LICENSE-OBLITERATOR
+
+   `mnemonist` depends on this library for its iteration primitives, so
+   porting `mnemonist` required porting them too. Two are reimplemented
+   here, both against version 2.0.5:
+
+     obliterator/iterator  ->  crates/mnemonist-core/src/cursor/
+     obliterator/foreach   ->  crates/mnemonist-napi/src/foreach.rs
+
+   Its error strings are reproduced exactly, because upstream's own tests
+   assert on them.
+
+--------------------------------------------------------------------------
+
+Upstream carries no per-file copyright or SPDX headers. Each ported module
+in this repository names the upstream file it derives from in its own
+documentation, which exceeds that obligation and costs nothing.

@@ -283,5 +283,21 @@ docs/modules/             one divergence document per unit
 
 ## License
 
-MIT, matching upstream. `mnemonist` is © Guillaume Plique and contributors; the vendored test suite
-under `tests/original/` is redistributed unmodified under that license.
+MIT, matching upstream — [LICENSE](LICENSE) for this port, and [NOTICE](NOTICE) for what it
+derives from and redistributes.
+
+Two upstream libraries are involved, both © Guillaume Plique (Yomguithereal) and both MIT:
+
+- **`mnemonist`** ([LICENSE-MNEMONIST](LICENSE-MNEMONIST)) — the library ported here. Its published
+  test suite is redistributed **unmodified** under `tests/original/`, byte-identical to the upstream
+  release and verified by `sha256sum -c tests/SHA256SUMS`. That suite is the equivalence evidence
+  this port rests on and is not this project's work. A vendored copy of the library sits under
+  `bench/upstream/` so both sides of a benchmark or a fuzz run execute the real thing.
+- **`obliterator`** ([LICENSE-OBLITERATOR](LICENSE-OBLITERATOR)) — `mnemonist`'s iteration
+  primitives, which had to be ported too. `obliterator/iterator` became
+  `crates/mnemonist-core/src/cursor/` and `obliterator/foreach` became
+  `crates/mnemonist-napi/src/foreach.rs`, both against version 2.0.5. Its error strings are
+  reproduced exactly, because upstream's own tests assert on them.
+
+Upstream carries no per-file copyright or SPDX headers; each ported module names the upstream file
+it derives from in its own documentation instead.

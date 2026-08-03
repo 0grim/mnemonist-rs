@@ -110,5 +110,6 @@ COPY bench/upstream ./bench/upstream
 # README.md links into docs/ throughout, so docs/ is copied with it: a reader
 # who explores the image should not hit dead links in the first file they open.
 COPY README.md .port-mortem.toml ./
+COPY LICENSE LICENSE-MNEMONIST LICENSE-OBLITERATOR NOTICE ./
 COPY docs ./docs
 CMD ["./tests/run.sh"]
