@@ -27,18 +27,18 @@
 //! which is exactly backwards (DIV-STACK-2's reasoning, applied to a static instead of
 //! to `Symbol.iterator`).
 //!
-//! # What this does NOT buy, corrected after measuring
+//! # What this does NOT buy — measured
 //!
-//! An earlier draft of this comment claimed that routing `of` through `from`
-//! makes the original suite exercise the `toString() === '[object Arguments]'`
-//! clause of `crate::foreach`'s branch 1. **That is false, and deleting the
-//! clause proves it:** with the clause removed, all 22 assertions in
-//! `test/stack.js` and `test/queue.js` still pass, `of` included. A modern
-//! `arguments` object carries `Symbol.iterator`, so it simply falls through to
-//! branches 3 and 4, which drain it in the same order with the same numeric
-//! second argument. The clause is observable only for something that claims the
-//! tag without being iterable — a hijacked `toString`, which is what
-//! `tests/boundary/foreach.js` uses and the only coverage it has.
+//! Routing `of` through `from` does **not** make the original suite exercise
+//! the `toString() === '[object Arguments]'` clause of `crate::foreach`'s
+//! branch 1. Deleting the clause proves it: with the clause removed, all 22
+//! assertions in `test/stack.js` and `test/queue.js` still pass, `of`
+//! included. A modern `arguments` object carries `Symbol.iterator`, so it
+//! simply falls through to branches 3 and 4, which drain it in the same order
+//! with the same numeric second argument. The clause is observable only for
+//! something that claims the tag without being iterable — a hijacked
+//! `toString`, which is what `tests/boundary/foreach.js` uses and the only
+//! coverage the clause has.
 
 use napi::bindgen_prelude::*;
 
@@ -57,13 +57,13 @@ const INSTALLER: &str =
 /// Cursor factories whose product must not carry a `#.return` method.
 ///
 /// `(class, method)`, matching `crate::cursor::ITERATOR_FACTORIES`' shape.
+///
+/// Append-only, for the reason given on `crate::cursor::ITERATOR_FACTORIES`.
 const CURSOR_FACTORIES: &[(&str, &str)] = &[
     ("Stack", "values"),
     ("Stack", "entries"),
     ("Queue", "values"),
     ("Queue", "entries"),
-    // Appended at the end, never inserted -- see the note on
-    // `crate::cursor::ITERATOR_FACTORIES`.
     ("FixedStack", "values"),
     ("FixedStack", "entries"),
     ("FixedDeque", "values"),
@@ -132,25 +132,17 @@ pub fn install_variadic_factories(exports: &mut Object, env: &Env) -> Result<()>
         patch.call((constructor, (*method).to_owned()).into())?;
     }
 
-    // Appended at the very end of this function, deliberately: it is the last
-    // statement before the `Ok`, so a merge conflict cannot land inside an
-    // existing loop or match arm. `heap.js` ends with its own load-time
+    // Per-module load-time statics. `heap.js`, for instance, ends with its own
     // assignments -- `MaxHeap.prototype = Heap.prototype`, `Heap.MinHeap`,
     // `Heap.MaxHeap` -- and they belong in the addon for the same reason `of`
     // does: a shim that added them would mean `require('@port/addon').Heap` was
     // incomplete without the test harness.
+    //
+    // This run is append-only; new installers go on the end.
     crate::comparators::install_comparator_factories(exports, env)?;
     crate::heap::install_heap_statics(exports, env)?;
-
-    // Appended at the end, never inserted: this function is called from the
-    // one module-export hook the addon has, and a new call anywhere else is
-    // a merge conflict.
     crate::trie_map::install_trie_statics(exports, env)?;
-
-    // Appended at the end, never inserted, same reason as above.
     crate::fibonacci_heap::install_fibonacci_heap_statics(exports, env)?;
-
-    // Appended at the end, never inserted, same reason as above.
     crate::passjoin_index::install_passjoin_index_statics(exports, env)?;
 
     Ok(())

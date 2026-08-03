@@ -6,112 +6,91 @@
 //! Unsafe code at this FFI boundary is expected and sanctioned -- napi-rs
 //! generates `unsafe` glue to cross the Rust/JS boundary -- in contrast to
 //! `mnemonist-core`, which forbids `unsafe` entirely.
+//!
+//! # What lives here rather than in core
+//!
+//! Everything that needs a JavaScript value to answer: `typeof` guards and
+//! the exact `TypeError` text upstream throws for them, SameValueZero key
+//! identity ([`js_key`]), `undefined` as a value distinct from absence
+//! ([`js_slot`]), the `Symbol.iterator` protocol ([`iterables`]), calling a
+//! caller-supplied callback ([`foreach`], [`comparators`]), and the typed
+//! array constructors ([`typed_arrays`], [`array_class`]). Core takes
+//! already-typed Rust values; the coercion happens here, once per module.
+//!
+//! Most items below are `#[napi]` classes and methods, consumed from
+//! JavaScript rather than from Rust, so their contract is upstream
+//! `mnemonist`'s own API. Where a method reproduces an upstream bug on
+//! purpose it is marked with the same `BUG-<MODULE>-<n>` identifier the core
+//! module and `docs/modules/<unit>.md` use.
 
 use napi_derive::napi;
 
+// rustfmt keeps this list alphabetical, so there is no position to choose
+// when adding a module -- which is what makes concurrent edits to it safe.
+pub mod array_class;
+pub mod bi_map;
+pub mod binary_search;
 pub mod bit_set;
 pub mod bit_vector;
+pub mod bk_tree;
+pub mod bloom_filter;
+pub mod circular_buffer;
+pub mod comparators;
+pub mod critbit_tree_map;
 pub mod cursor;
 pub mod default_map;
+pub mod default_weak_map;
+pub mod fibonacci_heap;
+pub mod fixed_critbit_tree_map;
+pub mod fixed_deque;
+pub mod fixed_reverse_heap;
+pub mod fixed_stack;
 pub mod foreach;
+pub mod fuzzy_map;
+pub mod fuzzy_multi_map;
+pub mod hash_tables;
 pub mod hashed_array_tree;
+pub mod heap;
+pub mod inverted_index;
+pub mod iterables;
+pub mod js_array;
 pub mod js_key;
 pub mod js_slot;
 pub mod js_value;
+pub mod kd_tree;
+pub mod linked_list;
+pub mod lru_cache;
+pub mod lru_cache_with_delete;
+pub mod lru_map;
+pub mod lru_map_with_delete;
 pub mod map_cursor;
+pub mod merge;
+pub mod multi_array;
+pub mod multi_map;
+pub mod multi_set;
+pub mod passjoin_index;
 pub mod queue;
+pub mod set;
+pub mod sort;
 pub mod sparse_map;
 pub mod sparse_queue_set;
 pub mod sparse_set;
 pub mod stack;
 pub mod static_disjoint_set;
-pub mod statics;
-// Appended, not merged into the alphabetical run above: this file is edited by
-// several agents at once and a new line at the end can never land inside
-// another one's hunk.
-pub mod array_class;
-pub mod circular_buffer;
-pub mod fixed_deque;
-pub mod fixed_stack;
-pub mod iterables;
-// Appended rather than filed alphabetically: this list is edited from several
-// worktrees at once, and a conflict boundary that lands inside it has already
-// broken three merges. New modules go on the end.
-pub mod set;
-pub mod sort;
-
-// Appended, never interleaved: this list is a shared registry (CLAUDE.md, Git).
-pub mod bloom_filter;
-pub mod suffix_array;
-// Appended at the end, never inserted: this file is edited by several agents
-// at once and a new line anywhere but the end can land inside another one's
-// hunk (CLAUDE.md, Git).
 pub mod static_interval_tree;
-pub mod vector;
-// at once and a new line at the end can never land inside another one's hunk.
-pub mod lru_cache;
-pub mod lru_cache_with_delete;
-pub mod lru_map;
-pub mod lru_map_with_delete;
-
-// Appended at the end of the list rather than in alphabetical position: this
-// file is shared, and a conflict boundary landing mid-list has broken three
-// merges already.
-pub mod comparators;
-pub mod fixed_reverse_heap;
-pub mod heap;
-pub mod js_array;
-
-// Appended at the end, never inserted: this file is edited by several agents
-// at once and a new line anywhere else is a merge conflict.
-pub mod bi_map;
-pub mod bk_tree;
-pub mod fuzzy_map;
-
-// Appended at the end, never inserted: this file is a shared registry edited
-// by several agents at once (CLAUDE.md, Git).
-pub mod binary_search;
-pub mod hash_tables;
-pub mod merge;
-pub mod typed_arrays;
-// Appended at the end, never inserted: this file is a shared registry
-// (CLAUDE.md, Git) and a new line anywhere else is a merge conflict.
+pub mod statics;
+pub mod suffix_array;
+pub mod symspell;
 pub mod trie;
 pub mod trie_map;
-// Appended at the end, never inserted (CLAUDE.md, Git): a line anywhere else
-// is a merge conflict inside this shared registry.
-pub mod multi_map;
-pub mod multi_set;
-
-// Appended at the end, never inserted (CLAUDE.md, Git).
-pub mod fuzzy_multi_map;
-
-// Appended at the end, never inserted: this file is a shared registry
-// (CLAUDE.md, Git) and a new line anywhere else is a merge conflict.
-pub mod fibonacci_heap;
-
-// Appended at the end, never inserted: this file is a shared registry
-// (CLAUDE.md, Git) and a new line anywhere else is a merge conflict.
-pub mod default_weak_map;
-pub mod inverted_index;
-pub mod linked_list;
-
-// Appended at the end, never inserted: this file is a shared registry
-// (CLAUDE.md, Git) and a new line anywhere else is a merge conflict.
-pub mod critbit_tree_map;
-pub mod fixed_critbit_tree_map;
-
-// Appended at the end, never inserted: this file is a shared registry
-// (CLAUDE.md, Git) and a new line anywhere else is a merge conflict.
-pub mod kd_tree;
+pub mod typed_arrays;
+pub mod vector;
 pub mod vp_tree;
 
-// Appended at the end, never inserted: this file is a shared registry
-// (CLAUDE.md, Git) and a new line anywhere else is a merge conflict.
-pub mod multi_array;
-pub mod passjoin_index;
-pub mod symspell;
-
+/// A liveness check for the addon: returns `"pong"`.
+///
+/// The test harness calls this first, so a failure here means the native
+/// module did not load at all rather than that some structure is wrong.
 #[napi]
 pub fn ping() -> &'static str {
     "pong"

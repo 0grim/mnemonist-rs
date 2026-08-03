@@ -52,8 +52,7 @@
 //! `Uint16Array` or `Uint32Array` argument leaks one strong reference per call.
 //! Unfixable from here, bounded by the number of calls the harness makes, and
 //! not on any path that runs long enough to matter — but it is a leak, and
-//! calling it anything else would be the kind of overclaim CLAUDE.md warns
-//! about.
+//! is recorded as one rather than downgraded to something milder.
 
 use mnemonist_core::sort::{insertion, quick};
 use mnemonist_core::utils::typed_arrays::{

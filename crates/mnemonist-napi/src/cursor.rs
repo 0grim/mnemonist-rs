@@ -217,6 +217,14 @@ impl BridgeBitCursor {
 /// One row per upstream `X.prototype[Symbol.iterator] = X.prototype.values`.
 /// Kept as data rather than as code per module so the count of modules and the
 /// count of places to get this wrong stay unrelated.
+///
+/// The aliased method is **not** always `values`, so each row records it: a
+/// map-like class usually aliases `entries`, and two classes alias something
+/// else again. Getting one wrong leaves `[...x]` yielding the wrong shape.
+///
+/// This table is append-only. It is a shared registry edited concurrently
+/// from several worktrees, and appending keeps git's conflict boundaries off
+/// the existing rows rather than inside the array literal.
 const ITERATOR_FACTORIES: &[(&str, &str)] = &[
     ("SparseSet", "values"),
     // Note the method: upstream aliases `SparseMap.prototype[Symbol.iterator]`
@@ -231,21 +239,13 @@ const ITERATOR_FACTORIES: &[(&str, &str)] = &[
     // Not always `values`: `DefaultMap`'s last line aliases `entries` too, so a
     // spread of one yields `[key, value]` pairs.
     ("DefaultMap", "entries"),
-    // Appended at the end, never inserted: this table is edited by several
-    // agents at once and a row added mid-list is a merge conflict inside an
-    // array literal.
     ("FixedStack", "values"),
     ("FixedDeque", "values"),
     ("CircularBuffer", "values"),
-    // Appended at the end, never inserted (CLAUDE.md, Git).
     ("Vector", "values"),
-    // Appended at the end, never inserted (CLAUDE.md, Git): a new row anywhere
-    // else is a merge conflict inside an array literal.
     ("BiMap", "entries"),
     ("BiMapInverse", "entries"),
     ("FuzzyMap", "values"),
-    // Appended at the end, never inserted: this file is edited by several
-    // agents at once and a new row can never land inside another one's hunk.
     // All four alias `entries`, not `values` -- upstream's own last line for
     // all of `lru-cache.js`/`lru-map.js`/the two `-with-delete` files is
     // `X.prototype[Symbol.iterator] = X.prototype.entries`.
@@ -253,29 +253,20 @@ const ITERATOR_FACTORIES: &[(&str, &str)] = &[
     ("LRUCacheWithDelete", "entries"),
     ("LRUMap", "entries"),
     ("LRUMapWithDelete", "entries"),
-    // Appended at the end, never inserted: this table is a shared registry
-    // (CLAUDE.md, Git) and a new row anywhere else is a merge conflict inside
-    // an array literal. `TrieMap`'s last line aliases `entries`; `trie.js`'s
-    // own last line aliases `keys`, not `entries` -- a `Trie` has no value to
-    // pair a key with.
+    // `TrieMap`'s last line aliases `entries`; `trie.js`'s own last line
+    // aliases `keys`, not `entries` -- a `Trie` has no value to pair a key
+    // with.
     ("TrieMap", "entries"),
     ("Trie", "keys"),
-    // Appended at the end, never inserted (CLAUDE.md, Git): a new row
-    // anywhere else is a merge conflict inside an array literal.
     // `MultiMap`'s last line aliases `entries`, matching `[...map]` yielding
     // `[key, value]` pairs; `MultiSet`'s aliases `values`.
     ("MultiMap", "entries"),
     ("MultiSet", "values"),
-    // Appended at the end, never inserted (CLAUDE.md, Git).
     ("FuzzyMultiMap", "values"),
-    // Appended at the end, never inserted: this table is a shared registry
-    // (CLAUDE.md, Git) and a new row anywhere else is a merge conflict inside
-    // an array literal. `InvertedIndex`'s last line aliases `documents`, not
-    // `values` -- there is no bare `values()` method on it at all.
+    // `InvertedIndex`'s last line aliases `documents`, not `values` -- there
+    // is no bare `values()` method on it at all.
     ("LinkedList", "values"),
     ("InvertedIndex", "documents"),
-    // Appended at the end, never inserted (CLAUDE.md, Git): a new row
-    // anywhere else is a merge conflict inside an array literal.
     // `PassjoinIndex`'s last line aliases `values`, matching
     // `test/passjoin-index.js`'s `for (var string of index)`.
     ("PassjoinIndex", "values"),

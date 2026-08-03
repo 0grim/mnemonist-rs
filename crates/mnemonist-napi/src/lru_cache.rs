@@ -575,11 +575,10 @@ pub fn step_entry<Owner: 'static, IK: Hash + Eq + 'static>(
 /// where upstream's own `pointer = forward[pointer]` sits in its loop body,
 /// one statement below the callback call. `CursorState`'s `Sequence` impl
 /// advances eagerly, which is right for `keys`/`values`/`entries` (upstream's
-/// own lazy-iterator closures do the same) and was wrong here: this bridge
-/// used to open an `Entries` walk the same way those three do, and it
-/// reproduced their timing instead of `forEach`'s own. See
-/// `mnemonist_core::structures::lru_cache`'s module docs and
-/// `docs/modules/lru-cache.md`'s "Bugs this found".
+/// own lazy-iterator closures do the same) and wrong here: opening an
+/// `Entries` walk the way those three do would reproduce their timing rather
+/// than `forEach`'s own. See `mnemonist_core::structures::lru_cache`'s module
+/// docs and `docs/modules/lru-cache.md`'s "Bugs this found".
 pub fn for_each_entries<IK: Hash + Eq>(
     inner: &RefCell<CoreLru<IK, JsSlot, JsSlot>>,
     this: This,

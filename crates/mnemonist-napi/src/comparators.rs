@@ -230,8 +230,8 @@ fn call_comparator(
 /// `f(a, b)` with `this` undefined.
 ///
 /// `compare(item, parent)` is a bare call upstream, so `this` is `undefined` —
-/// which a sloppy-mode callee sees as `globalThis`, decided by the callee
-/// rather than by us.
+/// which a sloppy-mode callee sees as `globalThis`. That substitution is the
+/// callee's, not this bridge's.
 fn call(
     env: sys::napi_env,
     function: sys::napi_value,

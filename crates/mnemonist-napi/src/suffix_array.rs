@@ -22,9 +22,9 @@
 //!    *namespacing* statement rather than a behaviour, and the addon exports
 //!    both classes so neither is missing. Doing the alias in the addon would
 //!    mean editing the one `#[napi(module_exports)]` hook in `crate::cursor`,
-//!    which several agents are editing concurrently and where a merge conflict
-//!    has already landed inside a function tail three times. That trade is
-//!    recorded in `docs/modules/suffix-array.md` rather than left implicit.
+//!    a shared registry, to reproduce a statement that changes nothing
+//!    observable. That trade is recorded in `docs/modules/suffix-array.md`
+//!    rather than left implicit.
 //! 4. **The core structure is held in a [`RefCell`].** Nothing here mutates and
 //!    no method takes a callback, so the aliasing hazard behind PORTBUG-1 is not
 //!    currently reachable — but `&self` on a `Freeze` type is `noalias

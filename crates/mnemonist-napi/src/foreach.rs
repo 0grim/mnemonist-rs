@@ -220,9 +220,8 @@ pub fn for_each<'env>(env: &Env, iterable: Unknown<'env>, callback: Unknown<'env
 
         // The enumerability filter is applied here rather than through
         // `KeyFilter::Enumerable`, whose N-API semantics differ across
-        // versions; `napi_get_property` on a key we just enumerated cannot
-        // fail, and a non-enumerable one is skipped exactly as `for…in` skips
-        // it.
+        // versions; `napi_get_property` on a key just enumerated cannot fail,
+        // and a non-enumerable one is skipped exactly as `for…in` skips it.
         if !is_enumerable(env, &drained_object, &key)? {
             continue;
         }

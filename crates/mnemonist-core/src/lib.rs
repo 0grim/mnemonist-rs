@@ -26,9 +26,6 @@
 
 pub mod cursor;
 pub mod map;
+pub mod sort;
 pub mod structures;
 pub mod utils;
-// New modules are appended rather than filed alphabetically: this list is
-// edited concurrently from several worktrees, and appending keeps git's
-// conflict boundaries off the existing entries.
-pub mod sort;

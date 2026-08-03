@@ -363,10 +363,9 @@ fn resolve_kind(env: &Env, container: Option<Unknown>) -> Result<ContainerKind> 
 /// Everything [`crate::foreach::for_each`] would visit, as `(key, value)`
 /// pairs already classified into [`JsKey`] — the shape `MultiMap.from`'s
 /// collector needs. A local copy of `bi_map::collect_pairs`'s pattern rather
-/// than a shared export: `fuzzy_map`/`bi_map` each keep their own for the
-/// same reason (CLAUDE.md: grep before inventing shared machinery, but a
+/// than a shared export: `fuzzy_map`/`bi_map` each keep their own, because a
 /// three-line closure over a different pair type is not machinery worth
-/// sharing).
+/// sharing.
 fn collect_pairs(env: &Env, iterable: Unknown) -> Result<Vec<(JsKey, JsKey)>> {
     use std::cell::RefCell as StdRefCell;
     use std::rc::Rc;
