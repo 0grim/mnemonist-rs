@@ -285,14 +285,46 @@ labelled unconfirmed.
 
 ## What these instruments cannot see
 
-This project's own verification instruments passed while measuring something other than correctness
-on three separate occasions:
+Ten times during this port, a check passed and the pass meant nothing. Not because the code was
+wrong and the check missed it — because **the check was answering a different question than the one
+it appeared to answer.** They are collected here rather than mentioned individually, because the
+pattern is the point and one instance reads like carelessness where ten read like a property of
+verification itself.
+
+| The check | What it looked like it verified | What it actually verified |
+|---|---|---|
+| A falsification that stayed green | that the suite exercises the Rust code | nothing — the sabotage was in a branch no test takes |
+| RSS, as evidence for a cache-locality hypothesis | that the memory footprint shrank | nothing — the pages were never resident to begin with |
+| `cargo build` clean | that the code compiles | that the *non-test* code compiles; `#[cfg(test)]` was never parsed |
+| `cases=16666` in a fuzz campaign | 16,666 distinct programs | 32 programs, plus two saved seeds replayed ~8,300 times each |
+| `cargo clippy \| tail -5` exiting 0 | that clippy passed | that **`tail`** succeeded — a pipeline's status is its last command's |
+| `cargo build … \| tail -1` before a fuzz run | that the sabotage was compiled in | `tail` again; the run used a stale binary and reported clean |
+| A bridge test green on `forEach` | that the loop re-reads `size` each step | nothing — the read was hoisted, and no test mutates from a bridge callback |
+| A cursor's `complete()` returning `None` | that `break` leaves the walk resumable | the opposite — napi had already latched `[[GeneratorState]]` |
+| A fuzz specification reporting zero divergences | that the module agreed with upstream | zero disagreements out of **zero comparisons** — every case died at construction |
+| A falsification of a fix, run twice, agreeing | that the fix was what changed the result | that one artefact was tested twice; the repro loaded a different file than the one rebuilt |
+
+Two of these deserve their detail, because they are the ones a reader is most likely to think could
+not happen to them.
 
 **A fuzz specification that never ran, reporting clean.** One module's harness referred to its hash
 factories by names the oracle did not register. Every generated case failed at construction, and the
 campaign reported zero divergences *truthfully* — zero disagreements out of zero comparisons.
 Nothing was broken, the arithmetic was correct, and the number meant nothing. After the fix, the
 same campaign executed 1,210,496 real operations.
+
+**A falsification that falsified nothing.** Verifying that a fix worked meant building without it,
+confirming the failure, rebuilding with it, and confirming the pass. Both runs passed. The rebuilt
+artefact had been copied to one filename and the reproduction script loaded another, so both runs
+exercised the *fixed* binary — and the agreeing results were nearly reported as confirmation. Redone
+against the file the script actually reads, the two runs differ as they should.
+
+The habit this produced is the one worth transferring: **before trusting a green signal, ask what it
+would look like if the thing it checks were broken.** Every failure above is invisible until that
+question is asked, and obvious within a minute of asking it.
+
+Two findings of a different shape came out of the same habit — an instrument that invented findings
+rather than missing them, and one that cannot see a whole layer by construction.
 
 **A decoder manufacturing divergences.** Two specifications opened with 1-ULP disagreements
 indistinguishable from genuine port bugs. The JSON library's default float parser is not
