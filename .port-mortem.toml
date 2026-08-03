@@ -40,7 +40,13 @@ core_standalone = "docker build -t pm-core --target core . && docker run --rm pm
 hashes          = "sha256sum -c tests/SHA256SUMS"
 
 [results]
+# Units (one upstream test file and its require-closure) through all ten gates.
 in_scope_passing  = 42
 in_scope_total    = 42
+# Specs from `tests/run.sh all`. This is the whole mocha run: 525 upstream specs
+# executing unmodified, plus 208 of this port's own boundary specs. Only the 525
+# are equivalence evidence -- see README.md and docs/METHODOLOGY.md gate 4.
 repo_wide_passing = 733
 repo_wide_total   = 733
+upstream_passing  = 525
+upstream_total    = 526          # 525 passing, 1 pending, which upstream also skips

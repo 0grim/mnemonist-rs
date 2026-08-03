@@ -102,7 +102,14 @@ the first run of a clean checkout and worked on every run after.
 **Purpose.** The primary equivalence evidence. Tests written for the JavaScript library pass against
 Rust without alteration.
 
-**How it runs.** `./tests/run.sh` — currently **733 upstream specs passing**.
+**How it runs.** `./tests/run.sh` — currently **525 upstream specs passing**, plus one pending that
+upstream itself skips.
+
+That script runs 733 specs in a single mocha invocation, because it appends this port's own
+`tests/boundary/` specs (208 of them) to upstream's files. Only the 525 count toward this gate. The
+boundary specs exercise the N-API bridge, which is this project's own code: they are gate 7's
+evidence, not gate 4's, and folding them into the headline would make the port's own tests vouch for
+the port. Separate them with `npx mocha test/*.js` and `npx mocha boundary/*.js` from `tests/.work`.
 
 **What it caught.** Everything a hand-written port forgets. It is also the gate that makes gate 6
 necessary: a suite that passes provides no evidence of correctness until it has been shown capable

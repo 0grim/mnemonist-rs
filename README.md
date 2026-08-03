@@ -10,10 +10,17 @@ unmodified against the Rust build through an N-API bridge that forms no part of 
 
 ```
 43 of 44 upstream structures ported        42 of 42 upstream test files ported
-42 units through all ten gates (100%)      733 upstream specs passing, unmodified
+42 units through all ten gates (100%)      525 upstream specs passing, unmodified
 130.0M differential fuzz operations        zero divergences
 71 upstream defects examined               12 documented in full
 ```
+
+**What the 525 counts, and what it does not.** `./tests/run.sh` executes 733 specs in one mocha run:
+the 525 above, which are upstream's own files running unmodified, plus 208 written by this port and
+kept in `tests/boundary/`. Only the first number is evidence of equivalence, so only the first is
+claimed as such — the boundary specs test the bridge, which is this project's code and cannot vouch
+for itself. Both numbers are reproducible: `npx mocha test/*.js` and `npx mocha boundary/*.js` from
+`tests/.work` after a run.
 
 One upstream file is not ported. `semi-dynamic-trie.js` (251 LOC) is absent from `mnemonist`'s own
 `index.js`, has no file in the published test suite, is required only from upstream's internal
@@ -122,7 +129,7 @@ Individual checks:
 ```bash
 cargo test                       # 799 native tests
 cargo run --release --example tour -p mnemonist-core   # the crate used from Rust
-./tests/run.sh                   # 733 upstream specs, unmodified, via the bridge
+./tests/run.sh                   # 525 upstream specs + 208 of this port's own, via the bridge
 ./tests/verify.sh                # all ten gates, per unit claimed complete
 sha256sum -c tests/SHA256SUMS    # upstream tests byte-identical to published
 scripts/status.sh                # derived coverage and per-unit evidence
