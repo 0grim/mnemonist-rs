@@ -113,12 +113,17 @@ pub enum NewError {
 /// `Sequence` impls, because Rust allows only one per type.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Projected<K, V> {
+    /// A `keys()` walk: just the key.
     Key(K),
+    /// A `values()` walk: just the value.
     Value(V),
+    /// An `entries()` walk: the pair, in upstream's `[key, value]` order.
     Entry(K, V),
 }
 
 impl<K, V> Projected<K, V> {
+    /// The key, for a [`Key`](Projected::Key) or an
+    /// [`Entry`](Projected::Entry); [`None`] for a [`Value`](Projected::Value).
     pub fn key(self) -> Option<K> {
         match self {
             Self::Key(key) | Self::Entry(key, _) => Some(key),
@@ -126,6 +131,8 @@ impl<K, V> Projected<K, V> {
         }
     }
 
+    /// The value, for a [`Value`](Projected::Value) or an
+    /// [`Entry`](Projected::Entry); [`None`] for a [`Key`](Projected::Key).
     pub fn value(self) -> Option<V> {
         match self {
             Self::Value(value) | Self::Entry(_, value) => Some(value),
@@ -133,6 +140,8 @@ impl<K, V> Projected<K, V> {
         }
     }
 
+    /// The pair, but only for an [`Entry`](Projected::Entry) — a one-sided
+    /// projection cannot be widened back into both halves.
     pub fn entry(self) -> Option<(K, V)> {
         match self {
             Self::Entry(key, value) => Some((key, value)),
@@ -144,8 +153,11 @@ impl<K, V> Projected<K, V> {
 /// Which of the three walks a [`LruCache`] cursor is performing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Projection {
+    /// `#.keys()`.
     Keys,
+    /// `#.values()`.
     Values,
+    /// `#.entries()`.
     Entries,
 }
 
@@ -159,9 +171,19 @@ pub enum SetPop<K, V> {
     /// the *old* value is what was displaced. Upstream returns the key
     /// unchanged (it did not move), so no `K: Clone` is needed here — the
     /// caller's own `key` argument is handed back.
-    Overwritten { key: K, value: V },
+    Overwritten {
+        /// The caller's key, handed straight back.
+        key: K,
+        /// The value that was displaced, not the one just stored.
+        value: V,
+    },
     /// The cache was full; `key`/`value` are the evicted pair.
-    Evicted { key: K, value: V },
+    Evicted {
+        /// The evicted entry's key.
+        key: K,
+        /// The evicted entry's value.
+        value: V,
+    },
 }
 
 /// The shared engine behind all four upstream files. See the module docs.
@@ -212,6 +234,8 @@ impl<IK: Hash + Eq, K, V> LruCache<IK, K, V> {
         })
     }
 
+    /// Upstream's `capacity` property — the fixed maximum entry count, above
+    /// which a `set` evicts the least recently used entry.
     pub fn capacity(&self) -> usize {
         self.capacity
     }
@@ -223,6 +247,7 @@ impl<IK: Hash + Eq, K, V> LruCache<IK, K, V> {
         self.size
     }
 
+    /// Whether the cache holds no entries — `size === 0`.
     pub fn is_empty(&self) -> bool {
         self.size == 0
     }

@@ -75,9 +75,13 @@ pub const INVALID_MAX_DISTANCE: &str =
 pub const INVALID_VERBOSITY: &str =
     "mnemonist/SymSpell.constructor: invalid `verbosity` option. Should be either 0, 1 or 2.";
 
+/// Everything [`SymSpell::new`] can reject.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Error {
+    /// `maxDistance <= 0`. Displays as [`INVALID_MAX_DISTANCE`]. A `NaN`
+    /// `maxDistance` does **not** land here — see [`SymSpell::new`].
     InvalidMaxDistance,
+    /// `verbosity` is not `0`, `1` or `2`. Displays as [`INVALID_VERBOSITY`].
     InvalidVerbosity,
 }
 
@@ -160,8 +164,11 @@ impl Entry {
 /// One search hit — upstream's `{term, distance, count}`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Suggestion {
+    /// The suggested dictionary word.
     pub term: String,
+    /// Its edit distance from the query.
     pub distance: i64,
+    /// How many times `term` was added to the dictionary.
     pub count: usize,
 }
 
@@ -211,18 +218,26 @@ impl SymSpell {
         })
     }
 
+    /// `#.size` — the number of distinct words added.
     pub fn size(&self) -> usize {
         self.size
     }
 
+    /// `#.maxDistance` — the deletion depth the dictionary was built to, and
+    /// the largest distance [`SymSpell::search`] can report.
     pub fn max_distance(&self) -> f64 {
         self.max_distance
     }
 
+    /// `#.verbosity` — `0` for the single best match, `1` for every match at
+    /// the smallest distance found, `2` for every match within
+    /// [`max_distance`](SymSpell::max_distance).
     pub fn verbosity(&self) -> u8 {
         self.verbosity
     }
 
+    /// `#.clear` — empties the dictionary and the word list, leaving
+    /// `maxDistance` and `verbosity` as they were.
     pub fn clear(&mut self) {
         self.size = 0;
         self.dictionary.clear();

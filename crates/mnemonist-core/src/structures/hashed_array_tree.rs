@@ -107,14 +107,24 @@ pub enum Error {
     /// Refused here instead of reproduced; see the divergence doc.
     BlockSizeUnsupported,
     /// `set` past `length`: `HashedArrayTree(<class>).set: index out of bounds.`
-    IndexOutOfBounds { class: &'static str },
+    IndexOutOfBounds {
+        /// The `ArrayClass` name upstream would name in the message.
+        class: &'static str,
+    },
     /// Indexing a block that was never allocated.
     ///
     /// Upstream reaches `blocks[b]` with `b === blocks.length` and gets
     /// `undefined`, then indexes it — a `TypeError`. The message is V8's, and
     /// is reproduced verbatim so the two sides compare equal in the
     /// differential fuzzer. It is therefore tied to Node 24.18.1.
-    UnallocatedBlock { writing: bool, offset: usize },
+    UnallocatedBlock {
+        /// `true` for a store, `false` for a load. V8 words the two
+        /// `TypeError`s differently and both wordings are reproduced.
+        writing: bool,
+        /// The within-block offset the access used, which V8 quotes in the
+        /// message.
+        offset: usize,
+    },
 }
 
 impl fmt::Display for Error {
@@ -158,8 +168,13 @@ impl fmt::Display for Error {
 /// form; the field defaults here are the object form's.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Options {
+    /// Slots to allocate up front — upstream's `initialCapacity`. A `0` here
+    /// means "use the default", because upstream reads it as `x || default`.
     pub initial_capacity: usize,
+    /// Elements to consider live from the start — upstream's `initialLength`.
+    /// Also implies at least that much capacity.
     pub initial_length: usize,
+    /// Elements per block — upstream's `blockSize`. Must be a power of two.
     pub block_size: usize,
 }
 
@@ -277,6 +292,7 @@ impl HashedArrayTree {
         self.capacity
     }
 
+    /// Elements per block — upstream's `blockSize`, always a power of two.
     pub fn block_size(&self) -> usize {
         self.block_size
     }

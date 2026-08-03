@@ -42,6 +42,7 @@ impl<T> Default for Trie<T> {
 }
 
 impl<T> Trie<T> {
+    /// An empty trie — `new Trie()`.
     pub fn new() -> Self {
         Self {
             inner: TrieMap::new(),

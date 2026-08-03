@@ -518,6 +518,7 @@ impl BitWalk {
         self.state.frozen_len()
     }
 
+    /// How many steps this walk has already produced.
     pub fn position(&self) -> usize {
         self.state.position()
     }

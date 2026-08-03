@@ -103,6 +103,9 @@ impl<K, V> Default for DefaultMap<K, V> {
 }
 
 impl<K, V> DefaultMap<K, V> {
+    /// An empty map — `new DefaultMap(factory)`, minus the factory: this port
+    /// takes the default-value closure per call rather than storing it, so a
+    /// Rust caller never has to deal with a JavaScript callback.
     pub fn new() -> Self {
         Self {
             items: OrderedMap::new(),

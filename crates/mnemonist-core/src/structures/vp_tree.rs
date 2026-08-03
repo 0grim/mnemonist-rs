@@ -75,7 +75,10 @@ use crate::utils::typed_arrays::{get_pointer_array, indices as pointer_indices, 
 /// One `nearestNeighbors`/`neighbors` hit: upstream's `{distance, item}`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Neighbor<I> {
+    /// The neighbor's distance from the query, as the caller's distance
+    /// function reported it.
     pub distance: f64,
+    /// The stored item.
     pub item: I,
 }
 
@@ -299,26 +302,37 @@ impl<I: Clone> VpTree<I> {
         })
     }
 
+    /// `#.size` — the number of items, fixed at construction. A vantage-point
+    /// tree has no `add`.
     pub fn size(&self) -> usize {
         self.size
     }
 
+    /// The stored items, in the permutation the build settled on rather than
+    /// the caller's original order.
     pub fn items(&self) -> &[I] {
         &self.items
     }
 
+    /// `#.nodes` — for each tree node, the index into
+    /// [`items`](VpTree::items) of its vantage point.
     pub fn nodes(&self) -> &PointerVec {
         &self.nodes
     }
 
+    /// `#.lefts` — the inner-subtree links (items within `mu` of the vantage
+    /// point), `0` for none.
     pub fn lefts(&self) -> &PointerVec {
         &self.lefts
     }
 
+    /// `#.rights` — the outer-subtree links (items beyond `mu`), `0` for none.
     pub fn rights(&self) -> &PointerVec {
         &self.rights
     }
 
+    /// `#.mus` — each node's radius: the median distance from its vantage
+    /// point that splits inner from outer.
     pub fn mus(&self) -> &[f64] {
         &self.mus
     }

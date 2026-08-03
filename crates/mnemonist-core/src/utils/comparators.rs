@@ -67,7 +67,17 @@ impl std::error::Error for Thrown {}
 /// impl would silently pick the wrong one for exactly the type the shrink
 /// window produces.
 pub trait Relational<E> {
+    /// JavaScript's `self < other`.
+    ///
+    /// # Errors
+    ///
+    /// `E` whenever the JS operator would throw — a `Symbol` operand, or a
+    /// `valueOf`/`toString` that throws. Core's own impls never return one.
     fn js_lt(&self, other: &Self) -> Result<bool, E>;
+
+    /// JavaScript's `self > other`. Errors on the same conditions as
+    /// [`js_lt`](Relational::js_lt); note that neither is the negation of the
+    /// other, because `undefined` compares `false` both ways.
     fn js_gt(&self, other: &Self) -> Result<bool, E>;
 }
 
@@ -122,6 +132,7 @@ impl<E, T: Relational<E>> Relational<E> for Option<T> {
 /// comparator — the one place in this unit where undefined-ness is not just
 /// another value.
 pub trait MaybeUndefined {
+    /// Whether this value reads as `undefined` in JavaScript.
     fn is_undefined(&self) -> bool;
 }
 
@@ -145,6 +156,9 @@ impl<T> MaybeUndefined for Option<T> {
 /// "no" is not a papered-over divergence — it is the same statement one level
 /// up.
 pub trait Sentinel: Sized {
+    /// `Infinity`, or `-Infinity` when `negative`, as a value of this slot
+    /// type — or [`None`] if the type cannot represent it, which is also a
+    /// type that cannot exhibit BUG-HEAP-3.
     fn infinity(negative: bool) -> Option<Self>;
 
     /// `value === Infinity`, or `value === -Infinity` when `negative`.
@@ -309,6 +323,9 @@ impl<E, T: ?Sized, C: Comparator<T, E> + ?Sized> Comparator<T, E> for &C {
 /// contributes no ordering. [`Vec::get`] reproduces that by returning `None`.
 #[derive(Debug, Clone, Copy)]
 pub struct TupleComparator {
+    /// How many leading members participate in the comparison. Members past
+    /// this index are ignored, and a tuple shorter than this contributes no
+    /// ordering for its missing members.
     pub size: usize,
 }
 

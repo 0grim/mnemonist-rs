@@ -10,8 +10,11 @@
 /// The unsigned pointer widths upstream selects between.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PointerWidth {
+    /// `Uint8Array` — indices up to 255.
     U8,
+    /// `Uint16Array` — indices up to 65 535.
     U16,
+    /// `Uint32Array` — indices up to 4 294 967 295.
     U32,
 }
 
@@ -190,8 +193,11 @@ impl TypedValue for f64 {
 /// unnecessary.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PointerVec {
+    /// A `Uint8Array`'s worth of slots.
     U8(Vec<u8>),
+    /// A `Uint16Array`'s worth of slots.
     U16(Vec<u16>),
+    /// A `Uint32Array`'s worth of slots.
     U32(Vec<u32>),
 }
 
@@ -305,6 +311,7 @@ impl PointerVec {
         }
     }
 
+    /// Whether no slots are allocated — `length === 0`.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
@@ -337,13 +344,22 @@ impl PointerVec {
 /// not a gap this port introduces.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NumberType {
+    /// `Uint8Array`.
     U8,
+    /// `Int8Array`.
     I8,
+    /// `Uint16Array`.
     U16,
+    /// `Int16Array`.
     I16,
+    /// `Uint32Array`.
     U32,
+    /// `Int32Array`.
     I32,
+    /// `Float32Array`. Present only to complete the priority table;
+    /// [`get_number_type`] never yields it. See the type docs.
     F32,
+    /// `Float64Array`.
     F64,
 }
 

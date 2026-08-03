@@ -161,12 +161,14 @@ pub enum Error {
     /// `bit-vector` divergence it mirrors.
     PolicyNotRepresentable,
     /// `Vector(<ArrayClass>).set: index out of bounds.` `class` is upstream's
-    /// `this.ArrayClass.name`, resolved from [`Storage::class_name`] --
-    /// carried in the error itself (rather than assembled at the bridge, as
-    /// an earlier draft did) so the message this crate produces already
-    /// matches upstream byte for byte, which the differential fuzzer
-    /// compares literally.
-    IndexOutOfBounds { class: &'static str },
+    /// `this.ArrayClass.name`, resolved from [`Storage::class_name`]. It is
+    /// carried in the error itself rather than interpolated at the bridge, so
+    /// the message this crate produces already matches upstream byte for
+    /// byte — the differential fuzzer compares it literally.
+    IndexOutOfBounds {
+        /// Upstream's `this.ArrayClass.name`.
+        class: &'static str,
+    },
     /// The `PointerVector` factory's width cannot index the requested
     /// capacity — upstream's `getPointerArray` throw,
     /// [`crate::utils::typed_arrays::POINTER_ARRAY_TOO_LARGE`].
@@ -224,6 +226,7 @@ impl Storage {
         }
     }
 
+    /// Whether no slots are allocated — a zero-capacity vector.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
@@ -360,6 +363,8 @@ impl Vector {
         Self::fixed_with_policy(width, capacity, length, Box::new(default_policy))
     }
 
+    /// [`Vector::fixed`] with an explicit growth policy in place of
+    /// upstream's default `capacity * 1.5`.
     pub fn fixed_with_policy(
         width: PointerWidth,
         capacity: usize,
@@ -381,6 +386,8 @@ impl Vector {
         Self::f64_with_policy(capacity, length, Box::new(default_policy))
     }
 
+    /// [`Vector::f64`] with an explicit growth policy in place of upstream's
+    /// default `capacity * 1.5`.
     pub fn f64_with_policy(capacity: usize, length: usize, policy: Policy) -> Self {
         let capacity = capacity.max(length);
 
@@ -403,6 +410,13 @@ impl Vector {
         Self::pointer_with_policy(capacity, length, Box::new(default_policy))
     }
 
+    /// [`Vector::pointer`] with an explicit growth policy in place of
+    /// upstream's default `capacity * 1.5`.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::LengthTooLarge`], on the same condition as
+    /// [`Vector::pointer`].
     pub fn pointer_with_policy(
         capacity: usize,
         length: usize,
@@ -419,10 +433,15 @@ impl Vector {
         })
     }
 
+    /// `#.length` — the number of live elements, which is what `get`/`set`
+    /// bounds-check against.
     pub fn length(&self) -> usize {
         self.length
     }
 
+    /// `#.capacity` — the number of allocated slots, always at least
+    /// [`length`](Vector::length). Slots between the two are zeroed and
+    /// writable via `set`, but not counted.
     pub fn capacity(&self) -> usize {
         self.capacity
     }

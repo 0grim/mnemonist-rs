@@ -174,18 +174,25 @@ impl MultiArray {
         }
     }
 
+    /// `#.size` — the total number of stored values across all containers.
     pub fn size(&self) -> usize {
         self.size
     }
 
+    /// `#.dimension` — the number of containers, i.e. one past the highest
+    /// container index ever written.
     pub fn dimension(&self) -> usize {
         self.dimension
     }
 
+    /// The fixed capacity in fixed mode, or [`None`] in dynamic mode where
+    /// storage grows on demand.
     pub fn capacity(&self) -> Option<usize> {
         self.capacity
     }
 
+    /// Whether this array was built by [`MultiArray::fixed`] and so cannot
+    /// grow past its capacity.
     pub fn has_fixed_capacity(&self) -> bool {
         self.capacity.is_some()
     }
@@ -288,6 +295,10 @@ impl MultiArray {
         Ok(())
     }
 
+    /// `#.has` — whether `index` names an existing container. This is a bare
+    /// `index < dimension` test, exactly as upstream: it answers `true` for a
+    /// gap left by an out-of-order `set`, whose
+    /// [`multiplicity`](MultiArray::multiplicity) is nonetheless `0`.
     pub fn has(&self, index: usize) -> bool {
         index < self.dimension
     }

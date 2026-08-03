@@ -82,6 +82,7 @@ impl Sequence {
         }
     }
 
+    /// `sequence.length === 0`.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
@@ -454,6 +455,8 @@ impl SuffixArray {
         self.sequence.len()
     }
 
+    /// Whether the underlying sequence is empty, in which case the suffix
+    /// array is empty too.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
@@ -577,6 +580,8 @@ impl GeneralizedSuffixArray {
         self.text.len()
     }
 
+    /// Whether the underlying sequence is empty, in which case the suffix
+    /// array is empty too.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }

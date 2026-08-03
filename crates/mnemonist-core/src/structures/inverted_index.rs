@@ -146,6 +146,9 @@ impl<Doc, Tok> Default for InvertedIndex<Doc, Tok> {
 }
 
 impl<Doc, Tok> InvertedIndex<Doc, Tok> {
+    /// An empty index — `new InvertedIndex(tokenizer)`, minus the tokenizer:
+    /// callers tokenise documents themselves and hand the tokens to
+    /// [`InvertedIndex::add`], keeping the JavaScript callback at the bridge.
     pub fn new() -> Self {
         Self {
             items: Rc::new(RefCell::new(Vec::new())),

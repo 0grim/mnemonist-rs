@@ -91,10 +91,14 @@ impl<T> Step<T> {
         }
     }
 
+    /// Whether this step is [`Done`](Step::Done) — past the frozen length,
+    /// the JS `{done: true}`. A [`Gap`](Step::Gap) is *not* done.
     pub fn is_done(&self) -> bool {
         matches!(self, Self::Done)
     }
 
+    /// Whether this step is a [`Gap`](Step::Gap) — inside the frozen length
+    /// but unbacked, which JS surfaces as `{done: false, value: undefined}`.
     pub fn is_gap(&self) -> bool {
         matches!(self, Self::Gap)
     }

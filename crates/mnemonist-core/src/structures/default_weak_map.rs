@@ -113,6 +113,9 @@ impl<K, V> Default for DefaultWeakMap<K, V> {
 }
 
 impl<K, V> DefaultWeakMap<K, V> {
+    /// An empty map — `new DefaultWeakMap(factory)`, minus the factory, which
+    /// this port takes per call. See [`DefaultWeakMap`] on why the backing
+    /// store is a `Vec` and not a hash map.
     pub fn new() -> Self {
         Self {
             entries: Vec::new(),

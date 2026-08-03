@@ -121,6 +121,8 @@ impl<K> Default for BiMap<K> {
 }
 
 impl<K> BiMap<K> {
+    /// An empty bi-map — `new BiMap()`. Both directions and both size
+    /// counters start at zero.
     pub fn new() -> Self {
         Self {
             items: OrderedMap::new(),
@@ -187,10 +189,12 @@ impl<K: Hash + Eq + Clone> BiMap<K> {
         self.inverse.get(value)
     }
 
+    /// Upstream's `has`, delegated to `this.items.has(key)`.
     pub fn has(&self, key: &K) -> bool {
         self.items.contains_key(key)
     }
 
+    /// `.inverse.has(value)` — membership in the reverse direction.
     pub fn has_reverse(&self, value: &K) -> bool {
         self.inverse.contains_key(value)
     }

@@ -124,6 +124,7 @@ impl<V: TypedValue> Values<V> {
         }
     }
 
+    /// Whether no slots are allocated at all — `vals.length === 0`.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
@@ -155,8 +156,13 @@ pub enum Projection {
 /// a single slot and therefore can.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Projected<V> {
+    /// A `keys()` step: `dense[i]`.
     Key(u32),
+    /// A `values()` step: `vals[i]`.
     Value(V),
+    /// An `entries()` step: the `[dense[i], vals[i]]` pair. Either half may be
+    /// [`None`] — upstream builds the array regardless, so the step is never a
+    /// [`Gap`](crate::cursor::Step::Gap).
     Entry(Option<u32>, Option<V>),
 }
 

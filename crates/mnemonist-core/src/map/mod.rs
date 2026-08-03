@@ -175,6 +175,8 @@ impl<K, V> OrderedMap<K, V> {
         self.live
     }
 
+    /// Whether there are no live entries — `size === 0`. Tombstoned slots do
+    /// not count.
     pub fn is_empty(&self) -> bool {
         self.live == 0
     }
@@ -258,6 +260,8 @@ impl<K: Hash + Eq + Clone, V> OrderedMap<K, V> {
         Some(value)
     }
 
+    /// `Map.prototype.get`, but handing back a mutable reference so the value
+    /// can be updated in place without disturbing the key's insertion order.
     pub fn get_mut(&mut self, key: &K) -> Option<&mut V> {
         let slot = *self.index.get(key)?;
         let (_, value) = self.slots[slot].entry.as_mut()?;

@@ -59,10 +59,13 @@ impl<S: Store, C: Comparator<S::Item, S::Error>> FixedReverseHeap<S, C> {
         }
     }
 
+    /// `#.size` — how many of the `capacity` slots currently hold an item.
     pub fn size(&self) -> usize {
         self.size.get()
     }
 
+    /// `#.capacity` — the fixed number of slots, set at construction. `push`
+    /// beyond this replaces the current worst item rather than growing.
     pub fn capacity(&self) -> usize {
         self.capacity
     }

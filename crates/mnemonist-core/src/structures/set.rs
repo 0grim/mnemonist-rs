@@ -81,6 +81,7 @@ pub struct OrderedSet<T> {
 }
 
 impl<T: Hash + Eq + Clone> OrderedSet<T> {
+    /// An empty set — `new Set()`.
     pub fn new() -> Self {
         Self {
             members: OrderedMap::new(),
@@ -120,6 +121,7 @@ impl<T: Hash + Eq + Clone> OrderedSet<T> {
         self.members.len()
     }
 
+    /// Whether the set has no members — `size === 0`.
     pub fn is_empty(&self) -> bool {
         self.members.is_empty()
     }
@@ -129,6 +131,8 @@ impl<T: Hash + Eq + Clone> OrderedSet<T> {
         self.members.keys()
     }
 
+    /// Members in insertion order, owned. A convenience for callers that need
+    /// a snapshot; unlike a JS iterator it cannot observe later mutations.
     pub fn to_vec(&self) -> Vec<T> {
         self.iter().cloned().collect()
     }

@@ -182,22 +182,30 @@ impl<T: Clone> CircularBuffer<T> {
 
     // ---- pasted from FixedDeque.prototype, unchanged ----------------------
 
+    /// `#.clear` — empties the buffer, resetting `start` and `size` without
+    /// shrinking the backing storage.
     pub fn clear(&mut self) {
         self.inner.clear();
     }
 
+    /// `#.pop` — removes and returns the element at the back, or `None`
+    /// (upstream `undefined`) when empty.
     pub fn pop(&mut self) -> Option<T> {
         self.inner.pop()
     }
 
+    /// `#.shift` — removes and returns the element at the front, or `None`
+    /// (upstream `undefined`) when empty.
     pub fn shift(&mut self) -> Option<T> {
         self.inner.shift()
     }
 
+    /// `#.peekFirst` — the front element without removing it.
     pub fn peek_first(&self) -> Option<T> {
         self.inner.peek_first()
     }
 
+    /// `#.peekLast` — the back element without removing it.
     pub fn peek_last(&self) -> Option<T> {
         self.inner.peek_last()
     }
@@ -207,22 +215,31 @@ impl<T: Clone> CircularBuffer<T> {
         self.inner.get(index)
     }
 
+    /// `#.toArray` — the live elements front to back. `None` marks a slot the
+    /// ring considers occupied but which holds no value; see
+    /// [`FixedDeque::to_array`].
     pub fn to_array(&self) -> Vec<Option<T>> {
         self.inner.to_array()
     }
 
+    /// The raw backing array, in physical order rather than ring order. This
+    /// is upstream's `this.items`, exposed so the differential fuzzer can
+    /// compare representations and not just observable behaviour.
     pub fn items(&self) -> &[Option<T>] {
         self.inner.items()
     }
 
+    /// `#.size` — the number of live elements, never above the capacity.
     pub fn size(&self) -> usize {
         self.inner.size()
     }
 
+    /// `#.capacity` — the fixed ring length fixed at construction.
     pub fn capacity(&self) -> usize {
         self.inner.capacity()
     }
 
+    /// `#.start` — the physical index the front element occupies.
     pub fn start(&self) -> usize {
         self.inner.start()
     }
@@ -232,6 +249,7 @@ impl<T: Clone> CircularBuffer<T> {
         self.inner.slot_at(index)
     }
 
+    /// Whether the buffer holds no elements — `size === 0`.
     pub fn is_empty(&self) -> bool {
         self.inner.is_empty()
     }

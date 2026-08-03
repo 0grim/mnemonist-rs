@@ -89,7 +89,10 @@ struct Node<I> {
 /// One `search` hit — upstream's `{item, distance}`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Found<I> {
+    /// The stored item that matched.
     pub item: I,
+    /// Its distance from the query, as reported by the caller-supplied
+    /// distance function.
     pub distance: i64,
 }
 
@@ -112,6 +115,8 @@ impl<I> Default for BkTree<I> {
 }
 
 impl<I> BkTree<I> {
+    /// An empty tree — `new BKTree(distance)`, minus the distance function,
+    /// which this port takes per call instead of storing.
     pub fn new() -> Self {
         Self {
             root: None,
@@ -119,6 +124,8 @@ impl<I> BkTree<I> {
         }
     }
 
+    /// Upstream's `size` — the number of items added, including any that
+    /// landed at a distance already occupied.
     pub fn size(&self) -> usize {
         self.size
     }

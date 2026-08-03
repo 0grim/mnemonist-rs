@@ -135,6 +135,7 @@ impl<K> Default for MultiSet<K> {
 }
 
 impl<K> MultiSet<K> {
+    /// An empty multi-set — `new MultiSet()`.
     pub fn new() -> Self {
         Self {
             items: OrderedMap::new(),
@@ -143,10 +144,15 @@ impl<K> MultiSet<K> {
         }
     }
 
+    /// Upstream's `size` — the sum of every multiplicity, a running `f64`
+    /// total rather than a recomputed one. It is a float because upstream
+    /// never checks that a count is an integer, so a fractional or `NaN`
+    /// total is reachable; see the module docs.
     pub fn size(&self) -> f64 {
         self.size
     }
 
+    /// `#.clear` — empties the map and zeroes both counters.
     pub fn clear(&mut self) {
         self.items.clear();
         self.size = 0.0;
@@ -166,6 +172,8 @@ impl<K: Hash + Eq + Clone> MultiSet<K> {
         self.dimension
     }
 
+    /// `#.has` — whether the item has an entry at all. An entry whose
+    /// multiplicity has been driven to `NaN` still counts as present.
     pub fn has(&self, item: &K) -> bool {
         self.items.contains_key(item)
     }
@@ -448,6 +456,9 @@ impl<K> Default for RepeatCursor<K> {
 }
 
 impl<K> RepeatCursor<K> {
+    /// A fresh cursor positioned before the first item. Like
+    /// [`MapCursor`](crate::map::MapCursor) it is not bound to a set: the map
+    /// is supplied to each [`step`](RepeatCursor::step).
     pub fn open() -> Self {
         Self {
             outer: MapCursor::open(),

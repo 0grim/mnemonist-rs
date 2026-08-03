@@ -114,14 +114,20 @@ impl<V> Bucket<V> {
         }
     }
 
+    /// Whether this bucket behaves as an `Array` or as a `Set` — the latter
+    /// rejects a value it already holds.
     pub fn kind(&self) -> ContainerKind {
         self.kind
     }
 
+    /// How many values the bucket holds: `.length` for an `Array` container,
+    /// `.size` for a `Set` one.
     pub fn len(&self) -> usize {
         self.values.len()
     }
 
+    /// Whether the bucket holds no values. An empty bucket is not normally
+    /// reachable — [`MultiMap::remove`] drops a bucket it empties.
     pub fn is_empty(&self) -> bool {
         self.values.is_empty()
     }
@@ -155,6 +161,9 @@ impl<K, V> MultiMap<K, V> {
         }
     }
 
+    /// Upstream's `size` — the total number of values across every bucket,
+    /// not the number of distinct keys. That is
+    /// [`dimension`](MultiMap::dimension).
     pub fn size(&self) -> usize {
         self.size
     }
@@ -188,6 +197,7 @@ impl<K, V> MultiMap<K, V> {
 }
 
 impl<K: Hash + Eq + Clone, V: Clone> MultiMap<K, V> {
+    /// `#.has` — whether any bucket is stored under `key`.
     pub fn has(&self, key: &K) -> bool {
         self.items.contains_key(key)
     }
@@ -360,6 +370,9 @@ impl<K, V> Default for FlattenedCursor<K, V> {
 }
 
 impl<K, V> FlattenedCursor<K, V> {
+    /// A fresh cursor positioned before the first entry. It is not bound to a
+    /// map: the map is supplied to each [`step`](FlattenedCursor::step), which
+    /// is what lets it observe mutations the way a JS iterator does.
     pub fn open() -> Self {
         Self {
             outer: MapCursor::open(),

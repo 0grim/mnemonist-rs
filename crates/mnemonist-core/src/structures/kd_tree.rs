@@ -282,30 +282,40 @@ impl<L: Clone> KdTree<L> {
         })
     }
 
+    /// `#.size` — the number of points in the tree, fixed at construction.
     pub fn size(&self) -> usize {
         self.size
     }
 
+    /// `#.dimensions` — how many coordinates each point has, and the modulus
+    /// of the round-robin splitting axis.
     pub fn dimensions(&self) -> usize {
         self.dimensions
     }
 
+    /// `#.axes` — the points stored transposed, one `Vec<f64>` per dimension
+    /// rather than one per point, exactly as upstream lays them out.
     pub fn axes(&self) -> &[Vec<f64>] {
         &self.axes
     }
 
+    /// `#.labels` — the payload for each point, indexed the same way the axes
+    /// are.
     pub fn labels(&self) -> &[L] {
         &self.labels
     }
 
+    /// `#.pivots` — for each tree node, the index of the point it splits on.
     pub fn pivots(&self) -> &PointerVec {
         &self.pivots
     }
 
+    /// `#.lefts` — the flat binary tree's left child links, `0` for none.
     pub fn lefts(&self) -> &PointerVec {
         &self.lefts
     }
 
+    /// `#.rights` — the flat binary tree's right child links, `0` for none.
     pub fn rights(&self) -> &PointerVec {
         &self.rights
     }

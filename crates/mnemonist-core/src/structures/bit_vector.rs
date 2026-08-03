@@ -176,6 +176,10 @@ impl BitVector {
         }
     }
 
+    /// Upstream's `length` — the number of bits currently considered part of
+    /// the vector, which is distinct from [`capacity`](BitVector::capacity):
+    /// bits between the two exist in the backing words and can be written, but
+    /// are not counted.
     pub fn length(&self) -> usize {
         self.words.length
     }
@@ -186,6 +190,8 @@ impl BitVector {
         self.words.size
     }
 
+    /// Upstream's `capacity` — the number of bits the backing words can hold
+    /// before a reallocation is required.
     pub fn capacity(&self) -> usize {
         self.capacity
     }
@@ -240,6 +246,7 @@ impl BitVector {
         self.get(index).is_some_and(|bit| bit != 0)
     }
 
+    /// `rank(i)` — the number of set bits strictly before index `i`.
     pub fn rank(&self, i: i64) -> i64 {
         self.words.rank(i)
     }

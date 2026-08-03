@@ -36,6 +36,8 @@ impl<K, V> FuzzyMultiMap<K, V> {
         self.items.size()
     }
 
+    /// Upstream's `clear`: `this.items.clear()`. Drops every bucket, and the
+    /// size follows because it is read straight off the wrapped map.
     pub fn clear(&mut self) {
         self.items.clear();
     }

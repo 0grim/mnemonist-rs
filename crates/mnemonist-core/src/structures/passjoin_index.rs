@@ -77,8 +77,10 @@ pub const INVALID_LEVENSHTEIN: &str =
 /// `mnemonist/passjoin-index: \`k\` should be a number > 0`
 pub const INVALID_K: &str = "mnemonist/passjoin-index: `k` should be a number > 0";
 
+/// Everything [`PassjoinIndex::new`] can reject.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Error {
+    /// `k <= 0`. Displays as [`INVALID_K`], upstream's own message.
     InvalidK,
 }
 
@@ -363,14 +365,19 @@ impl PassjoinIndex {
         })
     }
 
+    /// `#.size` — the number of strings added.
     pub fn size(&self) -> usize {
         self.size
     }
 
+    /// `#.k` — the maximum edit distance this index is partitioned for.
+    /// Queries beyond `k` are not answerable by it.
     pub fn k(&self) -> i64 {
         self.k
     }
 
+    /// `#.clear` — drops every string and every inverted index, leaving `k`
+    /// as it was.
     pub fn clear(&mut self) {
         self.size = 0;
         self.strings.clear();

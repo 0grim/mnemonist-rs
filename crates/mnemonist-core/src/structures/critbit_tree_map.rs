@@ -168,14 +168,23 @@ struct Internal {
 /// holds, and reproducing it here is what makes the comparison catch a
 /// critical-bit computation bug rather than merely a `root`-rendering one.
 pub enum RootNode<'a, V> {
+    /// Upstream's `null`: an empty tree, or an absent child.
     Empty,
+    /// Upstream's `InternalNode`.
     Internal {
+        /// The critical bit, in upstream's packed `(byteIndex << 8) | mask`
+        /// form rather than this port's internal tuple.
         critbit: u32,
+        /// The subtree taken when the key's critical bit is clear.
         left: Box<RootNode<'a, V>>,
+        /// The subtree taken when the key's critical bit is set.
         right: Box<RootNode<'a, V>>,
     },
+    /// Upstream's `ExternalNode`: one stored key/value pair.
     External {
+        /// The stored key, as raw bytes.
         key: &'a [u8],
+        /// The value stored under it.
         value: &'a V,
     },
 }
@@ -209,6 +218,8 @@ impl<V> Default for CritBitTreeMap<V> {
 }
 
 impl<V> CritBitTreeMap<V> {
+    /// An empty map — `new CritBitTreeMap()`. The arenas start empty and the
+    /// root is the null pointer.
     pub fn new() -> Self {
         Self {
             keys: Vec::new(),

@@ -397,6 +397,7 @@ impl<T, V> Default for TrieMap<T, V> {
 }
 
 impl<T, V> TrieMap<T, V> {
+    /// An empty map — `new TrieMap()`, holding only the root node.
     pub fn new() -> Self {
         Self {
             root: Node::new(),

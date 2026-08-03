@@ -996,6 +996,7 @@ impl<S: Store, C: Comparator<S::Item, S::Error>> Heap<S, C> {
         self.items.borrow().clone()
     }
 
+    /// The comparator this heap orders by, as supplied at construction.
     pub fn comparator(&self) -> &C {
         &self.comparator
     }

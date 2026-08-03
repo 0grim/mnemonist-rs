@@ -65,6 +65,9 @@ impl<K, V> Default for FuzzyMap<K, V> {
 }
 
 impl<K, V> FuzzyMap<K, V> {
+    /// An empty map — `new FuzzyMap(hashFunction)`, minus the hash function:
+    /// callers hash the key themselves and pass the result to
+    /// [`FuzzyMap::set`], keeping the JavaScript callback at the boundary.
     pub fn new() -> Self {
         Self {
             items: OrderedMap::new(),
