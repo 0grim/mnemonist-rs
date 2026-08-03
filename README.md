@@ -45,7 +45,7 @@ library. Every deliberate deviation is recorded on the affected item and in that
 divergence document.
 
 Where fidelity and Rust idiom did not conflict, the implementation is conventional. `clippy
---all-targets -D warnings` is clean across approximately 71,000 lines, with 25 lint suppressions:
+--all-targets -D warnings` is clean across approximately 72,000 lines, with 25 lint suppressions:
 24 concern signature shape or ergonomics (18 `type_complexity`, 5 `too_many_arguments`, 1
 `new_without_default`), and one is an `if_same_then_else` in `passjoin-index`, where two branches
 share a body but not their guards because only the second calls `levenshtein`. No suppression
