@@ -4,8 +4,8 @@
 //!
 //! A **ten-index pool** shared by `set`/`push`/`get`/`values`/`entries`, so
 //! the same index is hit repeatedly and its bucket accumulates several
-//! values (the state CLAUDE.md's fuzz-campaign guidance asks for directly:
-//! measured below by `grammar_self_check`). The constructor alternates
+//! values (the state a campaign for this module has to reach; measured
+//! below by `grammar_self_check`). The constructor alternates
 //! between the default dynamic container and a fixed-capacity
 //! `Uint8Array`/`Uint16Array`/`Uint32Array` one (small capacities, so a
 //! `push`/`set` past it is common and the capacity throw is exercised, not
@@ -171,8 +171,8 @@ fn number_f64(value: &Value) -> f64 {
 }
 
 /// Same rendering `sort`/`default_map`/`bloom_filter`/`set`/`vector` all use
-/// (CLAUDE.md: grep before inventing shared machinery -- duplicated here
-/// rather than factored out, matching the existing pattern in this crate):
+/// (duplicated per module rather than factored out, matching the existing
+/// pattern in this crate -- ten lines with no invariants of their own):
 /// a whole number in the JS safe-integer range prints without a decimal
 /// point, matching `JSON.stringify`.
 fn number_json(value: f64) -> Value {
@@ -209,8 +209,8 @@ fn render_bucket(values: &[f64], width: Option<PointerWidth>) -> Value {
     }
 }
 
-/// Direct evidence that this grammar reaches the states CLAUDE.md's
-/// fuzz-campaign guidance asks for: a bucket genuinely holding several
+/// Direct evidence that this grammar reaches the states a campaign for this
+/// module has to reach: a bucket genuinely holding several
 /// values, and a fixed-capacity instance actually running out of room (not
 /// just accepting every `push`/`set` up to some huge, never-hit ceiling).
 /// Runs the strategies directly, no oracle, no `node` -- this is about the

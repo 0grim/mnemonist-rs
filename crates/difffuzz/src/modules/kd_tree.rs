@@ -19,9 +19,9 @@
 //!
 //! # Grammar: a dense integer grid, specifically for the splitting plane
 //!
-//! CLAUDE.md names the sharp risk for this module by name: "queries whose
-//! nearest neighbor lies across a splitting plane from the query point ...
-//! precisely the case a naive implementation gets wrong." Points are drawn
+//! The sharp risk for this module is a query whose nearest neighbor lies
+//! across a splitting plane from the query point -- precisely the case a
+//! naive implementation gets wrong. Points are drawn
 //! from a small 2D integer grid (`0..RANGE` per axis) with an *index* label,
 //! so:
 //!
@@ -84,10 +84,11 @@ impl ModuleSpec for KdTreeSpec {
         // One point in eight is generated *shorter* than `DIMENSIONS`.
         // Upstream reads `row[1][d]` past the end, gets `undefined`, and
         // stores it into a `Float64Array` as `NaN` -- it does not throw, so
-        // this is a shape a caller can really hand `.from`, and one every
-        // program here used to be unable to produce. Before the fix this
-        // grammar could not have found it; a short row aborted the host
-        // process rather than diverging.
+        // this is a shape a caller can really hand `.from`. Generating it is
+        // what makes the grammar able to find a port that panics on it
+        // instead: a panic at the bridge aborts the host process rather than
+        // surfacing as a divergence, so an ungenerated short row is a hole
+        // the campaign cannot report.
         //
         // NaN coordinates are worth reaching in their own right: every
         // comparison against NaN is false in both languages, so a sort or a
@@ -240,7 +241,8 @@ mod tests {
         a.iter().zip(b).map(|(x, y)| (x - y) * (x - y)).sum()
     }
 
-    /// The measurement CLAUDE.md asks for directly: how often does the
+    /// The measurement that makes the grammar above worth its complexity: how
+    /// often does the
     /// point closest on the split axis ALONE differ from the true nearest
     /// neighbor? If it never does, the "go the other way too" branch is
     /// dead weight in this grammar.

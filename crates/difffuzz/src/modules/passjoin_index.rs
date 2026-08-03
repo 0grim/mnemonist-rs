@@ -7,8 +7,8 @@
 //! strings, which would all be far apart and make every `search` empty), and
 //! `k` varied across `1..=3` -- the exact range `test/passjoin-index.js`
 //! itself uses (`k1`/`k2`/`k3`) -- since `k` decides the partition arithmetic
-//! and the candidate-generation branches CLAUDE.md calls out as the sharpest
-//! place an off-by-one would hide.
+//! and the candidate-generation branches, which are the sharpest place an
+//! off-by-one could hide.
 //!
 //! `levenshtein` is `fuzz/oracle.js`'s `pjLeven` factory, the real `leven`
 //! npm package -- the exact function `test/passjoin-index.js` itself uses,
@@ -138,8 +138,8 @@ impl ModuleSpec for PassjoinIndexSpec {
     }
 }
 
-/// Direct evidence that this grammar reaches the states CLAUDE.md's
-/// fuzz-campaign guidance asks for: how many `search` calls come back with
+/// Direct evidence that this grammar reaches the states a campaign for this
+/// module has to reach: how many `search` calls come back with
 /// at least one candidate, and how many pull in a candidate whose real
 /// distance is exactly `k` (a threshold-boundary hit). Runs the strategies
 /// directly, no oracle, no `node`.

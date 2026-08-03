@@ -11,67 +11,53 @@
 
 use std::time::Duration;
 
+use difffuzz::modules::bi_map::{BiMapSpec, REGRESSIONS as BI_MAP_REGRESSIONS};
 use difffuzz::modules::bit_set::{BitSetSpec, REGRESSIONS as BIT_SET_REGRESSIONS};
 use difffuzz::modules::bit_vector::{BitVectorSpec, REGRESSIONS as BIT_VECTOR_REGRESSIONS};
+use difffuzz::modules::bk_tree::{BkTreeSpec, REGRESSIONS as BK_TREE_REGRESSIONS};
+use difffuzz::modules::bloom_filter::{BloomFilterSpec, REGRESSIONS as BLOOM_REGRESSIONS};
+use difffuzz::modules::circular_buffer::{
+    CircularBufferSpec, REGRESSIONS as CIRCULAR_BUFFER_REGRESSIONS,
+};
 use difffuzz::modules::default_map::{DefaultMapSpec, REGRESSIONS as DEFAULT_MAP_REGRESSIONS};
+use difffuzz::modules::fibonacci_heap::{
+    FibonacciHeapSpec, REGRESSIONS as FIBONACCI_HEAP_REGRESSIONS,
+};
+use difffuzz::modules::fixed_deque::{FixedDequeSpec, REGRESSIONS as FIXED_DEQUE_REGRESSIONS};
+use difffuzz::modules::fixed_reverse_heap::{
+    FixedReverseHeapSpec, REGRESSIONS as FIXED_REVERSE_HEAP_REGRESSIONS,
+};
+use difffuzz::modules::fixed_stack::{FixedStackSpec, REGRESSIONS as FIXED_STACK_REGRESSIONS};
+use difffuzz::modules::fuzzy_map::{FuzzyMapSpec, REGRESSIONS as FUZZY_MAP_REGRESSIONS};
+use difffuzz::modules::fuzzy_multi_map::{
+    FuzzyMultiMapSpec, REGRESSIONS as FUZZY_MULTI_MAP_REGRESSIONS,
+};
 use difffuzz::modules::hashed_array_tree::{HashedArrayTreeSpec, REGRESSIONS as HAT_REGRESSIONS};
+use difffuzz::modules::heap::{HeapSpec, REGRESSIONS as HEAP_REGRESSIONS};
+use difffuzz::modules::lru_cache::{
+    LruCacheSpec, LruCacheWithDeleteSpec, LruMapSpec, LruMapWithDeleteSpec, MAP_REGRESSIONS,
+    MAP_WITH_DELETE_REGRESSIONS, REGRESSIONS as LRU_CACHE_REGRESSIONS,
+    WITH_DELETE_REGRESSIONS as LRU_CACHE_WITH_DELETE_REGRESSIONS,
+};
+use difffuzz::modules::multi_map::{MultiMapSpec, REGRESSIONS as MULTI_MAP_REGRESSIONS};
+use difffuzz::modules::multi_set::{MultiSetSpec, REGRESSIONS as MULTI_SET_REGRESSIONS};
+use difffuzz::modules::set::{SetSpec, REGRESSIONS as SET_REGRESSIONS};
+use difffuzz::modules::sort::{SortSpec, REGRESSIONS as SORT_REGRESSIONS};
 use difffuzz::modules::sparse_map::{SparseMapSpec, REGRESSIONS as SPARSE_MAP_REGRESSIONS};
 use difffuzz::modules::sparse_queue_set::{
     SparseQueueSetSpec, REGRESSIONS as SPARSE_QUEUE_REGRESSIONS,
 };
 use difffuzz::modules::sparse_set::{SparseSetSpec, REGRESSIONS as SPARSE_REGRESSIONS};
 use difffuzz::modules::static_disjoint_set::{StaticDisjointSetSpec, REGRESSIONS};
-// Appended rather than filed alphabetically: this list is edited from several
-// worktrees at once, and a conflict boundary that lands inside it has already
-// broken three merges. New imports go on the end.
-use difffuzz::modules::set::{SetSpec, REGRESSIONS as SET_REGRESSIONS};
-use difffuzz::modules::sort::{SortSpec, REGRESSIONS as SORT_REGRESSIONS};
-// Appended, never interleaved (CLAUDE.md, Git).
-use difffuzz::modules::bloom_filter::{BloomFilterSpec, REGRESSIONS as BLOOM_REGRESSIONS};
+use difffuzz::modules::static_interval_tree::{
+    StaticIntervalTreeSpec, REGRESSIONS as STATIC_INTERVAL_TREE_REGRESSIONS,
+};
 use difffuzz::modules::suffix_array::{
     GeneralizedSuffixArraySpec, SuffixArraySpec, GENERALIZED_REGRESSIONS,
     REGRESSIONS as SUFFIX_ARRAY_REGRESSIONS,
 };
-// Appended at the end of the import list; see `modules/mod.rs`.
-use difffuzz::modules::fixed_reverse_heap::{
-    FixedReverseHeapSpec, REGRESSIONS as FIXED_REVERSE_HEAP_REGRESSIONS,
-};
-use difffuzz::modules::heap::{HeapSpec, REGRESSIONS as HEAP_REGRESSIONS};
-use difffuzz::Campaign;
-// Appended at the END of the file, never between two existing tests -- see
-// the bottom of this file, where the actual #[test] fns for these live.
-use difffuzz::modules::lru_cache::{
-    LruCacheSpec, LruCacheWithDeleteSpec, LruMapSpec, LruMapWithDeleteSpec, MAP_REGRESSIONS,
-    MAP_WITH_DELETE_REGRESSIONS, REGRESSIONS as LRU_CACHE_REGRESSIONS,
-    WITH_DELETE_REGRESSIONS as LRU_CACHE_WITH_DELETE_REGRESSIONS,
-};
-// Appended at the end of the import run, never inserted.
-use difffuzz::modules::circular_buffer::{
-    CircularBufferSpec, REGRESSIONS as CIRCULAR_BUFFER_REGRESSIONS,
-};
-use difffuzz::modules::fixed_deque::{FixedDequeSpec, REGRESSIONS as FIXED_DEQUE_REGRESSIONS};
-use difffuzz::modules::fixed_stack::{FixedStackSpec, REGRESSIONS as FIXED_STACK_REGRESSIONS};
-// Appended at the end of the import run, never inserted (CLAUDE.md, Git).
-use difffuzz::modules::static_interval_tree::{
-    StaticIntervalTreeSpec, REGRESSIONS as STATIC_INTERVAL_TREE_REGRESSIONS,
-};
 use difffuzz::modules::vector::{VectorSpec, REGRESSIONS as VECTOR_REGRESSIONS};
-// Appended at the end of the import run, never inserted: this file is edited
-// by several agents at once and a conflict boundary landing mid-list has
-// already broken merges here.
-use difffuzz::modules::bi_map::{BiMapSpec, REGRESSIONS as BI_MAP_REGRESSIONS};
-use difffuzz::modules::bk_tree::{BkTreeSpec, REGRESSIONS as BK_TREE_REGRESSIONS};
-use difffuzz::modules::fuzzy_map::{FuzzyMapSpec, REGRESSIONS as FUZZY_MAP_REGRESSIONS};
-// Appended at the end of the import run, never inserted (CLAUDE.md, Git).
-use difffuzz::modules::fuzzy_multi_map::{
-    FuzzyMultiMapSpec, REGRESSIONS as FUZZY_MULTI_MAP_REGRESSIONS,
-};
-use difffuzz::modules::multi_map::{MultiMapSpec, REGRESSIONS as MULTI_MAP_REGRESSIONS};
-use difffuzz::modules::multi_set::{MultiSetSpec, REGRESSIONS as MULTI_SET_REGRESSIONS};
-// Appended at the end of the import run, never inserted (CLAUDE.md, Git).
-use difffuzz::modules::fibonacci_heap::{
-    FibonacciHeapSpec, REGRESSIONS as FIBONACCI_HEAP_REGRESSIONS,
-};
+use difffuzz::Campaign;
 
 #[test]
 fn bit_set_matches_upstream() {
@@ -358,7 +344,6 @@ fn every_regression_corpus_explains_where_its_seeds_came_from() {
         SPARSE_REGRESSIONS,
         SPARSE_MAP_REGRESSIONS,
         SPARSE_QUEUE_REGRESSIONS,
-        // Appended at the END of the list (CLAUDE.md, Git).
         SUFFIX_ARRAY_REGRESSIONS,
         GENERALIZED_REGRESSIONS,
         BLOOM_REGRESSIONS,
@@ -377,12 +362,6 @@ fn every_regression_corpus_explains_where_its_seeds_came_from() {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Appended at the end of the file, never inserted: several agents edit this
-// file at once and a test added after the last one cannot land inside another
-// agent's hunk.
-// ---------------------------------------------------------------------------
-
 #[test]
 fn fixed_stack_matches_upstream() {
     let campaign = Campaign::cases(0xF15A, 96, FIXED_STACK_REGRESSIONS);
@@ -400,8 +379,6 @@ fn fixed_stack_matches_upstream() {
         panic!("{divergence}");
     }
 }
-
-// Appended at the END of the file, never between existing tests (CLAUDE.md).
 
 /// `suffix-array` is the first module here with no mutating method: the whole
 /// computation is the constructor, so the campaign spends its budget on
@@ -426,15 +403,13 @@ fn suffix_array_matches_upstream() {
 
 /// The corpora added by this wave carry provenance too.
 ///
-/// `every_regression_corpus_explains_where_its_seeds_came_from` above pins the
-/// four corpora that existed when it was written; extending its list in place
-/// would be a merge conflict, so the same assertion is made here for the ones
-/// added since. Every seed in them came from a deliberate sabotage, and an
-/// unlabelled `cc` line would read as "a real defect was found and fixed here".
+/// The same assertion as
+/// `every_regression_corpus_explains_where_its_seeds_came_from` above, over
+/// a second group of corpora. Every seed in them came from a deliberate
+/// sabotage, and an unlabelled `cc` line would read as "a real defect was
+/// found and fixed here".
 #[test]
 fn wave_one_regression_corpora_explain_where_their_seeds_came_from() {
-    // A slice rather than an array literal: the list grows as this wave lands
-    // its remaining modules, and a one-element array is a clippy lint.
     const CORPORA: &[&str] = &[
         FIXED_STACK_REGRESSIONS,
         FIXED_DEQUE_REGRESSIONS,
@@ -473,8 +448,6 @@ fn fixed_deque_matches_upstream() {
         panic!("{divergence}");
     }
 }
-
-// Appended at the END of the file, never between two existing tests.
 
 /// `heap` — the first module whose comparator is a callback.
 ///
@@ -520,9 +493,6 @@ fn generalized_suffix_array_matches_upstream() {
         panic!("{divergence}");
     }
 }
-
-// New tests go on the end of this file, never in the middle: a conflict
-// boundary landing inside one has already broken three merges.
 
 /// The first free-function module, and therefore the first exercise of the
 /// `functions` mode in `fuzz/oracle.js`.
@@ -612,12 +582,6 @@ fn bloom_filter_matches_upstream() {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Appended at the end of the file, never in the middle: a conflict boundary
-// landing inside an existing test has already broken three merges
-// (CLAUDE.md, Git).
-// ---------------------------------------------------------------------------
-
 #[test]
 fn vector_matches_upstream() {
     let campaign = Campaign::cases(0x7EC70, 96, VECTOR_REGRESSIONS);
@@ -678,10 +642,6 @@ fn fixed_reverse_heap_matches_upstream() {
     }
 }
 
-// Appended at the end of the file, never inserted: several agents edit this
-// file at once and a test added after the last one cannot land inside another
-// agent's hunk.
-
 /// `bi-map` — this campaign's own regression corpus carries two REAL
 /// divergences (BUG-BI-MAP-1), not sabotages; see the corpus file's provenance block
 /// and `docs/modules/bi-map.md`.
@@ -702,8 +662,6 @@ fn bi_map_matches_upstream() {
         panic!("{divergence}");
     }
 }
-
-// Appended at the END of the file, never between two existing tests.
 
 /// `lru-cache` -- the object-backed base class. Small capacities (`1..=6`)
 /// and a 300-op ceiling, so eviction fires constantly rather than the
@@ -833,12 +791,6 @@ fn lru_map_with_delete_matches_upstream() {
         panic!("{divergence}");
     }
 }
-
-// ---------------------------------------------------------------------------
-// Appended at the end of the file, never inserted: several agents edit this
-// file at once and a new test after the last one cannot land inside another
-// agent's hunk (CLAUDE.md, Git).
-// ---------------------------------------------------------------------------
 
 /// `multi-map` — a three-key pool shared by `set`/`remove`, so a bucket
 /// accumulates several values and drains back to zero constantly. See the

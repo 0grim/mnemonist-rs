@@ -17,79 +17,51 @@
 use std::process::ExitCode;
 use std::time::Duration;
 
+use difffuzz::modules::bi_map::BiMapSpec;
 use difffuzz::modules::bit_set::BitSetSpec;
 use difffuzz::modules::bit_vector::BitVectorSpec;
+use difffuzz::modules::bk_tree::BkTreeSpec;
+use difffuzz::modules::bloom_filter::BloomFilterSpec;
+use difffuzz::modules::circular_buffer::CircularBufferSpec;
+use difffuzz::modules::critbit_tree_map::CritBitTreeMapSpec;
 use difffuzz::modules::default_map::DefaultMapSpec;
+use difffuzz::modules::default_weak_map::DefaultWeakMapSpec;
+use difffuzz::modules::fibonacci_heap::FibonacciHeapSpec;
+use difffuzz::modules::fixed_critbit_tree_map::FixedCritBitTreeMapSpec;
+use difffuzz::modules::fixed_deque::FixedDequeSpec;
+use difffuzz::modules::fixed_reverse_heap::FixedReverseHeapSpec;
+use difffuzz::modules::fixed_stack::FixedStackSpec;
+use difffuzz::modules::fuzzy_map::FuzzyMapSpec;
+use difffuzz::modules::fuzzy_multi_map::FuzzyMultiMapSpec;
 use difffuzz::modules::hashed_array_tree::HashedArrayTreeSpec;
+use difffuzz::modules::heap::HeapSpec;
+use difffuzz::modules::inverted_index::InvertedIndexSpec;
+use difffuzz::modules::kd_tree::KdTreeSpec;
+use difffuzz::modules::linked_list::LinkedListSpec;
+use difffuzz::modules::lru_cache::{
+    LruCacheSpec, LruCacheWithDeleteSpec, LruMapSpec, LruMapWithDeleteSpec,
+};
+use difffuzz::modules::multi_array::MultiArraySpec;
+use difffuzz::modules::multi_map::MultiMapSpec;
+use difffuzz::modules::multi_set::MultiSetSpec;
+use difffuzz::modules::passjoin_index::PassjoinIndexSpec;
 use difffuzz::modules::queue::QueueSpec;
+use difffuzz::modules::set::SetSpec;
+use difffuzz::modules::sort::SortSpec;
 use difffuzz::modules::sparse_map::SparseMapSpec;
 use difffuzz::modules::sparse_queue_set::SparseQueueSetSpec;
 use difffuzz::modules::sparse_set::SparseSetSpec;
 use difffuzz::modules::stack::StackSpec;
 use difffuzz::modules::static_disjoint_set::StaticDisjointSetSpec;
-// Appended at the end of the import run, never inserted.
-use difffuzz::modules::circular_buffer::CircularBufferSpec;
-use difffuzz::modules::fixed_deque::FixedDequeSpec;
-use difffuzz::modules::fixed_stack::FixedStackSpec;
-// Appended rather than filed alphabetically: this list is edited from several
-// worktrees at once, and a conflict boundary that lands inside it has already
-// broken three merges. New modules go on the end.
-use difffuzz::modules::set::SetSpec;
-use difffuzz::modules::sort::SortSpec;
-// Appended, never interleaved (CLAUDE.md, Git).
-use difffuzz::modules::bloom_filter::BloomFilterSpec;
-use difffuzz::modules::suffix_array::{GeneralizedSuffixArraySpec, SuffixArraySpec};
-// Appended at the end of the import list; see `modules/mod.rs`.
-use difffuzz::modules::fixed_reverse_heap::FixedReverseHeapSpec;
-use difffuzz::modules::heap::HeapSpec;
-use difffuzz::{Campaign, Report};
-// Appended at the END of the import run, never inserted: this file is edited
-// from several worktrees at once (CLAUDE.md, Git).
 use difffuzz::modules::static_interval_tree::StaticIntervalTreeSpec;
-use difffuzz::modules::vector::VectorSpec;
-// by several agents at once and a conflict boundary landing mid-list has
-// already broken merges here.
-use difffuzz::modules::bi_map::BiMapSpec;
-use difffuzz::modules::bk_tree::BkTreeSpec;
-use difffuzz::modules::fuzzy_map::FuzzyMapSpec;
-// Appended at the end, never inserted: this file is edited by several agents
-// at once and a new line at the end can never land inside another one's hunk.
-use difffuzz::modules::lru_cache::{
-    LruCacheSpec, LruCacheWithDeleteSpec, LruMapSpec, LruMapWithDeleteSpec,
-};
-// Appended at the end, never inserted: this file is a shared registry edited
-// by several agents at once (CLAUDE.md, Git).
-use difffuzz::modules::utils_unit::UtilsSpec;
-// Appended at the end, never inserted: this file is a shared registry
-// (CLAUDE.md, Git) and a new line anywhere else is a merge conflict.
+use difffuzz::modules::suffix_array::{GeneralizedSuffixArraySpec, SuffixArraySpec};
+use difffuzz::modules::symspell::SymSpellSpec;
 use difffuzz::modules::trie::TrieSpec;
 use difffuzz::modules::trie_map::TrieMapSpec;
-// Appended at the end, never inserted (CLAUDE.md, Git): a new line anywhere
-// else is a merge conflict.
-use difffuzz::modules::fuzzy_multi_map::FuzzyMultiMapSpec;
-use difffuzz::modules::multi_map::MultiMapSpec;
-use difffuzz::modules::multi_set::MultiSetSpec;
-// Appended at the end, never inserted (CLAUDE.md, Git): a new line anywhere
-// else is a merge conflict.
-use difffuzz::modules::fibonacci_heap::FibonacciHeapSpec;
-// Appended at the end, never inserted (CLAUDE.md, Git): a new line anywhere
-// else is a merge conflict.
-use difffuzz::modules::default_weak_map::DefaultWeakMapSpec;
-use difffuzz::modules::inverted_index::InvertedIndexSpec;
-use difffuzz::modules::linked_list::LinkedListSpec;
-// Appended at the end, never inserted (CLAUDE.md, Git): a new line anywhere
-// else is a merge conflict.
-use difffuzz::modules::critbit_tree_map::CritBitTreeMapSpec;
-use difffuzz::modules::fixed_critbit_tree_map::FixedCritBitTreeMapSpec;
-// Appended at the end, never inserted: this file is a shared registry
-// (CLAUDE.md, Git) and a new line anywhere else is a merge conflict.
-use difffuzz::modules::kd_tree::KdTreeSpec;
+use difffuzz::modules::utils_unit::UtilsSpec;
+use difffuzz::modules::vector::VectorSpec;
 use difffuzz::modules::vp_tree::VpTreeSpec;
-// Appended at the end, never inserted: this file is a shared registry
-// (CLAUDE.md, Git) and a new line anywhere else is a merge conflict.
-use difffuzz::modules::multi_array::MultiArraySpec;
-use difffuzz::modules::passjoin_index::PassjoinIndexSpec;
-use difffuzz::modules::symspell::SymSpellSpec;
+use difffuzz::{Campaign, Report};
 
 const USAGE: &str = "\
 usage: difffuzz --module <name> [--seed N] [--duration SECONDS] [--cases N] [--batch N]
@@ -210,9 +182,6 @@ fn main() -> ExitCode {
                 ..campaign
             },
         ),
-        // Appended immediately before the fallback arm, never inserted into
-        // the run above: a new arm at the end of the list cannot land inside
-        // another agent's hunk.
         "fixed-stack" => difffuzz::run(
             &FixedStackSpec,
             &Campaign {
@@ -234,9 +203,6 @@ fn main() -> ExitCode {
                 ..campaign
             },
         ),
-        // New modules go on the end of this match, never in the middle: a
-        // conflict boundary landing inside an arm has already broken three
-        // merges.
         "sort" => difffuzz::run(
             &SortSpec,
             &Campaign {
@@ -251,8 +217,6 @@ fn main() -> ExitCode {
                 ..campaign
             },
         ),
-        // Appended at the END of the module arms, never between them: a merge
-        // conflict boundary inside a match arm has broken this tree before.
         "suffix-array" => difffuzz::run(
             &SuffixArraySpec,
             &Campaign {
@@ -274,9 +238,6 @@ fn main() -> ExitCode {
                 ..campaign
             },
         ),
-        // Appended at the END of the match, never between arms: a conflict
-        // boundary landing inside one has already broken three merges
-        // (CLAUDE.md, Git).
         "vector" => difffuzz::run(
             &VectorSpec,
             &Campaign {
@@ -291,8 +252,6 @@ fn main() -> ExitCode {
                 ..campaign
             },
         ),
-        // Appended at the END of the module arms, never between them: a merge
-        // conflict boundary inside a match arm has broken this tree before.
         "bi-map" => difffuzz::run(
             &BiMapSpec,
             &Campaign {
@@ -314,7 +273,6 @@ fn main() -> ExitCode {
                 ..campaign
             },
         ),
-        // Appended at the END of the match, never between two existing arms.
         "heap" => difffuzz::run(
             &HeapSpec,
             &Campaign {
@@ -329,7 +287,6 @@ fn main() -> ExitCode {
                 ..campaign
             },
         ),
-        // Appended at the END of the match, never between two existing arms.
         "lru-cache" => difffuzz::run(
             &LruCacheSpec,
             &Campaign {
@@ -358,9 +315,6 @@ fn main() -> ExitCode {
                 ..campaign
             },
         ),
-        // Appended at the END of the match, never between arms: a conflict
-        // boundary landing inside one has already broken three merges
-        // (CLAUDE.md, Git).
         "_utils" => difffuzz::run(
             &UtilsSpec,
             &Campaign {
@@ -368,8 +322,6 @@ fn main() -> ExitCode {
                 ..campaign
             },
         ),
-        // Appended at the END of the module arms, never between them: a merge
-        // conflict boundary inside a match arm has broken this tree before.
         "trie-map" => difffuzz::run(
             &TrieMapSpec,
             &Campaign {
@@ -384,8 +336,6 @@ fn main() -> ExitCode {
                 ..campaign
             },
         ),
-        // Appended at the END of the match, never between two existing arms
-        // (CLAUDE.md, Git).
         "multi-map" => difffuzz::run(
             &MultiMapSpec,
             &Campaign {
@@ -407,8 +357,6 @@ fn main() -> ExitCode {
                 ..campaign
             },
         ),
-        // Appended at the END of the match, never between two existing arms
-        // (CLAUDE.md, Git).
         "fibonacci-heap" => difffuzz::run(
             &FibonacciHeapSpec,
             &Campaign {
@@ -416,9 +364,6 @@ fn main() -> ExitCode {
                 ..campaign
             },
         ),
-        // Appended at the END of the module arms, never between them: a
-        // merge conflict boundary inside a match arm has broken this tree
-        // before (CLAUDE.md, Git).
         "linked-list" => difffuzz::run(
             &LinkedListSpec,
             &Campaign {
@@ -468,8 +413,6 @@ fn main() -> ExitCode {
                 ..campaign
             },
         ),
-        // Appended at the END of the module arms, never between them: a merge
-        // conflict boundary inside a match arm has broken this tree before.
         "multi-array" => difffuzz::run(
             &MultiArraySpec,
             &Campaign {

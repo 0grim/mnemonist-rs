@@ -34,16 +34,16 @@
 //!
 //! ## The one encoding subtlety
 //!
-//! A `new Array(n)` slot that was never written is a **hole**. `fuzz/oracle.js`
-//! used to encode an array with `value.map(encode)`, which SKIPS holes and
-//! leaves them holes for `JSON.stringify` to render as `null` — and this side
-//! matched that with `Value::Null`. The oracle now walks arrays by index
-//! instead (`heap` needed it: a comparator that shrinks the array mid-sift
-//! makes the sift write an explicit `undefined` past the array's old end, and
-//! that is not distinguishable from a hole through any API a stack, deque or
-//! buffer exposes — `items[i]` reads `undefined` either way). Both now encode
-//! as `{"$undefined": true}`, so the Rust side follows: a `None` slot of an
-//! `Array`-backed stack is `{"$undefined": true}`, never `null`.
+//! A `new Array(n)` slot that was never written is a **hole**.
+//! `fuzz/oracle.js` walks arrays by index rather than through
+//! `value.map(encode)`, which would *skip* holes and leave them for
+//! `JSON.stringify` to render as `null`. `heap` is what needs the difference:
+//! a comparator that shrinks the array mid-sift makes the sift write an
+//! explicit `undefined` past the array's old end, and that is not
+//! distinguishable from a hole through any API a stack, deque or buffer
+//! exposes — `items[i]` reads `undefined` either way. Both sides therefore
+//! encode as `{"$undefined": true}`: a `None` slot of an `Array`-backed stack
+//! is `{"$undefined": true}`, never `null`.
 //!
 //! A `Uint8Array`-backed stack has no holes — it is zero filled — so its
 //! `items` goes out as the oracle's `{"$typed": …}` envelope instead.
@@ -265,11 +265,10 @@ impl ModuleSpec for FixedStackSpec {
 /// `array[i] = undefined` touched (upstream's `FixedStack.prototype.toArray`
 /// writes every index explicitly; `FixedDeque.prototype.toArray`'s fast path
 /// is `items.slice(...)`, which preserves a hole as a hole). But
-/// `fuzz/oracle.js` no longer tells them apart: it walks arrays by index
-/// rather than by `.map()` (which used to skip holes), so both read back
-/// through the same `{"$undefined": true}` envelope. The variant is kept at
-/// each call site as documentation of which one is in play; it no longer
-/// changes what gets encoded.
+/// `fuzz/oracle.js` does not tell them apart: it walks arrays by index, so
+/// both read back through the same `{"$undefined": true}` envelope. The
+/// variant is kept at each call site as documentation of which one is in
+/// play; it does not change what gets encoded.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Hole {
     /// A `new Array(n)` slot nothing has assigned.

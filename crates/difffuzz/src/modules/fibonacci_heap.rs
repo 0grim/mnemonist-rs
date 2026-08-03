@@ -415,10 +415,9 @@ mod grammar_self_check {
     ///   trees together (`merges()`), and
     /// * how many of those programs saw at least one link at all.
     ///
-    /// This is the measurement CLAUDE.md's brief for this unit asked for
-    /// directly: "a Fibonacci heap fuzzed with many pushes and one pop never
-    /// consolidates, and a green campaign then proves only that it can store
-    /// numbers." A campaign report with zero divergences says nothing about
+    /// This is the measurement this unit specifically needs: a Fibonacci heap
+    /// fuzzed with many pushes and one pop never consolidates, and a green
+    /// campaign over such programs proves only that it can store numbers. A campaign report with zero divergences says nothing about
     /// which branches actually ran; this does.
     fn sample(samples: usize) -> (u64, u64, u64) {
         let spec = FibonacciHeapSpec;
@@ -469,7 +468,7 @@ mod grammar_self_check {
         // Both floors are deliberately blunt: the point is not a precise
         // rate but ruling out "the campaign never actually reached
         // `consolidate`'s degree-merge path", which is exactly the failure
-        // mode CLAUDE.md's brief warned this unit could fall into silently.
+        // mode this unit can fall into silently.
         assert!(
             merges > 1_000,
             "expected consolidate to link trees thousands of times over 400 programs \

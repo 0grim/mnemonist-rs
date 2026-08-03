@@ -161,10 +161,9 @@ impl ModuleSpec for FuzzyMultiMapSpec {
     /// `fuzz/oracle.js`'s generic `encode()` renders it as the nested object
     /// its own enumerable properties are: `{items: {$map: [...]}, size,
     /// dimension}` (`Container`, a function, is silently dropped by
-    /// `JSON.stringify`). Flattening this to a bare `$map` — what this
-    /// module's very first draft did — is indistinguishable from that shape
-    /// only by accident, and diverged on case 0 of every campaign run
-    /// before this fix.
+    /// `JSON.stringify`). So the observation below reproduces that nesting.
+    /// Flattening it to a bare `$map` diverges on case 0 of every campaign,
+    /// which is the cheapest possible way to be told about it.
     fn observe(&self, instance: &mut Self::Instance) -> Value {
         let items: Vec<Value> = instance
             .items()
@@ -187,8 +186,8 @@ impl ModuleSpec for FuzzyMultiMapSpec {
 
 /// Direct evidence that `fuzzyLower` collapsing `'Hello'`/`'HELLO'`/`'World'`
 /// onto two hashed keys routinely gives a bucket more than one value, and
-/// that `.clear()` routinely drains the whole map back to zero -- per
-/// CLAUDE.md's fuzz-campaign guidance. No oracle involved.
+/// that `.clear()` routinely drains the whole map back to zero -- the two
+/// states a campaign for this unit has to reach. No oracle involved.
 #[cfg(test)]
 mod grammar_self_check {
     use proptest::strategy::ValueTree;

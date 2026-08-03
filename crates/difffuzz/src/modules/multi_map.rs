@@ -4,9 +4,9 @@
 //!
 //! A **three-key pool** shared by every `set`/`remove` call, so the same key
 //! is hit repeatedly and its bucket accumulates several values before
-//! anything empties it back out — the two states CLAUDE.md's fuzz-campaign
-//! guidance names explicitly for this unit: a key genuinely holding several
-//! values, and a container emptying to zero via `remove`/`delete`.
+//! anything empties it back out — the two states a campaign for this unit
+//! has to reach: a key genuinely holding several values, and a container
+//! emptying to zero via `remove`/`delete`.
 //! `remove`/`delete` are weighted in for the same reason.
 //!
 //! The constructor alternates between the default (`List`-kind) and `Set`
@@ -216,8 +216,8 @@ impl ModuleSpec for MultiMapSpec {
     }
 }
 
-/// Direct evidence that this grammar reaches the two states CLAUDE.md's
-/// fuzz-campaign guidance asks for: a key genuinely holding several values,
+/// Direct evidence that this grammar reaches the two states a campaign for
+/// this unit has to reach: a key genuinely holding several values,
 /// and a bucket emptying back to zero (and leaving `items`) via `remove`/
 /// `delete`. Runs the strategies directly, with no oracle involved — this is
 /// about the grammar's own reach, not about port-vs-upstream agreement.

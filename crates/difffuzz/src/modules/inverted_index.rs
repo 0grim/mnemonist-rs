@@ -2,9 +2,8 @@
 //!
 //! # Grammar: identity tokenizer, so documents ARE token arrays
 //!
-//! CLAUDE.md's brief for this unit is explicit: "documents must share tokens
-//! or every posting list has length one and the campaign proves only that
-//! the index can store words." Reaching real overlap with a genuine natural-
+//! Documents must share tokens, or every posting list has length one and
+//! the campaign proves only that the index can store words. Reaching real overlap with a genuine natural-
 //! language tokenizer (stemming, stopwords, `lodash/words`) would mean
 //! porting or mirroring one just for the fuzz harness — a second copy of
 //! machinery the module itself does not need. Instead this grammar
@@ -264,7 +263,7 @@ mod tests {
 
     /// Measures, rather than infers from the op weights, how often generated
     /// documents actually share a token with an earlier document — the
-    /// thing CLAUDE.md's brief for this unit asked to be shown, not assumed.
+    /// one property this whole grammar exists to produce.
     ///
     /// Generates `(ctor, ops)` pairs by hand via `ValueTree::new_tree` and
     /// runs them in an ordinary `for` loop, the same shape
@@ -329,8 +328,8 @@ mod tests {
             collision_rate > 0.3,
             "only {collision_rate:.2} of posting lists span more than one document \
              ({multi_doc_postings}/{total_postings}) -- the grammar proves only that \
-             the index can store words, which is exactly the shape CLAUDE.md's brief \
-             for this unit warned against"
+             the index can store words, which is the failure this grammar exists \
+             to avoid"
         );
     }
 }

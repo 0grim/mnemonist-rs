@@ -17,11 +17,10 @@
 //! Items are small integers in `0..RANGE` and `distance(a, b) = |a - b|` --
 //! the same real, trivially-mirrored metric `bk-tree`'s own campaign uses
 //! (`bkAbsDiff` in `fuzz/oracle.js`, reused rather than re-added). The
-//! narrowness is deliberate and is the answer to the risk CLAUDE.md names for
-//! this module by name: a wide item range would make every distance from a
-//! vantage point distinct, so the median split (`mus`) would never have to
-//! choose between two *equal* distances and the "genuine near-ties" this
-//! module's brief asks for would never occur. With `RANGE = 24` and up to 80
+//! narrowness is deliberate and is the answer to this module's sharp risk: a
+//! wide item range would make every distance from a vantage point distinct,
+//! so the median split (`mus`) would never have to choose between two *equal*
+//! distances and a genuine near-tie would never occur. With `RANGE = 24` and up to 80
 //! items, repeated collisions on the same distance from any given node are
 //! constant, which is the only way the quicksort's tie-break (and therefore
 //! the tree's exact shape) is ever exercised at all.
@@ -147,8 +146,7 @@ fn neighbors_json(neighbors: &[Neighbor<i64>]) -> Value {
 /// default encoding would otherwise print `5.0` where the oracle's raw
 /// number and `JSON.stringify` print `5` -- a false divergence, not a real
 /// one. Same fix as `vector`'s `number_json`/`static-interval-tree`'s own
-/// (CLAUDE.md: grep before inventing shared machinery; duplicated per-module
-/// here to match the existing pattern in this crate).
+/// duplicated per module here to match the existing pattern in this crate.
 fn number_json(value: f64) -> Value {
     if value.fract() == 0.0 && value.abs() < 9_007_199_254_740_992.0 {
         return json!(value as i64);

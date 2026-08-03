@@ -39,8 +39,8 @@
 //! # The `-with-delete` pair: where the holes live
 //!
 //! `delete`/`remove` are only generated for the two `-with-delete` specs, and
-//! at higher weight than `clear` for exactly the reason CLAUDE.md names them:
-//! interleaved with `set`/`setpop`-driven eviction, they are what exercises
+//! at higher weight than `clear` for a specific reason: interleaved with
+//! `set`/`setpop`-driven eviction, they are what exercises
 //! the freelist (`holes`) reuse path in
 //! `mnemonist_core::structures::lru_cache::LruCache::insert_new`. `$iter` /
 //! `$next` are generated frequently and independently of `delete`/`remove`,
@@ -744,9 +744,9 @@ impl ModuleSpec for LruMapWithDeleteSpec {
 /// A self-check on the GRAMMAR, not a differential test — no oracle, no
 /// `node`, nothing compared against upstream. DESIGN.md's own warning about
 /// this family is that a campaign whose capacity is large relative to its op
-/// count proves only that a map stores things, and "the weights look right by
-/// inspection" is exactly the kind of confident-but-unverified claim
-/// CLAUDE.md's NOTES.md keeps a table of. So this runs a representative batch
+/// count proves only that a map stores things, and "the weights look right
+/// by inspection" is a green signal that verifies something other than what
+/// it appears to. So this runs a representative batch
 /// of generated programs purely against `mnemonist-core` and asserts a floor
 /// on how often `set`/`setpop` actually evict and how often `delete` actually
 /// removes something, printing the real counts under `--nocapture` for the

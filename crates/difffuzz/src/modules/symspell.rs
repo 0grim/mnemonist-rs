@@ -5,18 +5,17 @@
 //! A **controlled-edit-distance vocabulary**, not random strings: every
 //! word below sits at a known, small Damerau-Levenshtein distance from at
 //! least one other word in the pool (substitutions, one deletion, one
-//! insertion), the way CLAUDE.md's fuzz-campaign guidance requires --
-//! random strings would all be far apart, every query would return an
-//! empty candidate set, and the campaign would be green while proving
-//! nothing. `grammar_self_check` below measures that this pool actually
+//! insertion). This is not decoration: random strings would all be far
+//! apart, every query would return an empty candidate set, and the campaign
+//! would be green while proving nothing. `grammar_self_check` below measures that this pool actually
 //! produces non-empty searches and threshold-boundary hits rather than
 //! assuming it.
 //!
 //! `maxDistance` is varied across `1..=4` — the same range
 //! `test/symspell.js` itself exercises (`2` default, `4` explicitly) — and
 //! `verbosity` across all three of its valid values, since both gate which
-//! branches `lookup` even reaches (CLAUDE.md: "a distance of 1 exercises
-//! almost nothing").
+//! branches `lookup` even reaches -- a distance of 1 exercises almost
+//! nothing.
 
 use mnemonist_core::structures::symspell::SymSpell as CoreSymSpell;
 use proptest::prelude::*;
@@ -140,9 +139,9 @@ impl ModuleSpec for SymSpellSpec {
 }
 
 /// Same rendering `sort`/`default_map`/`bloom_filter`/`set`/`vector`/
-/// `multi_array` all use (CLAUDE.md: grep before inventing shared machinery
-/// -- duplicated here rather than factored out, matching the existing
-/// pattern in this crate): a whole number in the JS safe-integer range
+/// `multi_array` all use, duplicated per module rather than factored out to
+/// match the existing pattern in this crate: a whole number in the JS
+/// safe-integer range
 /// prints without a decimal point, matching `JSON.stringify`.
 fn number_json(value: f64) -> Value {
     if value.fract() == 0.0 && value.abs() < 9_007_199_254_740_992.0 {
@@ -152,8 +151,8 @@ fn number_json(value: f64) -> Value {
     json!(value)
 }
 
-/// Direct evidence that this grammar reaches the states CLAUDE.md's
-/// fuzz-campaign guidance asks for: how many `search` calls come back with
+/// Direct evidence that this grammar reaches the states a campaign for this
+/// module has to reach: how many `search` calls come back with
 /// at least one suggestion, and how many suggestions land at exactly the
 /// configured `maxDistance` (a threshold-boundary hit, not merely "close").
 /// Runs the strategies directly, no oracle, no `node`.

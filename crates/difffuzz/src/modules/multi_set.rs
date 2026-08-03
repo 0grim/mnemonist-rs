@@ -4,7 +4,7 @@
 //!
 //! A **three-item pool** shared by `add`/`remove`/`set`/`edit`, so the same
 //! item accumulates a multiplicity greater than one (the "a key genuinely
-//! holds several values" state CLAUDE.md's fuzz-campaign guidance names) and
+//! holds several values" state a campaign for this module has to reach) and
 //! `remove`/`set`-to-non-positive routinely drive it back to zero and out of
 //! `items` entirely.
 //!
@@ -238,9 +238,9 @@ fn number_json(value: f64) -> Value {
 }
 
 /// Direct evidence that this grammar reaches multiplicity greater than one
-/// and drains an item back out of `items` entirely, per CLAUDE.md's
-/// fuzz-campaign guidance. No oracle involved -- this is about the
-/// grammar's own reach.
+/// and drains an item back out of `items` entirely -- the two states a
+/// campaign for this module has to reach. No oracle involved; this is about
+/// the grammar's own reach.
 #[cfg(test)]
 mod grammar_self_check {
     use proptest::strategy::ValueTree;

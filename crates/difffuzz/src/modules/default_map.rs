@@ -49,16 +49,17 @@
 //! the oracle has no way to send a callback that would notice. Covered by the
 //! original test file and by the probes instead.
 //!
-//! # `$forEach`, added after PORTBUG-1
+//! # `$forEach` — why the protocol carries a callback at all
 //!
-//! The line above used to read "**`forEach`.** It takes a callback, and the
-//! oracle protocol has no way to send one." That was true and it was also the
-//! hole: this module's 2.94M-operation clean campaign could not express a
-//! single program in which a callback mutates the map it is walking, so it
-//! read as coverage it did not have. `$forEach` is that op, and this module's
-//! walk is the interesting one — a `Map` iteration is **live**, so an entry
-//! the callback adds *is* visited and one it deletes ahead of the cursor is
-//! *not*, which is the opposite of every frozen-bound module in the port.
+//! "The oracle protocol has no way to send a callback" is a true statement
+//! about a plain JSON op stream, and it is also a hole large enough to hide
+//! PORTBUG-1: without a callback op, no generated program can mutate a map
+//! while walking it, and a clean campaign of millions of operations reads as
+//! coverage it does not have. `$forEach` closes that.
+//!
+//! This module's walk is the interesting one. A `Map` iteration is **live**,
+//! so an entry the callback adds *is* visited and one it deletes ahead of the
+//! cursor is *not* — the opposite of every frozen-bound module in the port.
 //! See [`crate::spec::ForEach`] for the op, and for what it still does not
 //! reach.
 
@@ -141,8 +142,9 @@ impl FuzzKey {
 /// serialises as `1` and never as `1.0`. serde_json *does* distinguish the two
 /// and compares them unequal, so a Rust side emitting `json!(1.0)` disagrees
 /// with the oracle on every integral key — a false divergence that says
-/// nothing about the port. Found by this module's very first campaign, which
-/// is what a fuzzer is for even when the fault turns out to be in the fuzzer.
+/// nothing about the port. This module's first campaign reported exactly
+/// that, which is a fuzzer earning its keep even when the fault is in the
+/// fuzzer.
 fn number_json(value: f64) -> Value {
     if value.is_nan() {
         return json!({"$nan": true});

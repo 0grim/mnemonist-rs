@@ -379,18 +379,17 @@ fn typed_array(values: &PointerVec) -> Value {
 /// `undefined` — `vals[i]` on one is `undefined`, and that is the only way this
 /// structure ever exposes a hole.
 ///
-/// This used to be [`Value::Null`], because `fuzz/oracle.js` encoded arrays
-/// with `Array.prototype.map`, which *skips* holes and leaves them holes for
-/// `JSON.stringify` to render as `null`. That encoding could not tell a hole
-/// from an element explicitly assigned `undefined`, which is a distinction
-/// `heap` genuinely produces: a comparator that shrinks the array mid-sift
-/// makes the sift read past the end and write the `undefined` back. The oracle
-/// now walks arrays by index and encodes both as `{"$undefined": true}`, so
-/// this follows.
+/// A hole is encoded as `{"$undefined": true}` and not as [`Value::Null`].
+/// `fuzz/oracle.js` walks arrays by index rather than through
+/// `Array.prototype.map`, which *skips* holes and would leave them for
+/// `JSON.stringify` to render as `null` — an encoding that cannot tell a hole
+/// from an element explicitly assigned `undefined`. `heap` genuinely produces
+/// that distinction: a comparator that shrinks the array mid-sift makes the
+/// sift read past the end and write the `undefined` back.
 ///
-/// Nothing in *this* grammar can store `undefined`, so the change is exact for
-/// `sparse-map` either way; it is strictly more accurate, because upstream's
-/// hole really does read as `undefined` and never as `null`.
+/// Nothing in *this* grammar can store `undefined`, so for `sparse-map` the
+/// two encodings agree; `$undefined` is nonetheless the accurate one, because
+/// upstream's hole really does read as `undefined` and never as `null`.
 fn value_store(values: &Values<u32>) -> Value {
     match values {
         Values::Typed(slots) => typed_array(slots),

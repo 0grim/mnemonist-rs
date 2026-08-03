@@ -2,8 +2,8 @@
 //!
 //! # Grammar, and what it is built to reach
 //!
-//! CLAUDE.md's brief for this unit named the interesting territory directly:
-//! "`unshift`/`shift`/`push` against a live cursor." So this grammar keeps
+//! The interesting territory for this unit is `unshift`/`shift`/`push`
+//! against a live cursor. So this grammar keeps
 //! at most a handful of live nodes (`VALUES` is a small pool, `program_len`
 //! wide) and interleaves the three mutating ops with cursor lifecycle ops
 //! constantly, rather than draining a cursor immediately after opening it —

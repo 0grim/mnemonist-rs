@@ -21,12 +21,12 @@
 //!   run deterministically on anything, so an unsorted array is exactly the
 //!   kind of "awkward value" this task exists to reach.
 //! * **A real port defect, found on this campaign's first run (seed 42):**
-//!   `unionUnique`'s two-array prefix loop had no dedup check upstream, and a
-//!   first draft of this port added one anyway — *more correct* than
-//!   upstream, and so a bug per CLAUDE.md. `unionUnique([-5, -5, 0], [-0.5])`
-//!   caught it inside the first 300 generated cases. Fixed in
-//!   `mnemonist_core::utils::merge::union_unique_two`; see that function's
-//!   own test, `the_prefix_loop_does_not_deduplicate_an_already_non_unique_input`.
+//!   `unionUnique`'s two-array prefix loop has no dedup check upstream, so a
+//!   port that adds one is *more correct* than upstream — which this project
+//!   counts as a defect. `unionUnique([-5, -5, 0], [-0.5])` catches it inside
+//!   the first 300 generated cases. The invariant now lives in
+//!   `mnemonist_core::utils::merge::union_unique_two` and its own test,
+//!   `the_prefix_loop_does_not_deduplicate_an_already_non_unique_input`.
 //! * **`lowerBoundIndices`'s own quirk** — `hi` defaults from `array.length`,
 //!   not `indices.length` — generated directly by drawing indices whose
 //!   length differs from the array's.
@@ -63,9 +63,9 @@
 //!   `instance.linearProbing.set`, so any op name here would resolve to
 //!   "not a function" on the JS side — confirmed by this campaign's own
 //!   first attempt, before the ops were removed. Extending the protocol to
-//!   walk a dotted path would be a structural change to `fuzz/oracle.js`,
-//!   which CLAUDE.md's shared-file rule reserves for additive edits, not a
-//!   change one module's fuzz spec should make unilaterally. Covered instead
+//!   walk a dotted path would be a structural change to `fuzz/oracle.js`, a
+//!   file every module's spec depends on — not a change one module's fuzz
+//!   spec should make unilaterally. Covered instead
 //!   by `crate::utils::hash_tables`'s own extensive native tests (pinned
 //!   against Node for `jenkinsInt32`, and covering every edge — the key `0`,
 //!   a full table, every power-of-two size, a non-power-of-two size — the
@@ -206,19 +206,17 @@ impl ModuleSpec for UtilsSpec {
 /// 2 to 5 number arrays, each independently 0 to 5 elements. The 0-length
 /// case is not filtered out — it is the whole point (BUG-UTILS-1).
 ///
-/// # WIDENED — DIV-UTILS-2 is closed, so ties are back in the k-way pool
+/// # Ties are in the k-way pool, because DIV-UTILS-2 is closed
 ///
-/// This grammar used to narrow the k-way generator to globally distinct
-/// values (`k_way_arrays_op` below) specifically because
-/// `mnemonist_core::utils::merge`'s k-way `merge`/`unionUnique` path was a
-/// linear scan standing in for upstream's `FibonacciHeap`, and the two
-/// disagreed on ties (see the history recorded on [`k_way_arrays_op`] and
-/// NOTES.md's `_utils` section for the exact pre-widening divergence this
-/// campaign's first runs found). Now that `fibonacci-heap` is a ported unit
-/// and `merge.rs`'s k-way `merge`/`unionUnique` drive the real thing (DIV-UTILS-2,
-/// `docs/modules/_utils.md`), that narrowing excuse is gone for those two —
-/// CLAUDE.md is explicit that a narrowed grammar must not stay narrowed once
-/// the reason for narrowing it is fixed.
+/// A k-way generator restricted to globally distinct values cannot exercise
+/// a tie-break, and a tie-break is exactly what `merge`/`unionUnique`'s k-way
+/// path depends on. Restricting it would only be defensible while that path
+/// was a linear scan standing in for upstream's `FibonacciHeap` — the two
+/// disagree on ties. `fibonacci-heap` is now a ported unit and
+/// `mnemonist_core::utils::merge` drives the real thing (DIV-UTILS-2,
+/// `docs/modules/_utils.md`), so the pool is wide: a grammar narrowed around
+/// a defect must widen again when the defect is gone, or the campaign
+/// reports coverage it no longer has.
 ///
 /// `allow_nan_in_k_way` stays `false` for `intersectionUnique` alone: see
 /// [`k_way_arrays_op`]'s own docs for why that is a genuinely different,
@@ -252,16 +250,16 @@ fn two_arrays_op(name: &'static str) -> BoxedStrategy<Op> {
 /// Three to five arrays, drawn from the same small, repetitive pool as
 /// [`two_arrays_op`] — `NaN` included when `allow_nan` is `true`.
 ///
-/// # History — this generator used to force globally distinct values, for
-/// `merge`/`unionUnique` AND `intersectionUnique` alike
+/// # Why ties and `NaN` belong in this pool for `merge`/`unionUnique`
 ///
-/// Two real divergences surfaced from this campaign's own first runs, back
-/// when `merge`/`unionUnique`'s k-way path was a linear scan:
+/// Two real divergences surfaced from this campaign's own first runs, while
+/// `merge`/`unionUnique`'s k-way path was still a linear scan rather than a
+/// heap:
 ///
 /// * `unionUnique([3], [2, -5], [2])` disagreed (`port: [2,-5,2,3]`,
 ///   `upstream: [2,-5,3]`), and — sharper still — `merge([3], [2, -5], [2])`
-///   disagreed on **order alone**: upstream is `[2, 2, -5, 3]`, the port was
-///   `[2, -5, 2, 3]`. The cause: the linear scan kept the earliest array on a
+///   disagreed on **order alone**: upstream is `[2, 2, -5, 3]`, the scan gave
+///   `[2, -5, 2, 3]`. The cause: a linear scan keeps the earliest array on a
 ///   value tie, where upstream's `FibonacciHeap` updates its `min` pointer
 ///   with `<=`, favouring the most recently *pushed* node — and after
 ///   `consolidate` restructures the tree across pops, which node that ends
@@ -274,8 +272,8 @@ fn two_arrays_op(name: &'static str) -> BoxedStrategy<Op> {
 /// * `merge([-5], [NaN], [-1])` diverged too (`port: [-5, NaN, -1]`,
 ///   `upstream: [-1, NaN, -5]`), for the same underlying reason: every
 ///   comparison against `NaN` is `false` in both directions, so "which array
-///   has the smaller head" was never well-defined for the linear scan the
-///   moment `NaN` entered a three-or-more-way pick. The real heap has no
+///   has the smaller head" is not well-defined for a linear scan the moment
+///   `NaN` enters a three-or-more-way pick. The real heap has no
 ///   such ambiguity — it is upstream's own algorithm — so `NaN` is safe to
 ///   reinstate for `merge`/`unionUnique` alongside ties.
 ///
@@ -523,9 +521,9 @@ fn optional_usize(value: &Value) -> Option<usize> {
 /// A JavaScript number, encoded as `JSON.stringify` would encode it.
 ///
 /// Duplicated from `crate::modules::sort`, which duplicated it from
-/// `crate::modules::default_map` — see either's module docs for why this is
-/// copied rather than shared (CLAUDE.md: a shared helper is a merge conflict
-/// three worktrees would fight over).
+/// `crate::modules::default_map` — see either's module docs. Ten lines with
+/// no invariants of their own are cheaper copied than shared out of a file
+/// every module's spec would then depend on.
 fn number_json(value: f64) -> Value {
     if value.is_nan() {
         return json!({"$nan": true});

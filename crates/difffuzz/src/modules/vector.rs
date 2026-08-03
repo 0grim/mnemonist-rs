@@ -189,9 +189,9 @@ fn thrown(error: &CoreError) -> Value {
 /// whole numbers within the safe-integer range print without a decimal
 /// point, so `Value::from(0.0_f64)`'s `"0.0"` would otherwise diverge
 /// against the oracle's `"0"` on every all-zero `Float64Array`. Same
-/// helper as `sort`/`default_map`/`bloom_filter`/`set` (CLAUDE.md: grep
-/// before inventing shared machinery -- duplicated here rather than
-/// factored out, matching the existing pattern in this crate).
+/// helper as `sort`/`default_map`/`bloom_filter`/`set`, duplicated per
+/// module rather than factored out, matching the existing pattern in this
+/// crate.
 fn number_json(value: f64) -> Value {
     if value.fract() == 0.0 && value.abs() < 9_007_199_254_740_992.0 {
         return json!(value as i64);

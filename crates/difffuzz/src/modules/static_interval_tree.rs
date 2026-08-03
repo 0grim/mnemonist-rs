@@ -170,8 +170,8 @@ fn thrown(error: &CoreError) -> Value {
 /// whole number carried in an `f64`, and `json!(f64)`'s default encoding
 /// prints `118.0` where the oracle's `Array.from`/`JSON.stringify` prints
 /// `118` -- a false divergence, not a real one. Same fix as `vector`'s
-/// `number_json` (CLAUDE.md: grep before inventing shared machinery;
-/// duplicated per-module here to match the existing pattern in this crate).
+/// `number_json`, duplicated per module here to match the existing pattern
+/// in this crate.
 fn intervals_json(matches: &[(f64, f64)]) -> Value {
     Value::Array(
         matches
