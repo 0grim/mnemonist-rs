@@ -131,6 +131,8 @@ pub struct Operand {
 }
 
 impl Operand {
+    /// Wrap a stored slot together with the environment `<`/`>` may need to
+    /// fall back to. `env` must be live for the whole life of the operand.
     pub fn new(env: sys::napi_env, slot: JsSlot) -> Self {
         Self { env, slot }
     }

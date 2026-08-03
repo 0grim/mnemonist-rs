@@ -17,16 +17,27 @@
 //! array constructors ([`typed_arrays`], [`array_class`]). Core takes
 //! already-typed Rust values; the coercion happens here, once per module.
 //!
-//! Most items below are `#[napi]` classes and methods, consumed from
-//! JavaScript rather than from Rust, so their contract is upstream
-//! `mnemonist`'s own API. Where a method reproduces an upstream bug on
-//! purpose it is marked with the same `BUG-<MODULE>-<n>` identifier the core
-//! module and `docs/modules/<unit>.md` use.
+//! # Where `missing_docs` is enforced, and where it is not
+//!
+//! `mnemonist-core` denies `missing_docs` crate-wide: it is the shipped
+//! library, and a Rust caller reads its rustdoc. This crate is not that.
+//! Most items below are `#[napi]` classes and methods whose only consumer is
+//! JavaScript, whose contract is upstream `mnemonist`'s own API, and whose
+//! rustdoc nobody reads — a `/// #.push` on each of 250 of them would be
+//! noise standing in for documentation.
+//!
+//! So the lint is applied per module, to the ones with a genuine *Rust*
+//! surface: the value-representation and protocol types every bridge module
+//! calls into. Those are documented and the compiler keeps them that way.
+//! The per-structure bridges are not, deliberately; where one reproduces an
+//! upstream bug on purpose it is marked with the same `BUG-<MODULE>-<n>`
+//! identifier the core module and `docs/modules/<unit>.md` use.
 
 use napi_derive::napi;
 
 // rustfmt keeps this list alphabetical, so there is no position to choose
 // when adding a module -- which is what makes concurrent edits to it safe.
+#[warn(missing_docs)]
 pub mod array_class;
 pub mod bi_map;
 pub mod binary_search;
@@ -35,8 +46,10 @@ pub mod bit_vector;
 pub mod bk_tree;
 pub mod bloom_filter;
 pub mod circular_buffer;
+#[warn(missing_docs)]
 pub mod comparators;
 pub mod critbit_tree_map;
+#[warn(missing_docs)]
 pub mod cursor;
 pub mod default_map;
 pub mod default_weak_map;
@@ -45,6 +58,7 @@ pub mod fixed_critbit_tree_map;
 pub mod fixed_deque;
 pub mod fixed_reverse_heap;
 pub mod fixed_stack;
+#[warn(missing_docs)]
 pub mod foreach;
 pub mod fuzzy_map;
 pub mod fuzzy_multi_map;
@@ -52,10 +66,15 @@ pub mod hash_tables;
 pub mod hashed_array_tree;
 pub mod heap;
 pub mod inverted_index;
+#[warn(missing_docs)]
 pub mod iterables;
+#[warn(missing_docs)]
 pub mod js_array;
+#[warn(missing_docs)]
 pub mod js_key;
+#[warn(missing_docs)]
 pub mod js_slot;
+#[warn(missing_docs)]
 pub mod js_value;
 pub mod kd_tree;
 pub mod linked_list;
@@ -63,6 +82,7 @@ pub mod lru_cache;
 pub mod lru_cache_with_delete;
 pub mod lru_map;
 pub mod lru_map_with_delete;
+#[warn(missing_docs)]
 pub mod map_cursor;
 pub mod merge;
 pub mod multi_array;

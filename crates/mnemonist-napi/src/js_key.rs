@@ -75,8 +75,11 @@ const UNSUPPORTED: &str =
 /// [`JsKey::Number`] holds a normalised bit pattern. See the module docs.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum JsKey {
+    /// `undefined` used as a key — a real, distinct key in a JS `Map`.
     Undefined,
+    /// `null`, which SameValueZero keeps distinct from `undefined`.
     Null,
+    /// `true` or `false`.
     Bool(bool),
     /// `f64::to_bits` of a **normalised** double: no `-0.0`, one `NaN`.
     Number(u64),

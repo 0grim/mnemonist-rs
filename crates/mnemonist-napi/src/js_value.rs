@@ -90,9 +90,13 @@ use napi::{check_status, sys};
 /// only keys are folded, and only because SameValueZero folds them.
 #[derive(Debug, Clone)]
 pub enum JsPrimitive {
+    /// `null`.
     Null,
+    /// `true` or `false`.
     Bool(bool),
+    /// A double, unnormalised: `-0` and each `NaN` bit pattern survive.
     Number(f64),
+    /// A string, shared by refcount rather than copied on every hand-out.
     String(Rc<str>),
 }
 
@@ -277,7 +281,11 @@ pub enum Loaned {
     /// A missing key and a stored `undefined` are the same thing from
     /// JavaScript, and this is both.
     Undefined,
+    /// A primitive, copied out — cheap, since the only heap case is an
+    /// `Rc<str>` refcount bump.
     Primitive(JsPrimitive),
+    /// The stored `napi_ref` itself, borrowed without touching its count.
+    /// Valid only for the duration of the napi call that produced it.
     Reference(sys::napi_ref),
 }
 

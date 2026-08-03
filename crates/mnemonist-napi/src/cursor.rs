@@ -189,6 +189,8 @@ pub struct BridgeBitCursor {
 }
 
 impl BridgeBitCursor {
+    /// Wrap an already-frozen core walk. The walk owns everything it reads,
+    /// so nothing here needs a handle on the parent structure.
     pub fn new(walk: BitWalk) -> Self {
         Self { walk }
     }

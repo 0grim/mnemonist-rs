@@ -83,6 +83,16 @@ pub fn js_is_array_like(env: Env, target: Unknown) -> Result<bool> {
     is_array_like(&env, &target)
 }
 
+/// `isArrayLike(target)` for Rust callers — the same predicate
+/// [`js_is_array_like`] exposes to JavaScript.
+///
+/// True for a real `Array` and for any `ArrayBufferView` (every typed array,
+/// and `DataView`). Notably **not** true for a string, which is why
+/// `FixedStack.from('abc', Array)` takes the other branch of `from`.
+///
+/// # Errors
+///
+/// Propagates any napi error raised while interrogating `target`.
 pub fn is_array_like(env: &Env, target: &Unknown) -> Result<bool> {
     Ok(is_array(env, target)? || is_array_buffer_view(env, target)?)
 }

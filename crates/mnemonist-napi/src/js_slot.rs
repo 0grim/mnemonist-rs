@@ -60,8 +60,12 @@ use napi::sys;
 /// identity survives `Stack.from([o]).pop() === o`.
 #[derive(Clone)]
 pub enum JsSlot {
+    /// `undefined`, stored as a value rather than standing for absence —
+    /// absence is core's `None`, one level up.
     Undefined,
+    /// `null`.
     Null,
+    /// `true` or `false`.
     Boolean(bool),
     /// `-0` and `NaN` both survive this round trip, which is what `Object.is`
     /// would notice if they did not.
