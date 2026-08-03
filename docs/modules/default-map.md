@@ -449,6 +449,34 @@ other is a plausible but unverified explanation, not a confirmed one:
   consistent with the data but was not isolated with its own falsifying metric (e.g. a domain-size
   sweep instrumented with hardware cache-miss counters, which this host's tooling could not provide).
 
+  **Costed and declined, 2026-08-03.** The structural fix this account implies — values inline in
+  the hash map, insertion order tracked separately — was scoped rather than dismissed. `OrderedMap`
+  is used directly by seven units (`default-map`, `bi-map`, `fuzzy-map`, `multi-set`, `set`,
+  `multi-map`, `inverted-index`) and transitively by an eighth (`fuzzy-multi-map`); `bk-tree` and
+  `default-weak-map` only *mention* it in doc comments and are unaffected. All eight are complete
+  through all ten gates, so each would need its gate-6 falsification redone against the new
+  internals, its gate-9 campaign re-run, and its gate-10 benchmark re-measured on an idle machine.
+  Estimate: 3.5–6 h implementation, 2.5–4.5 h re-verification, 0.5–1 h documentation.
+
+  Declined on two grounds, neither of them the estimate alone. First, `MapCursor`'s discipline —
+  a frozen `next_id` resolved against live slots each step, surviving a compaction that renumbers
+  physical indices — is a genuinely subtle invariant, and this repository's own history shows that
+  arena-and-id structures walked under mutation (`critbit-tree-map`, `fixed-critbit-tree-map`)
+  produce bugs found late rather than early. Note also that `MapCursor`'s discipline is *not* the
+  same as `crate::cursor`'s frozen-length/live-element hybrid capture; a replacement must reproduce
+  this one specifically.
+
+  Second, and independent of time: this benchmark's op mix is 50% `set`, 25% `delete`, 25%
+  `getOrInsertWith`. Inlining values clearly helps only the read-shaped quarter — `set` and `delete`
+  must still touch a second structure to maintain insertion order and tombstones under any design
+  that keeps the cursor guarantees. So a successful rewrite should not be expected to close the full
+  gap, and the honest prior on it closing *most* of it is well under even.
+
+  **Before anyone attempts this**, run the domain-size sweep with cache-miss counters named above.
+  It is the falsifying measurement this account never got, it costs hours rather than days, and it
+  would establish whether the two-structure layout is the bottleneck *before* a day is spent
+  replacing it.
+
   **No fix applicable.** There is nothing to fix: the hypothesised second lookup does not exist, and
   `try_get_or_insert_with`'s hit path is already a single lookup plus an O(1) index.
 

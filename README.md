@@ -204,6 +204,25 @@ What remains is the allocation itself: `get` returns a fresh container per call,
 nursery is simply better at this shape than a general-purpose allocator. That is the residue, and it
 is not addressable without changing what the method returns.
 
+`default-map` is the largest regression left, and it is the one whose cause this port does **not**
+claim to know. The obvious explanation — a duplicate hash lookup — was measured and refuted: a probe
+separating a peek from a hit put the two 0.7% apart, where a second lookup would have shown up
+plainly. What replaced it is an account, not a finding: at a million-key domain `OrderedMap`'s
+internal `HashMap` no longer fits in cache and a uniformly random key makes most lookups a real
+memory access. That is consistent with the regression *narrowing* from 1.44× to 1.13× as the domain
+grows, but it was never isolated against a metric that would have falsified it — the domain-size
+sweep with hardware cache-miss counters that would settle it is not available on this host. The
+module's own document says so in those words, and this summary does not upgrade it.
+
+The structural fix — storing values inline and tracking order separately — was costed rather than
+waved away: roughly 6.5 to 11.5 hours, because `OrderedMap` is used by eight units that are all
+complete through every gate, and each would need its falsification redone, its differential campaign
+re-run and its benchmark re-measured. It was declined on two grounds. The time is most of what
+remained before the freeze, with no slack. And the benchmark's operation mix is three-quarters
+writes, which have to touch a second structure under any design that keeps insertion order and the
+cursor semantics — so even a successful rewrite would only clearly help the remaining quarter, and
+should not be expected to close a 1.44× gap.
+
 The `heap` figures are the clearest measure of what fidelity costs. The delivered implementation
 runs at 31.7 ns against upstream's 24.3 ns; a bare `Vec<f64>` heap over the identical workload runs
 at 21.7 ns — a separate probe, not part of the table above — so the `RefCell` and comparator
