@@ -60,6 +60,8 @@ conceals a numeric or comparison lint.
 | [docs/BUGS.md](docs/BUGS.md) | Defects identified in the original library, with reproductions |
 | [docs/DECISIONS.md](docs/DECISIONS.md) | Deliberate divergences from upstream behaviour |
 | [docs/modules/](docs/modules/) | 46 per-unit documents covering upstream coverage, gaps, and additions |
+| [docs/modules/evidence/](docs/modules/evidence/) | per-unit gate artifacts: coverage tables, fuzz grammars, falsification records, benchmark figures |
+| [docs/modules/log/](docs/modules/log/) | per-unit working logs — chronological, including superseded figures and refuted hypotheses |
 
 **Bug Catcher submission.** The upstream defects this entry claims are
 [docs/BUGS.md](docs/BUGS.md), in full and in one place: 12 written up individually with

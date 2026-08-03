@@ -53,17 +53,13 @@ value.**
 
 ## What we test in addition
 
-| gap | test |
-|---|---|
-| — (upstream's own case, transcribed) | `linear_probing_matches_the_upstream_suites_own_case` |
-| 1 | `jenkins_int32_matches_node_24_18_1` — 28 inputs against real Node, including `0`, `±1`, `i32::MIN`, `i32::MAX`, `255/256`, `65535/65536` and every key upstream's own test uses |
-| 2 | `the_upstream_pairs_land_in_a_known_layout` — the exact `keys`/`values` arrays upstream's eight pairs produce |
-| 3 | `setting_an_existing_key_overwrites_in_place` |
-| 4 | `the_key_zero_occupies_a_slot_that_still_reads_as_empty` |
-| 5 | `a_zero_length_table_is_refused_rather_than_hung` |
-| 6 | `a_non_power_of_two_table_still_terminates` — `n = 5`, layout pinned against Node |
-| 7 | `round_trips_at_every_power_of_two_size` — `n` from 2 to 64 |
-| 8 | `a_full_table_terminates_from_every_starting_slot` |
+Nine tests, transcribing upstream's own case as a baseline and then closing all eight gaps above:
+28 `jenkinsInt32` outputs checked against real Node (including `0`, `±1`, `i32::MIN`, `i32::MAX`,
+the byte/word boundaries, and every key upstream's own test uses), the exact slot layout upstream's
+eight pairs produce, an overwrite-in-place, the key `0` occupying a slot that still reads as empty,
+a zero-length table refused rather than hung, a non-power-of-two table (`n = 5`) still terminating
+with its layout pinned against Node, round-tripping at every power-of-two size from 2 to 64, and a
+full table terminating from every starting slot. Full test list: `docs/modules/evidence/utils-hash-tables.md`.
 
 The `jenkinsInt32` table is the load-bearing one. It is what makes "matches upstream" an executed
 comparison rather than an assertion, and it is the reason the port can use wrapping `u32` arithmetic
@@ -129,13 +125,13 @@ property upstream checks once at one size, checked at six.
 
 Gate 10 will be recorded against the `_utils` unit once that unit exists.
 
-Gate 6 (falsification), performed through the native suite with the target assertion named first:
-
-| sabotage | must break | result |
-|---|---|---|
-| `jenkinsInt32`'s `(a as i32) >> 19` → `a >> 19` (arithmetic shift becomes logical) | `jenkins_int32_matches_node_24_18_1` | **red**, together with `the_upstream_pairs_land_in_a_known_layout` — which is the point: the layout test is downstream of the hash, so a hash defect moves the data too |
-| `linearProbingGet`'s branch order: `c === 0` tested before `c === key` | `the_key_zero_occupies_a_slot_that_still_reads_as_empty` | **red**, and *only* that test — the seven others do not store `0`, so nothing else could see it |
-
-Both reverted; 9/9 green afterwards. The second sabotage is the more informative of the two: it is a
-one-line reordering that no upstream assertion can distinguish, and it is caught only because the
-port has a test for a key upstream never stores.
+**Falsified (gate 6), performed through the native suite with the target assertion named first.**
+Two sabotages: making `jenkinsInt32`'s final shift logical instead of arithmetic (`(a as i32) >> 19`
+→ `a >> 19`) turns red on `jenkins_int32_matches_node_24_18_1` and, downstream of it, on the layout
+test as well — the layout test depends on the hash, so a hash defect moves the data too. Reordering
+`linearProbingGet`'s branch check (`c === 0` tested before `c === key`) turns red on exactly one
+test, `the_key_zero_occupies_a_slot_that_still_reads_as_empty` — the other seven never store `0`, so
+nothing else could see it. Both reverted; 9/9 green afterwards. Full sabotage-to-assertion table:
+`docs/modules/evidence/utils-hash-tables.md`. The second sabotage is the more informative of the
+two: a one-line reordering no upstream assertion can distinguish, caught only because the port has
+a test for a key upstream never stores.

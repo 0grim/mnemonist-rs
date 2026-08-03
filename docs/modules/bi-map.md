@@ -60,30 +60,23 @@ counter afterwards.
 
 ## What we test in addition
 
-`crates/mnemonist-core/src/structures/bi_map.rs` — 12 tests:
+`crates/mnemonist-core/src/structures/bi_map.rs` — 12 tests, starting with a 1:1 port of all
+twelve upstream blocks as a baseline. They close B-120 in both directions plus the
+healing-on-next-mutation property (gap 1), a `set` that rebinds both sides of the bijection in one
+call (gap 2), `delete` on a missing key (gap 3), reinsertion order (gap 4), the inverse view's full
+method set exercised directly rather than only read through (gap 5), and iteration on an empty map
+(gap 6). Also covered: each of the two-branch rebinding cases in isolation, and that `set` is a
+true no-op — insertion order untouched — when the exact relation already exists. Full
+test-to-gap mapping: `docs/modules/evidence/bi-map.md`.
 
-| Test | Closes gap |
-|---|---|
-| `reproduces_the_upstream_suite` | 1:1 port of all twelve upstream blocks, as a baseline |
-| `clear_desyncs_size_from_inverse_size_b_120` | 1 — B-120, both directions, plus the healing-on-next-mutation property |
-| `clear_called_on_the_inverse_view_also_empties_the_forward_map` | 1 — the underlying-maps half (both empty regardless of direction) |
-| `set_can_rebind_both_sides_of_the_bijection_in_one_call` | 2 |
-| `delete_on_a_missing_key_reports_it_and_changes_nothing` | 3 |
-| `a_deleted_key_reinserted_moves_to_the_end` | 4 |
-| `the_inverse_view_supports_the_full_method_set` | 5 — `set_reverse`/`delete_reverse` exercised directly |
-| `rebinding_a_key_releases_its_old_value_from_the_inverse` | — the two-branch case in isolation |
-| `rebinding_a_value_releases_its_old_key_from_the_forward_map` | — the other two-branch case |
-| `set_is_a_no_op_when_the_exact_relation_already_exists` | — insertion order is untouched on a no-op |
-| `an_empty_map_reports_nothing` | 6 |
-
-Gaps 7 and 8 are stated rather than closed — see Deliberate divergences.
+Gaps 7 and 8 are stated rather than closed — see "Deliberate divergences".
 
 ## Bugs this found
 
 ### B-120 — `BiMap.prototype.clear` resets only ONE of its two size counters
 
-`status: VERIFIED against Node 24.18.1` · found by differential fuzzing (proptest, seed 42), on the
-very first campaign run against this module.
+Verified against Node 24.18.1; found by differential fuzzing on the first campaign run against this
+module.
 
 `BiMap`/`InverseMap` share one `clear`:
 
@@ -110,30 +103,21 @@ The staleness is not permanent — the next `set`/`delete` on either side resync
 from the live maps (`this.size = this.items.size; this.inverse.size = this.inverse.items.size;`),
 which is why the upstream suite, whose only `clear` call is the last thing it does with that map, has
 never seen it. `delete` on an absent key, though, returns `false` **before** touching either counter,
-so a no-op `delete` right after a `clear()` leaves the stale counter stale for one more op — the case
-the second fuzzing round caught (below).
+so a no-op `delete` right after a `clear()` leaves the stale counter stale for one more op.
 
-**Found in two rounds, because the first fix over-corrected:**
+Reproduced faithfully: `size()`/`inverse_size()` are real stored counters (not derived from
+`OrderedMap::len()`, which cannot desync from anything), reset asymmetrically by `clear`, and
+resynchronised by `delete`/`delete_reverse` only when something was actually removed — the second
+of those two conditions took a second fuzzing round to get right; see the log for the round that
+over-corrected and how it was caught. Both regression seeds are committed in
+`crates/difffuzz/proptest-regressions/bi-map.txt`, one of which predates this module's own test
+being wired into `cargo test` — the log records how that was confirmed to be a genuine capture and
+not noise.
 
-1. The initial port derived both `size()`/`inverse_size()` from `OrderedMap::len()`, so `clear()`
-   incidentally zeroed both — a real defect (more correct than upstream). Caught in **18 cases
-   (0.3s)** on `set("a","a"); clear();`.
-2. The fix added two real stored counters, reset asymmetrically — but resynchronised both
-   unconditionally after every `delete` call. Since a no-op `delete` (absent key) is reachable right
-   after a genuine `clear()` and upstream's `del` does not touch either counter on that path, the
-   unconditional resync "healed" the still-stale counter one operation early. Caught in **177 cases
-   (0.3s)** on `set("a","a"); clear(); delete("a");` — the very next campaign run against round 1's
-   fix.
-
-Fixed by resynchronising `delete`/`delete_reverse` only when something was actually removed. Both
-seeds are committed with provenance in `crates/difffuzz/proptest-regressions/bi-map.txt` — see "Fuzz"
-below for what that file's un-labelled first entry turned out to be.
-
-**Strong candidate**, and worth reading past the bug itself: the module doc for
-`mnemonist_core::structures::bi_map` had already analysed and *named* this exact defect in prose,
-including the reproduction above, before the implementation caught up to it. A doc comment
-describing intended behaviour is a claim, not evidence that the code behind it does that — this is
-the reminder this project's own process left for itself.
+**Worth reading past the bug itself:** the module doc for `mnemonist_core::structures::bi_map` had
+already analysed and *named* this exact defect in prose, including the reproduction above, before
+the implementation caught up to it. A doc comment describing intended behaviour is a claim, not
+evidence that the code behind it does that.
 
 ## Deliberate divergences
 
@@ -155,106 +139,40 @@ module=bi-map seed=42  cases=11778  ops=1178193  wall=90.0s  divergences=0
 **1.18M operations, zero divergences**, on the tree with B-120 fixed. Reproduce with
 `target/release/difffuzz --module bi-map --seed 42 --cases 11778`.
 
-* **Op alphabet:** `set(k, v)` (weight 5) · `delete(k)` (3) · `get(k)` (3) · `has(k)` (2) ·
-  `clear()` (1).
-* **Keys and values share one six-item pool**, mixed strings and numbers, so `set` collides with an
-  existing key, an existing value, or both far more often than a wide space would by chance — that
-  collision handling is the entire point of the module. `clear`/`delete` are weighted in because
-  B-120's reinsert-after-delete-and-clear interactions are easiest to reach right after one.
-* **Observable state:** `size`, `items` (the real `Map`), and `inverse` — `{size, items: {$map:
-  [...]}, inverse: {$self: true}}`, because `instance.inverse.inverse === instance` and the oracle's
-  generic `encode()` special-cases exactly that circular reference. No oracle change was needed.
-* **Deliberately excluded:** `instance.inverse.*` called directly (the oracle's `op` dispatch cannot
-  reach a nested `instance.inverse.set(...)`, though every forward op still mutates and every
-  observation still reads both sides, so the bijection invariant is fully checked); cursor lifecycle
-  ops (`bi-map`'s cursor is `default-map`'s `OrderedMap` cursor, already fuzzed there); `forEach`
-  (not yet in this alphabet — see `fuzz/log.txt`).
+Keys and values share one six-item pool, mixed strings and numbers, so `set` collides with an
+existing key, an existing value, or both far more often than a wide space would by chance — that
+collision handling is the entire point of the module. Observable state is `size`, `items`, and
+`inverse` (with the oracle's generic circular-reference handling covering `instance.inverse.inverse
+=== instance` for free). Full grammar and exclusions: `docs/modules/evidence/bi-map.md`.
 
-### The orphan regression seed, resolved
-
-`crates/difffuzz/proptest-regressions/bi-map.txt` existed in the repository **before** the spec had
-ever been compiled or run as part of `cargo test` — an earlier run's process was interrupted, leaving
-the file uncommitted and its meaning unrecorded. Its first line:
-
-```
-cc 70b0df5065314c3bffe40687fe27d07184199cdf317c0a4fc17b89b1b0a1fb64 # shrinks to Program { ctor: [], ops: [Op { name: "set", args: [String("a"), String("a")] }, Op { name: "clear", args: [] }] }
-```
-
-Two things made it worth distrusting rather than trusting on sight: the same hash also appears in
-this repo's `fixed-stack.txt`, `hashed-array-tree.txt` and `static-disjoint-set.txt` corpora, which is
-explained by proptest's own mechanics — the persisted value is the master RNG seed at the case index
-the failure occurred, and that chain advances identically regardless of which module or strategy is
-running, so an unrelated module failing at the same case count under the same top-level `--seed 42`
-produces byte-identical output. And the spec it names had no `#[test]` anywhere in
-`tests/differential.rs` — nothing in the committed history had ever run it as a gate.
-
-Replaying it directly against the current build (`difffuzz --module bi-map --seed 42 --cases 60`)
-answered the question: the seed decodes to exactly the program in its own comment, and that program
-diverges — B-120, round one, verbatim. **It was a real, previously uncaptured divergence, not
-noise** — an earlier run (or an ad hoc run of the already-registered CLI binary) had found B-120
-and never got the chance to report it. The corpus file now carries a provenance block explaining
-both entries; the campaign above is clean against the fixed tree, including both persisted seeds
-replayed first.
-
-### Falsification of the port (gate 6)
-
-**Named first:** `clear_desyncs_size_from_inverse_size_b_120`'s assertion
-`assert_eq!(forward.inverse_size(), 1, "clear() must NOT resync inverse_size — B-120")`.
-
-**The sabotage:** `BiMap::clear` given back the line round 1 above (before the fix) was missing —
-`self.inverse_size = 0;` alongside `self.size = 0;` — reintroducing the exact "more correct than
-upstream" defect fuzzing first caught.
-
-**Confirmed red**, at exactly the named assertion: `left: 0, right: 1`. Reverted; **confirmed green
-again**: all 11 `bi_map` unit tests pass, `cargo test --workspace` clean.
+**Falsified (gate 6):** the sabotage removed `self.inverse_size = 0;` from `clear` — reintroducing
+the exact "more correct than upstream" defect fuzzing first caught. Confirmed red at the named
+assertion in `clear_desyncs_size_from_inverse_size_b_120` (`left: 0, right: 1`); reverted and
+confirmed green again across all 11 `bi_map` unit tests and a clean `cargo test --workspace`.
 
 ### Bench
 
 `bench/results.json` → `modules["bi-map"]`. Methodology: `bench/methodology.md`.
 Host: AMD Ryzen 5 7600X, 12 threads, WSL2, Node 24.18.1, rustc 1.97.1, quiet serial pass.
-Protocol: 3 warmup + 10 measured, interleaved A/B/A/B, batches of K = 1000, 10,000 samples/side.
 
 **`mixed-1e6`** — 1e6 mixed `set`/`get`/`delete` (50/25/25) over a shared 1e6-value domain for both
-key and value (`K = u32`; drawing both from one domain makes `set`'s four-branch constraint
-resolution — B-120's own subject — fire under load rather than only on the cheap "brand new pair"
-path), xorshift32 seed 42:
+key and value (drawing both from one domain makes `set`'s four-branch constraint resolution —
+B-120's own subject — fire under load rather than only on the cheap "brand new pair" path):
+the port is slower on both p50 and p99, and uses far less memory (60.1 MB RSS delta versus 212.8
+MB). **This is the least trustworthy p50 figure in the port**: across six runs it has ranged from
+1.14× to 1.59× slower, where every other module's ratio reproduces to about 1% — read it as
+"slower, by somewhere between a little and a half" rather than a single number. p99 is comparatively
+stable at 1.12× slower. Full table and run history: evidence file.
 
-| metric | port | upstream | |
-|---|---|---|---|
-| p50 ns/op | 118.1 | **102.9** | 1.15× slower |
+A doubled-hashing shape — `link` reading `primary.get(&key)` and then unconditionally writing
+`primary.set(key, value)`, for both `primary` and `secondary` — was found and fixed by updating an
+existing slot in place through `OrderedMap::get_mut` instead. It bought nothing measurable: six
+alternating runs put the port at 169.9 ns before and 164.6 ns after, a 3% gap inside a 10%
+run-to-run spread. The change is kept because one lookup is not worse than two, not because a
+speedup is claimed.
 
-**Re-measured 2026-08-03: 1.51× slower, and this benchmark is the least trustworthy in the port.**
-A whole-suite pass on an idle machine, and a spot-check in isolation afterwards, both put this
-module well below the 1.15× above.
-
-The same doubled-hashing shape `multi-set` had was found here too — `link` reads `primary.get(&key)`
-and then unconditionally writes `primary.set(key, value)`, and does it again for `secondary`, so
-`bi-map` pays it twice per call. It was rewritten to update an existing slot in place through
-`OrderedMap::get_mut`, skipping the closing `set` for whichever side already held the key.
-
-The rewrite needed care in one place. It writes `primary` early and then, in the second block, calls
-`primary.delete(&current_key)`. Were `current_key` ever equal to `key`, that would delete the entry
-just written, where the original's trailing `set` would have re-inserted it. It cannot: the block
-returns early when the slot already holds `key`, so reaching the delete proves `current_key != key`.
-`set_can_rebind_both_sides_of_the_bijection_in_one_call` is exactly that case.
-
-**And it bought nothing measurable.** Six runs alternating the old and new code under identical
-conditions put the port at 169.9 ns before and 164.6 ns after — a 3% gap inside a 10% run-to-run
-spread. The change is kept because one lookup is not worse than two, but no speedup is claimed for
-it, and the mechanism is stated in the source without a magnitude.
-
-Those same six runs are why the figure above carries a caveat the rest of the port's table does not:
-this workload's ratio spanned **1.14× to 1.59×** across them, where every other module reproduces to
-about 1%. Read it as "slower, by somewhere between a little and a half".
-| p99 ns/op | 322.3 | **288.2** | 1.12× slower |
-| RSS delta MB | **60.1** | 212.8 | |
-| structure-only RSS delta MB | **1.4** | 9.8 | |
-| startup ms | **0.6** | 16.5 | 25× (reported separately; not throughput) |
-
-**Another loss, on both p50 and p99** — stated plainly alongside `default-map`'s. **Unconfirmed
-cause:** `BiMap::set` maintains two `OrderedMap`s in lockstep (`items` and `inverse`) and, on the
-rebinding paths this workload's shared key/value domain deliberately exercises, does up to two
-extra `delete` calls beyond the two `set`s every relation needs — a real, structural reason this
-module could cost more per op than a single `Map`. That is a plausible account, not a confirmed
-one: it has not been checked against a metric (e.g. counting how often each of `set`'s four branches
+The base regression's cause is unconfirmed: `BiMap::set` maintains two `OrderedMap`s in lockstep
+and, on the rebinding paths this workload's shared key/value domain deliberately exercises, does up
+to two extra `delete` calls beyond the two `set`s every relation needs. Plausible, not confirmed —
+it has not been checked against a metric (e.g. counting how often each of `set`'s four branches
 actually fires in this workload) that would let it be falsified rather than merely asserted.
