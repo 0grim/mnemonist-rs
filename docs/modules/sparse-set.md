@@ -8,9 +8,8 @@ Port: `crates/mnemonist-core/src/structures/sparse_set.rs`,
 Bridge: `crates/mnemonist-napi/src/sparse_set.rs`, `crates/mnemonist-napi/src/cursor.rs`.
 
 This is the first module in the port with a real iterator surface, which is why it was chosen to
-land immediately after the cursor machinery. It is also, unexpectedly,
-the module that makes the `undefined` shrink window (see D-09, below) reachable through the **public API** in
-two calls — see below.
+land immediately after the cursor machinery. It is also, unexpectedly, the module that makes the
+`undefined` shrink window reachable through the **public API** in two calls — see D-09, below.
 
 ---
 
@@ -151,7 +150,7 @@ The **differential fuzzer** then covers gaps 1–16 continuously rather than at 
 Both backing arrays are in the observable-state set, so the swap in `delete` and every truncating
 store are compared slot for slot after *every* operation of *every* generated program; roughly one
 generated member in eight is out of range; and the grammar interleaves cursor creation and stepping
-with mutation, which is what D-21 has asked for from the start and what no previous module had the
+with mutation, which is what this class of grammar needs and what no previous module had the
 surface to provide.
 
 **Still untested, stated rather than glossed:** gap 20 (`inspect`, not bridged — a Node display
@@ -235,7 +234,7 @@ cases is a batch that really generated.
 
 **What the fuzzer found: nothing new.** Two campaigns, 2.94 M operations, zero divergences. As with
 `static-disjoint-set`, that is the expected outcome — a faithful port reproduces upstream's bugs,
-so differential fuzzing structurally cannot find them (D-33). B-8, B-9 and B-10 were all found by
+so differential fuzzing structurally cannot find them. B-8, B-9 and B-10 were all found by
 reading the file statement by statement and confirming each step against Node. What the fuzzer is
 for is the other direction, and it was proven to work in that direction twice (see Fuzz, below).
 
@@ -298,7 +297,7 @@ side holds, `$next` steps it against whatever the set has become since, and `$sp
 cursor every time. `$spread` is separate from `$next` on purpose: the factory half of D-07 is only
 observable by comparing an op that must restart against one that must not, and folding them
 together would leave every non-interleaved program still passing. This is the first grammar in the
-repo that satisfies D-21.
+repo that interleaves cursor stepping with mutation throughout.
 
 **The fuzzer was falsified twice, once per half of the grammar.** A fuzzer that has never been seen
 to fail is just a second green light — the lesson gate 6 exists for, applied to the fuzzer itself.

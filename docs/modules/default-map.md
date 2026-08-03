@@ -262,7 +262,7 @@ just a second green light**, and that applies to the tests as much as to the gat
 
 **What the fuzzer found in the port: nothing.** Two campaigns, 4.37 M operations, zero divergences.
 As with `sparse-set`, that is the expected outcome — a faithful port reproduces upstream's bugs, so
-differential fuzzing structurally cannot find them (D-33). B-40 was found by reading the file line
+differential fuzzing structurally cannot find them. B-40 was found by reading the file line
 by line and confirming each step against Node. What the fuzzer is for is the other direction, and
 here it is *sharper than the original suite by a wide margin*: see "Fuzz".
 

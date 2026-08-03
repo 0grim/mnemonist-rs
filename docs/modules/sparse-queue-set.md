@@ -250,7 +250,7 @@ behaviour are `SparseSet`'s. The `sparse[undefined]` expando of B-10 reappears i
 `capacity === 0`, where `member` is `undefined`.
 
 **What the fuzzer found: nothing new.** Two campaigns, 3.36 M operations, zero divergences — the
-expected outcome for a faithful port (D-33), and the third module in a row to produce it. B-12,
+expected outcome for a faithful port, and the third module in a row to produce it. B-12,
 B-13 and B-14 were all found by reading the file statement by statement and confirming each step
 against Node. What the fuzzer is for is the other direction, and it was proven to work in that
 direction twice (see Fuzz, below).

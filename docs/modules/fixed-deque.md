@@ -170,7 +170,7 @@ class: `FixedDeque.from(new Set([1,2,3]), Array, 3)` is
 `TypeError: iterables.forEach is not a function`.
 
 **What the fuzzer found: nothing new.** Two campaigns, zero divergences — the expected outcome
-(D-33). Both bugs were found by reading the file statement by statement against Node.
+. Both bugs were found by reading the file statement by statement against Node.
 
 ## Deliberate divergences
 

@@ -207,7 +207,7 @@ the signed `size`, the `i64` indices, `array` exposed as a copy, the strict `val
 |---|---|---|
 | — | **The growth policy is `Box<dyn Fn(f64) -> Option<f64>>`.** | `None` is upstream's `typeof newCapacity !== 'number'`, which a JS policy really can produce and which `applyPolicy` explicitly checks for. `f64` in and out because a policy result of `40.5` is accepted upstream and rounded to a word. |
 | — | **A throwing JS policy is re-raised by the bridge, not by the core.** | The core's `Option` has nowhere to put an exception, so `JsPolicy` parks it in a `RefCell` and the calling method prefers it over the core's classification. Without that, a throwing policy would surface as "policy returned an invalid value" — a different error from a different place. |
-| — | **A policy returning `NaN` or `Infinity` is refused.** | Upstream's guard is `typeof !== 'number' \|\| < 0`, and `NaN` passes both because every `NaN` comparison is false. It then flows into `Math.ceil(NaN / 32) * 32` and `new Uint32Array(NaN)`. There is no honest Rust reproduction of an allocation of `NaN` elements, so it raises instead — the same call D-37 makes for `StaticDisjointSet`'s out-of-range reads. |
+| — | **A policy returning `NaN` or `Infinity` is refused.** | Upstream's guard is `typeof !== 'number' \|\| < 0`, and `NaN` passes both because every `NaN` comparison is false. It then flows into `Math.ceil(NaN / 32) * 32` and `new Uint32Array(NaN)`. There is no honest Rust reproduction of an allocation of `NaN` elements, so it raises instead — the same call made for `StaticDisjointSet`'s out-of-range reads. |
 | — | **`BitVector` is not `Clone`-equivalent across policies.** | `Box<dyn Fn>` cannot be cloned, so `Clone` copies the bits and the capacity and resets the policy to the default. Nothing upstream clones a vector, and silently sharing a policy would be worse than a documented reset. |
 | — | **The constructor's `initialLength \|\| initialCapacity` union is resolved in the bridge.** | Upstream reads `initialLength \|\| initialCapacity \|\| 0`, so `{initialCapacity: 30}` sets the **length**. The core takes a length and nothing else; the quirk is reproduced at the boundary where the JS object exists, and pinned by a test on the arithmetic that follows from it. |
 
@@ -250,7 +250,7 @@ They are covered by native tests in `mnemonist-core` instead (`a_policy_can_fail
 `a_non_integer_policy_result_is_rounded_up_to_a_word`). Stated explicitly because a silently
 narrowed grammar reads as "we covered everything" when it did not.
 
-**The fuzzer was falsified before it was trusted** (D-32). Sabotage: `pop` made to clear the bit it
+**The fuzzer was falsified before it was trusted**. Sabotage: `pop` made to clear the bit it
 returns and to decrement `size` — which is what `pop` is supposed to do, and the single most
 plausible repair anyone would make to this module. Caught in **1,075 cases (1.0 s)** and shrunk from
 200 ops to **two**:

@@ -249,7 +249,7 @@ port models the value store as two shapes rather than one width, and the reason 
 generates all four constructors.
 
 **What the fuzzer found: nothing new.** Two campaigns, 2.65 M operations, zero divergences —
-the expected outcome for a faithful port (D-33), and the same result as the two previous modules.
+the expected outcome for a faithful port, and the same result as the two previous modules.
 B-11 was found by reading `delete` and asking what happened to the third array. What the fuzzer is
 for is the other direction, and it was proven to work in that direction twice (see Fuzz, below) —
 including on B-11 itself.

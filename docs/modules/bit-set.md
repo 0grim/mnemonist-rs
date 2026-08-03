@@ -248,7 +248,7 @@ Two campaigns, two seeds, **3.92 M operations, zero divergences**. Reproduce wit
 separate closures upstream, so fuzzing only one would leave the other unchecked. `clear()` is in the
 alphabet *because* it interacts with an open cursor.
 
-**The fuzzer was falsified before it was trusted** (D-32). Sabotage: `reset` given the `>>> 0`
+**The fuzzer was falsified before it was trusted**. Sabotage: `reset` given the `>>> 0`
 upstream forgot — B-17 *fixed*, which is the single most plausible thing a future cleanup does to
 this file. Caught in **1,325 cases (2.0 s)** and shrunk from 200 ops to **two**:
 

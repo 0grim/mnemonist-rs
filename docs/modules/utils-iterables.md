@@ -121,7 +121,7 @@ sharpest is gap 11 — `toArray({length: 5})` returning `[5, <4 empty items>]`, 
 
 | # | Divergence | Why |
 |---|---|---|
-| D-60 | **B-2 is reproduced, not repaired** (resolves the PROPOSED D-17). | The array is really allocated by calling the running realm's `Array` constructor rather than by `napi_create_array_with_length`, so the holes are real holes and the `RangeError` is V8's own. The two calls differ exactly where this module is interesting: `napi_create_array_with_length(-1)` does not throw. |
+| D-60 | **B-2 is reproduced, not repaired**. | The array is really allocated by calling the running realm's `Array` constructor rather than by `napi_create_array_with_length`, so the holes are real holes and the `RangeError` is V8's own. The two calls differ exactly where this module is interesting: `napi_create_array_with_length(-1)` does not throw. |
 | D-18 | **`guessLength` trusts `.length` then `.size` without validating.** | Confirmed rather than changed; it is what feeds D-60. |
 | D-39 | **`guessLength` returns `Either<f64, Undefined>`, not `Option<f64>`.** | napi renders `None` as `null`, and upstream returns a bare `undefined`. |
 | — | **`toArrayWithIndices` returns a real JS array**, built with `napi_create_array_with_length`, not a plain object with `"0"`/`"1"` keys. | Callers destructure it. |

@@ -173,7 +173,7 @@ therefore leaves a `CircularBuffer` in a state its own `push` can never produce 
 than a defect.
 
 **What the fuzzer found: nothing new.** Two campaigns, 3.10 M operations, zero divergences — the
-expected outcome (D-33).
+expected outcome.
 
 ## Deliberate divergences
 

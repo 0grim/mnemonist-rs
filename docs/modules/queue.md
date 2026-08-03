@@ -133,7 +133,8 @@ Rust.
 statement by statement against Node turned up nothing.
 
 **What it did surface is the divergence between the two `values()` implementations**, which is
-recorded as B-6's mirror image rather than as a bug: `Stack` freezes `items.length` and `Queue`
+recorded as the mirror image of `Stack`'s own case rather than as a bug: `Stack` freezes
+`items.length` and `Queue`
 does not, in code that is otherwise identical. Neither is wrong; they are simply different, and the
 difference is observable in three lines:
 
@@ -153,7 +154,7 @@ The three **port** defects found while bridging this module — the `noalias` ho
 not fix.
 
 **What the fuzzer found: nothing new.** Two campaigns, 4.13 M operations, zero divergences — the
-expected outcome for a faithful port (D-33).
+expected outcome for a faithful port.
 
 ## Deliberate divergences
 

@@ -200,10 +200,11 @@ Two adjacent values of `n` disagree about which element is smallest.
 `status: all fixed, all pinned by tests/boundary/heap.js`
 
 This is the most important paragraph in the document, because the unit had 21 upstream assertions,
-47 boundary cases, three fuzz campaigns and 5 M operations all green when they were found. It
-belongs alongside `docs/METHODOLOGY.md`'s "What these instruments cannot see" section, which covers
-this material — and, like B-31, it was found by *a second, independent
-look* rather than by the machinery.
+47 boundary cases, three fuzz campaigns and 5 M operations all green when they were found. It is
+the sixth occasion in this port where a confident green signal turned out to be verifying something
+other than what was believed — the category `docs/METHODOLOGY.md`'s "What these instruments cannot
+see" collects — and, like B-31, it was found by *a second, independent look* rather than by the
+machinery.
 
 *1 — a `RefCell` borrow held across a call into JavaScript, which aborted the process.*
 `Heap::clear` was written as
@@ -269,8 +270,8 @@ deletes from its exports (D-75).
 the constructor and called it bare, which died with `Failed to create instance of class`. Fixed by
 binding the receiver before deleting the temporary property.
 
-**What the fuzzer found: nothing new**, which is the expected outcome and the same statement D-33
-makes. The oracle *is* upstream, so a faithfully reproduced bug is by definition not a divergence.
+**What the fuzzer found: nothing new**, which is the expected outcome for a faithful port. The
+oracle *is* upstream, so a faithfully reproduced bug is by definition not a divergence.
 All ten of B-70…B-79 were found by reading the two files statement by statement and confirming each
 against Node. What the fuzzer is for is drift, and it was proven to work in that direction — see
 below.

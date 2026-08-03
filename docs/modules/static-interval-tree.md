@@ -160,7 +160,7 @@ Two campaigns, two seeds, **1,454,763 operations, zero divergences**. Reproduce 
   for why that carries the whole signal past construction.
 
 **A harness bug this campaign's own design surfaced, fixed before trusting any result from it**
-(D-103, shared with `vector`): query results are `Vec<(f64, f64)>` pairs built from generated
+(shared with `vector`): query results are `Vec<(f64, f64)>` pairs built from generated
 `i32` bounds carried as `f64`. `serde_json`'s default float parser is not always correctly rounded
 for the oracle's JSON responses; the same `float_roundtrip` fix that `vector` needed applies here
 too, since this module's query results round-trip through the identical wire protocol. Confirmed

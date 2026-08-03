@@ -206,11 +206,11 @@ failure and would abort the campaign rather than being reported — and that the
 on both sides. `fuzz/oracle.js` now does. Sabotage B below is the proof that it works, because it is
 a divergence *in the throwing itself*.
 
-**The fuzzer was falsified twice, once per defect** (D-32). Both sabotages were reverted and both
+**The fuzzer was falsified twice, once per defect**. Both sabotages were reverted and both
 seeds are committed with provenance in
 `crates/difffuzz/proptest-regressions/hashed-array-tree.txt`. Note that both make the port strictly
 *more correct* than upstream, which is the only direction differential fuzzing can work in on a
-bug-for-bug port (D-33) — and this module has two independent defects to demonstrate it with.
+bug-for-bug port — and this module has two independent defects to demonstrate it with.
 
 **A — `pop` reading the right block.** The obvious cleanup: `blocks[length >> blockMask]` instead of
 `blocks[blocks.length - 1]`. Caught in **1,228 cases (1.8 s)**, shrunk from 200 ops to five:

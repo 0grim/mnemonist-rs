@@ -211,7 +211,7 @@ instruments cannot see" section: the number was large, the run took the full 120
 nothing looked wrong.
 
 Throughput is ~11,700 op/s including a full `mapping()` + `compile()` comparison after every single
-op, which is the persistent-oracle decision (D-23) paying off: at one `node` spawn per op the same
+op, which is the persistent-oracle decision paying off: at one `node` spawn per op the same
 campaign would have taken roughly 16 hours.
 
 * **Op alphabet:** `union(x, y)` (weight 3), `find(x)`, `connected(x, y)`.

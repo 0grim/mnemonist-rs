@@ -217,14 +217,14 @@ Two campaigns, two seeds, **1,454,078 operations, zero divergences**. Reproduce 
   backing store, capacity region included, encoded exactly as the oracle encodes a JS typed array.
   `array` is the point: without it, B-101 and B-102 are only checkable indirectly through `get`.
 
-**A harness bug this campaign's own design surfaced, fixed before trusting any result from it**
-(D-103): the oracle's response line is a full-precision JSON number for every non-truncating
+**A harness bug this campaign's own design surfaced, fixed before trusting any result from it.**
+The oracle's response line is a full-precision JSON number for every non-truncating
 `Float64Array` value this grammar generates. `serde_json`'s default float parser is not always
 correctly rounded for such values — a scratch test parsing the literal `"38403.356486892444"`
 recovered a value one ULP away from what Rust's own `f64::from_str` gives for the same text. The
 wire log showed the port and the oracle's raw response text agreeing exactly; only the *parsed*
 `Value` used for the comparison disagreed. Enabling `serde_json`'s `float_roundtrip` feature
-(workspace `Cargo.toml`) fixed it — the same class of finding as D-78, a harness defect that
+(workspace `Cargo.toml`) fixed it — the same class of finding: a harness defect that
 manufactures divergences rather than catching real ones. `vector` is the first module whose
 grammar generates `f64` values wide enough to land in the affected range.
 

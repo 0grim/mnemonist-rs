@@ -101,7 +101,7 @@ Everything below is reachable through the public API and never exercised by the 
 | `reproduces_the_upstream_suite` | 1:1 port of all eleven upstream blocks, as a baseline |
 | `push_returns_the_new_size` | 1 |
 | `popping_an_empty_stack_does_not_move_the_size` | 2 |
-| `size_and_the_backing_length_track_each_other` | D-19/B-6 — the two quantities upstream keeps separate |
+| `size_and_the_backing_length_track_each_other` | the two quantities upstream keeps separate |
 | `cursors_do_not_restart_but_the_stack_can_be_walked_again` | 8, 9 — both levels of D-07 in one test |
 | `a_push_during_iteration_is_not_visible_to_the_cursor` | 6 |
 | `a_pop_during_iteration_opens_a_gap_at_the_top_of_the_walk` | 5 — the `undefined` window |
@@ -213,7 +213,7 @@ both places rather than quietly dropped.
 
 **What the fuzzer found: nothing new.** Two campaigns, 4.40 M operations, zero divergences — the
 expected outcome, since a faithful port reproduces upstream's bugs and differential fuzzing
-structurally cannot find them (D-33). What it is for is the other direction, and it was proven in
+structurally cannot find them. What it is for is the other direction, and it was proven in
 that direction below.
 
 ## Deliberate divergences
@@ -229,7 +229,7 @@ that direction below.
 | D-06 | **No collection implements `IntoIterator`.** | It would hand out a fresh iterator per `for` loop and silently restart. Collections expose `values()`; the `Cursor` is the stateful thing. |
 | D-07 | **`Symbol.iterator` is installed from Rust, not from the shim.** | The factory half is the one napi does not provide. A shim that added semantics would mean the addon was incomplete without the test harness. |
 | D-03 | **`forEach` lives in `mnemonist-napi`, not core.** | Every one of the 30 call sites operates on a user-supplied JS value inside `.from()`. Core takes `IntoIterator`; a Rust caller never meets the dispatch. |
-| — | **`size` and `items.length` are kept as separate quantities.** | They coincide on every public path, but upstream tracks them separately and `values()` is defined against the second (D-19/B-6). |
+| — | **`size` and `items.length` are kept as separate quantities.** | They coincide on every public path, but upstream tracks them separately and `values()` is defined against the second. |
 | — | **`inspect()` is not ported.** | A Node display convenience with no upstream assertion and no Rust equivalent. |
 | — | **`forEach(cb, undefined)` binds `this` to the stack.** | Upstream keys off `arguments.length > 1`, which napi's typed signature cannot see. The omitted-argument case — the only one the original suite uses — is exact, and passing a real scope object is exact. |
 
