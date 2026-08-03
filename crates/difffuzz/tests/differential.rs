@@ -214,10 +214,25 @@ fn sparse_queue_set_matches_upstream() {
 /// version does not terminate under a case budget it can never reach.
 #[test]
 fn every_batch_generates_new_cases() {
-    const NO_CORPUS: &str = "/tmp/difffuzz-batch-regression-test-corpus.txt";
     const BATCH: u32 = 8;
 
-    let _ = std::fs::remove_file(NO_CORPUS);
+    // Per-process, not a fixed `/tmp` name. The point of this path is that
+    // nothing is there to replay, and a name shared between two concurrent
+    // test binaries -- two checkouts, two users, or one machine running the
+    // suite twice at once -- is a path either of them may be writing to. A
+    // unique name can only make the corpus emptier, never fuller, so it
+    // strengthens the assertion rather than relaxing it.
+    let no_corpus = std::env::temp_dir().join(format!(
+        "difffuzz-batch-regression-{}.txt",
+        std::process::id()
+    ));
+    // `Campaign::regressions` is `&'static str`, and this one is only known at
+    // run time. Leaking a single path in a test process that is about to exit
+    // is cheaper than widening the field's lifetime across every call site.
+    let no_corpus: &'static str =
+        Box::leak(no_corpus.to_string_lossy().into_owned().into_boxed_str());
+
+    let _ = std::fs::remove_file(no_corpus);
 
     // The deadline escalates instead of being a single fixed budget, because a
     // 2-second wall clock is a proxy for "at least two batches ran" and the
@@ -240,7 +255,7 @@ fn every_batch_generates_new_cases() {
             cases: None,
             duration: Some(Duration::from_secs(seconds)),
             batch: BATCH,
-            regressions: NO_CORPUS,
+            regressions: no_corpus,
         };
 
         let attempt = difffuzz::run(&StaticDisjointSetSpec, &campaign)

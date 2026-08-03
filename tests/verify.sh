@@ -110,7 +110,14 @@ if TEST_OUT=$(cargo test 2>&1); then
   ok "gate 7  Rust native tests pass"
 else
   bad "gate 7  Rust native tests FAILING"
+  # The whole thing, not five grepped lines. A gate 7 failure on 2026-08-03
+  # named its failing tests, and the five-line summary was the only record --
+  # then the caller piped this script through `tail` and even that was lost.
+  # The failure has never reproduced and is still unexplained. Next time there
+  # is a transcript.
+  printf '%s\n' "$TEST_OUT" > tests/.verify-gate7.log
   note "$(echo "$TEST_OUT" | grep -E '^test .* FAILED|^error|panicked at' | head -5)"
+  note "full transcript: tests/.verify-gate7.log -- read it BEFORE re-running"
   note "re-run before assuming a flake; a green second attempt is not a passing gate"
 fi
 

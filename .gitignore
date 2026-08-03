@@ -9,3 +9,4 @@ bench/raw/
 # Agent worktrees live inside the repo; never commit them as gitlinks
 /.claude/worktrees/
 /tests/.verify-last.log
+/tests/.verify-gate7.log

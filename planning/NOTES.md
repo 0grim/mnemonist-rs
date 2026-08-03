@@ -2874,3 +2874,35 @@ survive. The log deliberately does **not** live under `tests/.work/` — gate 4 
 invocation, and the first version of the log came out five lines long because of it. That was
 a smaller instance of the same failure the log exists to prevent, caught by checking the log's
 line count against the known check count (259) rather than by looking at it and seeing text.
+
+### Follow-up investigation, same day
+
+Ran the standing suspect down rather than leaving it named.
+
+**`cargo test` × 8, idle machine: 8 green.** No flake.
+
+**`cargo test` under 12 spinning cores (the reproduction the test's own comment
+prescribes — "reproducible on demand by running this suite against 12 busy cores"):
+green.** So the escalating-deadline fix in `every_batch_generates_new_cases` holds under
+exactly the contention that used to break it. That test is **no longer the standing
+suspect**; the earlier note naming it was inherited, not evidence.
+
+What remains plausible and untested: `difffuzz::run` starts each campaign with
+`Command::new("node")` (`crates/difffuzz/src/oracle.rs:87`), and a spawn failure becomes
+`.expect("oracle must be reachable…")` — a panic, indistinguishable in the summary from a
+divergence. `cargo test` runs the integration binary's tests across all 12 threads, each
+holding its own Node child. Two subagents had been running heavy work shortly before the
+failing invocation. Transient spawn failure under process or memory pressure fits every
+observation, including non-reproducibility on an idle machine. **Not confirmed** — deliberately
+not chased by starving the machine on freeze day.
+
+**Two changes, neither of which pretends to be a fix:**
+
+1. Gate 7 now writes the *entire* `cargo test` output to `tests/.verify-gate7.log` on failure,
+   not five grepped lines. A recurrence leaves a transcript.
+2. `every_batch_generates_new_cases` used the fixed path
+   `/tmp/difffuzz-batch-regression-test-corpus.txt`, which two concurrent test binaries — two
+   checkouts, two users, or one machine running the suite twice, all of which happened during
+   this session — would share, one removing it while the other writes. Now per-process. This
+   cannot weaken the assertion: the path exists to hold *no* corpus, and a unique name can only
+   make it emptier.
