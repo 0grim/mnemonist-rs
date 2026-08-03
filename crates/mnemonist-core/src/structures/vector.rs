@@ -149,7 +149,7 @@ pub const MISSING_ARRAY_CLASS: &str =
     "mnemonist/vector: expecting at least a byte array constructor.";
 
 /// Upstream's two `applyPolicy` throws, one `set` throw, and one refusal of
-/// our own for a policy result no allocation can honour.
+/// this port's own for a policy result no allocation can honour.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Error {
     /// `policy returned an invalid value (expecting a positive integer).`

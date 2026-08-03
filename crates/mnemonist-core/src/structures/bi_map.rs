@@ -61,8 +61,8 @@
 //! this.inverse.items.size;` touches the same two properties whether `this`
 //! is the `BiMap` or its `InverseMap`, because `this.items`/`this.inverse`
 //! mean the complementary thing from either side. So neither of those two
-//! methods can ever desynchronise the pair; a first draft of this module
-//! claimed exactly that and was wrong about why.
+//! methods can ever desynchronise the pair — `clear` is the only method that
+//! can, and the next section is why.
 //!
 //! `clear` cannot make the same claim:
 //!

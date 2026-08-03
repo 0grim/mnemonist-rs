@@ -26,8 +26,7 @@
 //!   Confirmed against Node 24.18.1.
 //! * `disjunct` decides what to add **while `A` still holds the intersection**,
 //!   and deletes afterwards. See [`disjunct`] for what that does and does not
-//!   buy — the first draft of this note claimed more than is true, and a
-//!   sabotage that reordered only the *writes* stayed green.
+//!   buy: the *decision* order is observable, the *write* order is not.
 //! * `Set.add` on a member that is already present does **not** move it, which
 //!   is [`crate::map::OrderedMap::set`]'s behaviour and the reason this is
 //!   built on it rather than on a fresh structure.
@@ -354,12 +353,12 @@ pub fn intersect<T: Hash + Eq + Clone>(a: &mut OrderedSet<T>, b: &OrderedSet<T>)
 /// `A ∩ B` passes that test, gets re-added, and the answer becomes `A ∪ B`.
 /// That sabotage turns `test/set.js`'s `#.disjunct` block red.
 ///
-/// The *write* order buys nothing observable, which is not what an earlier
-/// draft of this doc claimed. Reordering only the writes — deleting first while
-/// still testing against the original `A` — leaves both the result and its
-/// order unchanged, because a member of `B \ A` is appended at the end either
-/// way and a member of `A ∩ B` is gone either way. Sabotaged and confirmed:
-/// `test/set.js` stayed at 16 passing, and so did `tests/boundary/set.js`.
+/// The *write* order, by contrast, buys nothing observable. Reordering only
+/// the writes — deleting first while still testing against the original `A` —
+/// leaves both the result and its order unchanged, because a member of
+/// `B \ A` is appended at the end either way and a member of `A ∩ B` is gone
+/// either way. Sabotaged and confirmed: `test/set.js` stayed at 16 passing,
+/// and so did `tests/boundary/set.js`.
 ///
 /// The trace is still emitted add-then-delete, because that is the sequence of
 /// calls upstream makes and the bridge replays them onto a live JavaScript

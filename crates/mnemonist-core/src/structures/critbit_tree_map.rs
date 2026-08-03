@@ -774,19 +774,18 @@ mod tests {
         assert!(seen.is_empty());
     }
 
-    /// A port bug (not upstream's), caught by this module's own
-    /// differential fuzzer within its first few generated operations,
-    /// minimised to exactly this sequence: `set("a"); delete("a");
-    /// set("a")`. `set`'s "tree is empty" fast path used to hardcode
-    /// `root = external_ptr(0)`, which is only correct the very first time
-    /// it runs -- upstream's own equivalent branch builds a brand new
-    /// object and has no index at all to get wrong, but this port's
-    /// append-only arena (see the module docs) had already pushed the
-    /// first key at index 0 and left it there, orphaned, after the
-    /// `delete`. The second `set` pushed its key at index 1 while `root`
-    /// kept pointing at the stale, already-`take`n index 0, and
-    /// `CritBitTreeMap::root`'s own "always holds a value" panic caught
-    /// the mismatch immediately.
+    /// Pins the arena index `set`'s "tree is empty" fast path must publish as
+    /// the new `root`, on the sequence `set("a"); delete("a"); set("a")` --
+    /// minimised from this module's own differential fuzzer, which reached it
+    /// within its first few generated operations.
+    ///
+    /// Upstream's equivalent branch builds a brand new object and so has no
+    /// index to get wrong. This port's arena is append-only (see the module
+    /// docs): the first key sits at index 0 and stays there, orphaned, after
+    /// the `delete`, so the second `set` pushes its key at index 1. A fast
+    /// path that hardcoded `root = external_ptr(0)` would leave `root`
+    /// pointing at the stale, already-`take`n slot, which
+    /// `CritBitTreeMap::root`'s "always holds a value" panic reports.
     #[test]
     fn setting_again_after_deleting_back_to_empty_does_not_point_root_at_a_stale_slot() {
         let mut tree: CritBitTreeMap<i32> = CritBitTreeMap::new();

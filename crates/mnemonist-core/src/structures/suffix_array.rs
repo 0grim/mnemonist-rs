@@ -32,7 +32,7 @@
 //! answer can be wrong. `new SuffixArray('aaaaaaa').array` is
 //! `[6, 5, 3, 0, 2, 4, 1]`; the correct answer is `[6, 5, 4, 3, 2, 1, 0]`.
 //!
-//! Neither is "our" bug to fix. DESIGN.md's porting rule is explicit that a
+//! Neither is this port's bug to fix. DESIGN.md's porting rule is explicit that a
 //! divergence in which the port is *more* correct is a defect in the port.
 //!
 //! # Everything is read through [`Sparse`], and that is load-bearing

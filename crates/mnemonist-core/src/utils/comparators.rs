@@ -364,10 +364,10 @@ impl<E, T: Relational<E>> Comparator<Vec<T>, E> for TupleComparator {
 ///
 /// `kd-tree.rs`'s `k_nearest_neighbors`/`linear_k_nearest_neighbors` build a
 /// fresh tuple for every node visited during a query — `[dist, visited,
-/// pivot]` or `[dist, i]`, always exactly `N` long — and previously boxed each
-/// one as a `Vec<f64>`, which a `Store::get`/`set` clone (every sift step)
-/// turned into a fresh heap allocation. `[T; N]` is `Copy` for `T: Copy`, so
-/// the same clone is a stack copy instead. Behaviourally this impl is
+/// pivot]` or `[dist, i]`, always exactly `N` long. Boxing each one as a
+/// `Vec<f64>` would make the `Store::get`/`set` clone on every sift step a
+/// fresh heap allocation; `[T; N]` is `Copy` for `T: Copy`, so the same clone
+/// is a stack copy. Behaviourally this impl is
 /// identical to the `Vec<T>` one: both tuples here are always exactly `N`
 /// elements, matching the comparator's own `size`, so the "shorter than `N`"
 /// case the `Vec` impl's doc comment calls out is never reached by either.

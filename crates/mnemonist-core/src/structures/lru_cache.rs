@@ -372,16 +372,15 @@ impl<IK: Hash + Eq, K, V> LruCache<IK, K, V> {
     /// `~/upstream-mnemonist/lru-cache-with-delete.js`, where both simply
     /// splice the linked list and record the hole. A pointer's slot is only
     /// ever overwritten by [`LruCache::insert_new`], on reuse. So a stale
-    /// `Some` is left behind on purpose: it is what upstream's own `this.K`/
-    /// `this.V` arrays hold too, and it is what fixed a real port bug (see the
-    /// module docs above and `docs/modules/lru-cache.md`, "Bugs this
-    /// found") — an in-flight `keys()`/`values()`/`entries()`/`forEach` walk
-    /// whose frozen bound had not yet reached this pointer used to panic on
-    /// the `.expect` in [`LruCache::slot`] the moment `delete`/`remove` ran
-    /// underneath it, because the slot the walk was about to visit had just
-    /// been nulled. Upstream never nulls it, so it just returns the stale
-    /// (soon-to-be-overwritten-or-not) key/value instead of throwing anything
-    /// at all — reproduced bug-for-bug here rather than "fixed" a second time.
+    /// `Some` is left behind on purpose, and it is load-bearing: an in-flight
+    /// `keys()`/`values()`/`entries()`/`forEach` walk whose frozen bound has
+    /// not yet reached this pointer will still read the slot after a
+    /// `delete`/`remove` runs underneath it. Nulling it would make
+    /// [`LruCache::slot`]'s `.expect` fire; upstream never nulls it, and so
+    /// returns the stale (soon to be overwritten, or not) key/value instead of
+    /// throwing anything at all. Reproduced bug-for-bug rather than corrected.
+    /// See the module docs and `docs/modules/lru-cache.md`, "Bugs this
+    /// found".
     fn unlink(&mut self, pointer: usize) {
         if self.size == 1 {
             self.size = 0;
@@ -891,17 +890,16 @@ mod tests {
         assert_eq!(values, vec![2, 1]);
     }
 
-    /// A port-only defect, found by reading (not fuzzing) before the fuzz
-    /// grammar existed at all, and fixed before it could ever have run: an
-    /// in-flight `entries()`/`keys()`/`values()` walk whose frozen `size`
-    /// bound has not yet reached a pointer, when `delete` unlinks exactly that
-    /// pointer, used to panic — `unlink` nulled `self.keys[pointer]`, and the
-    /// walk's `.expect("a pointer reachable ... is always live")` then found
-    /// `None`. Upstream's `delete` never touches `this.K`/`this.V` (confirmed
-    /// against `~/upstream-mnemonist/lru-cache-with-delete.js`), so it just
-    /// returns the *stale* key/value at that position instead of throwing
-    /// anything — this test is the same three-op program that panicked before
-    /// the fix, now pinned to upstream's actual (unglamorous) answer.
+    /// Pins the one interleaving where [`LruCache::unlink`]'s refusal to null
+    /// `self.keys[pointer]` is observable: an in-flight
+    /// `entries()`/`keys()`/`values()` walk whose frozen `size` bound has not
+    /// yet reached a pointer, and a `delete` that unlinks exactly that
+    /// pointer. Nulling the slot would make the walk's `.expect("a pointer
+    /// reachable ... is always live")` fire. Upstream's `delete` never touches
+    /// `this.K`/`this.V` (confirmed against
+    /// `~/upstream-mnemonist/lru-cache-with-delete.js`), so it yields the
+    /// *stale* key/value at that position instead of throwing anything, and
+    /// that unglamorous answer is what this pins.
     #[test]
     fn a_delete_of_the_walks_next_unvisited_pointer_yields_stale_data_not_a_panic() {
         let mut cache = cache(4);

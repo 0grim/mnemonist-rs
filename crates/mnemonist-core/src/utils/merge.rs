@@ -182,10 +182,10 @@ pub fn union_unique_two<T: Clone + PartialOrd>(a: &[T], b: &[T]) -> Vec<T> {
     // unlike the overlap and filling loops below. It relies on the precondition
     // that `a` is already internally unique; when a caller violates that (an
     // "awkward value" no test here or upstream reaches), consecutive
-    // duplicates in this prefix survive into the output. A first draft of
-    // this port called `push_unique` here too, which is *more correct* than
-    // upstream and therefore a defect (CLAUDE.md); found by differential
-    // fuzzing, not by reading, on `unionUnique([-5, -5, 0], [-0.5])`.
+    // duplicates in this prefix survive into the output. Calling `push_unique`
+    // here would be *more correct* than upstream and therefore a defect
+    // (CLAUDE.md). Differential fuzzing is what distinguishes the two, on
+    // `unionUnique([-5, -5, 0], [-0.5])`; reading the code does not.
     while a_pointer < a.len() && a[a_pointer] < *b_start {
         out.push(a[a_pointer].clone());
         a_pointer += 1;
@@ -696,10 +696,11 @@ mod tests {
     /// index 2 win, so index 2's lone element pops first, then index 1 pops
     /// its own tied `2`, exposing its unsorted second element `-5` next, and
     /// only then index 0's `3`): upstream's real output is `[2, 2, -5, 3]`,
-    /// which is what this test pins now that DIV-UTILS-2 is closed. The linear-scan
-    /// cut this file used to have gave `[2, -5, 2, 3]` instead -- see this
-    /// test's sibling `ties_across_arrays_do_not_affect_the_merged_multiset`
-    /// for why that only matters once a tie meets an unsorted array.
+    /// which is what this test pins now that DIV-UTILS-2 is closed. A
+    /// linear-scan substitute for the heap yields `[2, -5, 2, 3]` instead --
+    /// see this test's sibling
+    /// `ties_across_arrays_do_not_affect_the_merged_multiset` for why that
+    /// only matters once a tie meets an unsorted array.
     #[test]
     fn merge_k_matches_upstreams_real_heap_on_the_case_that_found_div_utils_2() {
         let a: [i32; 1] = [3];

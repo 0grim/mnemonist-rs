@@ -99,7 +99,7 @@ pub fn default_policy(capacity: f64) -> Option<f64> {
 /// that, and upstream checks for it, so the type has to be able to say it.
 pub type Policy = Box<dyn Fn(f64) -> Option<f64>>;
 
-/// Upstream's two `applyPolicy` throws, plus one refusal of our own.
+/// Upstream's two `applyPolicy` throws, plus one refusal of this port's own.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Error {
     /// `policy returned an invalid value (expecting a positive integer).`
@@ -884,8 +884,8 @@ mod tests {
             Error::PolicyTooSmall
         );
 
-        // Our own refusal, where upstream would propagate NaN into an
-        // allocation size.
+        // This port's own refusal, where upstream would propagate NaN into
+        // an allocation size.
         let vector = with(32, |_| Some(f64::NAN));
         assert_eq!(
             vector.apply_policy(None).unwrap_err(),

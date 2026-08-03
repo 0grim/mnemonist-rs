@@ -868,17 +868,14 @@ mod tests {
         assert!(seen.is_empty());
     }
 
-    /// A port bug (not upstream's), caught by this module's own
-    /// differential fuzzer: a `set` right after a `clear` used to panic.
-    /// `clear` resets `size` to `0` but never truncates `keys`/`values`
-    /// (matching upstream, which does the identical thing), so the very
-    /// next `set` must use
-    /// `self.size == 0`, not `self.keys.is_empty()`, to notice the tree is
-    /// logically empty again -- the first differential-fuzz campaign for
-    /// this module found the wrong check within its first handful of
-    /// generated programs: `pointer == EMPTY` fell through to the walk
-    /// loop's external-node branch unguarded and computed an
-    /// out-of-bounds index from it.
+    /// Pins which emptiness test `set` uses right after a `clear`. `clear`
+    /// resets `size` to `0` but never truncates `keys`/`values` (matching
+    /// upstream, which does the identical thing), so the check must be
+    /// `self.size == 0` and not `self.keys.is_empty()`. With the latter,
+    /// `pointer == EMPTY` falls through to the walk loop's external-node
+    /// branch unguarded and computes an out-of-bounds index from it -- which
+    /// is what this module's first differential-fuzz campaign hit within its
+    /// first handful of generated programs.
     #[test]
     fn a_set_right_after_a_clear_reuses_index_zero_instead_of_panicking() {
         let mut tree: FixedCritBitTreeMap<i32> = FixedCritBitTreeMap::new(4).unwrap();

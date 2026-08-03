@@ -4,11 +4,10 @@ pub mod bitwise;
 pub mod comparators;
 pub mod typed_arrays;
 
-// Appended, never interleaved: this list is a shared registry and every
-// reordering becomes another agent's merge conflict (CLAUDE.md, Git).
+// This list is append-only. It is a shared registry edited concurrently from
+// several worktrees, and appending keeps git's conflict boundaries off the
+// existing entries; reordering or inserting puts one in the middle of them.
 pub mod binary_search;
 pub mod hash_tables;
-pub mod murmurhash3;
-// Appended at the end, never inserted: this file is edited by several agents
-// at once and a new line anywhere else is a merge conflict (CLAUDE.md, Git).
 pub mod merge;
+pub mod murmurhash3;

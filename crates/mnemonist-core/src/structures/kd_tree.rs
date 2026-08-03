@@ -54,8 +54,9 @@
 //!   branched around: the throw is reproduced by message, and the axis step
 //!   is left at `0` on a path where upstream's own `NaN` is never read back.
 //!   Verified against Node 24.18.1. No upstream test constructs a
-//!   zero-dimensional tree; this used to panic, and through the bridge that
-//!   aborted the host process.
+//!   zero-dimensional tree, and the branch matters because an unhandled Rust
+//!   panic does not become a JavaScript `throw` at the bridge — it aborts the
+//!   host process.
 
 use crate::sort::quick::inplace_quick_sort_indices;
 use crate::structures::fixed_reverse_heap::FixedReverseHeap;
@@ -237,7 +238,8 @@ impl<L: Clone> KdTree<L> {
         for (i, (label, point)) in rows.into_iter().enumerate() {
             // `axis[i] = row[1][d]` past the end of the point stores
             // `undefined` into a `Float64Array`, which is `NaN`. Not a throw
-            // upstream, and previously an index-out-of-bounds panic here.
+            // upstream, so a short point pads rather than being rejected --
+            // hence `get(d)` and not `point[d]`, which would panic.
             for (d, axis) in axes.iter_mut().enumerate() {
                 axis[i] = point.get(d).copied().unwrap_or(f64::NAN);
             }
@@ -713,21 +715,18 @@ mod tests {
     /// in both `nearestNeighbor` and `kNearestNeighbors`.
     #[test]
     fn finds_neighbors_across_the_splitting_plane() {
-        // A dense diagonal line turns out NOT to be adversarial enough here:
-        // when every point's x equals its y, the primary "trust the split"
-        // descent already converges on the true answer coordinate by
-        // coordinate, so it is not a case that needs the "go the other way
-        // too" branch at all -- confirmed empirically: this construction
-        // alone did not go red under gate 6's falsification of that branch
-        // (see `docs/modules/kd-tree.md`). A dense 2D *grid* (not a line) is
-        // what actually forces it: many points share a coordinate on
-        // whichever axis the tree splits on, so a query can land close to a
-        // plane with the true nearest neighbor on its far side while the
-        // primary descent's own path does not happen to pass close enough
-        // first. This is also what `crates/difffuzz/src/modules/kd_tree.rs`'s
-        // `grammar_self_check` uses, and what actually caught the sabotage
-        // during gate 6 (this test did not, at first -- see the module doc's
-        // Bugs/Fuzz section for the investigation).
+        // The construction is a dense 2D *grid*, deliberately, and not a
+        // diagonal line. On a line every point's x equals its y, so the
+        // primary "trust the split" descent already converges on the true
+        // answer coordinate by coordinate and never needs the "go the other
+        // way too" branch -- a line therefore does not falsify that branch,
+        // confirmed empirically under gate 6 (see `docs/modules/kd-tree.md`).
+        // A grid does force it: many points share a coordinate on whichever
+        // axis the tree splits on, so a query can land close to a plane with
+        // the true nearest neighbor on its far side while the primary
+        // descent's own path does not pass close enough first. This is also
+        // what `crates/difffuzz/src/modules/kd_tree.rs`'s `grammar_self_check`
+        // builds, for the same reason.
         let side = 10i64;
         let rows: Vec<(usize, Vec<f64>)> = (0..side * side)
             .map(|i| (i as usize, vec![(i % side) as f64, (i / side) as f64]))
@@ -771,9 +770,11 @@ mod tests {
 
     // ------------------------------------------------------------------
     // Malformed rows and zero dimensions. Every expectation below was taken
-    // from real upstream in Node 24.18.1, not from reading kd-tree.js: each
-    // of these inputs used to panic here, and through the bridge a panic
-    // aborts the host process rather than throwing.
+    // from real upstream in Node 24.18.1, not from reading kd-tree.js. These
+    // are the inputs where JavaScript's `undefined`/`NaN` arithmetic keeps
+    // going and Rust's equivalent would panic -- and at the bridge a panic
+    // aborts the host process rather than throwing, so each one has to be
+    // branched around explicitly.
     // ------------------------------------------------------------------
 
     #[test]
