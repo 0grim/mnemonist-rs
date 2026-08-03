@@ -222,6 +222,30 @@ path), xorshift32 seed 42:
 | metric | port | upstream | |
 |---|---|---|---|
 | p50 ns/op | 118.1 | **102.9** | 1.15× slower |
+
+**Re-measured 2026-08-03: 1.51× slower, and this benchmark is the least trustworthy in the port.**
+A whole-suite pass on an idle machine, and a spot-check in isolation afterwards, both put this
+module well below the 1.15× above.
+
+The same doubled-hashing shape `multi-set` had was found here too — `link` reads `primary.get(&key)`
+and then unconditionally writes `primary.set(key, value)`, and does it again for `secondary`, so
+`bi-map` pays it twice per call. It was rewritten to update an existing slot in place through
+`OrderedMap::get_mut`, skipping the closing `set` for whichever side already held the key.
+
+The rewrite needed care in one place. It writes `primary` early and then, in the second block, calls
+`primary.delete(&current_key)`. Were `current_key` ever equal to `key`, that would delete the entry
+just written, where the original's trailing `set` would have re-inserted it. It cannot: the block
+returns early when the slot already holds `key`, so reaching the delete proves `current_key != key`.
+`set_can_rebind_both_sides_of_the_bijection_in_one_call` is exactly that case.
+
+**And it bought nothing measurable.** Six runs alternating the old and new code under identical
+conditions put the port at 169.9 ns before and 164.6 ns after — a 3% gap inside a 10% run-to-run
+spread. The change is kept because one lookup is not worse than two, but no speedup is claimed for
+it, and the mechanism is stated in the source without a magnitude.
+
+Those same six runs are why the figure above carries a caveat the rest of the port's table does not:
+this workload's ratio spanned **1.14× to 1.59×** across them, where every other module reproduces to
+about 1%. Read it as "slower, by somewhere between a little and a half".
 | p99 ns/op | 322.3 | **288.2** | 1.12× slower |
 | RSS delta MB | **60.1** | 212.8 | |
 | structure-only RSS delta MB | **1.4** | 9.8 | |

@@ -23,7 +23,7 @@
   },
   "baseline_rss_mb": {
     "node": 45.2,
-    "rust": 4.7
+    "rust": 4.8
   },
   "modules": {
     "static-disjoint-set": {
@@ -795,43 +795,43 @@
           "checksum_note": "identical on both sides: same ops, same answers, upstream bugs included",
           "structure_note": "structure_rss_delta_mb constructs size 1e6 and nothing else, isolating the structure from the op arrays both sides materialise",
           "port": {
-            "p50_ns_per_op": 120.749,
-            "p99_ns_per_op": 268.808,
-            "min_ns_per_op": 32.521,
-            "rss_total_mb": 65.1,
-            "rss_delta_mb": 60.4,
+            "p50_ns_per_op": 152.149,
+            "p99_ns_per_op": 374.689,
+            "min_ns_per_op": 33.584,
+            "rss_total_mb": 64.8,
+            "rss_delta_mb": 60,
             "structure_rss_delta_mb": 1.6,
-            "startup_ms": 0.6,
+            "startup_ms": 0.7,
             "samples": 10000
           },
           "original": {
-            "p50_ns_per_op": 77.537,
-            "p99_ns_per_op": 204.498,
-            "min_ns_per_op": 28.093,
-            "rss_total_mb": 257.9,
-            "rss_delta_mb": 212.7,
-            "structure_rss_delta_mb": 10.3,
-            "startup_ms": 15.5,
+            "p50_ns_per_op": 100.911,
+            "p99_ns_per_op": 284.579,
+            "min_ns_per_op": 28.464,
+            "rss_total_mb": 258.8,
+            "rss_delta_mb": 213.6,
+            "structure_rss_delta_mb": 10.2,
+            "startup_ms": 16.3,
             "samples": 10000
           },
           "regressions": [
             {
               "metric": "p50_ns_per_op",
-              "port": 120.749,
-              "original": 77.537,
-              "ratio": 1.56
+              "port": 152.149,
+              "original": 100.911,
+              "ratio": 1.51
             },
             {
               "metric": "p99_ns_per_op",
-              "port": 268.808,
-              "original": 204.498,
-              "ratio": 1.31
+              "port": 374.689,
+              "original": 284.579,
+              "ratio": 1.32
             },
             {
               "metric": "min_ns_per_op",
-              "port": 32.521,
-              "original": 28.093,
-              "ratio": 1.16
+              "port": 33.584,
+              "original": 28.464,
+              "ratio": 1.18
             }
           ]
         }
@@ -876,45 +876,26 @@
           "checksum_note": "identical on both sides: same ops, same answers, upstream bugs included",
           "structure_note": "structure_rss_delta_mb constructs size 20000 and nothing else, isolating the structure from the op arrays both sides materialise",
           "port": {
-            "p50_ns_per_op": 24.797,
-            "p99_ns_per_op": 44.034,
-            "min_ns_per_op": 23.264,
-            "rss_total_mb": 13.2,
-            "rss_delta_mb": 8.4,
+            "p50_ns_per_op": 16.14,
+            "p99_ns_per_op": 42.26,
+            "min_ns_per_op": 14.598,
+            "rss_total_mb": 13.3,
+            "rss_delta_mb": 8.5,
             "structure_rss_delta_mb": 0.1,
             "startup_ms": 0.6,
             "samples": 10000
           },
           "original": {
-            "p50_ns_per_op": 19.226,
-            "p99_ns_per_op": 43.883,
-            "min_ns_per_op": 15.73,
-            "rss_total_mb": 75.7,
-            "rss_delta_mb": 30.5,
+            "p50_ns_per_op": 21.881,
+            "p99_ns_per_op": 49.694,
+            "min_ns_per_op": 15.79,
+            "rss_total_mb": 75.1,
+            "rss_delta_mb": 29.9,
             "structure_rss_delta_mb": 6.2,
-            "startup_ms": 15.5,
+            "startup_ms": 16.6,
             "samples": 10000
           },
-          "regressions": [
-            {
-              "metric": "p50_ns_per_op",
-              "port": 24.797,
-              "original": 19.226,
-              "ratio": 1.29
-            },
-            {
-              "metric": "p99_ns_per_op",
-              "port": 44.034,
-              "original": 43.883,
-              "ratio": 1
-            },
-            {
-              "metric": "min_ns_per_op",
-              "port": 23.264,
-              "original": 15.73,
-              "ratio": 1.48
-            }
-          ]
+          "regressions": []
         }
       }
     },
@@ -1524,5 +1505,5 @@
       "excluded": "A require-closure of five unrelated pure-function files (typed-arrays, binary-search, hash-tables, iterables, merge) with no shared instance. The benchmark harness keys one workload per module name, so a single entry would misrepresent all five, and splitting them would no longer describe the unit named in the scope manifest. Correctness is covered by gates 1-9."
     }
   },
-  "generated_utc": "2026-08-03T03:13:33.734Z"
+  "generated_utc": "2026-08-03T07:41:55.013Z"
 }

@@ -114,18 +114,17 @@ is given and the unit's divergence document states it; a missing benchmark still
 Measured against the vendored upstream JavaScript using matched operation streams, interleaved, on
 an idle machine. Full methodology in [docs/METHODOLOGY.md](docs/METHODOLOGY.md).
 
-**44 benchmarked workloads across 40 structures. 36 are faster than upstream, 8 are slower.** The
+**44 benchmarked workloads across 40 structures. 37 are faster than upstream, 7 are slower.** The
 median is 1.46× faster. Two further units carry a benchmark exemption, described below.
 
 **Every workload that is slower**, without exception — this is the complete list, not a selection:
 
 | Structure | Workload | Median, relative to upstream |
 |---|---|---|
-| `bi-map` | `mixed-1e6` | 1.56× slower |
+| `bi-map` | `mixed-1e6` | 1.51× slower |
 | `default-map` | `mixed-1e6` | 1.44× slower |
 | `multi-array` | `mixed-1e6` | 1.31× slower |
 | `heap` | `mixed-1e6` | 1.31× slower |
-| `multi-set` | `mixed-1e6` | 1.29× slower |
 | `default-map` | `mixed-4e6` | 1.13× slower |
 | `fixed-critbit-tree-map` | `mixed-2e5` | 1.11× slower |
 | `bit-set` | `mixed-1e6` | 1.10× slower |
@@ -155,10 +154,24 @@ unchanged code.
 That instability is not symmetric, and it cost this table two rows. `multi-set` and `bi-map` were
 previously recorded as wins at 0.85× and 1.15×. In this pass both measured as losses, and a further
 spot-check of each in isolation on a settled machine measured them **worse still** — 1.29× and 1.56×
-against the pass's 1.13× and 1.35×. Those two rows are therefore published at the worse of the two
-figures rather than the pass's own, on the principle that between two honest measurements the
-unflattering one is the safer claim. Two workloads that had been counted as wins are now counted as
-losses.
+against the pass's 1.13× and 1.35×. Both were therefore treated as losses at the worse of the two
+figures, on the principle that between two honest measurements the unflattering one is the safer
+claim.
+
+Being counted as losses is what got them looked at. `multi-set` and `bi-map` both read a key and
+then wrote it back unconditionally, hashing it twice on every call; upstream cannot avoid that,
+since a JavaScript `Map` has no look-up-and-update-in-place operation, but `OrderedMap::get_mut`
+can. On `multi-set`, where `add` is half the workload's operations and every operation is O(1) map
+bookkeeping, that halved the hashing and took the port from 24.80 ns to 16.1–16.4 ns across four
+runs — **1.36× faster than upstream**, out of the loss column entirely.
+
+`bi-map` got the same treatment and it made no measurable difference. Six interleaved runs of the
+old and new code under identical conditions put the port at 169.9 ns before and 164.6 ns after, a 3%
+gap inside a 10% run-to-run spread. The change is kept because one lookup is not worse than two and
+the code is no more complex, but no speedup is claimed for it. `bi-map` is also the least stable
+measurement in this table: its ratio spanned 1.14× to 1.59× across those six runs, where every other
+module reproduces to about 1%. Its published figure should be read as "slower, by somewhere between
+a little and a half", not as 1.51.
 
 `kd-tree` was the largest regression at 2.18× slower and is now faster than upstream. Its k-nearest-
 neighbour search built a fresh heap-allocated tuple per node visited, and the heap's store clones a

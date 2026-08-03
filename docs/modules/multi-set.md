@@ -251,6 +251,22 @@ multiplicity per item on average by the run's end**, xorshift32 seed 42:
 | metric | port | upstream | |
 |---|---|---|---|
 | p50 ns/op | **19.0** | 22.3 | 1.2× faster |
+
+**Re-measured 2026-08-03, and it was not a win at first.** A whole-suite pass on an idle machine put
+this module at **1.29× slower** — the earlier 1.2× faster had been measured in a different session,
+where the JavaScript baseline sits up to 20% away from where it sits here. Being in the loss column
+is what got the module read line by line.
+
+`add` did `items.get(&item)` and then, unconditionally, `items.set(item, ...)` — two hash lookups of
+the same key on every call, on the operation that is half this workload's mix. Upstream has no
+choice: a JS `Map` cannot look up and hand back a handle to update in place. `OrderedMap::get_mut`
+can, and `set` on an existing key is already an in-place `mem::replace` into the same slot, so
+bumping the multiplicity through the `&mut f64` preserves insertion order identically. `remove`'s
+"still positive afterwards" path is the same shape; its "drops to zero" path is unchanged, since
+deleting is not something `get_mut` can do.
+
+Measured over four runs: the port's own p50 is 16.13–16.37 ns against 24.80 ns before, a 0.7% spread
+on the port side. **1.36× faster than upstream**, back out of the loss column.
 | p99 ns/op | **37.4** | 44.7 | 1.2× faster |
 | min ns/op | 17.9 | **15.9** | 1.13× slower |
 | RSS delta MB | **8.1** | 30.0 | |
