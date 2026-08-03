@@ -78,6 +78,13 @@ has since moved. Every slot carries an id that is never reused, the slot table s
 across any number of compactions, and a cursor resolves its id with a validated index hint for the
 common case and a binary search as the fallback.
 
+Two alternatives were rejected. The first is **V8's own approach** — chain the old table to the new
+and transition live iterators through a hole list. It is correct, and it is strictly more
+bookkeeping: a slot id needs no communication between a map and its cursors at all, which is
+precisely what leaves `MapCursor` `Copy` and impossible to invalidate. The second is **never
+compacting**, which removes the problem by letting the entry list grow without bound under exactly
+the delete-then-insert churn `lru-map` performs by design.
+
 **`MultiMap`'s flattened cursor snapshots each bucket rather than reading it live**, and this is the
 one place in the family where the port's behaviour and upstream's are known to disagree. Upstream
 obtains, per key, either a genuinely live `Set` iterator or an array walk with the length frozen at

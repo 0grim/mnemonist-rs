@@ -292,10 +292,10 @@ labelled unconfirmed.
 
 ## What these instruments cannot see
 
-Ten times during this port, a check passed and the pass meant nothing. Not because the code was
+Eleven times during this port, a check passed and the pass meant nothing. Not because the code was
 wrong and the check missed it — because **the check was answering a different question than the one
 it appeared to answer.** They are collected here rather than mentioned individually, because the
-pattern is the point and one instance reads like carelessness where ten read like a property of
+pattern is the point and one instance reads like carelessness where eleven read like a property of
 verification itself.
 
 | The check | What it looked like it verified | What it actually verified |
@@ -304,6 +304,7 @@ verification itself.
 | RSS, as evidence for a cache-locality hypothesis | that the memory footprint shrank | nothing — the pages were never resident to begin with |
 | `cargo build` clean | that the code compiles | that the *non-test* code compiles; `#[cfg(test)]` was never parsed |
 | `cases=16666` in a fuzz campaign | 16,666 distinct programs | 32 programs, plus two saved seeds replayed ~8,300 times each |
+| The oracle's array encoding | that a hole and a stored `undefined` compared equal | nothing — `map` skips holes, so they rendered as `null` while an assigned `undefined` became `{$undefined}` |
 | `cargo clippy \| tail -5` exiting 0 | that clippy passed | that **`tail`** succeeded — a pipeline's status is its last command's |
 | `cargo build … \| tail -1` before a fuzz run | that the sabotage was compiled in | `tail` again; the run used a stale binary and reported clean |
 | A bridge test green on `forEach` | that the loop re-reads `size` each step | nothing — the read was hoisted, and no test mutates from a bridge callback |
@@ -325,6 +326,23 @@ confirming the failure, rebuilding with it, and confirming the pass. Both runs p
 artefact had been copied to one filename and the reproduction script loaded another, so both runs
 exercised the *fixed* binary — and the agreeing results were nearly reported as confirmation. Redone
 against the file the script actually reads, the two runs differ as they should.
+
+**The two that were fixed rather than merely noticed.** The replay-inflated case count came from
+reusing one proptest `TestRunner` across batches: it counts successes for its whole lifetime and
+loops `while successes < cases`, so every batch after the first ran nothing but the persisted
+regression corpus. The fix is a fresh runner per batch, seeded from `(campaign seed, batch index)`
+so replays stay exact while later batches explore new programs, and it is pinned by
+`every_batch_generates_new_cases` — run deliberately against an *empty* corpus, because with nothing
+to replay the only way past `batch` cases is a batch that genuinely generated.
+
+The oracle's array encoding is the same class pointing the other way, and was caught by asking what
+the encoder could not distinguish rather than by a red run. `Array.prototype.map` skips holes, so
+`JSON.stringify` rendered them `null`, while an element explicitly assigned `undefined` encoded as
+`{$undefined}`. Nothing these structures expose can tell the two apart — `a[i]` is `undefined`
+either way — so the first module to produce both would have reported a divergence belonging to the
+harness. `heap` is that module: a comparator that shrinks the array mid-sift makes the sift read
+past the end and write `undefined` back, while an assignment past the end leaves holes. The oracle
+now walks arrays by index and both encode alike.
 
 The habit this produced is the one worth transferring: **before trusting a green signal, ask what it
 would look like if the thing it checks were broken.** Every failure above is invisible until that
